@@ -1119,7 +1119,7 @@ function renderCalUpcoming() {
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;color:#888;font-size:11px">· ${esc(e.item||'-')}</span></div>
-        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' ·':''} ${e.ctype?ctB(e.ctype)+' '+esc(e.ctype)+' '+e.qty+'개':'배차 미등록'}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' ·':''} ${e.ctype?ctB(e.ctype)+' '+e.qty+'개':'배차 미등록'}</div>
       </div>
       <span class="badge ${bdg}">${e.status}</span>
     </div>`;
