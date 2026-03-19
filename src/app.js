@@ -46,19 +46,20 @@ function hideLoading() {
 async function initApp() {
   showLoading('데이터 불러오는 중...');
 
-  stock = getStockSettings();
+  // stock은 loadAllData 안에서 가져옴  
 
   try {
     const data = await loadAllData();
-    farms = data.farms;
-    drivers = data.drivers;
-    dispatches = data.dispatches;
-    picks = data.picks;
-    ownIns = data.ownIns;
-    ownOuts = data.ownOuts;
-    nhfIns = data.nhfIns;
-    nhfOuts = data.nhfOuts;
-    reports = data.reports;
+farms = data.farms;
+drivers = data.drivers;
+dispatches = data.dispatches;
+picks = data.picks;
+ownIns = data.ownIns;
+ownOuts = data.ownOuts;
+nhfIns = data.nhfIns;
+nhfOuts = data.nhfOuts;
+reports = data.reports;
+stock = data.stockData;
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -170,7 +171,14 @@ function doLogout() {
 
 function gotoAdmin() {
   document.getElementById('rbtn-adm').className = 'rbtn active';
+  document.getElementById('hdr-btns').style.display = 'flex';
+  document.getElementById('hdr-logged').style.display = 'none';
   setRole('admin');
+}
+function adminLogout() {
+  document.getElementById('pin-screen').style.display = 'flex';
+  setPinMode('adm');
+}
 }
 
 // ── PIN 관리
