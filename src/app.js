@@ -1022,7 +1022,8 @@ function renderRep() {
   const page = list.slice((_rp - 1) * PER, _rp * PER);
   document.getElementById('rep-tb').innerHTML = page.length ? page.map(r => `<tr><td>${r.date}</td><td>${esc(r.driver)}</td><td class="nm">${esc(r.farm)}</td><td>${r.qty}개</td><td>${esc(r.note || '-')}</td></tr>`).join('') : emr(5, '내역 없음');
   mkPg('rep-pg', list.length, _rp, 'goRP');
-  const c = document.getElementById('rep-cnt'); if (c) c.textContent = list.length + '건';
+  const c = document.getElementById('rep-cnt');
+  if (c) c.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
 }
 
 // ── 현황판
