@@ -783,7 +783,7 @@ async function updDisp(id, s) {
       }
     }
     renderDisp(); renderDDash(); renderMyAssign(); renderMyPending();
-    const c = document.getElementById('rep-cnt'); if (c) c.textContent = reports.length + '건';
+    const c = document.getElementById('rep-cnt'); if (c) c.textContent = (_loggedDrv ? reports.filter(r=>r.driver===_loggedDrv.name).length : reports.length) + '건';
     if (_repOpen) renderRep(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -989,7 +989,7 @@ async function drvDone(id) {
       const rpt = await dbInsertReport({ driver: d.driver, date: d.date, farm: d.farm, qty: d.qty, note: '앱에서 완료처리' });
       reports.unshift(rpt);
     }
-    const c = document.getElementById('rep-cnt'); if (c) c.textContent = reports.length + '건';
+    const c = document.getElementById('rep-cnt'); if (c) c.textContent = (_loggedDrv ? reports.filter(r=>r.driver===_loggedDrv.name).length : reports.length) + '건';
     if (!_repOpen) { _repOpen = true; document.getElementById('rep-history').style.display = ''; document.getElementById('rep-h-icon').textContent = '▲ 접기'; }
     renderRep(); renderMyPending(); renderMyAssign(); renderDisp(); renderDDash(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
