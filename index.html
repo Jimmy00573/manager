@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>🍊 감귤 수송·콘테이너 통합 관리</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+
+<!-- PIN 로그인 화면 -->
+<div id="pin-screen" class="pin-screen">
+  <div class="pin-card">
+    <div class="pin-logo">🍊</div>
+    <div class="pin-title">감귤 수송 관리</div>
+    <div class="pin-sub">PIN으로 로그인하세요</div>
+    <div class="pin-mode-tabs">
+      <button class="pin-mode-tab active" id="ptab-drv" onclick="setPinMode('drv')">기사 로그인</button>
+      <button class="pin-mode-tab" id="ptab-adm" onclick="setPinMode('adm')">관리자</button>
+    </div>
+    <div id="pin-drv-sec">
+      <div class="pin-fg">
+        <label>기사 선택</label>
+        <select id="pin-sel" onchange="pinReset()"><option value="">-- 기사를 선택하세요 --</option></select>
+      </div>
+      <div class="pin-dots">
+        <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+        <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pk" onclick="pinKey('1')">1</button><button class="pk" onclick="pinKey('2')">2</button><button class="pk" onclick="pinKey('3')">3</button>
+        <button class="pk" onclick="pinKey('4')">4</button><button class="pk" onclick="pinKey('5')">5</button><button class="pk" onclick="pinKey('6')">6</button>
+        <button class="pk" onclick="pinKey('7')">7</button><button class="pk" onclick="pinKey('8')">8</button><button class="pk" onclick="pinKey('9')">9</button>
+        <button class="pk pkblank"></button><button class="pk" onclick="pinKey('0')">0</button><button class="pk pkdel" onclick="pinDel()">⌫</button>
+      </div>
+      <div id="pin-error" class="pin-error" style="display:none"></div>
+    </div>
+    <div id="pin-adm-sec" style="display:none">
+      <div class="pin-fg">
+        <label>관리자 PIN (4자리)</label>
+        <input id="adm-pin-in" type="password" maxlength="4" placeholder="관리자 PIN 입력"
+          oninput="this.value=this.value.replace(/\D/g,'')"
+          onkeydown="if(event.key==='Enter')chkAdmPin()">
+      </div>
+      <div style="margin-top:8px">
+        <button class="btn pri" onclick="chkAdmPin()" style="width:100%">관리자로 접속</button>
+      </div>
+      <div id="adm-err" class="pin-error" style="display:none">❌ PIN이 맞지 않습니다</div>
+    </div>
+  </div>
+</div>
+
+<!-- 모달: 농가 수정 -->
+<div id="modal-farm" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('farm')">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">✏️ 농가 수정</div><button class="modal-close" onclick="CM('farm')">✕</button></div>
+    <div class="modal-grid">
+      <div class="fg"><label>농가명 *</label><input id="mf-name"></div>
+      <div class="fg"><label>연락처</label><input id="mf-tel"></div>
+      <div class="fg full"><label>주소</label><input id="mf-addr"></div>
+      <div class="fg"><label>품종</label><input id="mf-variety" list="dl-v"></div>
+      <div class="fg"><label>계약 콘테이너(개)</label><input id="mf-contract" type="number"></div>
+      <div class="fg"><label>담당직원</label><input id="mf-staff"></div>
+      <div class="fg full"><label>비고</label><input id="mf-memo"></div>
+    </div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('farm')">취소</button><button class="btn pri" onclick="saveFarmEdit()">저장</button></div>
+  </div>
+</div>
+
+<!-- 모달: 기사 수정 -->
+<div id="modal-drv" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('drv')">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">✏️ 기사 수정</div><button class="modal-close" onclick="CM('drv')">✕</button></div>
+    <div class="modal-grid">
+      <div class="fg"><label>기사명 *</label><input id="md-name"></div>
+      <div class="fg"><label>연락처 *</label><input id="md-tel"></div>
+      <div class="fg"><label>차량번호</label><input id="md-car"></div>
+      <div class="fg"><label>소속</label><select id="md-type"><option value="내부">내부 직원</option><option value="외부">외부 용역</option></select></div>
+      <div class="fg full"><label>비고</label><input id="md-note"></div>
+    </div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('drv')">취소</button><button class="btn pri" onclick="saveDrvEdit()">저장</button></div>
+  </div>
+</div>
+
+<!-- 모달: 수거 수정 -->
+<div id="modal-pick" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('pick')">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">✏️ 수거 기록 수정</div><button class="modal-close" onclick="CM('pick')">✕</button></div>
+    <div class="modal-grid">
+      <div class="fg"><label>날짜 *</label><input id="mp-date" type="date"></div>
+      <div class="fg"><label>농가명 *</label><select id="mp-farm"><option value="">선택</option></select></div>
+      <div class="fg"><label>구분 *</label><select id="mp-type"><option value="원물수거">원물수거</option><option value="잉여회수">잉여회수</option></select></div>
+      <div class="fg"><label>수량(개) *</label><input id="mp-qty" type="number"></div>
+      <div class="fg"><label>기사</label><select id="mp-drv"><option value="">선택사항</option></select></div>
+      <div class="fg"><label>차량</label><input id="mp-car"></div>
+      <div class="fg full"><label>비고</label><input id="mp-note"></div>
+    </div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('pick')">취소</button><button class="btn pri" onclick="savePickEdit()">저장</button></div>
+  </div>
+</div>
+
+<!-- 모달: 외부용기 수정 -->
+<div id="modal-ext" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('ext')">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title" id="ext-modal-title">✏️ 이동 기록 수정</div><button class="modal-close" onclick="CM('ext')">✕</button></div>
+    <div class="modal-grid" id="ext-modal-body"></div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('ext')">취소</button><button class="btn pri" onclick="saveExtEdit()">저장</button></div>
+  </div>
+</div>
+
+<!-- 문자 모달 -->
+<div id="modal-msg" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('msg')">
+  <div class="msg-wrap">
+    <div class="msg-hdr"><div class="msg-ttl">📱 문자 발송</div><button class="modal-close" onclick="CM('msg')">✕</button></div>
+    <div class="msg-tabs">
+      <button class="msg-tab active" id="msgtab-c" onclick="switchMsgTab('c')">📋 내용 복사</button>
+      <button class="msg-tab" id="msgtab-s" onclick="switchMsgTab('s')">✉️ 문자 보내기</button>
+    </div>
+    <div class="msg-tab-content" id="msgtab-c-panel">
+      <div class="msg-box" id="msg-text"></div>
+      <div class="form-actions"><button class="btn copy" onclick="copyMsg()">📋 복사하기</button><button class="btn cancel" onclick="CM('msg')">닫기</button></div>
+    </div>
+    <div class="msg-tab-content" id="msgtab-s-panel" style="display:none">
+      <div class="sms-note">⚙️ <strong>SMS API 연동 필요</strong><br><code>src/sms.js</code>에서 API 키를 설정하면 활성화됩니다.</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="fg"><label>발송 서비스</label>
+          <div class="sms-provs">
+            <button class="sms-prov sel" id="pv-aligo" onclick="selPv('aligo')">알리고</button>
+            <button class="sms-prov" id="pv-solapi" onclick="selPv('solapi')">솔라피</button>
+            <button class="sms-prov" id="pv-naver" onclick="selPv('naver')">네이버 SENS</button>
+          </div>
+        </div>
+        <div class="fg"><label>수신 번호</label><input id="sms-to" type="tel" placeholder="010-0000-0000"></div>
+        <div class="fg"><label>발신 번호</label><input id="sms-from" placeholder="공장 대표번호"></div>
+        <div class="fg"><label>문자 내용</label><textarea id="sms-body" rows="6" style="resize:vertical;font-size:12px;line-height:1.7"></textarea></div>
+        <div id="sms-stat" style="display:none" class="sms-stat"></div>
+        <div class="form-actions">
+          <button class="btn sms" onclick="sendSms()" id="sms-send-btn">✉️ 문자 발송</button>
+          <button class="btn cancel" onclick="CM('msg')">닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 헤더 -->
+<div class="hdr">
+  <div class="hdr-title">🍊 감귤 수송·콘테이너 통합 관리</div>
+  <div id="hdr-right">
+    <div id="hdr-btns" class="role-sw">
+      <button class="rbtn active" id="rbtn-adm" onclick="gotoAdmin()">관리자</button>
+      <button class="rbtn" onclick="showPin()">기사 로그인</button>
+    </div>
+    <div id="hdr-logged" style="display:none" class="login-info">
+      <span class="login-badge" id="logged-name"></span>
+      <button class="logout-btn" onclick="doLogout()">로그아웃</button>
+    </div>
+  </div>
+</div>
+
+<!-- 관리자 탭 -->
+<div id="anav" class="nav">
+  <button class="nbtn active" onclick="T('dash')">현황판</button>
+  <button class="nbtn" onclick="T('disp')">배차·배출</button>
+  <button class="nbtn" onclick="T('pick')">수거 관리</button>
+  <button class="nbtn" onclick="T('ext')">외부 용기</button>
+  <button class="nbtn" onclick="T('farm')">농가 관리</button>
+  <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
+</div>
+
+<!-- 기사 탭 -->
+<div id="dnav" class="nav" style="display:none">
+  <button class="nbtn active" onclick="DT('dmy')">내 배차</button>
+  <button class="nbtn" onclick="DT('drep')">완료 등록</button>
+</div>
+
+<div class="main">
+
+<!-- 현황판 -->
+<div id="p-dash" class="panel active">
+  <div class="sec-hdr"><div class="sec-title">🏭 공장 보유 재고</div></div>
+  <div class="stock-grid" id="stock-cards"></div>
+  <div class="kpi-grid" id="kpi" style="margin-top:14px"></div>
+  <div class="sec-hdr"><div class="sec-title">⚠️ 처리 필요 알림</div><button class="sec-toggle" onclick="togS('alert')"><span id="alert-txt">간략히</span></button></div>
+  <div id="alert-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="alert-badges"></div></div>
+  <div id="alert-detail"><div class="alert-cats"><div class="alert-cat"><div class="alert-cat-hdr fh">🟡 농가 보유 <span id="afc" class="alert-cnt w">0</span></div><div class="alert-cat-body" id="afb"></div></div><div class="alert-cat"><div class="alert-cat-hdr rh">🟢 반납 필요 <span id="arc" class="alert-cnt g">0</span></div><div class="alert-cat-body" id="arb"></div></div></div></div>
+  <div class="sec-hdr"><div class="sec-title">배차·배출 현황</div><button class="sec-toggle" onclick="togS('disp-dash')"><span id="disp-dash-txt">간략히</span></button></div>
+  <div id="disp-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="disp-dash-badges"></div></div>
+  <div id="disp-dash-detail"><div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab-w" onclick="switchDT('w')">배출 대기</button><button class="dtab" id="dtab-d" onclick="switchDT('d')">배출 완료</button></div><table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>상태</th><th></th></tr></thead><tbody id="d-disp-tb"></tbody></table><div class="pagination" id="disp-pg"></div></div></div>
+  <div class="sec-hdr"><div class="sec-title">농가별 콘테이너 현황</div><button class="sec-toggle" onclick="togS('farm-dash')"><span id="farm-dash-txt">간략히</span></button></div>
+  <div id="farm-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="farm-dash-badges"></div></div>
+  <div id="farm-dash-detail"><div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="ftab-n" onclick="switchFT('n')">처리 필요</button><button class="dtab" id="ftab-o" onclick="switchFT('o')">정상</button></div><table><thead><tr><th>농가명</th><th>배출</th><th>원물수거</th><th>잉여회수</th><th>농가보유</th><th>상태</th></tr></thead><tbody id="d-farm-tb"></tbody></table></div></div>
+  <div class="sec-hdr"><div class="sec-title">외부 용기 현황</div><button class="sec-toggle" onclick="togS('ext-dash')"><span id="ext-dash-txt">간략히</span></button></div>
+  <div id="ext-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="ext-dash-badges"></div></div>
+  <div id="ext-dash-detail"><div class="ext-grid" id="ext-cards"></div></div>
+</div>
+
+<!-- 배차·배출 -->
+<div id="p-disp" class="panel">
+  <div class="note">💡 배차 등록 → 재고 자동 차감 → 등록 후 문자 발송 팝업</div>
+  <div class="form-card"><div class="form-title">배차 등록</div>
+    <div class="form-grid">
+      <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
+      <div class="fg"><label>농가명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
+      <div class="fg"><label>농가 연락처</label><input id="dp-ftel" class="auto" readonly></div>
+      <div class="fg"><label>주소</label><input id="dp-addr" class="auto" readonly></div>
+      <div class="fg"><label>기사 *</label><select id="dp-drv" onchange="afD('dp')"><option value="">선택</option></select></div>
+      <div class="fg"><label>기사 연락처</label><input id="dp-dtel" class="auto" readonly></div>
+      <div class="fg"><label>차량</label><input id="dp-car" class="auto" readonly></div>
+      <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
+      <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
+      <div class="fg"><label>🍊 품목</label><input id="dp-item" list="dl-v" placeholder="예) 노지감귤"></div>
+      <div class="fg" style="grid-column:1/-1">
+        <label>콘테이너 종류 * <span style="font-size:10px;color:#aaa">→ 재고 자동 차감</span></label>
+        <div class="ctype-btns"><button class="ctype-btn" onclick="selCt('노랑')">🟡 노랑</button><button class="ctype-btn" onclick="selCt('초록')">🟢 초록</button><button class="ctype-btn" onclick="selCt('헌콘')">⬜ 헌콘</button></div>
+        <input id="dp-ctype" readonly placeholder="위에서 선택" style="cursor:pointer">
+      </div>
+      <div class="fg"><label>특이사항</label><input id="dp-note" placeholder="메모"></div>
+    </div>
+    <div id="dp-stw" style="display:none" class="stock-warn-banner"></div>
+    <div class="form-actions"><button class="btn copy" onclick="previewMsg()">📋 문자 미리보기</button><button class="btn pri" onclick="addDisp()">배차 등록</button></div>
+  </div>
+  <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
+  <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th>문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
+  <div class="pagination" id="disp2-pg"></div></div>
+</div>
+
+<!-- 수거 관리 -->
+<div id="p-pick" class="panel">
+  <div class="form-card"><div class="form-title">수거 기록</div>
+    <div class="form-grid">
+      <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
+      <div class="fg"><label>농가명 *</label><select id="pk-farm" onchange="afF('pk')"><option value="">선택</option></select></div>
+      <div class="fg"><label>연락처</label><input id="pk-tel" class="auto" readonly></div>
+      <div class="fg"><label>구분 *</label><select id="pk-type"><option value="">선택</option><option value="원물수거">원물수거</option><option value="잉여회수">잉여회수</option></select></div>
+      <div class="fg"><label>수량(개) *</label><input id="pk-qty" type="number" placeholder="0"></div>
+      <div class="fg"><label>기사</label><select id="pk-drv" onchange="afD('pk')"><option value="">선택사항</option></select></div>
+      <div class="fg"><label>차량</label><input id="pk-car" class="auto" readonly></div>
+      <div class="fg"><label>비고</label><input id="pk-note" placeholder="메모"></div>
+    </div>
+    <div class="form-actions"><button class="btn pri" onclick="addPick()">수거 기록 추가</button></div>
+  </div>
+  <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>기사</th><th>차량</th><th>비고</th><th>수정시간</th><th></th></tr></thead><tbody id="pick-tb"></tbody></table></div>
+</div>
+
+<!-- 외부 용기 -->
+<div id="p-ext" class="panel">
+  <div class="ext-tabs"><button class="etab af" id="et-f" onclick="extTab('f')">🔵 농가 자가 콘테이너</button><button class="etab" id="et-n" onclick="extTab('n')">🟢 농협 콘테이너·파렛트</button></div>
+  <div id="ext-f-div">
+    <div class="ext-tabs"><button class="etab af" id="ot-i" onclick="ownTab('i')">반입 기록</button><button class="etab" id="ot-o" onclick="ownTab('o')">반납 기록</button></div>
+    <div id="own-in" class="form-card"><div class="form-title">농가 자가 콘테이너 반입</div>
+      <div class="form-grid"><div class="fg"><label>반입일자 *</label><input id="oi-date" type="date"></div><div class="fg"><label>농가명 *</label><select id="oi-farm" onchange="afF('oi')"><option value="">선택</option></select></div><div class="fg"><label>연락처</label><input id="oi-tel" class="auto" readonly></div><div class="fg"><label>콘테이너 특징</label><input id="oi-desc" placeholder="예) 파란스티커"></div><div class="fg"><label>반입 수량(개) *</label><input id="oi-qty" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="oi-staff" placeholder="직원명"></div></div>
+      <div class="form-actions"><button class="btn pri" onclick="addOwnIn()">반입 등록</button></div>
+    </div>
+    <div id="own-out" class="form-card" style="display:none"><div class="form-title">농가 자가 콘테이너 반납</div>
+      <div class="form-grid"><div class="fg"><label>반납일자 *</label><input id="oo-date" type="date"></div><div class="fg"><label>농가명 *</label><select id="oo-farm" onchange="afF('oo')"><option value="">선택</option></select></div><div class="fg"><label>연락처</label><input id="oo-tel" class="auto" readonly></div><div class="fg"><label>반납 방법</label><select id="oo-method"><option>공장→농가배달</option><option>농가직접회수</option><option>기타</option></select></div><div class="fg"><label>콘테이너 특징</label><input id="oo-desc" placeholder="예) 파란스티커"></div><div class="fg"><label>반납 수량(개) *</label><input id="oo-qty" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="oo-staff" placeholder="직원명"></div></div>
+      <div class="form-actions"><button class="btn pri" onclick="addOwnOut()">반납 등록</button></div>
+    </div>
+    <div class="sec-hdr"><div class="sec-title">농가별 현황 <span id="own-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>농가명</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>특징</th><th>상태</th></tr></thead><tbody id="own-sum"></tbody></table></div>
+    <div class="fold-bar" onclick="togF('own-tb')"><div class="fold-label">이동 내역 <span id="own-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="own-tb-icon" class="fold-icon">▼ 자세히</span></div>
+    <div id="own-tb-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>방법</th><th>콘테이너 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="own-tb"></tbody></table></div></div>
+  </div>
+  <div id="ext-n-div" style="display:none">
+    <div class="ext-tabs"><button class="etab an" id="nt-i" onclick="nhfTab('i')">반입 기록</button><button class="etab" id="nt-o" onclick="nhfTab('o')">반납 기록</button></div>
+    <div id="nhf-in" class="form-card"><div class="form-title">농협 용기 반입</div>
+      <div class="form-grid"><div class="fg"><label>반입일자 *</label><input id="ni-date" type="date"></div><div class="fg"><label>농협명·지점</label><input id="ni-nhf" placeholder="예) 서귀포농협 서홍지점"></div><div class="fg"><label>용기 종류 *</label><input id="ni-type" list="dl-cx"></div><div class="fg"><label>용기 특징</label><input id="ni-desc" placeholder="예) 파란색, 번호표"></div><div class="fg"><label>반입 수량 *</label><input id="ni-qty" type="number" placeholder="0"></div><div class="fg"><label>구매 내용</label><input id="ni-goods" placeholder="예) 노지감귤 500kg"></div><div class="fg"><label>담당직원</label><input id="ni-staff" placeholder="직원명"></div></div>
+      <div class="form-actions"><button class="btn pri" onclick="addNhfIn()">반입 등록</button></div>
+    </div>
+    <div id="nhf-out" class="form-card" style="display:none"><div class="form-title">농협 용기 반납</div>
+      <div class="form-grid"><div class="fg"><label>반납일자 *</label><input id="no-date" type="date"></div><div class="fg"><label>농협명·지점 *</label><input id="no-nhf" placeholder="예) 서귀포농협 서홍지점"></div><div class="fg"><label>용기 종류 *</label><input id="no-type" list="dl-cx"></div><div class="fg"><label>반납 방법</label><select id="no-method"><option>공장→농협배달</option><option>농협직접회수</option><option>기타</option></select></div><div class="fg"><label>용기 특징</label><input id="no-desc" placeholder="예) 파란색, 번호표"></div><div class="fg"><label>반납 수량 *</label><input id="no-qty" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="no-staff" placeholder="직원명"></div></div>
+      <div class="form-actions"><button class="btn pri" onclick="addNhfOut()">반납 등록</button></div>
+    </div>
+    <div class="fold-bar" onclick="togF('nhf-sum')"><div class="fold-label">농협별 현황 <span id="nhf-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div><span id="nhf-sum-icon" class="fold-icon">▼ 자세히</span></div>
+    <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
+    <div class="fold-bar" onclick="togF('nhf-tb')"><div class="fold-label">이동 내역 <span id="nhf-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="nhf-tb-icon" class="fold-icon">▼ 자세히</span></div>
+    <div id="nhf-tb-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농협명</th><th>종류</th><th>구분</th><th>수량</th><th>방법</th><th>용기 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="nhf-tb"></tbody></table></div></div>
+  </div>
+</div>
+
+<!-- 농가 관리 -->
+<div id="p-farm" class="panel">
+  <div class="form-card"><div class="form-title">농가 등록</div>
+    <div class="form-grid"><div class="fg"><label>농가명 *</label><input id="f-name" placeholder="예) 김개똥"></div><div class="fg"><label>연락처</label><input id="f-tel" placeholder="010-0000-0000"></div><div class="fg"><label>주소</label><input id="f-addr" placeholder="예) 서귀포시 ..."></div><div class="fg"><label>품종</label><input id="f-variety" list="dl-v"></div><div class="fg"><label>계약 콘테이너(개)</label><input id="f-contract" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="f-staff" placeholder="담당자명"></div><div class="fg"><label>비고</label><input id="f-memo" placeholder="메모"></div></div>
+    <div class="form-actions"><button class="btn pri" onclick="addFarm()">등록</button></div>
+  </div>
+  <div style="font-size:12px;color:#888;margin:8px 0;display:flex;align-items:center;gap:8px">등록된 농가 <span id="farm-cnt" class="badge b-neu">0</span></div>
+  <div id="farm-cards"></div>
+</div>
+
+<!-- 기사·PIN 관리 -->
+<div id="p-drv" class="panel">
+  <div class="form-card"><div class="form-title">기사 등록</div>
+    <div class="form-grid"><div class="fg"><label>기사명 *</label><input id="dv-name" placeholder="예) 홍길동"></div><div class="fg"><label>연락처 *</label><input id="dv-tel" placeholder="010-0000-0000"></div><div class="fg"><label>차량번호</label><input id="dv-car" placeholder="제주 12가 3456"></div><div class="fg"><label>소속</label><select id="dv-type"><option value="내부">내부 직원</option><option value="외부">외부 용역</option></select></div><div class="fg"><label>비고</label><input id="dv-note" placeholder="메모"></div></div>
+    <div class="form-actions"><button class="btn pri" onclick="addDriver()">등록</button></div>
+  </div>
+  <div class="note">💡 PIN은 기본으로 표시됩니다. 🔄 재발급으로 새 PIN 발급. 퇴사 기사는 🚫 차단하면 즉시 로그인 불가.</div>
+  <div style="font-size:12px;color:#888;margin:8px 0;display:flex;align-items:center;gap:8px">등록된 기사 <span id="drv-cnt" class="badge b-neu">0</span></div>
+  <div id="drv-list"></div>
+</div>
+
+<!-- 기사: 내 배차 -->
+<div id="p-dmy" class="panel" style="display:none">
+  <div class="form-card"><div class="form-title">내 배차</div>
+    <div id="drv-welcome" style="padding:10px 12px;background:#f8f8f8;border-radius:8px;font-size:13px;margin-bottom:14px"></div>
+    <div id="my-list"></div>
+  </div>
+</div>
+
+<!-- 기사: 완료 등록 -->
+<div id="p-drep" class="panel" style="display:none">
+  <div class="note">💡 배출 대기 건을 완료 처리하거나 직접 입력하세요.</div>
+  <div id="my-pending-list" style="margin-bottom:16px"></div>
+  <div class="form-card"><div class="form-title">직접 입력</div>
+    <div class="form-grid"><div class="fg"><label>날짜 *</label><input id="rp-date" type="date"></div><div class="fg"><label>농가명 *</label><select id="rp-farm"><option value="">선택</option></select></div><div class="fg"><label>실제 수량(개) *</label><input id="rp-qty" type="number" placeholder="0"></div><div class="fg"><label>특이사항</label><input id="rp-note" placeholder="파손, 부족 등"></div></div>
+    <div class="form-actions"><button class="btn pri" onclick="addReport()">완료 등록</button></div>
+  </div>
+  <div class="fold-bar" onclick="togRepH()"><div class="fold-label">📋 완료 내역 <span id="rep-cnt" class="badge b-neu">0건</span></div><span id="rep-h-icon" class="fold-icon">▼ 자세히</span></div>
+  <div id="rep-history" style="display:none">
+    <div class="date-range"><span>기간</span><input type="date" id="rp-from" onchange="renderRep()"><span>~</span><input type="date" id="rp-to" onchange="renderRep()"><button class="btn sm" onclick="clearRepF()">전체</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>기사명</th><th>농가명</th><th>수량</th><th>특이사항</th></tr></thead><tbody id="rep-tb"></tbody></table><div class="pagination" id="rep-pg"></div></div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<datalist id="dl-v"><option value="노지감귤"><option value="하우스감귤"><option value="한라봉"><option value="천혜향"><option value="레드향"><option value="황금향"><option value="청견"><option value="세토카"></datalist>
+<datalist id="dl-cx"><option value="콘테이너"><option value="파렛트"><option value="사각"><option value="노랑"><option value="초록"><option value="헌콘"></datalist>
+
+<script src="src/supabase-client.js"></script>
+<script src="src/db.js"></script>
+<script src="src/sms.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
