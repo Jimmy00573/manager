@@ -881,7 +881,35 @@ async function addOwnIn() {
 }
 async function addOwnOut() {
   const date = gv('oo-date'), farm = gv('oo-farm'), qty = n('oo-qty');
-  if (!date || !farm || !qty || !gv('oo-staff')) { alert('담당 기사를 선택하세요'); return; } alert('반납일자, 농가명, 수량을 입력하세요'); return; }
+
+  if (!date || !farm || !qty) {
+    alert('반납일자, 농가명, 수량을 입력하세요');
+    return;
+  }
+
+  if (!gv('oo-staff')) {
+    alert('담당 기사를 선택하세요');
+    return;
+  }
+
+  try {
+    const row = await dbInsertOwnOut({
+      date,
+      farm,
+      qty,
+      method: gv('oo-method'),
+      feature: gv('oo-feature'),
+      staff: gv('oo-staff')
+    });
+
+    ownOuts.unshift(row);
+    clr('oo-qty', 'oo-staff', 'oo-feature');
+    renderOwn();
+    renderDash();
+  } catch (e) {
+    alert('오류: ' + e.message);
+  }
+}
   try {
     const row = await dbInsertOwnOut({ date, farm, qty, method: gv('oo-method'), feature: gv('oo-feature'), staff: gv('oo-staff') });
     ownOuts.unshift(row); clr('oo-qty', 'oo-staff', 'oo-feature'); renderOwn(); renderDash();
