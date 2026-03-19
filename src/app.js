@@ -688,25 +688,30 @@ function renderAdmPinChange() {
 }
 
 function changeAdmPin() {
-  const cur = document.getElementById('apc-cur')?.value;
-  const nw = document.getElementById('apc-new')?.value;
-  const cf = document.getElementById('apc-confirm')?.value;
+  const curEl = document.getElementById('apc-cur');
+  const nwEl = document.getElementById('apc-new');
+  const cfEl = document.getElementById('apc-confirm');
   const msg = document.getElementById('apc-msg');
   
+  if (!curEl || !nwEl || !cfEl || !msg) { alert('PIN 변경 폼을 찾을 수 없습니다'); return; }
+  
+  const cur = curEl.value;
+  const nw = nwEl.value;
+  const cf = cfEl.value;
   const currentPin = localStorage.getItem('citrus_adm_pin') || ADM_PIN;
   
-  msg.style.display = '';
-  if (cur !== currentPin) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN이 맞지 않습니다'; return; }
+  msg.style.display = 'block';
+  
+  if (!cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN을 입력하세요'; return; }
+  if (cur !== currentPin) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN이 맞지 않습니다 (입력: ' + cur + ')'; return; }
   if (!nw || nw.length < 4) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN은 4자리여야 합니다'; return; }
   if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN이 일치하지 않습니다'; return; }
   if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN과 동일합니다'; return; }
   
   localStorage.setItem('citrus_adm_pin', nw);
   msg.style.color = '#2E7D32';
-  msg.textContent = '✅ 관리자 PIN이 변경되었습니다!';
-  document.getElementById('apc-cur').value = '';
-  document.getElementById('apc-new').value = '';
-  document.getElementById('apc-confirm').value = '';
+  msg.textContent = '✅ PIN 변경 완료! 새 PIN: ' + nw;
+  curEl.value = ''; nwEl.value = ''; cfEl.value = '';
 }
 
 function renderDrivers() {
