@@ -2,8 +2,8 @@
 //  ⚠️ 여기에 Supabase 정보를 입력하세요
 //  supabase.com → 프로젝트 → Settings → API 에서 복사
 // ============================================================
-const SUPABASE_URL = 'https://poqrtghqsxyphfkyfgb.supabase.co';        // 예) https://abcdefgh.supabase.co
-const SUPABASE_ANON_KEY = 'sb_publishable_LEBgQHYF9enZNFtQ6ITjrQ_l8H7xfTW'; // 예) eyJhbGci...
+const SUPABASE_URL = 'https://poqrtghqsxyphfkyfgb.supabase.co';  // 예) https://abcdefgh.supabase.co
+const SUPABASE_ANON_KEY = 'sb_publishable_LE8g...';              // 예) eyJhbGci...
 
 // 관리자 PIN (4자리 숫자 — 원하는 번호로 변경하세요)
 const ADM_PIN = '3524';
