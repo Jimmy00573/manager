@@ -206,7 +206,9 @@ function doLogout() {
   document.getElementById('anav').style.display = 'flex';
   document.getElementById('dnav').style.display = 'none';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
-  T('dash');
+  document.getElementById('anav').style.display = 'none';
+  document.getElementById('pin-screen').style.display = 'flex';
+setPinMode('drv');
 }
 
 function gotoAdmin() {
@@ -360,6 +362,7 @@ function T(id) {
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
+  if (id === 'drv') renderAdmPinChange()
 }
 
 function DT(id) {
