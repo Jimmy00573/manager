@@ -45,7 +45,11 @@ function hideLoading() {
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
-
+  
+// 저장된 관리자 PIN 불러오기
+const savedAdmPin = localStorage.getItem('citrus_adm_pin');
+if (savedAdmPin) window.ADM_PIN = savedAdmPin;
+  
   // stock은 loadAllData 안에서 가져옴  
 
   try {
@@ -67,8 +71,39 @@ stock = data.stockData;
 
   setDates();
   popSels();
-  setRole('admin');
   renderAll();
+  
+  // 새로고침 후 로그인 상태 복원
+  const savedRole = sessionStorage.getItem('citrus_role');
+  const savedDrvName = sessionStorage.getItem('citrus_drv');
+  
+  if (savedRole === 'admin') {
+    document.getElementById('hdr-btns').style.display = 'flex';
+    document.getElementById('hdr-logged').style.display = 'none';
+    document.getElementById('rbtn-logout').style.display = '';
+    setRole('admin');
+  } else if (savedRole === 'driver' && savedDrvName) {
+    const drv = drivers.find(d => d.name === savedDrvName);
+    if (drv && drv.pin_active !== false) {
+      _loggedDrv = drv;
+      document.getElementById('hdr-btns').style.display = 'none';
+      document.getElementById('hdr-logged').style.display = 'flex';
+      document.getElementById('logged-name').textContent = drv.name + ' 기사님 👋';
+      document.getElementById('anav').style.display = 'none';
+      document.getElementById('dnav').style.display = 'flex';
+      document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); });
+      document.getElementById('p-dmy').style.display = '';
+      document.getElementById('p-drep').style.display = '';
+      DT('dmy');
+      const wel = document.getElementById('drv-welcome');
+      if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${drv.type} · ${esc(drv.car || '차량 미등록')}</span>`;
+      renderMyAssign(); renderMyPending();
+    } else {
+      document.getElementById('pin-screen').style.display = 'flex';
+    }
+  } else {
+    document.getElementById('pin-screen').style.display = 'flex';
+  }
   hideLoading();
 }
 
@@ -118,6 +153,8 @@ function checkPin() {
   if (!drv || drv.pin_active === false) { pinErr('❌ 비활성화된 계정입니다.'); return; }
   if (drv.pin === _pinBuf) {
     _loggedDrv = drv;
+    sessionStorage.setItem('citrus_role', 'driver');
+    sessionStorage.setItem('citrus_drv', drv.name);
     document.getElementById('pin-screen').style.display = 'none';
     document.getElementById('hdr-btns').style.display = 'none';
     document.getElementById('hdr-logged').style.display = 'flex';
@@ -148,6 +185,7 @@ function pinErr(msg) {
 function chkAdmPin() {
   const v = document.getElementById('adm-pin-in').value;
   if (v === ADM_PIN) {
+    sessionStorage.setItem('citrus_role', 'admin');
     document.getElementById('pin-screen').style.display = 'none';
     setRole('admin');
     document.getElementById('adm-pin-in').value = '';
@@ -160,6 +198,8 @@ function chkAdmPin() {
 }
 
 function doLogout() {
+  sessionStorage.removeItem('citrus_role');
+  sessionStorage.removeItem('citrus_drv');
   _loggedDrv = null;
   document.getElementById('hdr-btns').style.display = 'flex';
   document.getElementById('hdr-logged').style.display = 'none';
@@ -176,6 +216,8 @@ function gotoAdmin() {
   setRole('admin');
 }
 function adminLogout() {
+  sessionStorage.removeItem('citrus_role');
+  sessionStorage.removeItem('citrus_drv');
   document.getElementById('pin-screen').style.display = 'flex';
   document.getElementById('rbtn-logout').style.display = 'none';
   document.getElementById('rbtn-adm').className = 'rbtn active';
@@ -623,6 +665,45 @@ async function delDriver(id) {
   try { await dbDeleteDriver(id); drivers = drivers.filter(d => d.id !== id); popSels(); renderDrivers(); }
   catch (e) { alert('오류: ' + e.message); }
 }
+function renderAdmPinChange() {
+  const el = document.getElementById('adm-pin-change');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="form-card" style="border-left:3px solid #C05800">
+      <div class="form-title">🔐 관리자 PIN 변경</div>
+      <div class="form-grid">
+        <div class="fg"><label>현재 PIN</label><input id="apc-cur" type="password" maxlength="4" placeholder="현재 PIN" oninput="this.value=this.value.replace(/\\D/g,'')"></div>
+        <div class="fg"><label>새 PIN</label><input id="apc-new" type="password" maxlength="4" placeholder="새 PIN (4자리)" oninput="this.value=this.value.replace(/\\D/g,'')"></div>
+        <div class="fg"><label>새 PIN 확인</label><input id="apc-confirm" type="password" maxlength="4" placeholder="새 PIN 재입력" oninput="this.value=this.value.replace(/\\D/g,'')"></div>
+      </div>
+      <div id="apc-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <div class="form-actions"><button class="btn pri" onclick="changeAdmPin()">PIN 변경</button></div>
+    </div>
+  `;
+}
+
+function changeAdmPin() {
+  const cur = document.getElementById('apc-cur')?.value;
+  const nw = document.getElementById('apc-new')?.value;
+  const cf = document.getElementById('apc-confirm')?.value;
+  const msg = document.getElementById('apc-msg');
+  
+  msg.style.display = '';
+  if (cur !== ADM_PIN) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN이 맞지 않습니다'; return; }
+  if (!nw || nw.length < 4) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN은 4자리여야 합니다'; return; }
+  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN이 일치하지 않습니다'; return; }
+  if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN과 동일합니다'; return; }
+  
+  // PIN 변경 (supabase-client.js의 ADM_PIN은 상수라 직접 변경 불가 — localStorage에 저장)
+  localStorage.setItem('citrus_adm_pin', nw);
+  window.ADM_PIN = nw;
+  msg.style.color = '#2E7D32';
+  msg.textContent = '✅ 관리자 PIN이 변경되었습니다!';
+  document.getElementById('apc-cur').value = '';
+  document.getElementById('apc-new').value = '';
+  document.getElementById('apc-confirm').value = '';
+}
+
 function renderDrivers() {
   document.getElementById('drv-cnt').textContent = drivers.length;
   const el = document.getElementById('drv-list');
