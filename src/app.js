@@ -452,7 +452,7 @@ function popSels() {
     drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`);
     el.value = v;
   });
-  ['oi-staff', 'oo-staff'].forEach(id => {
+ ['oi-staff', 'oo-staff'].forEach(id => {
   const el = document.getElementById(id); if (!el) return;
   const v = el.value; el.innerHTML = '<option value="">선택</option>';
   drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`);
@@ -872,7 +872,8 @@ function renderPick() {
 // ── 자가 콘테이너
 async function addOwnIn() {
   const date = gv('oi-date'), farm = gv('oi-farm'), qty = n('oi-qty');
-  if (!date || !farm || !qty || !gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; } alert('반입일자, 농가명, 수량을 입력하세요'); return; }
+  if (!date || !farm || !qty) { alert('반입일자, 농가명, 수량을 입력하세요'); return; }
+if (!gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; }
   try {
     const row = await dbInsertOwnIn({ date, farm, qty, feature: gv('oi-feature'), staff: gv('oi-staff') });
     ownIns.unshift(row); clr('oi-qty', 'oi-feature', 'oi-staff'); renderOwn(); renderDash();
