@@ -177,6 +177,8 @@ function gotoAdmin() {
 }
 function adminLogout() {
   document.getElementById('pin-screen').style.display = 'flex';
+  document.getElementById('rbtn-logout').style.display = 'none';
+  document.getElementById('rbtn-adm').className = 'rbtn active';
   setPinMode('adm');
 }
 }
@@ -305,8 +307,11 @@ function setRole(r) {
   document.getElementById('anav').style.display = r === 'admin' ? 'flex' : 'none';
   document.getElementById('dnav').style.display = r === 'driver' ? 'flex' : 'none';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
-  if (r === 'admin') { document.getElementById('rbtn-adm').className = 'rbtn active'; T('dash'); }
-}
+  if (r === 'admin') {
+  document.getElementById('rbtn-adm').className = 'rbtn active';
+  document.getElementById('rbtn-logout').style.display = '';
+  T('dash');
+}}
 
 function T(id) {
   document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv'][i] === id));
