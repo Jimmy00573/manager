@@ -1118,6 +1118,25 @@ function renderCalUpcoming() {
         ${dispBox}
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;color:#888;font-size:11px">· ${esc(e.item||'-')}</span></d
+        <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;color:#888;font-size:11px">· ${esc(e.item||'-')}</span></div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' ·':''} ${e.ctype?ctB(e.ctype)+' '+esc(e.ctype)+' '+e.qty+'개':'배차 미등록'}</div>
+      </div>
+      <span class="badge ${bdg}">${e.status}</span>
+    </div>`;
+  }).join('');
+
+  const pgBar = document.getElementById('cal-pg-bar');
+  if (pages <= 1) { pgBar.style.display = 'none'; return; }
+  pgBar.style.display = 'flex';
+  document.getElementById('cal-pg-info').textContent = `${total}건 · ${(calUpPage-1)*CAL_PER+1}~${Math.min(calUpPage*CAL_PER,total)}`;
+  let btns = `<button class="pg-btn" onclick="calGoPage(${calUpPage-1})" ${calUpPage===1?'disabled':''}>◀</button>`;
+  for (let i = 1; i <= pages; i++) btns += `<button class="pg-btn${i===calUpPage?' cur':''}" onclick="calGoPage(${i})">${i}</button>`;
+  btns += `<button class="pg-btn" onclick="calGoPage(${calUpPage+1})" ${calUpPage===pages?'disabled':''}>▶</button>`;
+  document.getElementById('cal-pg-btns').innerHTML = btns;
+}
+
+function calGoPage(p) { calUpPage = p; renderCalUpcoming(); }
+function calPrevMonth() { if (calMonth === 0) { calYear--; calMonth = 11; } else calMonth--; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
+function calNextMonth() { if (calMonth === 11) { calYear++; calMonth = 0; } else calMonth++; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);
