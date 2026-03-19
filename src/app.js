@@ -931,14 +931,6 @@ async function delOwn(id, t) {
   }
 }
 
-async function delOwn(id, t) {
-  if (!cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제')) return;
-  try {
-    if (t === 'i') { await dbDeleteOwnIn(id); ownIns = ownIns.filter(o => o.id !== id); }
-    else { await dbDeleteOwnOut(id); ownOuts = ownOuts.filter(o => o.id !== id); }
-    renderOwn(); renderDash();
-  } catch (e) { alert('오류: ' + e.message); }
-}
 function gOwnSt(n) {
   const i = ownIns.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
   const o = ownOuts.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
