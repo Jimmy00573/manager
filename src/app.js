@@ -930,11 +930,7 @@ async function delOwn(id, t) {
     alert('오류: ' + e.message);
   }
 }
-  try {
-    const row = await dbInsertOwnOut({ date, farm, qty, method: gv('oo-method'), feature: gv('oo-feature'), staff: gv('oo-staff') });
-    ownOuts.unshift(row); clr('oo-qty', 'oo-staff', 'oo-feature'); renderOwn(); renderDash();
-  } catch (e) { alert('오류: ' + e.message); }
-}
+
 async function delOwn(id, t) {
   if (!cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제')) return;
   try {
