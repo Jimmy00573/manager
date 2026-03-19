@@ -171,6 +171,7 @@ function checkPin() {
     const rf = document.getElementById('rp-farm');
     if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
     renderMyAssign(); renderMyPending();
+    renderRep();
   } else {
     pinErr('❌ PIN이 맞지 않습니다.');
   }
@@ -280,7 +281,7 @@ function togRepH() {
   _repOpen = !_repOpen;
   document.getElementById('rep-history').style.display = _repOpen ? '' : 'none';
   document.getElementById('rep-h-icon').textContent = _repOpen ? '▲ 접기' : '▼ 자세히';
-  if (_repOpen) renderRep();
+  renderRep();
 }
 
 function switchMsgTab(t) {
