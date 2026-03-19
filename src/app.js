@@ -871,7 +871,7 @@ async function addOwnIn() {
   const date = gv('oi-date'), farm = gv('oi-farm'), qty = n('oi-qty');
   if (!date || !farm || !qty) { alert('반입일자, 농가명, 수량을 입력하세요'); return; }
   try {
-    const row = await dbInsertOwnIn({ date, farm, qty, desc: gv('oi-desc'), staff: gv('oi-staff') });
+    const row = await dbInsertOwnIn({ date, farm, qty, feature: gv('oi-desc'), staff: gv('oi-staff') });
     ownIns.unshift(row); clr('oi-qty', 'oi-desc', 'oi-staff'); renderOwn(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
