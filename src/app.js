@@ -170,13 +170,10 @@ function checkPin() {
     if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${drv.type} · ${esc(drv.car || '차량 미등록')}</span>`;
     const rf = document.getElementById('rp-farm');
     if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
-   renderMyAssign(); renderMyPending();
+  renderMyAssign(); renderMyPending();
     const myReports = reports.filter(r => r.driver === drv.name);
     const repCnt = document.getElementById('rep-cnt');
     if (repCnt) repCnt.textContent = myReports.length + '건';
-    const myReports = reports.filter(r => r.driver === drv.name);
-    const c = document.getElementById('rep-cnt');
-    if (c) c.textContent = myReports.length + '건';
   } else {
     pinErr('❌ PIN이 맞지 않습니다.');
   }
