@@ -172,6 +172,9 @@ function checkPin() {
     if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
    renderMyAssign(); renderMyPending();
     const myReports = reports.filter(r => r.driver === drv.name);
+    const repCnt = document.getElementById('rep-cnt');
+    if (repCnt) repCnt.textContent = myReports.length + '건';
+    const myReports = reports.filter(r => r.driver === drv.name);
     const c = document.getElementById('rep-cnt');
     if (c) c.textContent = myReports.length + '건';
   } else {
