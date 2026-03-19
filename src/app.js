@@ -610,10 +610,10 @@ async function saveExtEdit() {
   const g = i => document.getElementById(i)?.value?.trim() || '';
   const qty = parseInt(document.getElementById('em-qty')?.value) || 0;
   try {
-    if (_XT === 'ownIn') { await dbUpdateOwnIn(_XI, { date: g('em-date'), farm: g('em-farm'), qty, desc: g('em-desc'), staff: g('em-staff') }); ownIns = await dbGetOwnIns(); }
-    else if (_XT === 'ownOut') { await dbUpdateOwnOut(_XI, { date: g('em-date'), farm: g('em-farm'), qty, method: g('em-method'), desc: g('em-desc'), staff: g('em-staff') }); ownOuts = await dbGetOwnOuts(); }
-    else if (_XT === 'nhfIn') { await dbUpdateNhfIn(_XI, { date: g('em-date'), nhf: g('em-nhf'), type: g('em-type'), qty, desc: g('em-desc'), goods: g('em-goods'), staff: g('em-staff') }); nhfIns = await dbGetNhfIns(); }
-    else if (_XT === 'nhfOut') { await dbUpdateNhfOut(_XI, { date: g('em-date'), nhf: g('em-nhf'), type: g('em-type'), qty, method: g('em-method'), desc: g('em-desc'), staff: g('em-staff') }); nhfOuts = await dbGetNhfOuts(); }
+    if (_XT === 'ownIn') { await dbUpdateOwnIn(_XI, { date: g('em-date'), farm: g('em-farm'), qty, feature: g('em-desc'), staff: g('em-staff') }); ownIns = await dbGetOwnIns(); }
+    else if (_XT === 'ownOut') { await dbUpdateOwnOut(_XI, { date: g('em-date'), farm: g('em-farm'), qty, method: g('em-method'), feature: g('em-desc'), staff: g('em-staff') }); ownOuts = await dbGetOwnOuts(); }
+    else if (_XT === 'nhfIn') { await dbUpdateNhfIn(_XI, { date: g('em-date'), nhf: g('em-nhf'), type: g('em-type'), qty, feature: g('em-desc'), goods: g('em-goods'), staff: g('em-staff') }); nhfIns = await dbGetNhfIns(); }
+    else if (_XT === 'nhfOut') { await dbUpdateNhfOut(_XI, { date: g('em-date'), nhf: g('em-nhf'), type: g('em-type'), qty, method: g('em-method'), feature: g('em-desc'), staff: g('em-staff') }); nhfOuts = await dbGetNhfOuts(); }
     CM('ext'); renderOwn(); renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -876,7 +876,7 @@ async function addOwnOut() {
   const date = gv('oo-date'), farm = gv('oo-farm'), qty = n('oo-qty');
   if (!date || !farm || !qty) { alert('반납일자, 농가명, 수량을 입력하세요'); return; }
   try {
-    const row = await dbInsertOwnOut({ date, farm, qty, method: gv('oo-method'), desc: gv('oo-desc'), staff: gv('oo-staff') });
+    const row = await dbInsertOwnOut({ date, farm, qty, method: gv('oo-method'), feature: gv('oo-desc'), staff: gv('oo-staff') });
     ownOuts.unshift(row); clr('oo-qty', 'oo-staff', 'oo-desc'); renderOwn(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -891,7 +891,7 @@ async function delOwn(id, t) {
 function gOwnSt(n) {
   const i = ownIns.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
   const o = ownOuts.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
-  return { inQ: i, outQ: o, left: i - o, desc: ownIns.filter(o => o.farm === n).map(o => o.desc).filter(Boolean).join(', ') };
+  return { inQ: i, outQ: o, left: i - o, feature: ownIns.filter(o => o.farm === n).map(o => o.desc).filter(Boolean).join(', ') };
 }
 function renderOwn() {
   const names = [...new Set([...ownIns.map(o => o.farm), ...ownOuts.map(o => o.farm)])];
@@ -912,7 +912,7 @@ async function addNhfIn() {
   const date = gv('ni-date'), nhf = gv('ni-nhf'), type = gv('ni-type'), qty = n('ni-qty');
   if (!date || !nhf || !qty) { alert('반입일자, 농협명, 수량을 입력하세요'); return; }
   try {
-    const row = await dbInsertNhfIn({ date, nhf, type, desc: gv('ni-desc'), qty, goods: gv('ni-goods'), staff: gv('ni-staff') });
+    const row = await dbInsertNhfIn({ date, nhf, type, feature: gv('ni-desc'), qty, goods: gv('ni-goods'), staff: gv('ni-staff') });
     nhfIns.unshift(row); clr('ni-qty', 'ni-goods', 'ni-staff', 'ni-desc'); renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -920,7 +920,7 @@ async function addNhfOut() {
   const date = gv('no-date'), nhf = gv('no-nhf'), type = gv('no-type'), qty = n('no-qty');
   if (!date || !nhf || !qty) { alert('반납일자, 농협명, 수량을 입력하세요'); return; }
   try {
-    const row = await dbInsertNhfOut({ date, nhf, type, method: gv('no-method'), desc: gv('no-desc'), qty, staff: gv('no-staff') });
+    const row = await dbInsertNhfOut({ date, nhf, type, method: gv('no-method'), feature: gv('no-desc'), qty, staff: gv('no-staff') });
     nhfOuts.unshift(row); clr('no-qty', 'no-staff', 'no-desc'); renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
