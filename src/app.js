@@ -313,7 +313,7 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv'][i] === id));
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal'][i] === id));
   ['dash', 'disp', 'pick', 'ext', 'farm', 'drv'].forEach(p => { const el = document.getElementById('p-' + p); if (el) el.classList.remove('active'); });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
@@ -979,6 +979,144 @@ function renderDash() {
 }
 
 function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderRep(); }
+// ── 수확 캘린더
+const CAL_PER = 5;
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let calSelectedDate = null;
+let calUpPage = 1;
 
+function calSortOrder(s) { return s === '배차없음' ? 0 : s === '배차완료' ? 1 : 2; }
+function calSortItems(arr) {
+  return [...arr].sort((a, b) => {
+    const od = calSortOrder(a.status) - calSortOrder(b.status);
+    if (od !== 0) return od;
+    return (a.harvest || '') > (b.harvest || '') ? 1 : -1;
+  });
+}
+function calFmtShort(s) {
+  if (!s) return null;
+  const d = new Date(s + 'T00:00:00');
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+function calGetEvents(dStr) {
+  return dispatches.filter(d => d.harvest === dStr);
+}
+function calGetAllItems() {
+  const mStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
+  return calSortItems(dispatches.filter(d => d.harvest && d.harvest.startsWith(mStr)));
+}
+
+function renderCal() {
+  if (!document.getElementById('p-cal')?.classList.contains('active')) return;
+  const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  document.getElementById('cal-month-title').textContent = `${calYear}년 ${months[calMonth]}`;
+
+  // 통계
+  const done = dispatches.filter(d => d.status === '배출완료').length;
+  const pend = dispatches.filter(d => d.status === '배차완료').length;
+  const none = dispatches.filter(d => !d.harvest || !d.status).length;
+  const mStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
+  const thisM = dispatches.filter(d => d.harvest && d.harvest.startsWith(mStr)).length;
+  document.getElementById('cal-stats-row').innerHTML = `
+    <div class="kpi"><div class="kpi-label">배출 완료</div><div class="kpi-val kv-gr">${done}</div></div>
+    <div class="kpi"><div class="kpi-label">배출 대기</div><div class="kpi-val kv-pu">${pend}</div></div>
+    <div class="kpi"><div class="kpi-label">배차 없음</div><div class="kpi-val" style="color:#C62828">${dispatches.filter(d=>d.status==='배차없음').length}</div></div>
+    <div class="kpi"><div class="kpi-label">이번 달 수확</div><div class="kpi-val kv-bl">${thisM}</div></div>
+  `;
+
+  // 경고
+  const noD = dispatches.filter(d => d.status === '배차없음').length;
+  const strip = document.getElementById('cal-alert-strip');
+  if (noD > 0) { strip.style.display = 'flex'; strip.innerHTML = `⚠ 배차 없는 수확 예정 <strong style="margin:0 3px">${noD}곳</strong> — 빨간 일정을 확인하세요.`; }
+  else strip.style.display = 'none';
+
+  // 달력 헤더
+  document.getElementById('cal-head-grid').innerHTML = ['일','월','화','수','목','금','토'].map(d =>
+    `<div style="text-align:center;font-size:11px;font-weight:500;color:#888;padding:4px 0">${d}</div>`
+  ).join('');
+
+  // 달력 셀
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const first = new Date(calYear, calMonth, 1);
+  const last = new Date(calYear, calMonth + 1, 0);
+  const startDay = first.getDay();
+  let cells = '';
+  const cellStyle = 'min-height:72px;border-radius:8px;border:0.5px solid #e0e0e0;background:#fff;padding:4px;cursor:pointer';
+  const otherStyle = 'min-height:72px;border-radius:8px;border:0.5px solid #e0e0e0;background:#f5f5f5;padding:4px;opacity:.4';
+
+  for (let i = 0; i < startDay; i++) {
+    const d = new Date(calYear, calMonth, -startDay + i + 1);
+    cells += `<div style="${otherStyle}"><div style="font-size:11px;color:#aaa">${d.getDate()}</div></div>`;
+  }
+  for (let i = 1; i <= last.getDate(); i++) {
+    const dStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+    const evs = calSortItems(calGetEvents(dStr));
+    const isToday = dStr === todayStr;
+    const isSel = dStr === calSelectedDate;
+    let pills = evs.slice(0, 2).map(e => {
+      const bg = e.status === '배출완료' ? '#E8F5E9;color:#2E7D32' : e.status === '배차없음' ? '#FFEBEE;color:#C62828' : '#FFF3E0;color:#C05800';
+      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}</div>`;
+    }).join('');
+    if (evs.length > 2) pills += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
+    const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
+    const bg = isSel ? '#f8f8f8' : '#fff';
+    cells += `<div style="min-height:72px;border-radius:8px;border:${border};background:${bg};padding:4px;cursor:pointer" onclick="calSelectDay('${dStr}')">
+      <div style="font-size:11px;font-weight:500;color:${isToday ? '#C05800' : '#888'};margin-bottom:2px">${i}</div>${pills}
+    </div>`;
+  }
+  const rem = 7 - ((startDay + last.getDate()) % 7);
+  if (rem < 7) for (let i = 1; i <= rem; i++) cells += `<div style="${otherStyle}"><div style="font-size:11px;color:#aaa">${i}</div></div>`;
+  document.getElementById('cal-body-grid').innerHTML = cells;
+  renderCalUpcoming();
+}
+
+function calSelectDay(dStr) {
+  calSelectedDate = calSelectedDate === dStr ? null : dStr;
+  const panel = document.getElementById('cal-detail-panel');
+  const evs = calSortItems(calGetEvents(dStr));
+  if (!calSelectedDate || evs.length === 0) { panel.style.display = 'none'; renderCal(); return; }
+  const d = new Date(dStr + 'T00:00:00');
+  document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
+  const ctIcon = {노랑:'🟡',초록:'🟢',헌콘:'⬜'};
+  document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
+    const bg = e.status === '배출완료' ? '#F1F8E9' : e.status === '배차없음' ? '#FFEBEE' : '#FFF3E0';
+    const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:${bg};margin-bottom:5px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?ctIcon[e.ctype]+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
+      </div>
+      <span class="badge ${bdg}">${e.status}</span>
+    </div>`;
+  }).join('');
+  panel.style.display = 'block';
+  renderCal();
+}
+
+function renderCalUpcoming() {
+  const all = calGetAllItems();
+  const total = all.length;
+  document.getElementById('cal-up-count').textContent = `총 ${total}건`;
+  const el = document.getElementById('cal-upcoming-list');
+  if (!total) { el.innerHTML = `<div style="text-align:center;color:#aaa;font-size:13px;padding:16px">이번 달 수확 일정이 없습니다</div>`; document.getElementById('cal-pg-bar').style.display = 'none'; return; }
+  const pages = Math.ceil(total / CAL_PER);
+  if (calUpPage > pages) calUpPage = 1;
+  const page = all.slice((calUpPage - 1) * CAL_PER, calUpPage * CAL_PER);
+  const ctIcon = {노랑:'🟡',초록:'🟢',헌콘:'⬜'};
+  el.innerHTML = page.map(e => {
+    const lColor = e.status === '배출완료' ? '#43A047' : e.status === '배차없음' ? '#EF5350' : '#F28C28';
+    const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
+    const dispBox = e.date
+      ? `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E8F5E9;color:#2E7D32;white-space:nowrap">${calFmtShort(e.date)}</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`
+      : `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#FFEBEE;color:#C62828;white-space:nowrap">미정</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`;
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;border-left:3px solid ${lColor}">
+      <div style="display:flex;flex-direction:column;gap:3px;min-width:46px">
+        <div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E3F2FD;color:#1565C0;white-space:nowrap">${calFmtShort(e.harvest)}</div>
+        <div style="font-size:9px;text-align:center;color:#aaa">수확일</div>
+        ${dispBox}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;color:#888;font-size:11px">· ${esc(e.item||'-')}</span></d
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);
