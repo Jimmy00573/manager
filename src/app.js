@@ -880,7 +880,9 @@ async function addOwnIn() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function addOwnOut() {
-  const date = gv('oo-date'), farm = gv('oo-farm'), qty = n('oo-qty');
+  const date = gv('oo-date');
+  const farm = gv('oo-farm');
+  const qty = n('oo-qty');
 
   if (!date || !farm || !qty) {
     alert('반납일자, 농가명, 수량을 입력하세요');
