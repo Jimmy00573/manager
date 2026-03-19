@@ -1060,7 +1060,7 @@ function renderDash() {
   document.getElementById('ext-dash-badges').innerHTML = `<span class="badge b-pur">자가 ${oc}개 농가</span><span class="badge b-teal">농협 ${nc2}건 반납필요</span>`;
 }
 
-function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderRep(); }
+function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderRep(); renderAdmPinChange(); }
 // ── 수확 캘린더
 const CAL_PER = 5;
 let calYear = new Date().getFullYear();
