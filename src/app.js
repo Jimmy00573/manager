@@ -755,7 +755,7 @@ async function addDisp() {
   if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
   const d = gd(drv);
   try {
-    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest'), item: gv('dp-item'), note: gv('dp-note'), status: '배차완료' });
+    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, status: '배차완료' });
     dispatches.unshift(row);
     // 배출 자동 pick 생성
     await dbInsertPick({ date, farm, type: '배출', qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true });
