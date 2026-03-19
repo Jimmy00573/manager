@@ -77,7 +77,8 @@ stock = data.stockData;
   const savedRole = sessionStorage.getItem('citrus_role');
   const savedDrvName = sessionStorage.getItem('citrus_drv');
   
-  if (savedRole === 'admin') {
+if (savedRole === 'admin') {
+    document.getElementById('pin-screen').style.display = 'none';
     document.getElementById('hdr-btns').style.display = 'flex';
     document.getElementById('hdr-logged').style.display = 'none';
     document.getElementById('rbtn-logout').style.display = '';
