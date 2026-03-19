@@ -912,7 +912,6 @@ async function addOwnOut() {
     alert('오류: ' + e.message);
   }
 }
-
 async function delOwn(id, t) {
   if (!cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제')) return;
   try {
