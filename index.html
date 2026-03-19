@@ -167,6 +167,8 @@
   <button class="nbtn" onclick="T('ext')">외부 용기</button>
   <button class="nbtn" onclick="T('farm')">농가 관리</button>
   <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
+  <button class="nbtn" onclick="T('cal')">수확 캘린더</button>
+
 </div>
 
 <!-- 기사 탭 -->
@@ -307,7 +309,40 @@
     <div id="my-list"></div>
   </div>
 </div>
-
+<!-- 수확 캘린더 -->
+<div id="p-cal" class="panel">
+  <div id="cal-stats-row" class="kpi-grid" style="margin-bottom:12px"></div>
+  <div id="cal-alert-strip" style="display:none;padding:8px 12px;border-radius:8px;background:#FFEBEE;border:0.5px solid #FFCDD2;font-size:12px;color:#C62828;margin-bottom:12px;display:flex;align-items:center;gap:6px"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn" onclick="calPrevMonth()" style="width:32px;height:32px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px">&#8249;</button>
+      <div id="cal-month-title" style="font-size:18px;font-weight:500;min-width:120px;text-align:center"></div>
+      <button class="btn" onclick="calNextMonth()" style="width:32px;height:32px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:font-size:16px">&#8250;</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888"><span style="width:9px;height:9px;border-radius:50%;background:#C62828;display:inline-block"></span>배차없음</span>
+      <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888"><span style="width:9px;height:9px;border-radius:50%;background:#F28C28;display:inline-block"></span>배차완료</span>
+      <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888"><span style="width:9px;height:9px;border-radius:50%;background:#2E7D32;display:inline-block"></span>배출완료</span>
+    </div>
+  </div>
+  <div id="cal-head-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px"></div>
+  <div id="cal-body-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:16px"></div>
+  <div id="cal-detail-panel" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;padding:14px;margin-bottom:12px">
+    <div id="cal-detail-title" style="font-size:13px;font-weight:500;color:#C05800;margin-bottom:10px"></div>
+    <div id="cal-detail-list"></div>
+  </div>
+  <div style="background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden">
+    <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">이번 달 수확 일정</div>
+      <div id="cal-up-count" style="font-size:11px;color:#aaa"></div>
+    </div>
+    <div id="cal-upcoming-list"></div>
+    <div id="cal-pg-bar" style="display:none;padding:8px 14px;background:#f8f8f8;border-top:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#888">
+      <span id="cal-pg-info"></span>
+      <div id="cal-pg-btns" style="display:flex;gap:4px"></div>
+    </div>
+  </div>
+</div>
 <!-- 기사: 완료 등록 -->
 <div id="p-drep" class="panel" style="display:none">
   <div class="note">💡 배출 대기 건을 완료 처리하거나 직접 입력하세요.</div>
