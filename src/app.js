@@ -185,7 +185,8 @@ function pinErr(msg) {
 
 function chkAdmPin() {
   const v = document.getElementById('adm-pin-in').value;
-  if (v === ADM_PIN) {
+  const currentPin = localStorage.getItem('citrus_adm_pin') || ADM_PIN;
+  if (v === currentPin) {
     sessionStorage.setItem('citrus_role', 'admin');
     document.getElementById('pin-screen').style.display = 'none';
     setRole('admin');
@@ -692,15 +693,15 @@ function changeAdmPin() {
   const cf = document.getElementById('apc-confirm')?.value;
   const msg = document.getElementById('apc-msg');
   
+  const currentPin = localStorage.getItem('citrus_adm_pin') || ADM_PIN;
+  
   msg.style.display = '';
-  if (cur !== ADM_PIN) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN이 맞지 않습니다'; return; }
+  if (cur !== currentPin) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN이 맞지 않습니다'; return; }
   if (!nw || nw.length < 4) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN은 4자리여야 합니다'; return; }
   if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN이 일치하지 않습니다'; return; }
   if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN과 동일합니다'; return; }
   
-  // PIN 변경 (supabase-client.js의 ADM_PIN은 상수라 직접 변경 불가 — localStorage에 저장)
   localStorage.setItem('citrus_adm_pin', nw);
-  window.ADM_PIN = nw;
   msg.style.color = '#2E7D32';
   msg.textContent = '✅ 관리자 PIN이 변경되었습니다!';
   document.getElementById('apc-cur').value = '';
