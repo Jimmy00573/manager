@@ -181,7 +181,6 @@ function adminLogout() {
   document.getElementById('rbtn-adm').className = 'rbtn active';
   setPinMode('adm');
 }
-}
 
 // ── PIN 관리
 function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
