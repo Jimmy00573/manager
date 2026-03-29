@@ -1238,6 +1238,19 @@ function calSelectDay(dStr) {
   panel.style.display = 'block';
   renderCal();
 }
+function itemColor(item) {
+  const map = {
+    '노지감귤': 'background:#FFF3E0;color:#E65100',
+    '하우스감귤': 'background:#E8F5E9;color:#1B5E20',
+    '한라봉': 'background:#F3E5F5;color:#6A1B9A',
+    '천혜향': 'background:#E3F2FD;color:#0D47A1',
+    '레드향': 'background:#FCE4EC;color:#880E4F',
+    '황금향': 'background:#FFFDE7;color:#F57F17',
+    '청견': 'background:#E0F2F1;color:#004D40',
+    '세토카': 'background:#FBE9E7;color:#BF360C',
+  };
+  return map[item] || 'background:#F5F5F5;color:#555';
+}
 
 function renderCalUpcoming() {
   const all = calGetAllItems();
@@ -1255,14 +1268,14 @@ function renderCalUpcoming() {
     const dispBox = e.date
       ? `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E8F5E9;color:#2E7D32;white-space:nowrap">${calFmtShort(e.date)}</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`
       : `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#FFEBEE;color:#C62828;white-space:nowrap">미정</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`;
-    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:0.5px solid #f0f0f0;border-left:4px solid ${lColor};background:${e.status==='배차없음'?'#fff9f9':e.status==='배출완료'?'#f9fff9':'#fffdf5'}">
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;border-left:3px solid ${lColor}">
       <div style="display:flex;flex-direction:column;gap:3px;min-width:46px">
         <div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E3F2FD;color:#1565C0;white-space:nowrap">${calFmtShort(e.harvest)}</div>
         <div style="font-size:9px;text-align:center;color:#aaa">수확일</div>
         ${dispBox}
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)} <span style="font-weight:400;font-size:11px;color:#C05800;background:#FFF3E0;padding:1px 6px;border-radius:4px;margin-left:4px">${esc(e.item||'-')}</span></div>
+        <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)} ${e.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;margin-left:4px;${itemColor(e.item)}">${esc(e.item)}</span>` : ''}</div>
         <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':'<span style="color:#C62828">배차 미등록</span>'}</div>
       </div>
      <span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>
