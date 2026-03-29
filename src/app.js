@@ -368,8 +368,8 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal'][i] === id));
-  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal'].forEach(p => { const el = document.getElementById('p-' + p); if (el) el.classList.remove('active'); });
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export'][i] === id));
+  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export'].forEach(p => { const el = document.getElementById('p-' + p); if (el) el.classList.remove('active'); });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
@@ -1295,5 +1295,75 @@ function renderCalUpcoming() {
 function calGoPage(p) { calUpPage = p; renderCalUpcoming(); }
 function calPrevMonth() { if (calMonth === 0) { calYear--; calMonth = 11; } else calMonth--; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
 function calNextMonth() { if (calMonth === 11) { calYear++; calMonth = 0; } else calMonth++; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
+
+// ── 엑셀 내보내기
+function exportExcel(type) {
+  const from = document.getElementById('exp-from')?.value;
+  const to = document.getElementById('exp-to')?.value;
+
+  function filterByDate(arr) {
+    return arr.filter(r => {
+      if (from && r.date < from) return false;
+      if (to && r.date > to) return false;
+      return true;
+    });
+  }
+
+  function toCSV(headers, rows) {
+    const h = headers.join(',');
+    const r = rows.map(row => row.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(','));
+    return [h, ...r].join('\n');
+  }
+
+  function download(filename, csv) {
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const today = new Date().toISOString().slice(0,10);
+
+  if (type === 'dispatch' || type === 'all') {
+    const data = filterByDate(dispatches);
+    const csv = toCSV(
+      ['날짜','농가명','기사','소속','차량','수량','콘테이너','수확예정일','품목','특이사항','상태'],
+      data.map(d => [d.date, d.farm, d.driver, gd(d.driver).type||'', d.car, d.qty, d.ctype, d.harvest||'', d.item||'', d.note||'', d.status])
+    );
+    download(`배차내역_${today}.csv`, csv);
+  }
+
+  if (type === 'pick' || type === 'all') {
+    const data = filterByDate(picks.filter(p => !p.auto));
+    const csv = toCSV(
+      ['날짜','농가명','구분','수량','기사','차량','비고'],
+      data.map(p => [p.date, p.farm, p.type, p.qty, p.driver||'', p.car||'', p.note||''])
+    );
+    download(`수거내역_${today}.csv`, csv);
+  }
+
+  if (type === 'farm' || type === 'all') {
+    const csv = toCSV(
+      ['농가명','연락처','주소','품종','계약수량','담당직원','비고'],
+      farms.map(f => [f.name, f.tel||'', f.addr||'', f.variety||'', f.contract||0, f.staff||'', f.memo||''])
+    );
+    download(`농가목록_${today}.csv`, csv);
+  }
+
+  if (type === 'driver' || type === 'all') {
+    const csv = toCSV(
+      ['기사명','연락처','차량번호','소속','비고'],
+      drivers.map(d => [d.name, d.tel||'', d.car||'', d.type||'', d.note||''])
+    );
+    download(`기사목록_${today}.csv`, csv);
+  }
+
+  if (type === 'all') {
+    alert('✅ 전체 파일 다운로드 완료!\n배차내역, 수거내역, 농가목록, 기사목록 4개 파일이 저장됩니다.');
+  }
+}
+
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);
