@@ -692,6 +692,51 @@ async function delDriver(id) {
   try { await dbDeleteDriver(id); drivers = drivers.filter(d => d.id !== id); popSels(); renderDrivers(); }
   catch (e) { alert('오류: ' + e.message); }
 }
+
+// ── 모달: 배차 수정
+let _editDispId = null;
+function openDispEdit(id) {
+  const d = dispatches.find(x => x.id === id); if (!d) return;
+  _editDispId = id;
+  document.getElementById('ed-date').value = d.date || '';
+  const ef = document.getElementById('ed-farm');
+  ef.innerHTML = '<option value="">선택</option>';
+  farms.forEach(f => ef.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+  ef.value = d.farm || '';
+  const edrv = document.getElementById('ed-drv');
+  edrv.innerHTML = '<option value="">선택</option>';
+  drivers.forEach(dr => edrv.innerHTML += `<option value="${esc(dr.name)}">${esc(dr.name)}</option>`);
+  edrv.value = d.driver || '';
+  document.getElementById('ed-qty').value = d.qty || '';
+  document.getElementById('ed-ctype').value = d.ctype || '노랑';
+  document.getElementById('ed-harvest').value = d.harvest || '';
+  document.getElementById('ed-item').value = d.item || '';
+  document.getElementById('ed-note').value = d.note || '';
+  document.getElementById('modal-disp').style.display = 'flex';
+}
+
+async function saveDispEdit() {
+  const date = document.getElementById('ed-date').value;
+  const farm = document.getElementById('ed-farm').value;
+  const driver = document.getElementById('ed-drv').value;
+  const qty = parseInt(document.getElementById('ed-qty').value) || 0;
+  if (!date || !farm || !driver || !qty) { alert('필수 항목을 입력하세요'); return; }
+  const d = gd(driver);
+  const data = {
+    date, farm, driver,
+    dtel: d.tel || '', car: d.car || '', qty,
+    ctype: document.getElementById('ed-ctype').value,
+    harvest: document.getElementById('ed-harvest').value || null,
+    item: document.getElementById('ed-item').value || null,
+    note: document.getElementById('ed-note').value || null
+  };
+  try {
+    await dbUpdateDispatch(_editDispId, data);
+    dispatches = dispatches.map(x => x.id === _editDispId ? { ...x, ...data } : x);
+    CM('disp'); renderDisp(); renderDDash(); renderSC(); renderDash();
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
 function renderAdmPinChange() {
   const el = document.getElementById('adm-pin-change');
   if (!el) return;
