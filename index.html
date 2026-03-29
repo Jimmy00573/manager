@@ -143,6 +143,24 @@
   </div>
 </div>
 
+  <!-- 모달: 배차 수정 -->
+<div id="modal-disp" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('disp')">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">✏️ 배차 수정</div><button class="modal-close" onclick="CM('disp')">✕</button></div>
+    <div class="modal-grid">
+      <div class="fg"><label>날짜 *</label><input id="ed-date" type="date"></div>
+      <div class="fg"><label>농가명 *</label><select id="ed-farm"><option value="">선택</option></select></div>
+      <div class="fg"><label>기사 *</label><select id="ed-drv"><option value="">선택</option></select></div>
+      <div class="fg"><label>수량(개) *</label><input id="ed-qty" type="number"></div>
+      <div class="fg"><label>콘테이너 종류</label><select id="ed-ctype"><option value="노랑">🟡 노랑</option><option value="초록">🟢 초록</option><option value="헌콘">⬜ 헌콘</option></select></div>
+      <div class="fg"><label>수확 예정일</label><input id="ed-harvest" type="date"></div>
+      <div class="fg"><label>품목</label><input id="ed-item" list="dl-v"></div>
+      <div class="fg"><label>특이사항</label><input id="ed-note"></div>
+    </div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('disp')">취소</button><button class="btn pri" onclick="saveDispEdit()">저장</button></div>
+  </div>
+</div>
+  
 <!-- 헤더 -->
 <div class="hdr">
   <div class="hdr-title">🍊 감귤 수송·콘테이너 통합 관리</div>
