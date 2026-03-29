@@ -202,6 +202,7 @@
   <button class="nbtn" onclick="T('ext')">외부 용기</button>
   <button class="nbtn" onclick="T('farm')">농가 관리</button>
   <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
+  <button class="nbtn" onclick="T('stats')">📊 실적 현황</button>
   <button class="nbtn" onclick="T('cal')">수확 캘린더</button>
   <button class="nbtn" onclick="T('export')">📥 내보내기</button>
 </div>
@@ -382,6 +383,19 @@
     </div>
   </div>
 </div>
+  
+  <!-- 실적 현황 -->
+<div id="p-stats" class="panel">
+  <div class="form-card">
+    <div class="form-title">📊 기사별 실적 현황</div>
+    <div class="form-grid" style="margin-bottom:12px">
+      <div class="fg"><label>시작일</label><input id="st-from" type="date" onchange="renderStats()"></div>
+      <div class="fg"><label>종료일</label><input id="st-to" type="date" onchange="renderStats()"></div>
+    </div>
+    <div id="stats-body"></div>
+  </div>
+</div>
+  
  <!-- 내보내기 -->
 <div id="p-export" class="panel">
   <div class="form-card">
