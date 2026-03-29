@@ -168,7 +168,7 @@
   <button class="nbtn" onclick="T('farm')">농가 관리</button>
   <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
   <button class="nbtn" onclick="T('cal')">수확 캘린더</button>
-
+  <button class="nbtn" onclick="T('export')">📥 내보내기</button>
 </div>
 
 <!-- 기사 탭 -->
@@ -337,7 +337,24 @@
     </div>
   </div>
 </div>
-  
+ <!-- 내보내기 -->
+<div id="p-export" class="panel">
+  <div class="form-card">
+    <div class="form-title">📥 데이터 내보내기</div>
+    <div class="note">💡 선택한 기간의 데이터를 엑셀 파일로 다운로드합니다.</div>
+    <div class="form-grid">
+      <div class="fg"><label>시작일</label><input id="exp-from" type="date"></div>
+      <div class="fg"><label>종료일</label><input id="exp-to" type="date"></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+      <button class="btn pri" onclick="exportExcel('dispatch')">🚛 배차 내역</button>
+      <button class="btn pri" onclick="exportExcel('pick')">📦 수거 내역</button>
+      <button class="btn pri" onclick="exportExcel('farm')">🏡 농가 목록</button>
+      <button class="btn pri" onclick="exportExcel('driver')">👤 기사 목록</button>
+      <button class="btn" style="background:#2E7D32;color:#fff;border:none" onclick="exportExcel('all')">📊 전체 (모든 시트)</button>
+    </div>
+  </div>
+</div>
 <!-- 기사: 내 배차 -->
 <div id="p-dmy" class="panel" style="display:none">
   <div class="form-card"><div class="form-title">내 배차</div>
