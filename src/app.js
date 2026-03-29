@@ -102,7 +102,13 @@ if (savedRole === 'admin') {
     } else {
       document.getElementById('pin-screen').style.display = 'flex';
     }
-  } else {
+ } else {
+    // 기사 목록 채우고 PIN 화면 표시
+    const sel = document.getElementById('pin-sel');
+    sel.innerHTML = '<option value="">-- 기사를 선택하세요 --</option>';
+    drivers.filter(d => d.pin_active !== false).forEach(d => {
+      sel.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${d.type})</option>`;
+    });
     document.getElementById('pin-screen').style.display = 'flex';
   }
   hideLoading();
