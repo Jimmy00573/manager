@@ -1265,18 +1265,7 @@ function renderCalUpcoming() {
         <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)} <span style="font-weight:400;font-size:11px;color:#C05800;background:#FFF3E0;padding:1px 6px;border-radius:4px;margin-left:4px">${esc(e.item||'-')}</span></div>
         <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':'<span style="color:#C62828">배차 미등록</span>'}</div>
       </div>
-      <span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>
-    </div>`;
-      <div style="display:flex;flex-direction:column;gap:3px;min-width:46px">
-        <div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E3F2FD;color:#1565C0;white-space:nowrap">${calFmtShort(e.harvest)}</div>
-        <div style="font-size:9px;text-align:center;color:#aaa">수확일</div>
-        ${dispBox}
-      </div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;color:#888;font-size:11px">· ${esc(e.item||'-')}</span></div>
-        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' ·':''} ${e.ctype?ctB(e.ctype)+' '+e.qty+'개':'배차 미등록'}</div>
-      </div>
-      <span class="badge ${bdg}">${e.status}</span>
+     <span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>
     </div>`;
   }).join('');
 
