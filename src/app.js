@@ -369,8 +369,8 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export'][i] === id));
-  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export'].forEach(p => { const el = document.getElementById('p-' + p); if (el) el.classList.remove('active'); });
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export', 'stats'][i] === id));
+  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export', 'stats'].forEach(p => {
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
@@ -382,6 +382,7 @@ function T(id) {
     const et = document.getElementById('exp-to');
     if (ef && !ef.value) ef.value = fd;
     if (et && !et.value) et.value = t;
+    if (id === 'stats') renderStats();
   }}
 
 function DT(id) {
@@ -1438,6 +1439,80 @@ function renderFarmHistory() {
   }
 }
 
+  // ── 기사별 실적 현황
+function renderStats() {
+  const el = document.getElementById('stats-body');
+  if (!el) return;
+
+  const now = new Date();
+  const fd = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const td = now.toISOString().slice(0, 10);
+  const sfEl = document.getElementById('st-from');
+  const stEl = document.getElementById('st-to');
+  if (sfEl && !sfEl.value) sfEl.value = fd;
+  if (stEl && !stEl.value) stEl.value = td;
+  const from = sfEl?.value || fd;
+  const to = stEl?.value || td;
+
+  const filtered = dispatches.filter(d => d.date >= from && d.date <= to && d.status === '배출완료');
+  const pending = dispatches.filter(d => d.date >= from && d.date <= to && d.status === '배차완료');
+
+  if (!drivers.length) { el.innerHTML = '<div class="note">등록된 기사가 없습니다</div>'; return; }
+
+  const stats = drivers.map(d => {
+    const done = filtered.filter(x => x.driver === d.name);
+    const pend = pending.filter(x => x.driver === d.name);
+    const totalQty = done.reduce((s, x) => s + x.qty, 0);
+    const pendQty = pend.reduce((s, x) => s + x.qty, 0);
+    return { ...d, doneCnt: done.length, doneQty: totalQty, pendCnt: pend.length, pendQty };
+  }).sort((a, b) => b.doneQty - a.doneQty);
+
+  const totalDone = stats.reduce((s, d) => s + d.doneCnt, 0);
+  const totalQty = stats.reduce((s, d) => s + d.doneQty, 0);
+
+  el.innerHTML = `
+    <div class="kpi-grid" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-label">총 배출 완료</div><div class="kpi-val kv-gr">${totalDone}건</div></div>
+      <div class="kpi"><div class="kpi-label">총 배출 수량</div><div class="kpi-val kv-bl">${totalQty.toLocaleString()}개</div></div>
+      <div class="kpi"><div class="kpi-label">기간</div><div class="kpi-val" style="font-size:13px">${from} ~ ${to}</div></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:#f8f8f8;border-bottom:1px solid #e0e0e0">
+          <th style="padding:10px 12px;text-align:left">기사명</th>
+          <th style="padding:10px 12px;text-align:left">소속</th>
+          <th style="padding:10px 12px;text-align:center">배출완료</th>
+          <th style="padding:10px 12px;text-align:center">완료수량</th>
+          <th style="padding:10px 12px;text-align:center">배출대기</th>
+          <th style="padding:10px 12px;text-align:center">대기수량</th>
+          <th style="padding:10px 12px;text-align:left">실적 비율</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${stats.map(d => {
+          const ratio = totalQty > 0 ? Math.round(d.doneQty / totalQty * 100) : 0;
+          return `<tr style="border-bottom:0.5px solid #f0f0f0">
+            <td style="padding:10px 12px;font-weight:500">${esc(d.name)}</td>
+            <td style="padding:10px 12px"><span class="badge ${d.type==='내부'?'b-ok':'b-pur'}">${d.type}</span></td>
+            <td style="padding:10px 12px;text-align:center"><span class="badge b-ok">${d.doneCnt}건</span></td>
+            <td style="padding:10px 12px;text-align:center;font-weight:500;color:#2E7D32">${d.doneQty.toLocaleString()}개</td>
+            <td style="padding:10px 12px;text-align:center"><span class="badge b-info">${d.pendCnt}건</span></td>
+            <td style="padding:10px 12px;text-align:center;color:#C05800">${d.pendQty.toLocaleString()}개</td>
+            <td style="padding:10px 12px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;background:#f0f0f0;border-radius:4px;height:8px">
+                  <div style="width:${ratio}%;background:#2E7D32;border-radius:4px;height:8px;transition:.3s"></div>
+                </div>
+                <span style="font-size:12px;color:#888;min-width:32px">${ratio}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+  
 async function addHarvest() {
   const date = document.getElementById('cal-add-date')?.value;
   const farm = document.getElementById('cal-add-farm')?.value;
