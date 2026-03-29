@@ -373,8 +373,15 @@ function T(id) {
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
-  if (id === 'drv') renderAdmPinChange()
-}
+  if (id === 'drv') renderAdmPinChange();
+  if (id === 'export') {
+    const t = new Date().toISOString().slice(0, 10);
+    const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const ef = document.getElementById('exp-from');
+    const et = document.getElementById('exp-to');
+    if (ef && !ef.value) ef.value = fd;
+    if (et && !et.value) et.value = t;
+  }}
 
 function DT(id) {
   document.querySelectorAll('#dnav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dmy', 'drep'][i] === id));
