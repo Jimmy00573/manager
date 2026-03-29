@@ -1367,6 +1367,33 @@ function renderCalUpcoming() {
   document.getElementById('cal-pg-btns').innerHTML = btns;
 }
 
+async function addHarvest() {
+  const date = document.getElementById('cal-add-date')?.value;
+  const farm = document.getElementById('cal-add-farm')?.value;
+  const item = document.getElementById('cal-add-item')?.value || null;
+  const note = document.getElementById('cal-add-note')?.value || null;
+  if (!date || !farm) { alert('수확 예정일과 농가명을 입력하세요'); return; }
+  try {
+    const row = await dbInsertHarvest({ date, farm, item, note });
+    harvests.push(row);
+    document.getElementById('cal-add-date').value = '';
+    document.getElementById('cal-add-farm').value = '';
+    document.getElementById('cal-add-item').value = '';
+    document.getElementById('cal-add-note').value = '';
+    renderCal();
+    alert('✅ 수확 일정이 등록되었습니다!');
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+async function delHarvest(id) {
+  if (!confirm('수확 일정을 삭제할까요?')) return;
+  try {
+    await dbDeleteHarvest(id);
+    harvests = harvests.filter(h => h.id !== id);
+    renderCal();
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
 function calGoPage(p) { calUpPage = p; renderCalUpcoming(); }
 function calPrevMonth() { if (calMonth === 0) { calYear--; calMonth = 11; } else calMonth--; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
 function calNextMonth() { if (calMonth === 11) { calYear++; calMonth = 0; } else calMonth++; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
