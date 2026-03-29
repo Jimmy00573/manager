@@ -371,6 +371,8 @@ function setRole(r) {
 function T(id) {
   document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export', 'stats'][i] === id));
   ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'cal', 'export', 'stats'].forEach(p => {
+    const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
+  });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
@@ -383,9 +385,8 @@ function T(id) {
     const et = document.getElementById('exp-to');
     if (ef && !ef.value) ef.value = fd;
     if (et && !et.value) et.value = t;
-  }}
-    if (id === 'stats') renderStats();                                                                                 
-
+  }
+}
 function DT(id) {
   document.querySelectorAll('#dnav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dmy', 'drep'][i] === id));
   ['dmy', 'drep'].forEach(p => { const el = document.getElementById('p-' + p); if (el) el.classList.remove('active'); });
