@@ -845,6 +845,7 @@ function renderDisp() {
     <td><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
     <td style="display:flex;gap:4px">
       ${d.status !== '배출완료' ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>` : ''}
+      <button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>
       <button class="btn del" onclick="delDisp(${d.id})">삭제</button>
     </td>
   </tr>`).join('') : emr(12, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
