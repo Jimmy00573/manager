@@ -383,8 +383,8 @@ function T(id) {
     const et = document.getElementById('exp-to');
     if (ef && !ef.value) ef.value = fd;
     if (et && !et.value) et.value = t;
-    if (id === 'stats') renderStats();
   }}
+    if (id === 'stats') renderStats();                                                                                 
 
 function DT(id) {
   document.querySelectorAll('#dnav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dmy', 'drep'][i] === id));
