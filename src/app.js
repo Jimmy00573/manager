@@ -8,7 +8,7 @@ const OT = ['노랑', '초록', '헌콘'];
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
-let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [];
+let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [];
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -64,6 +64,7 @@ nhfIns = data.nhfIns;
 nhfOuts = data.nhfOuts;
 reports = data.reports;
 stock = data.stockData;
+harvests = data.harvests || [];
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -1198,13 +1199,24 @@ function calFmtShort(s) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 function calGetEvents(dStr) {
-  return dispatches.filter(d => d.harvest === dStr);
+  const fromDisp = dispatches.filter(d => d.harvest === dStr);
+  const fromHarvest = harvests.filter(h => h.date === dStr).map(h => ({
+    ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: '배차없음'
+  }));
+  const dispFarms = fromDisp.map(d => d.farm);
+  const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm));
+  return [...fromDisp, ...extra];
 }
 function calGetAllItems() {
   const mStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
-  return calSortItems(dispatches.filter(d => d.harvest && d.harvest.startsWith(mStr)));
+  const fromDisp = dispatches.filter(d => d.harvest && d.harvest.startsWith(mStr));
+  const fromHarvest = harvests.filter(h => h.date && h.date.startsWith(mStr)).map(h => ({
+    ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: '배차없음'
+  }));
+  const dispFarms = fromDisp.map(d => d.farm + d.harvest);
+  const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm + h.date));
+  return calSortItems([...fromDisp, ...extra]);
 }
-
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
@@ -1266,6 +1278,16 @@ function renderCal() {
   const rem = 7 - ((startDay + last.getDate()) % 7);
   if (rem < 7) for (let i = 1; i <= rem; i++) cells += `<div style="${otherStyle}"><div style="font-size:11px;color:#aaa">${i}</div></div>`;
   document.getElementById('cal-body-grid').innerHTML = cells;
+
+  // 수확 일정 등록 폼
+  const formEl = document.getElementById('cal-add-form');
+  if (formEl) {
+    const sf = document.getElementById('cal-add-farm');
+    if (sf) {
+      sf.innerHTML = '<option value="">농가 선택</option>';
+      farms.forEach(f => sf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+    }
+  }
   renderCalUpcoming();
 }
 
