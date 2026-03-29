@@ -176,7 +176,24 @@
     </div>
   </div>
 </div>
-
+  
+<!-- 모달: 농가 이력 -->
+<div id="modal-farm-history" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('farm-history')">
+  <div class="modal" style="max-width:700px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title" id="fh-title">농가 이력</div>
+      <button class="modal-close" onclick="CM('farm-history')">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="dtab active" id="fh-tab-disp" onclick="fhTab('disp')">배차 내역</button>
+      <button class="dtab" id="fh-tab-pick" onclick="fhTab('pick')">수거 내역</button>
+      <button class="dtab" id="fh-tab-own" onclick="fhTab('own')">외부 용기</button>
+    </div>
+    <div id="fh-body" style="max-height:400px;overflow-y:auto"></div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('farm-history')">닫기</button></div>
+  </div>
+</div>
+  
 <!-- 관리자 탭 -->
 <div id="anav" class="nav">
   <button class="nbtn active" onclick="T('dash')">현황판</button>
