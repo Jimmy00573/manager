@@ -1255,7 +1255,18 @@ function renderCalUpcoming() {
     const dispBox = e.date
       ? `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E8F5E9;color:#2E7D32;white-space:nowrap">${calFmtShort(e.date)}</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`
       : `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#FFEBEE;color:#C62828;white-space:nowrap">미정</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`;
-    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;border-left:3px solid ${lColor}">
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:0.5px solid #f0f0f0;border-left:4px solid ${lColor};background:${e.status==='배차없음'?'#fff9f9':e.status==='배출완료'?'#f9fff9':'#fffdf5'}">
+      <div style="display:flex;flex-direction:column;gap:3px;min-width:46px">
+        <div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E3F2FD;color:#1565C0;white-space:nowrap">${calFmtShort(e.harvest)}</div>
+        <div style="font-size:9px;text-align:center;color:#aaa">수확일</div>
+        ${dispBox}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)} <span style="font-weight:400;font-size:11px;color:#C05800;background:#FFF3E0;padding:1px 6px;border-radius:4px;margin-left:4px">${esc(e.item||'-')}</span></div>
+        <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':'<span style="color:#C62828">배차 미등록</span>'}</div>
+      </div>
+      <span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>
+    </div>`;
       <div style="display:flex;flex-direction:column;gap:3px;min-width:46px">
         <div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E3F2FD;color:#1565C0;white-space:nowrap">${calFmtShort(e.harvest)}</div>
         <div style="font-size:9px;text-align:center;color:#aaa">수확일</div>
