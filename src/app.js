@@ -375,6 +375,7 @@ function T(id) {
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
   if (id === 'drv') renderAdmPinChange();
+  if (id === 'stats') renderStats();
   if (id === 'export') {
     const t = new Date().toISOString().slice(0, 10);
     const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -382,7 +383,6 @@ function T(id) {
     const et = document.getElementById('exp-to');
     if (ef && !ef.value) ef.value = fd;
     if (et && !et.value) et.value = t;
-    if (id === 'stats') renderStats();
   }}
 
 function DT(id) {
