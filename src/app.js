@@ -670,7 +670,7 @@ function renderFarm() {
         ${f.memo ? `<span>💬 ${esc(f.memo)}</span>` : ''}
       </div>
     </div>
-    <div class="fc-actions"><button class="btn edt" onclick="openFarmEdit(${f.id})">✏️</button><button class="btn del" onclick="delFarm(${f.id})">삭제</button></div>
+    <div class="fc-actions"><button class="btn" onclick="openFarmHistory('${esc(f.name)}')">📋 이력</button><button class="btn edt" onclick="openFarmEdit(${f.id})">✏️</button><button class="btn del" onclick="delFarm(${f.id})">삭제</button></div>
   </div>`).join('');
 }
 
@@ -1365,6 +1365,77 @@ function renderCalUpcoming() {
   for (let i = 1; i <= pages; i++) btns += `<button class="pg-btn${i===calUpPage?' cur':''}" onclick="calGoPage(${i})">${i}</button>`;
   btns += `<button class="pg-btn" onclick="calGoPage(${calUpPage+1})" ${calUpPage===pages?'disabled':''}>▶</button>`;
   document.getElementById('cal-pg-btns').innerHTML = btns;
+}
+
+// ── 농가 이력
+let _fhFarm = '', _fhTab = 'disp';
+
+function openFarmHistory(name) {
+  _fhFarm = name; _fhTab = 'disp';
+  document.getElementById('fh-title').textContent = `📋 ${name} 이력`;
+  document.getElementById('fh-tab-disp').className = 'dtab active';
+  document.getElementById('fh-tab-pick').className = 'dtab';
+  document.getElementById('fh-tab-own').className = 'dtab';
+  renderFarmHistory();
+  document.getElementById('modal-farm-history').style.display = 'flex';
+}
+
+function fhTab(t) {
+  _fhTab = t;
+  document.getElementById('fh-tab-disp').className = 'dtab' + (t === 'disp' ? ' active' : '');
+  document.getElementById('fh-tab-pick').className = 'dtab' + (t === 'pick' ? ' active' : '');
+  document.getElementById('fh-tab-own').className = 'dtab' + (t === 'own' ? ' active' : '');
+  renderFarmHistory();
+}
+
+function renderFarmHistory() {
+  const el = document.getElementById('fh-body');
+  if (_fhTab === 'disp') {
+    const list = dispatches.filter(d => d.farm === _fhFarm).sort((a,b) => b.date > a.date ? 1 : -1);
+    if (!list.length) { el.innerHTML = '<div class="note">배차 내역이 없습니다</div>'; return; }
+    const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f8f8f8"><th style="padding:8px;text-align:left">날짜</th><th>기사</th><th>수량</th><th>종류</th><th>수확예정일</th><th>상태</th></tr></thead>
+      <tbody>${list.map(d => `<tr style="border-bottom:0.5px solid #f0f0f0">
+        <td style="padding:8px">${d.date}</td>
+        <td style="padding:8px">${esc(d.driver)}</td>
+        <td style="padding:8px">${d.qty}개</td>
+        <td style="padding:8px">${ctB(d.ctype)}</td>
+        <td style="padding:8px">${d.harvest||'-'}</td>
+        <td style="padding:8px"><span class="badge ${sc[d.status]||'b-neu'}">${d.status}</span></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } else if (_fhTab === 'pick') {
+    const list = picks.filter(p => p.farm === _fhFarm && !p.auto).sort((a,b) => b.date > a.date ? 1 : -1);
+    if (!list.length) { el.innerHTML = '<div class="note">수거 내역이 없습니다</div>'; return; }
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f8f8f8"><th style="padding:8px;text-align:left">날짜</th><th>구분</th><th>수량</th><th>기사</th><th>비고</th></tr></thead>
+      <tbody>${list.map(p => `<tr style="border-bottom:0.5px solid #f0f0f0">
+        <td style="padding:8px">${p.date}</td>
+        <td style="padding:8px"><span class="badge ${p.type==='원물수거'?'b-ok':'b-neu'}">${p.type}</span></td>
+        <td style="padding:8px">${p.qty}개</td>
+        <td style="padding:8px">${esc(p.driver||'-')}</td>
+        <td style="padding:8px">${esc(p.note||'-')}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } else if (_fhTab === 'own') {
+    const ins = ownIns.filter(o => o.farm === _fhFarm);
+    const outs = ownOuts.filter(o => o.farm === _fhFarm);
+    const all = [...ins.map(o=>({...o,dir:'반입'})), ...outs.map(o=>({...o,dir:'반납'}))].sort((a,b)=>b.date>a.date?1:-1);
+    if (!all.length) { el.innerHTML = '<div class="note">외부 용기 내역이 없습니다</div>'; return; }
+    const st = gOwnSt(_fhFarm);
+    el.innerHTML = `<div style="padding:8px 0;margin-bottom:8px;font-size:13px">반입 <strong>${st.inQ}개</strong> · 반납 <strong>${st.outQ}개</strong> · 공장보유 <strong style="color:${st.left>0?'#C05800':'#2E7D32'}">${st.left}개</strong></div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f8f8f8"><th style="padding:8px;text-align:left">날짜</th><th>구분</th><th>수량</th><th>방법</th><th>담당</th></tr></thead>
+      <tbody>${all.map(o => `<tr style="border-bottom:0.5px solid #f0f0f0">
+        <td style="padding:8px">${o.date}</td>
+        <td style="padding:8px"><span class="badge ${o.dir==='반입'?'b-pur':'b-ok'}">${o.dir}</span></td>
+        <td style="padding:8px">${o.qty}개</td>
+        <td style="padding:8px">${esc(o.method||'-')}</td>
+        <td style="padding:8px">${esc(o.staff||'-')}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
 }
 
 async function addHarvest() {
