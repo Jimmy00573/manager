@@ -1740,17 +1740,23 @@ function renderCal() {
     if (allTodayItems.length) {
       todayEl.style.display = '';
       const rows = allTodayItems.map(e => {
-        // harvests 테이블에 해당 항목이 있으면 상태 버튼 포함
         const hEntry = harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
         if (hEntry) return harvestRow(hEntry, false);
-        // 배차에서만 온 항목 — 정보만 표시
-        const dispItems = dispatches.filter(d => d.harvest === todayStr && d.farm === e.farm && d.status !== '배출완료');
-        const drvNames = [...new Set(dispItems.map(d => d.driver))].join(', ');
+        // 배차에서만 온 항목 — auto-create 버튼 포함
+        const st = e.status || '수확전';
+        const item = e.item || '';
+        const farmEsc = e.farm.replace(/'/g, "\\'");
+        const itemEsc = item.replace(/'/g, "\\'");
         return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
-          ${e.item ? `<span style="font-size:11px;color:#888">${esc(e.item)}</span>` : ''}
-          ${drvNames ? `<span style="font-size:11px;color:#888">· ${esc(drvNames)}</span>` : ''}
-          <span class="badge b-info" style="font-size:10px">배차등록</span>
+          ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
+          <span class="badge b-warn" style="font-size:10px">수확전</span>
+          <div style="margin-left:auto;display:flex;gap:4px">
+            <button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확중')">▶ 시작</button>
+            <button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확완료')">✅ 완료</button>
+            <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
+            <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>
+          </div>
         </div>`;
       }).join('');
       todayEl.innerHTML =
@@ -2076,6 +2082,38 @@ async function saveHarvestEdit() {
     CM('harvest'); renderCal();
   } catch (e) { alert('오류: ' + e.message); }
 }
+async function autoSetHarvestStatus(farm, date, item, status) {
+  let h = harvests.find(x => x.farm === farm && x.date === date);
+  if (!h) {
+    try {
+      const row = await dbInsertHarvest({ date, farm, item: item || null, status });
+      harvests.push(row);
+    } catch(e) {
+      // status 컬럼 없으면 status 빼고 재시도
+      try { const row = await dbInsertHarvest({ date, farm, item: item || null }); harvests.push(row); h = row; } catch(e2) {}
+      harvests[harvests.length - 1].status = status;
+      renderCal(); return;
+    }
+    harvests[harvests.length - 1].status = status;
+    renderCal(); return;
+  }
+  setHarvestStatus(h.id, status);
+}
+
+async function autoOpenHarvestEdit(farm, date, item) {
+  let h = harvests.find(x => x.farm === farm && x.date === date);
+  if (!h) {
+    try { const row = await dbInsertHarvest({ date, farm, item: item || null }); harvests.push(row); h = row; }
+    catch(e) { alert('오류: ' + e.message); return; }
+  }
+  openHarvestEdit(h.id);
+}
+
+async function autoDelHarvest(farm, date) {
+  const h = harvests.find(x => x.farm === farm && x.date === date);
+  if (h) { delHarvest(h.id); } else { renderCal(); }
+}
+
 async function setHarvestStatus(id, status) {
   // 우선 로컬 상태 먼저 반영 (DB 성공 여부 무관하게 화면 즉시 업데이트)
   harvests = harvests.map(h => h.id === id ? { ...h, status } : h);
