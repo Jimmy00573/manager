@@ -307,6 +307,7 @@
       <div id="dp-stw" style="display:none" class="stock-warn-banner"></div>
       <div class="form-actions"><button class="btn copy" onclick="previewMsg()">📋 문자 미리보기</button><button class="btn pri" onclick="addDisp()">배차 등록</button></div>
     </div>
+    <div id="harvest-no-disp-sec" style="display:none;margin-bottom:12px"></div>
     <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
     <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>시간대</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th>문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
     <div class="pagination" id="disp2-pg"></div></div>
@@ -439,7 +440,6 @@
 </div>
   <div id="cal-stats-row" class="kpi-grid" style="margin-bottom:12px"></div>
   <div id="cal-today-strip" style="display:none;background:#FFFDE7;border:1px solid #FFE082;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
-  <div id="cal-month-list" style="background:#fafafa;border:0.5px solid #e0e0e0;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
   <div id="cal-alert-strip" style="display:none;padding:8px 12px;border-radius:8px;background:#FFEBEE;border:0.5px solid #FFCDD2;font-size:12px;color:#C62828;margin-bottom:12px;display:flex;align-items:center;gap:6px"></div>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
     <div style="display:flex;align-items:center;gap:12px">

@@ -1101,6 +1101,55 @@ function renderDDash() {
   }).join('');
 
   mkPg('disp-pg', dates.length, _dp, 'goDP');
+  renderHarvestNoDisp();
+}
+
+function renderHarvestNoDisp() {
+  const el = document.getElementById('harvest-no-disp-sec');
+  if (!el) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const todayHarvFarms = harvests.filter(h =>
+    h.date === today ||
+    (h.status === '수확중' && !h.end_date && h.date < today)
+  );
+  const todayDispFarms = new Set(dispatches.filter(d => d.date === today).map(d => d.farm));
+  const missing = todayHarvFarms.filter(h => !todayDispFarms.has(h.farm));
+  if (!missing.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const rows = missing.map(h => {
+    const farm = gf(h.farm);
+    const st = h.status || '수확전';
+    const stBadge = st === '수확중' ? '<span class="badge b-warn">수확중</span>'
+      : st === '수확완료' ? '<span class="badge b-ok">수확완료</span>'
+      : '<span class="badge b-neu">수확전</span>';
+    const farmEsc = h.farm.replace(/'/g, "\\'");
+    const itemEsc = (h.item || '').replace(/'/g, "\\'");
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:0.5px solid #FFE082;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:1px;flex:1;min-width:0">
+        <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
+        ${farm.addr ? `<span style="font-size:10px;color:#aaa">${esc(farm.addr)}</span>` : ''}
+      </div>
+      ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
+      ${stBadge}
+      <button class="btn pri" style="font-size:11px;padding:4px 12px" onclick="fillDispForm('${farmEsc}','${today}','${itemEsc}')">+ 배차 등록</button>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="background:#FFFDE7;border:1px solid #FFE082;border-radius:10px;padding:10px 14px">
+    <div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">⚠️ 금일 수확 중 배차 미등록 (${missing.length}건)</div>
+    <div style="display:flex;flex-direction:column;gap:5px">${rows}</div>
+  </div>`;
+}
+
+function fillDispForm(farm, harvestDate, item) {
+  const fd = document.getElementById('dp-farm');
+  if (fd) { fd.value = farm; afF('dp'); }
+  const hd = document.getElementById('dp-harvest');
+  if (hd) hd.value = harvestDate || '';
+  const it = document.getElementById('dp-item');
+  if (it && item) it.value = item;
+  const dd = document.getElementById('dp-date');
+  if (dd && !dd.value) dd.value = harvestDate;
+  document.querySelector('#pt-disp-sec .form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderDisp() {
@@ -1778,16 +1827,6 @@ function renderCal() {
     } else {
       todayEl.style.display = 'none';
     }
-  }
-
-  // 이번달 수확일정 목록
-  const monthEl = document.getElementById('cal-month-list');
-  if (monthEl) {
-    const monthHarvests = harvests.filter(h => h.date && h.date.startsWith(mStr)).sort((a, b) => a.date > b.date ? 1 : -1);
-    monthEl.innerHTML = monthHarvests.length
-      ? `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:8px">📋 이번달 수확 일정 (${monthHarvests.length}건)</div>
-         <div style="display:flex;flex-direction:column;gap:5px">${monthHarvests.map(h => harvestRow(h, true)).join('')}</div>`
-      : `<div style="font-size:12px;color:#aaa;padding:4px 0">이번달 수확 일정 없음</div>`;
   }
 
   // 경고
