@@ -765,6 +765,7 @@ function openDispEdit(id) {
   document.getElementById('ed-item').value = d.item || '';
   document.getElementById('ed-note').value = d.note || '';
   document.getElementById('ed-trip').value = d.trip || '';
+  document.getElementById('ed-timeslot').value = d.timeslot || '';
   document.getElementById('modal-disp').style.display = 'flex';
 }
 
@@ -782,7 +783,8 @@ async function saveDispEdit() {
     harvest: document.getElementById('ed-harvest').value || null,
     item: document.getElementById('ed-item').value || null,
     note: document.getElementById('ed-note').value || null,
-    trip: document.getElementById('ed-trip').value || null
+    trip: document.getElementById('ed-trip').value || null,
+    timeslot: document.getElementById('ed-timeslot').value || null
   };
   try {
     await dbUpdateDispatch(_editDispId, data);
@@ -876,7 +878,7 @@ async function addDisp() {
   if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
   const d = gd(drv);
   try {
-    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, status: '배차완료' });
+    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배차완료' });
     dispatches.unshift(row);
     // 수량이 있을 때만 배출 자동 pick 생성
     if (qty > 0) {
@@ -918,10 +920,14 @@ async function delDisp(id) {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
+function tsBadge(ts) {
+  if (!ts) return '';
+  const style = ts === '오전' ? 'background:#E3F2FD;color:#1565C0' : 'background:#FFF3E0;color:#E65100';
+  return `<span style="font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;${style}">${ts === '오전' ? '🌅 오전' : '🌇 오후'}</span>`;
+}
 function tripBadge(trip) {
   if (!trip) return '';
-  const style = trip === '오전' ? 'background:#E3F2FD;color:#1565C0' : trip === '오후' ? 'background:#FFF3E0;color:#E65100' : 'background:#F3E5F5;color:#6A1B9A';
-  return `<span style="font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;${style}">${esc(trip)}</span>`;
+  return `<span style="font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;background:#F3E5F5;color:#6A1B9A">${esc(trip)}</span>`;
 }
 function renderDDash() {
   const list = dispatches.filter(d => _dt === 'w' ? d.status === '배차완료' : d.status === '배출완료')
@@ -933,53 +939,52 @@ function renderDDash() {
 
   if (!list.length) { el.innerHTML = `<div style="padding:16px;text-align:center;color:#aaa;font-size:13px">${_dt === 'w' ? '배출 대기 없음 🎉' : '배출 완료 없음'}</div>`; mkPg('disp-pg', 0, 1, 'goDP'); return; }
 
-  // 농가별 그룹
-  const farmOrder = [...new Set(list.map(d => d.farm))];
   const today = new Date().toISOString().slice(0, 10);
 
-  el.innerHTML = farmOrder.map(farmName => {
-    const items = list.filter(d => d.farm === farmName);
-    const farm = gf(farmName);
-    const hasLate = items.some(d => d.date < today);
+  // 날짜별 → 오전/오후/미지정 → 농가별 그룹
+  const dates = [...new Set(list.map(d => d.date))];
 
-    // 날짜별 서브그룹
-    const dates = [...new Set(items.map(d => d.date))];
-    const dateRows = dates.map(date => {
-      const dayItems = items.filter(d => d.date === date).sort((a, b) => {
-        const order = { '오전': 0, '오후': 1, '1차': 2, '2차': 3, '3차': 4 };
-        return (order[a.trip] ?? 9) - (order[b.trip] ?? 9);
-      });
-      const isToday = date === today, isLate = date < today;
-      const dateLabel = isToday ? `<span style="color:#C05800;font-weight:700">${date.slice(5).replace('-','/')} 오늘</span>` : isLate ? `<span style="color:#C62828;font-weight:700">${date.slice(5).replace('-','/')} ⚠지연</span>` : `<span style="color:#555">${date.slice(5).replace('-','/')}</span>`;
-      const pills = dayItems.map(d => {
-        const drv = gd(d.driver);
-        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;background:#fff;border-radius:8px;border:0.5px solid #e8e8e8;flex-wrap:wrap">
-          ${tripBadge(d.trip)}
-          <span style="font-size:12px;font-weight:600">${esc(d.driver)}</span>
-          <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
-          <span style="font-size:12px;color:#555">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100">수량미정</span>'} ${ctB(d.ctype)}</span>
-          ${_dt === 'w' ? `<button class="btn grn" style="padding:3px 8px;font-size:11px;margin-left:auto" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>` : ''}
-        </div>`;
-      }).join('');
-      return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:0.5px solid #f5f5f5">
-        <div style="min-width:52px;font-size:11px;padding-top:6px">${dateLabel}</div>
-        <div style="flex:1;display:flex;flex-direction:column;gap:4px">${pills}</div>
+  function dispRow(d) {
+    const drv = gd(d.driver);
+    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border-radius:8px;border:0.5px solid #ebebeb;flex-wrap:wrap">
+      ${tripBadge(d.trip)}
+      <span style="font-size:12px;font-weight:600">${esc(d.farm)}</span>
+      <span style="font-size:11px;color:#888">·</span>
+      <span style="font-size:12px">${esc(d.driver)}</span>
+      <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
+      <span style="font-size:12px;color:#555;margin-left:2px">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100;font-size:11px">수량미정</span>'} ${ctB(d.ctype)}</span>
+      ${_dt === 'w' ? `<button class="btn grn" style="padding:3px 8px;font-size:11px;margin-left:auto" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>` : ''}
+    </div>`;
+  }
+
+  el.innerHTML = dates.map(date => {
+    const dayItems = list.filter(d => d.date === date);
+    const isToday = date === today, isLate = date < today;
+    const dateLabel = isToday ? `오늘 <span style="color:#C05800">${date}</span>` : isLate ? `<span style="color:#C62828">⚠ ${date} 지연</span>` : date;
+
+    const am = dayItems.filter(d => d.timeslot === '오전');
+    const pm = dayItems.filter(d => d.timeslot === '오후');
+    const none = dayItems.filter(d => !d.timeslot);
+
+    function slot(label, icon, items, bg, border) {
+      if (!items.length) return '';
+      return `<div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:#888;margin-bottom:5px;padding:3px 8px;background:${bg};border-radius:6px;display:inline-block;border:1px solid ${border}">${icon} ${label} ${items.length}건</div>
+        <div style="display:flex;flex-direction:column;gap:4px">${items.map(dispRow).join('')}</div>
       </div>`;
-    }).join('');
+    }
 
-    return `<div style="background:#fff;border-radius:10px;border:1px solid ${hasLate?'#FFCDD2':'#e0e0e0'};overflow:hidden;margin-bottom:10px">
-      <div style="padding:10px 14px;background:${hasLate?'#FFF8F8':'#fafafa'};display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:4px">
-        <div>
-          <span style="font-weight:700;font-size:14px">${esc(farmName)}</span>
-          ${farm.addr ? `<div style="font-size:10px;color:#aaa;margin-top:2px">${esc(farm.addr)}</div>` : ''}
-        </div>
-        <span class="badge b-info" style="font-size:11px">${items.length}건</span>
+    return `<div style="background:#fff;border-radius:10px;border:1px solid ${isLate?'#FFCDD2':'#e0e0e0'};overflow:hidden;margin-bottom:10px">
+      <div style="padding:9px 14px;background:${isLate?'#FFF8F8':isToday?'#FFFDE7':'#fafafa'};font-size:12px;font-weight:600;border-bottom:0.5px solid #f0f0f0">${dateLabel} <span style="font-weight:400;color:#aaa;font-size:11px">${dayItems.length}건</span></div>
+      <div style="padding:10px 14px">
+        ${slot('오전','🌅',am,'#E3F2FD','#BBDEFB')}
+        ${slot('오후','🌇',pm,'#FFF3E0','#FFE0B2')}
+        ${none.length ? `<div style="display:flex;flex-direction:column;gap:4px">${none.map(dispRow).join('')}</div>` : ''}
       </div>
-      <div style="padding:4px 14px 8px">${dateRows}</div>
     </div>`;
   }).join('');
 
-  mkPg('disp-pg', farmOrder.length, _dp, 'goDP');
+  mkPg('disp-pg', dates.length, _dp, 'goDP');
 }
 
 function renderDisp() {
@@ -988,6 +993,7 @@ function renderDisp() {
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('disp-tb').innerHTML = page.length ? page.map(d => `<tr>
     <td>${d.date}</td><td class="nm">${esc(d.farm)}${gf(d.farm).addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:2px">${esc(gf(d.farm).addr)}</div>` : ''}</td><td>${esc(d.driver)}</td>
+    <td>${d.timeslot ? tsBadge(d.timeslot) : '-'}</td>
     <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
     <td>${d.qty > 0 ? d.qty+'개' : '<span class="badge b-warn">미정</span>'}</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td><td>${esc(d.car || '-')}</td>
@@ -998,7 +1004,7 @@ function renderDisp() {
       <button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>
       <button class="btn del" onclick="delDisp(${d.id})">삭제</button>
     </td>
-  </tr>`).join('') : emr(13, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
+  </tr>`).join('') : emr(14, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
   mkPg('disp2-pg', f.length, _d2p, 'goD2P');
 }
 

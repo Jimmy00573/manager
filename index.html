@@ -165,7 +165,8 @@
       <div class="fg"><label>날짜 *</label><input id="ed-date" type="date"></div>
       <div class="fg"><label>농가명 *</label><select id="ed-farm"><option value="">선택</option></select></div>
       <div class="fg"><label>기사 *</label><select id="ed-drv"><option value="">선택</option></select></div>
-      <div class="fg"><label>차수</label><select id="ed-trip"><option value="">해당없음</option><option value="오전">오전</option><option value="오후">오후</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
+      <div class="fg"><label>차수</label><select id="ed-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
+      <div class="fg"><label>시간대</label><select id="ed-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
       <div class="fg"><label>수량(개) *</label><input id="ed-qty" type="number"></div>
       <div class="fg"><label>콘테이너 종류</label><select id="ed-ctype"><option value="노랑">🟡 노랑</option><option value="초록">🟢 초록</option><option value="헌콘">⬜ 헌콘</option></select></div>
       <div class="fg"><label>수확 예정일</label><input id="ed-harvest" type="date"></div>
@@ -275,7 +276,8 @@
         <div class="fg"><label>기사 *</label><select id="dp-drv" onchange="afD('dp')"><option value="">선택</option></select></div>
         <div class="fg"><label>기사 연락처</label><input id="dp-dtel" class="auto" readonly></div>
         <div class="fg"><label>차량</label><input id="dp-car" class="auto" readonly></div>
-        <div class="fg"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="오전">오전</option><option value="오후">오후</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
+        <div class="fg"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
+        <div class="fg"><label>시간대</label><select id="dp-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
         <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
         <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
         <div class="fg"><label>🍊 품목</label><input id="dp-item" list="dl-v" placeholder="예) 노지감귤"></div>
@@ -290,7 +292,7 @@
       <div class="form-actions"><button class="btn copy" onclick="previewMsg()">📋 문자 미리보기</button><button class="btn pri" onclick="addDisp()">배차 등록</button></div>
     </div>
     <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
-    <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th>문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
+    <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>시간대</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th>문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
     <div class="pagination" id="disp2-pg"></div></div>
   </div>
 
