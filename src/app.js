@@ -370,14 +370,15 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'stats', 'export'][i] === id));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'stats', 'export'].forEach(p => {
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export'][i] === id));
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
   if (id === 'drv') renderAdmPinChange();
+  if (id === 'vehicle') renderVehicles();
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
   if (id === 'export') {
@@ -877,45 +878,106 @@ function renderDrivers() {
 let _editVehicleId = null;
 
 function renderVehicles() {
-  const el = document.getElementById('vehicle-list'); if (!el) return;
-  const assignedCars = new Set(drivers.map(d => d.car).filter(Boolean));
-  if (!vehicles.length) {
-    el.innerHTML = '<div class="note">등록된 차량이 없습니다</div>';
-    document.getElementById('vehicle-avail').innerHTML = '';
-    return;
-  }
-  const free = vehicles.filter(v => !assignedCars.has(v.number));
-  document.getElementById('vehicle-avail').innerHTML = free.length
-    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-        <span style="font-size:11px;color:#888;font-weight:600;align-self:center">미배정 차량 ${free.length}대:</span>
-        ${free.map(v => `<span style="padding:4px 10px;background:#E8F5E9;color:#2E7D32;border-radius:20px;font-size:12px;font-weight:500">${esc(v.number)} <span style="font-size:10px;color:#888">${v.capacity_default||'-'}개</span></span>`).join('')}
-      </div>`
-    : '';
-  el.innerHTML = vehicles.map(v => {
-    const assigned = drivers.find(d => d.car === v.number);
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:10px;margin-bottom:6px;flex-wrap:wrap">
-      <div style="flex:1;min-width:120px">
-        <div style="font-size:13px;font-weight:600">${esc(v.number)}</div>
-        <div style="font-size:11px;color:#888;margin-top:2px">기본 ${v.capacity_default||'-'}개 · 최대 ${v.capacity_max||'-'}개${v.note ? ' · '+esc(v.note) : ''}</div>
-      </div>
-      <div>
-        ${assigned
-          ? `<span class="badge b-info" style="font-size:11px">${esc(assigned.name)} 배정</span>`
-          : `<span class="badge b-ok" style="font-size:11px">미배정</span>`}
-      </div>
-      <div style="display:flex;gap:4px">
-        <button class="btn edt" onclick="openVehicleEdit(${v.id})">✏️</button>
-        <button class="btn del" onclick="delVehicle(${v.id})">삭제</button>
-      </div>
-    </div>`;
-  }).join('');
-
-  // 기사 등록 차량 셀렉트 갱신
+  // 기사 등록 폼의 차량 드롭다운 갱신
   const sel = document.getElementById('dv-car-sel');
   if (sel) {
     const cur = sel.value;
     sel.innerHTML = '<option value="">미배정</option>' + vehicles.map(v => `<option value="${esc(v.number)}">${esc(v.number)} (기본${v.capacity_default||'-'}개)</option>`).join('');
     sel.value = cur;
+  }
+
+  const el = document.getElementById('vehicle-list');
+  if (!el) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const mStr = today.slice(0, 7);
+
+  if (!vehicles.length) {
+    el.innerHTML = '<div class="note">등록된 차량이 없습니다</div>';
+    const avail = document.getElementById('vehicle-avail');
+    if (avail) avail.innerHTML = '';
+    return;
+  }
+
+  el.innerHTML = vehicles.map(v => {
+    const assigned = drivers.find(d => d.car === v.number);
+    const vDisps = dispatches.filter(d => d.car === v.number);
+    const pending = vDisps.filter(d => d.status === '배차완료').sort((a, b) => a.date > b.date ? 1 : -1);
+    const monthTotal = vDisps.filter(d => d.date && d.date.startsWith(mStr)).length;
+    const monthQty = vDisps.filter(d => d.date && d.date.startsWith(mStr) && d.qty > 0).reduce((s, d) => s + d.qty, 0);
+
+    const statusBadge = pending.length > 0
+      ? `<span class="badge b-warn">${pending.length}건 대기</span>`
+      : `<span class="badge b-ok">대기 없음</span>`;
+
+    const pendingRows = pending.slice(0, 8).map(d => {
+      const isToday = d.date === today, isLate = d.date < today;
+      const dateStyle = isLate ? 'color:#C62828;font-weight:600' : isToday ? 'color:#C05800;font-weight:600' : 'color:#555';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 14px;border-top:0.5px solid #f0f0f0;font-size:12px;flex-wrap:wrap">
+        <span style="${dateStyle}">${d.date.slice(5).replace('-','/')}</span>
+        ${isToday ? '<span style="font-size:10px;background:#FFF3E0;color:#C05800;padding:1px 5px;border-radius:4px">오늘</span>' : isLate ? '<span style="font-size:10px;background:#FFEBEE;color:#C62828;padding:1px 5px;border-radius:4px">지연</span>' : ''}
+        <span style="font-weight:600">${esc(d.farm)}</span>
+        ${d.driver ? `<span style="color:#888">· ${esc(d.driver)}</span>` : ''}
+        <span style="margin-left:auto;color:#555">${d.qty > 0 ? d.qty+'개' : '미정'} ${ctB(d.ctype)}</span>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:#fff;border-radius:12px;border:1px solid ${pending.length ? '#FFE082' : '#e0e0e0'};overflow:hidden;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:${pending.length ? '#FFFDE7' : '#fafafa'};flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-size:15px;font-weight:700">🚛 ${esc(v.number)}</div>
+          <div style="font-size:11px;color:#888">기본 ${v.capacity_default||'-'}개 · 최대 ${v.capacity_max||'-'}개${v.note ? ' · '+esc(v.note) : ''}</div>
+          ${assigned ? `<span class="badge b-info" style="font-size:11px">👤 ${esc(assigned.name)}</span>` : '<span class="badge b-neu" style="font-size:11px">기사 미배정</span>'}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${statusBadge}
+          <span style="font-size:11px;color:#aaa">이번달 ${monthTotal}건 · ${monthQty}개</span>
+          <button class="btn edt" style="padding:3px 8px;font-size:11px" onclick="openVehicleEdit(${v.id})">✏️</button>
+          <button class="btn del" style="padding:3px 8px;font-size:11px" onclick="delVehicle(${v.id})">삭제</button>
+        </div>
+      </div>
+      ${pending.length
+        ? `<div style="padding:4px 14px 2px;background:#FFF8F0;border-top:0.5px solid #FFE082"><span style="font-size:10px;color:#C05800;font-weight:600">배출 대기 ${pending.length}건</span></div>${pendingRows}`
+        : '<div style="padding:10px 14px;font-size:12px;color:#aaa">배출 대기 없음</div>'}
+    </div>`;
+  }).join('');
+
+  // 미배정 기사 차량 요약
+  const assignedCars = new Set(drivers.map(d => d.car).filter(Boolean));
+  const free = vehicles.filter(v => !assignedCars.has(v.number));
+  const avail = document.getElementById('vehicle-avail');
+  if (avail) {
+    avail.innerHTML = free.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center">
+          <span style="font-size:11px;color:#888;font-weight:600">기사 미배정 차량 ${free.length}대:</span>
+          ${free.map(v => `<span style="padding:4px 10px;background:#E8F5E9;color:#2E7D32;border-radius:20px;font-size:12px;font-weight:500">${esc(v.number)}</span>`).join('')}
+        </div>`
+      : '';
+  }
+
+  // 차량 번호 없는 배차 (등록 차량 외)
+  const regNums = new Set(vehicles.map(v => v.number));
+  const noCarDisps = dispatches.filter(d => d.status === '배차완료' && (!d.car || !regNums.has(d.car)));
+  const noCarEl = document.getElementById('vehicle-no-car-sec');
+  if (noCarEl) {
+    if (noCarDisps.length) {
+      noCarEl.style.display = '';
+      noCarEl.innerHTML = `<div style="background:#FFF8F0;border:1px solid #FFE0B2;border-radius:10px;padding:10px 14px">
+        <div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">⚠️ 차량 미지정 배출 대기 (${noCarDisps.length}건)</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${noCarDisps.sort((a,b) => a.date > b.date ? 1 : -1).map(d => `
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#fff;border-radius:6px;font-size:12px;flex-wrap:wrap">
+              <span style="${d.date < today ? 'color:#C62828;font-weight:600' : 'color:#555'}">${d.date.slice(5).replace('-','/')}</span>
+              <span style="font-weight:600">${esc(d.farm)}</span>
+              ${d.driver ? `<span style="color:#888">· ${esc(d.driver)}</span>` : ''}
+              <span style="color:#E65100;font-size:11px">${d.car ? esc(d.car)+' (미등록)' : '차량 없음'}</span>
+              <button class="btn edt" style="padding:2px 7px;font-size:11px;margin-left:auto" onclick="openDispEdit(${d.id})">✏️</button>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    } else {
+      noCarEl.style.display = 'none';
+    }
   }
 }
 

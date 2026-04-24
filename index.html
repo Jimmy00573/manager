@@ -235,6 +235,7 @@
   <div style="flex:1"></div>
   <button class="nbtn" onclick="T('farm')" style="border-left:1px solid var(--border)">농가 관리</button>
   <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
+  <button class="nbtn" onclick="T('vehicle')">🚛 차량 관리</button>
   <button class="nbtn" onclick="T('stats')" style="border-left:1px solid var(--border)">📊 실적 현황</button>
   <button class="nbtn" onclick="T('export')">📥 내보내기</button>
 </div>
@@ -394,20 +395,6 @@
 <div id="p-drv" class="panel">
   <div id="adm-pin-change"></div>
 
-  <!-- 차량 관리 -->
-  <div class="form-card"><div class="form-title">🚛 차량 등록 (회사 차량)</div>
-    <div class="form-grid">
-      <div class="fg"><label>차량번호 *</label><input id="vc-number" placeholder="예) 제주 12가 3456"></div>
-      <div class="fg"><label>기본 적재(개)</label><input id="vc-cap-def" type="number" placeholder="예) 135"></div>
-      <div class="fg"><label>최대 적재(개)</label><input id="vc-cap-max" type="number" placeholder="예) 150"></div>
-      <div class="fg"><label>비고</label><input id="vc-note" placeholder="메모"></div>
-    </div>
-    <div class="form-actions"><button class="btn pri" onclick="addVehicle()">차량 등록</button></div>
-  </div>
-  <div id="vehicle-avail"></div>
-  <div style="font-size:12px;color:#888;margin:4px 0 8px">등록된 차량</div>
-  <div id="vehicle-list" style="margin-bottom:20px"></div>
-
   <!-- 기사 등록 -->
   <div class="form-card"><div class="form-title">기사 등록</div>
     <div class="form-grid">
@@ -425,6 +412,22 @@
   <div id="drv-list"></div>
 </div>
   
+<!-- 차량 관리 -->
+<div id="p-vehicle" class="panel">
+  <div class="form-card"><div class="form-title">🚛 차량 등록</div>
+    <div class="form-grid">
+      <div class="fg"><label>차량번호 *</label><input id="vc-number" placeholder="예) 제주 12가 3456"></div>
+      <div class="fg"><label>기본 적재(개)</label><input id="vc-cap-def" type="number" placeholder="예) 135"></div>
+      <div class="fg"><label>최대 적재(개)</label><input id="vc-cap-max" type="number" placeholder="예) 150"></div>
+      <div class="fg"><label>비고</label><input id="vc-note" placeholder="메모"></div>
+    </div>
+    <div class="form-actions"><button class="btn pri" onclick="addVehicle()">차량 등록</button></div>
+  </div>
+  <div id="vehicle-avail" style="margin-bottom:4px"></div>
+  <div id="vehicle-list"></div>
+  <div id="vehicle-no-car-sec" style="display:none;margin-top:16px"></div>
+</div>
+
 <!-- 수확 캘린더 -->
 <div id="p-cal" class="panel">
   <div id="cal-add-form" class="form-card" style="margin-bottom:12px">
