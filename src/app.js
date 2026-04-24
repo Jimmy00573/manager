@@ -369,8 +369,8 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'][i] === id));
-  ['dash', 'disp', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'].forEach(p => {
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'ext', 'farm', 'cal', 'drv', 'dboard', 'stats', 'export'][i] === id));
+  ['dash', 'disp', 'ext', 'farm', 'cal', 'drv', 'dboard', 'stats', 'export'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
