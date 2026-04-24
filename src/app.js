@@ -1726,18 +1726,36 @@ function renderCal() {
   }
 
   // 금일 수확일정
-  const todayHarvests = harvests.filter(h =>
-    h.date === todayStr ||
-    (h.date <= todayStr && h.end_date && h.end_date >= todayStr) ||
-    (h.status === '수확중' && h.date < todayStr)
+  // 금일 수확일정: 캘린더와 동일하게 dispatches.harvest + harvests 테이블 통합
+  const calTodayEvents = calGetEvents(todayStr);
+  // 수확중이지만 오늘 날짜가 아닌 항목도 추가 (진행 중 carry-forward)
+  const ongoingHarvests = harvests.filter(h =>
+    h.status === '수확중' && h.date < todayStr &&
+    !calTodayEvents.find(e => e.farm === h.farm)
   );
+  const allTodayItems = [...calTodayEvents, ...ongoingHarvests];
+
   const todayEl = document.getElementById('cal-today-strip');
   if (todayEl) {
-    if (todayHarvests.length) {
+    if (allTodayItems.length) {
       todayEl.style.display = '';
+      const rows = allTodayItems.map(e => {
+        // harvests 테이블에 해당 항목이 있으면 상태 버튼 포함
+        const hEntry = harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
+        if (hEntry) return harvestRow(hEntry, false);
+        // 배차에서만 온 항목 — 정보만 표시
+        const dispItems = dispatches.filter(d => d.harvest === todayStr && d.farm === e.farm && d.status !== '배출완료');
+        const drvNames = [...new Set(dispItems.map(d => d.driver))].join(', ');
+        return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
+          ${e.item ? `<span style="font-size:11px;color:#888">${esc(e.item)}</span>` : ''}
+          ${drvNames ? `<span style="font-size:11px;color:#888">· ${esc(drvNames)}</span>` : ''}
+          <span class="badge b-info" style="font-size:10px">배차등록</span>
+        </div>`;
+      }).join('');
       todayEl.innerHTML =
-        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${todayHarvests.length}건)</div>` +
-        `<div style="display:flex;flex-direction:column;gap:5px">${todayHarvests.map(h => harvestRow(h, false)).join('')}</div>`;
+        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)</div>` +
+        `<div style="display:flex;flex-direction:column;gap:5px">${rows}</div>`;
     } else {
       todayEl.style.display = 'none';
     }
