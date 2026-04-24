@@ -918,21 +918,68 @@ async function delDisp(id) {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
+function tripBadge(trip) {
+  if (!trip) return '';
+  const style = trip === '오전' ? 'background:#E3F2FD;color:#1565C0' : trip === '오후' ? 'background:#FFF3E0;color:#E65100' : 'background:#F3E5F5;color:#6A1B9A';
+  return `<span style="font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;${style}">${esc(trip)}</span>`;
+}
 function renderDDash() {
-  const f = dispatches.filter(d => _dt === 'w' ? d.status === '배차완료' : d.status === '배출완료');
-  const page = f.slice((_dp - 1) * PER, _dp * PER);
-  const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
-  document.getElementById('d-disp-tb').innerHTML = page.length ? page.map(d => `<tr>
-    <td>${d.date}</td><td class="nm">${esc(d.farm)}${gf(d.farm).addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:2px">${esc(gf(d.farm).addr)}</div>` : ''}</td><td>${esc(d.driver)}</td>
-    <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
-    <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
-    <td>${d.qty > 0 ? d.qty+'개' : '<span class="badge b-warn">미정</span>'}</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td>
-    <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
-    <td>${_dt === 'w' ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">✅ 완료처리</button>` : ''}</td>
-  </tr>`).join('') : emr(11, _dt === 'w' ? '배출 대기 없음' : '배출 완료 없음');
-  mkPg('disp-pg', f.length, _dp, 'goDP');
-  const w = dispatches.filter(d => d.status === '배차완료').length, dn = dispatches.filter(d => d.status === '배출완료').length;
+  const list = dispatches.filter(d => _dt === 'w' ? d.status === '배차완료' : d.status === '배출완료')
+    .sort((a, b) => a.date > b.date ? 1 : a.date < b.date ? -1 : 0);
+  const el = document.getElementById('d-disp-tb');
+  const w = dispatches.filter(d => d.status === '배차완료').length;
+  const dn = dispatches.filter(d => d.status === '배출완료').length;
   document.getElementById('disp-dash-badges').innerHTML = `<span class="badge b-info">배출 대기 ${w}건</span><span class="badge b-ok">배출 완료 ${dn}건</span>`;
+
+  if (!list.length) { el.innerHTML = `<div style="padding:16px;text-align:center;color:#aaa;font-size:13px">${_dt === 'w' ? '배출 대기 없음 🎉' : '배출 완료 없음'}</div>`; mkPg('disp-pg', 0, 1, 'goDP'); return; }
+
+  // 농가별 그룹
+  const farmOrder = [...new Set(list.map(d => d.farm))];
+  const today = new Date().toISOString().slice(0, 10);
+
+  el.innerHTML = farmOrder.map(farmName => {
+    const items = list.filter(d => d.farm === farmName);
+    const farm = gf(farmName);
+    const hasLate = items.some(d => d.date < today);
+
+    // 날짜별 서브그룹
+    const dates = [...new Set(items.map(d => d.date))];
+    const dateRows = dates.map(date => {
+      const dayItems = items.filter(d => d.date === date).sort((a, b) => {
+        const order = { '오전': 0, '오후': 1, '1차': 2, '2차': 3, '3차': 4 };
+        return (order[a.trip] ?? 9) - (order[b.trip] ?? 9);
+      });
+      const isToday = date === today, isLate = date < today;
+      const dateLabel = isToday ? `<span style="color:#C05800;font-weight:700">${date.slice(5).replace('-','/')} 오늘</span>` : isLate ? `<span style="color:#C62828;font-weight:700">${date.slice(5).replace('-','/')} ⚠지연</span>` : `<span style="color:#555">${date.slice(5).replace('-','/')}</span>`;
+      const pills = dayItems.map(d => {
+        const drv = gd(d.driver);
+        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;background:#fff;border-radius:8px;border:0.5px solid #e8e8e8;flex-wrap:wrap">
+          ${tripBadge(d.trip)}
+          <span style="font-size:12px;font-weight:600">${esc(d.driver)}</span>
+          <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
+          <span style="font-size:12px;color:#555">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100">수량미정</span>'} ${ctB(d.ctype)}</span>
+          ${_dt === 'w' ? `<button class="btn grn" style="padding:3px 8px;font-size:11px;margin-left:auto" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>` : ''}
+        </div>`;
+      }).join('');
+      return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:0.5px solid #f5f5f5">
+        <div style="min-width:52px;font-size:11px;padding-top:6px">${dateLabel}</div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px">${pills}</div>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:#fff;border-radius:10px;border:1px solid ${hasLate?'#FFCDD2':'#e0e0e0'};overflow:hidden;margin-bottom:10px">
+      <div style="padding:10px 14px;background:${hasLate?'#FFF8F8':'#fafafa'};display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:4px">
+        <div>
+          <span style="font-weight:700;font-size:14px">${esc(farmName)}</span>
+          ${farm.addr ? `<div style="font-size:10px;color:#aaa;margin-top:2px">${esc(farm.addr)}</div>` : ''}
+        </div>
+        <span class="badge b-info" style="font-size:11px">${items.length}건</span>
+      </div>
+      <div style="padding:4px 14px 8px">${dateRows}</div>
+    </div>`;
+  }).join('');
+
+  mkPg('disp-pg', farmOrder.length, _dp, 'goDP');
 }
 
 function renderDisp() {
@@ -1323,7 +1370,7 @@ function renderDBoard() {
           ${isToday ? '<div style="font-size:9px;color:#C05800;font-weight:600">오늘</div>' : isBefore ? '<div style="font-size:9px;color:#C62828">지연</div>' : ''}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:#222">${esc(d.farm)}${d.trip ? ` <span class="badge b-neu" style="font-size:10px">${esc(d.trip)}</span>` : ''}</div>
+          <div style="font-size:13px;font-weight:600;color:#222">${esc(d.farm)}${d.trip ? ` ${tripBadge(d.trip)}` : ''}</div>
           ${farm.addr ? `<div style="font-size:10px;color:#aaa;margin-top:1px">${esc(farm.addr)}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:70px">
