@@ -232,6 +232,9 @@
   <div class="sec-hdr"><div class="sec-title">외부 용기 현황</div><button class="sec-toggle" onclick="togS('ext-dash')"><span id="ext-dash-txt">간략히</span></button></div>
   <div id="ext-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="ext-dash-badges"></div></div>
   <div id="ext-dash-detail"><div class="ext-grid" id="ext-cards"></div></div>
+  <div class="sec-hdr"><div class="sec-title">⬜ 빈콘 회수 현황</div><button class="sec-toggle" onclick="togS('bk-dash')"><span id="bk-dash-txt">간략히</span></button></div>
+  <div id="bk-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="bk-dash-badges"></div></div>
+  <div id="bk-dash-detail"><div id="bk-dash-list"></div></div>
 </div>
 
 <!-- 배차·배출 -->
@@ -284,7 +287,7 @@
 
 <!-- 외부 용기 -->
 <div id="p-ext" class="panel">
-  <div class="ext-tabs"><button class="etab af" id="et-f" onclick="extTab('f')">🔵 농가 자가 콘테이너</button><button class="etab" id="et-n" onclick="extTab('n')">🟢 농협 콘테이너·파렛트</button></div>
+  <div class="ext-tabs"><button class="etab af" id="et-f" onclick="extTab('f')">🔵 농가 자가 콘테이너</button><button class="etab" id="et-n" onclick="extTab('n')">🟢 농협 콘테이너·파렛트</button><button class="etab" id="et-b" onclick="extTab('b')">⬜ 빈콘 회수</button></div>
   <div id="ext-f-div">
     <div class="ext-tabs"><button class="etab af" id="ot-i" onclick="ownTab('i')">반입 기록</button><button class="etab" id="ot-o" onclick="ownTab('o')">반납 기록</button></div>
     <div id="own-in" class="form-card"><div class="form-title">농가 자가 콘테이너 반입</div>
@@ -314,7 +317,20 @@
     <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
     <div class="fold-bar" onclick="togF('nhf-tb')"><div class="fold-label">이동 내역 <span id="nhf-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="nhf-tb-icon" class="fold-icon">▼ 자세히</span></div>
     <div id="nhf-tb-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농협명</th><th>종류</th><th>구분</th><th>수량</th><th>방법</th><th>용기 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="nhf-tb"></tbody></table></div></div>
+    <div id="ext-b-div" style="display:none">
+    <div class="form-card"><div class="form-title">⬜ 빈콘 회수 등록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="bk-date" type="date"></div>
+        <div class="fg"><label>농가명 *</label><select id="bk-farm"><option value="">선택</option></select></div>
+        <div class="fg"><label>수량(개) *</label><input id="bk-qty" type="number" placeholder="0"></div>
+        <div class="fg"><label>기사</label><select id="bk-drv"><option value="">선택사항</option></select></div>
+        <div class="fg full"><label>비고</label><input id="bk-note" placeholder="메모"></div>
+      </div>
+      <div class="form-actions"><button class="btn pri" onclick="addBkCol()">회수 등록</button></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>수량</th><th>기사</th><th>비고</th><th></th></tr></thead><tbody id="bk-tb"></tbody></table></div>
   </div>
+</div>
 </div>
 
 <!-- 농가 관리 -->

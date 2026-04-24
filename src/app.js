@@ -20,7 +20,7 @@ let _dp = 1, _d2p = 1, _rp = 1;
 let _repOpen = false;
 let _pinHidden = {};
 const foldSt = { 'own-tb': false, 'nhf-sum': false, 'nhf-tb': false };
-const secSt = { alert: true, 'disp-dash': true, 'farm-dash': true, 'ext-dash': true };
+const secSt = { alert: true, 'disp-dash': true, 'farm-dash': true, 'ext-dash': true, 'bk-dash': true };
 
 // PIN 상태
 let _loggedDrv = null, _pinBuf = '', _pinMode = 'drv';
@@ -396,8 +396,10 @@ function DT(id) {
 function extTab(t) {
   document.getElementById('ext-f-div').style.display = t === 'f' ? '' : 'none';
   document.getElementById('ext-n-div').style.display = t === 'n' ? '' : 'none';
+  document.getElementById('ext-b-div').style.display = t === 'b' ? '' : 'none';
   document.getElementById('et-f').className = 'etab' + (t === 'f' ? ' af' : '');
   document.getElementById('et-n').className = 'etab' + (t === 'n' ? ' an' : '');
+  document.getElementById('et-b').className = 'etab' + (t === 'b' ? ' af' : '');
 }
 function ownTab(t) {
   document.getElementById('ot-i').className = 'etab' + (t === 'i' ? ' af' : '');
@@ -444,13 +446,13 @@ function afF(p) {
 function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv(p + '-car', d.car || ''); }
 
 function popSels() {
-  ['dp-farm', 'pk-farm', 'oi-farm', 'oo-farm'].forEach(id => {
+  ['dp-farm', 'pk-farm', 'oi-farm', 'oo-farm', 'bk-farm'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value; el.innerHTML = '<option value="">선택</option>';
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
     el.value = v;
   });
-  ['dp-drv', 'pk-drv'].forEach(id => {
+  ['dp-drv', 'pk-drv', 'bk-drv'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value;
     el.innerHTML = id === 'pk-drv' ? '<option value="">선택사항</option>' : '<option value="">선택</option>';
@@ -481,7 +483,7 @@ function popSels() {
 
 function setDates() {
   const t = new Date().toISOString().slice(0, 10);
-  ['dp-date', 'pk-date', 'oi-date', 'oo-date', 'ni-date', 'no-date', 'rp-date'].forEach(id => {
+  ['dp-date', 'pk-date', 'oi-date', 'oo-date', 'ni-date', 'no-date', 'rp-date', 'bk-date'].forEach(id => {
     const el = document.getElementById(id); if (el && !el.value) el.value = t;
   });
   const now = new Date();
@@ -919,7 +921,7 @@ async function delPick(id) {
 }
 function renderPick() {
   const tb = document.getElementById('pick-tb');
-  const list = picks.filter(p => !p.auto);
+  const list = picks.filter(p => !p.auto && p.type !== '빈콘회수');
   if (!list.length) { tb.innerHTML = emr(9, '수거 기록이 없습니다'); return; }
   const cls = { 원물수거: 'b-ok', 잉여회수: 'b-neu' };
   tb.innerHTML = list.map(p => `<tr>
@@ -1011,6 +1013,49 @@ function renderOwn() {
   const all = [...ownIns.map(o => ({ ...o, dir: '반입', xt: 'ownIn', meth: '-' })), ...ownOuts.map(o => ({ ...o, dir: '반납', xt: 'ownOut', meth: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('own-tb-badge'); if (tb) tb.textContent = all.length + '건';
   document.getElementById('own-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.farm)}</td><td><span class="badge ${o.dir === '반입' ? 'b-pur' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.meth)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button><button class="btn del" onclick="delOwn(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button></td></tr>`).join('') : emr(8, '기록 없음');
+}
+
+// ── 빈콘 회수
+async function addBkCol() {
+  const date = gv('bk-date'), farm = gv('bk-farm'), qty = n('bk-qty');
+  if (!date || !farm || !qty) { alert('날짜, 농가명, 수량을 입력하세요'); return; }
+  try {
+    const drvName = gv('bk-drv');
+    const drv = drivers.find(d => d.name === drvName);
+    const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty, driver: drvName || null, car: drv?.car || null, note: gv('bk-note') || null });
+    picks.unshift(row);
+    clr('bk-qty', 'bk-note');
+    renderBkCol(); renderDash();
+    showToast(`⬜ 빈콘 회수 등록 완료 — ${farm} ${qty}개`);
+  } catch (e) { alert('오류: ' + e.message); }
+}
+async function delBkCol(id) {
+  if (!cDel('빈콘 회수 삭제')) return;
+  try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderBkCol(); renderDash(); }
+  catch (e) { alert('오류: ' + e.message); }
+}
+function renderBkCol() {
+  const list = picks.filter(p => p.type === '빈콘회수');
+  const tb = document.getElementById('bk-tb'); if (!tb) return;
+  tb.innerHTML = list.length ? list.map(p => `<tr>
+    <td>${p.date}</td><td class="nm">${esc(p.farm)}</td>
+    <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td>
+    <td>${esc(p.note || '-')}</td>
+    <td><button class="btn del" onclick="delBkCol(${p.id})">삭제</button></td>
+  </tr>`).join('') : emr(6, '빈콘 회수 기록 없음');
+}
+function showToast(msg) {
+  let el = document.getElementById('toast-msg');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast-msg';
+    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; }, 3000);
 }
 
 // ── 농협
@@ -1178,9 +1223,18 @@ function renderDash() {
   document.getElementById('ext-cards').innerHTML = `<div class="ext-card"><div class="ext-card-title"><span class="badge b-pur">농가 자가 콘테이너</span></div>${or || '<div style="font-size:13px;color:#aaa">없음</div>'}</div><div class="ext-card"><div class="ext-card-title"><span class="badge b-teal">농협 용기 반납 필요</span></div>${nr || '<div style="font-size:13px;color:#aaa">없음</div>'}</div>`;
   const oc = on.filter(n => gOwnSt(n).left > 0).length, nc2 = nk.filter(k => { const [n, t] = k.split('||'); return gNhfSt(n, t).left > 0; }).length;
   document.getElementById('ext-dash-badges').innerHTML = `<span class="badge b-pur">자가 ${oc}개 농가</span><span class="badge b-teal">농협 ${nc2}건 반납필요</span>`;
+  // 빈콘 회수 현황
+  const bkList = picks.filter(p => p.type === '빈콘회수').slice(0, 10);
+  const bkTotal = picks.filter(p => p.type === '빈콘회수').reduce((s, p) => s + p.qty, 0);
+  const bkDl = document.getElementById('bk-dash-list');
+  if (bkDl) {
+    bkDl.innerHTML = bkList.length ? `<div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>수량</th><th>기사</th><th>비고</th></tr></thead><tbody>${bkList.map(p => `<tr><td>${p.date}</td><td class="nm">${esc(p.farm)}</td><td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.note || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<div style="padding:12px;font-size:13px;color:#aaa">빈콘 회수 기록 없음</div>';
+  }
+  const bkBadge = document.getElementById('bk-dash-badges');
+  if (bkBadge) bkBadge.innerHTML = `<span class="badge b-neu">총 ${picks.filter(p => p.type === '빈콘회수').length}건</span><span class="badge b-ok">누적 ${bkTotal}개 회수</span>`;
 }
 
-function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderAdmPinChange(); }
+function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPinChange(); }
 // ── 수확 캘린더
 const CAL_PER = 5;
 let calYear = new Date().getFullYear();
