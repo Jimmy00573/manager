@@ -1437,7 +1437,10 @@ function renderDash() {
   renderSC();
   const fhi = farms.map(f => { const st = getFCS(f.name); const ow = gOwnSt(f.name); const total = st.hold + ow.left; if (total <= 0) return null; return { name: f.name, ctypes: getFCtypes(f.name), ownLeft: ow.left, total }; }).filter(Boolean);
   const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, detail: `${type} ${st.left}개 반납필요`, total: st.left } : null; }).filter(Boolean);
-  document.getElementById('afc').textContent = fhi.length + '곳'; document.getElementById('arc').textContent = ri.length + '건';
+  const tfTotal = fhi.reduce((s, i) => s + i.total, 0);
+  const trTotal = ri.reduce((s, i) => s + i.total, 0);
+  document.getElementById('afc').textContent = fhi.length + '곳 · ' + tfTotal + '개';
+  document.getElementById('arc').textContent = ri.length + '건 · ' + trTotal + '개';
   document.getElementById('afb').innerHTML = fhi.length ? fhi.map(i => {
     const st = getFCS(i.name);
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt w">${i.total}개</span></div>
@@ -1445,8 +1448,7 @@ function renderDash() {
     <div class="alert-item-ctypes">${i.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}${i.ownLeft > 0 ? `<span class="ct" style="background:#F3E5F5;color:#6A1B9A">자가 ${i.ownLeft}개</span>` : ''}</div></div>`;
   }).join('') : '<div class="alert-none">처리 필요 없음 🎉</div>';
   document.getElementById('arb').innerHTML = ri.length ? ri.map(i => `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt g">${i.total}개</span></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div></div>`).join('') : '<div class="alert-none">반납 필요 없음</div>';
-  const tf = fhi.reduce((s, i) => s + i.total, 0), tr = ri.reduce((s, i) => s + i.total, 0);
-  document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 농가보유 ${fhi.length}곳 · ${tf}개</span><span class="badge b-ok">🟢 반납필요 ${ri.length}건 · ${tr}개</span>`;
+  document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 농가보유 ${fhi.length}곳 · ${tfTotal}개</span><span class="badge b-ok">🟢 반납필요 ${ri.length}건 · ${trTotal}개</span>`;
   renderDDash(); renderFarmTbl();
   const or = on.map(n => { const st = gOwnSt(n); return st.left > 0 ? `<div class="ext-row"><span>${esc(n)}</span><span class="ext-warn">${st.left}개</span></div>` : ''; }).filter(Boolean).join('');
   const nr = nk.map(k => { const [n, t] = k.split('||'); const st = gNhfSt(n, t); return st.left > 0 ? `<div class="ext-row"><span>${esc(n)} (${esc(t)})</span><span class="ext-warn">${st.left}개</span></div>` : ''; }).filter(Boolean).join('');
