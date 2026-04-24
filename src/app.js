@@ -1726,7 +1726,11 @@ function renderCal() {
   }
 
   // 금일 수확일정
-  const todayHarvests = harvests.filter(h => h.date === todayStr || (h.date <= todayStr && h.end_date && h.end_date >= todayStr));
+  const todayHarvests = harvests.filter(h =>
+    h.date === todayStr ||
+    (h.date <= todayStr && h.end_date && h.end_date >= todayStr) ||
+    (h.status === '수확중' && h.date < todayStr)
+  );
   const todayEl = document.getElementById('cal-today-strip');
   if (todayEl) {
     if (todayHarvests.length) {
