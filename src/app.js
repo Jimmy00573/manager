@@ -5,6 +5,7 @@
 
 const PER = 7;
 const OT = ['노랑', '초록', '헌콘'];
+const td = () => td();
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
@@ -45,27 +46,24 @@ function hideLoading() {
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
-  
-// 저장된 관리자 PIN 불러오기
-const savedAdmPin = localStorage.getItem('citrus_adm_pin');
-if (savedAdmPin) window.ADM_PIN = savedAdmPin;
-  
-  // stock은 loadAllData 안에서 가져옴  
+
+  const savedAdmPin = localStorage.getItem('citrus_adm_pin');
+  if (savedAdmPin) window.ADM_PIN = savedAdmPin;
 
   try {
     const data = await loadAllData();
-farms = data.farms;
-drivers = data.drivers;
-dispatches = data.dispatches;
-picks = data.picks;
-ownIns = data.ownIns;
-ownOuts = data.ownOuts;
-nhfIns = data.nhfIns;
-nhfOuts = data.nhfOuts;
-reports = data.reports;
-stock = data.stockData;
-harvests = data.harvests || [];
-vehicles = data.vehicles || [];
+    farms = data.farms;
+    drivers = data.drivers;
+    dispatches = data.dispatches;
+    picks = data.picks;
+    ownIns = data.ownIns;
+    ownOuts = data.ownOuts;
+    nhfIns = data.nhfIns;
+    nhfOuts = data.nhfOuts;
+    reports = data.reports;
+    stock = data.stockData;
+    harvests = data.harvests || [];
+    vehicles = data.vehicles || [];
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -79,7 +77,7 @@ vehicles = data.vehicles || [];
   const savedRole = sessionStorage.getItem('citrus_role');
   const savedDrvName = sessionStorage.getItem('citrus_drv');
   
-if (savedRole === 'admin') {
+  if (savedRole === 'admin') {
     document.getElementById('pin-screen').style.display = 'none';
     document.getElementById('hdr-btns').style.display = 'flex';
     document.getElementById('hdr-logged').style.display = 'none';
@@ -104,8 +102,7 @@ if (savedRole === 'admin') {
     } else {
       document.getElementById('pin-screen').style.display = 'flex';
     }
- } else {
-    // 기사 목록 채우고 PIN 화면 표시
+  } else {
     const sel = document.getElementById('pin-sel');
     sel.innerHTML = '<option value="">-- 기사를 선택하세요 --</option>';
     drivers.filter(d => d.pin_active !== false).forEach(d => {
@@ -216,12 +213,11 @@ function doLogout() {
   _loggedDrv = null;
   document.getElementById('hdr-btns').style.display = 'flex';
   document.getElementById('hdr-logged').style.display = 'none';
-  document.getElementById('anav').style.display = 'flex';
+  document.getElementById('anav').style.display = 'none';
   document.getElementById('dnav').style.display = 'none';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
-  document.getElementById('anav').style.display = 'none';
   document.getElementById('pin-screen').style.display = 'flex';
-setPinMode('drv');
+  setPinMode('drv');
 }
 
 function gotoAdmin() {
@@ -364,13 +360,15 @@ function setRole(r) {
   document.getElementById('dnav').style.display = r === 'driver' ? 'flex' : 'none';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
   if (r === 'admin') {
-  document.getElementById('rbtn-adm').className = 'rbtn active';
-  document.getElementById('rbtn-logout').style.display = '';
-  T('dash');
-}}
+    document.getElementById('rbtn-adm').className = 'rbtn active';
+    document.getElementById('rbtn-logout').style.display = '';
+    T('dash');
+  }
+}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export'][i] === id));
+  document.querySelectorAll('#anav .nbtn').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
   ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
@@ -382,7 +380,7 @@ function T(id) {
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
   if (id === 'export') {
-    const t = new Date().toISOString().slice(0, 10);
+    const t = td();
     const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const ef = document.getElementById('exp-from');
     const et = document.getElementById('exp-to');
@@ -391,7 +389,8 @@ function T(id) {
   }
 }
 function DT(id) {
-  document.querySelectorAll('#dnav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dmy', 'drep'][i] === id));
+  document.querySelectorAll('#dnav .nbtn').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('onclick') === `DT('${id}')`));
   ['dmy', 'drep'].forEach(p => { const el = document.getElementById('p-' + p); if (el) el.classList.remove('active'); });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
 }
@@ -469,18 +468,10 @@ function popSels() {
     drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${d.type})</option>`);
     el.value = v;
   });
-  ['mp-farm'].forEach(id => {
-    const el = document.getElementById(id); if (!el) return;
-    const v = el.value; el.innerHTML = '<option value="">선택</option>';
-    farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
-    el.value = v;
-  });
-  ['mp-drv'].forEach(id => {
-    const el = document.getElementById(id); if (!el) return;
-    const v = el.value; el.innerHTML = '<option value="">선택사항</option>';
-    drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`);
-    el.value = v;
-  });
+  const mpf = document.getElementById('mp-farm');
+  if (mpf) { const v = mpf.value; mpf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => mpf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); mpf.value = v; }
+  const mpd = document.getElementById('mp-drv');
+  if (mpd) { const v = mpd.value; mpd.innerHTML = '<option value="">선택사항</option>'; drivers.forEach(d => mpd.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`); mpd.value = v; }
  ['oi-staff', 'oo-staff'].forEach(id => {
   const el = document.getElementById(id); if (!el) return;
   const v = el.value; el.innerHTML = '<option value="">선택</option>';
@@ -492,7 +483,7 @@ function popSels() {
 }
 
 function setDates() {
-  const t = new Date().toISOString().slice(0, 10);
+  const t = td();
   ['dp-date', 'pk-date', 'oi-date', 'oo-date', 'ni-date', 'no-date', 'rp-date', 'bk-date'].forEach(id => {
     const el = document.getElementById(id); if (el && !el.value) el.value = t;
   });
@@ -889,7 +880,7 @@ function renderVehicles() {
   const el = document.getElementById('vehicle-list');
   if (!el) return;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = td();
   const mStr = today.slice(0, 7);
 
   if (!vehicles.length) {
@@ -990,10 +981,7 @@ async function addVehicle() {
   try {
     const row = await dbInsertVehicle({ number, capacity_default, capacity_max, note });
     vehicles.push(row);
-    document.getElementById('vc-number').value = '';
-    document.getElementById('vc-cap-def').value = '';
-    document.getElementById('vc-cap-max').value = '';
-    document.getElementById('vc-note').value = '';
+    clr('vc-number', 'vc-cap-def', 'vc-cap-max', 'vc-note');
     renderVehicles();
   } catch(e) { alert('오류: ' + e.message); }
 }
@@ -1108,7 +1096,7 @@ function renderDDash() {
 
   if (!list.length) { el.innerHTML = `<div style="padding:16px;text-align:center;color:#aaa;font-size:13px">${_dt === 'w' ? '배출 대기 없음 🎉' : '배출 완료 없음'}</div>`; mkPg('disp-pg', 0, 1, 'goDP'); return; }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = td();
 
   // 날짜별 → 오전/오후/미지정 → 농가별 그룹
   const dates = [...new Set(list.map(d => d.date))];
@@ -1171,7 +1159,7 @@ function renderDDash() {
 function renderHarvestNoDisp() {
   const el = document.getElementById('harvest-no-disp-sec');
   if (!el) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = td();
   const todayHarvFarms = harvests.filter(h =>
     h.date === today ||
     (h.status === '수확중' && !h.end_date && h.date < today)
@@ -1279,8 +1267,8 @@ function onPickTypeChange() {
 // ── 자가 콘테이너
 async function addOwnIn() {
   const date = gv('oi-date'), farm = gv('oi-farm'), qty = n('oi-qty');
-  if (!date || !farm || !qty || !gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; }
   if (!date || !farm || !qty) { alert('반입일자, 농가명, 수량을 입력하세요'); return; }
+  if (!gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; }
   try {
     const row = await dbInsertOwnIn({ date, farm, qty, feature: gv('oi-feature'), staff: gv('oi-staff') });
     ownIns.unshift(row); clr('oi-qty', 'oi-feature', 'oi-staff'); renderOwn(); renderDash();
@@ -1601,7 +1589,7 @@ function switchDBView(v) {
 
 function renderDSchedule() {
   const el = document.getElementById('dboard-sched'); if (!el) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = td();
 
   // 오늘 → D-1 → D-2 → D-3 → D-4 순
   const dates = [];
@@ -1683,7 +1671,7 @@ function renderDSchedule() {
 
 function renderDBoard() {
   const el = document.getElementById('dboard-body'); if (!el) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = td();
 
   // 기사별로 배출 대기 배차 묶기
   const active = drivers.filter(d => d.pin_active !== false);
@@ -1811,7 +1799,7 @@ function calGetAllItems() {
 }
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = td();
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   document.getElementById('cal-month-title').textContent = `${calYear}년 ${months[calMonth]}`;
 
