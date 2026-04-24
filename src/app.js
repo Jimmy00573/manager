@@ -555,6 +555,7 @@ function openFarmEdit(id) {
 async function saveFarmEdit() {
   const name = document.getElementById('mf-name').value.trim();
   if (!name) { alert('농가명을 입력하세요'); return; }
+  const oldName = farms.find(f => f.id === _editFarmId)?.name;
   const data = {
     name, tel: document.getElementById('mf-tel').value, addr: document.getElementById('mf-addr').value,
     variety: document.getElementById('mf-variety').value, contract: parseInt(document.getElementById('mf-contract').value) || 0,
@@ -563,6 +564,22 @@ async function saveFarmEdit() {
   try {
     await dbUpdateFarm(_editFarmId, data);
     farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
+    if (oldName && oldName !== name) {
+      const cascadeTables = ['dispatches', 'picks', 'own_ins', 'own_outs', 'reports', 'harvests'];
+      await Promise.all(cascadeTables.map(tbl =>
+        fetch(`${SUPABASE_URL}/rest/v1/${tbl}?farm=eq.${encodeURIComponent(oldName)}`, {
+          method: 'PATCH',
+          headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ farm: name })
+        })
+      ));
+      dispatches = dispatches.map(d => d.farm === oldName ? { ...d, farm: name } : d);
+      picks     = picks.map(p => p.farm === oldName ? { ...p, farm: name } : p);
+      ownIns    = ownIns.map(o => o.farm === oldName ? { ...o, farm: name } : o);
+      ownOuts   = ownOuts.map(o => o.farm === oldName ? { ...o, farm: name } : o);
+      reports   = reports.map(r => r.farm === oldName ? { ...r, farm: name } : r);
+      harvests  = harvests.map(h => h.farm === oldName ? { ...h, farm: name } : h);
+    }
     CM('farm'); popSels(); renderFarm(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
