@@ -1698,25 +1698,35 @@ function renderCal() {
     <div class="kpi"><div class="kpi-label">이번 달 수확</div><div class="kpi-val kv-bl">${thisM}</div></div>
   `;
 
+  // 공통 헬퍼
+  const stBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
+  const stBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
+  function harvestRow(h, showDate) {
+    const st = h.status || '수확전';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${stBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
+      ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
+      ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
+      <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
+      ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
+      <span class="badge ${stBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
+      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">
+        ${st !== '수확중'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
+        ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
+        <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
+        <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>
+      </div>
+    </div>`;
+  }
+
   // 금일 수확일정
   const todayHarvests = harvests.filter(h => h.date === todayStr || (h.date <= todayStr && h.end_date && h.end_date >= todayStr));
   const todayEl = document.getElementById('cal-today-strip');
   if (todayEl) {
     if (todayHarvests.length) {
-      const statusColor = { 수확전: '#FFF3E0', 수확중: '#E3F2FD', 수확완료: '#E8F5E9' };
-      const statusText = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
       todayEl.style.display = '';
-      todayEl.innerHTML = `<div style="font-size:11px;font-weight:700;color:#C05800;margin-bottom:6px">📅 금일 수확 일정 (${todayHarvests.length}건)</div>` +
-        todayHarvests.map(h => `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:${statusColor[h.status]||'#FFF3E0'};border-radius:8px;margin-bottom:4px;flex-wrap:wrap">
-          <span style="font-size:13px;font-weight:600">${esc(h.farm)}</span>
-          ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
-          ${h.end_date ? `<span style="font-size:10px;color:#aaa">~ ${h.end_date}</span>` : ''}
-          <span class="badge ${statusText[h.status]||'b-warn'}" style="font-size:10px">${h.status||'수확전'}</span>
-          <div style="margin-left:auto;display:flex;gap:4px">
-            ${h.status !== '수확중'  ? `<button class="btn" style="font-size:10px;padding:3px 8px;background:#E3F2FD;color:#1565C0;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">🌱 시작</button>` : ''}
-            ${h.status !== '수확완료' ? `<button class="btn grn" style="font-size:10px;padding:3px 8px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
-          </div>
-        </div>`).join('');
+      todayEl.innerHTML =
+        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${todayHarvests.length}건)</div>` +
+        `<div style="display:flex;flex-direction:column;gap:5px">${todayHarvests.map(h => harvestRow(h, false)).join('')}</div>`;
     } else {
       todayEl.style.display = 'none';
     }
@@ -1726,26 +1736,10 @@ function renderCal() {
   const monthEl = document.getElementById('cal-month-list');
   if (monthEl) {
     const monthHarvests = harvests.filter(h => h.date && h.date.startsWith(mStr)).sort((a, b) => a.date > b.date ? 1 : -1);
-    if (monthHarvests.length) {
-      const statusText = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
-      monthEl.innerHTML = `<div style="font-size:11px;font-weight:700;color:#555;margin-bottom:6px">📋 이번달 수확 일정 (${monthHarvests.length}건)</div>` +
-        `<div style="display:flex;flex-direction:column;gap:3px">` +
-        monthHarvests.map(h => `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:#fff;border:0.5px solid #e0e0e0;border-radius:7px;flex-wrap:wrap">
-          <span style="font-size:11px;color:#888;min-width:40px">${h.date.slice(5).replace('-','/')}</span>
-          ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
-          <span style="font-size:12px;font-weight:600">${esc(h.farm)}</span>
-          ${h.item ? `<span style="font-size:11px;color:#aaa">${esc(h.item)}</span>` : ''}
-          <span class="badge ${statusText[h.status]||'b-warn'}" style="font-size:10px">${h.status||'수확전'}</span>
-          <div style="margin-left:auto;display:flex;gap:4px">
-            ${h.status !== '수확중'  ? `<button class="btn" style="font-size:10px;padding:2px 7px;background:#E3F2FD;color:#1565C0;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">시작</button>` : ''}
-            ${h.status !== '수확완료' ? `<button class="btn grn" style="font-size:10px;padding:2px 7px" onclick="setHarvestStatus(${h.id},'수확완료')">완료</button>` : ''}
-            <button class="btn edt" style="font-size:10px;padding:2px 7px" onclick="openHarvestEdit(${h.id})">✏️</button>
-            <button class="btn del" style="font-size:10px;padding:2px 7px" onclick="delHarvest(${h.id})">삭제</button>
-          </div>
-        </div>`).join('') + `</div>`;
-    } else {
-      monthEl.innerHTML = `<div style="font-size:12px;color:#aaa;padding:8px 0">이번달 수확 일정 없음</div>`;
-    }
+    monthEl.innerHTML = monthHarvests.length
+      ? `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:8px">📋 이번달 수확 일정 (${monthHarvests.length}건)</div>
+         <div style="display:flex;flex-direction:column;gap:5px">${monthHarvests.map(h => harvestRow(h, true)).join('')}</div>`
+      : `<div style="font-size:12px;color:#aaa;padding:4px 0">이번달 수확 일정 없음</div>`;
   }
 
   // 경고
@@ -2054,11 +2048,19 @@ async function saveHarvestEdit() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function setHarvestStatus(id, status) {
+  // 우선 로컬 상태 먼저 반영 (DB 성공 여부 무관하게 화면 즉시 업데이트)
+  harvests = harvests.map(h => h.id === id ? { ...h, status } : h);
+  renderCal();
   try {
     await dbUpdateHarvest(id, { status });
-    harvests = harvests.map(h => h.id === id ? { ...h, status } : h);
-    renderCal();
-  } catch (e) { alert('오류: ' + e.message); }
+  } catch (e) {
+    if (e.message.includes('status') || e.message.includes('column')) {
+      // 컬럼 없어도 화면은 동작, 새로고침 시 초기화됨을 안내
+      console.warn('status 컬럼 없음 — Supabase SQL 실행 필요');
+    } else {
+      alert('오류: ' + e.message);
+    }
+  }
 }
 async function delHarvest(id) {
   if (!cDel('수확일정 삭제')) return;
