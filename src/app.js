@@ -773,8 +773,9 @@ async function saveDispEdit() {
   const date = document.getElementById('ed-date').value;
   const farm = document.getElementById('ed-farm').value;
   const driver = document.getElementById('ed-drv').value;
-  const qty = parseInt(document.getElementById('ed-qty').value) || 0;
-  if (!date || !farm || !driver || !qty) { alert('필수 항목을 입력하세요'); return; }
+  const qtyRaw = document.getElementById('ed-qty').value.trim();
+  const qty = qtyRaw === '' ? 0 : parseInt(qtyRaw) || 0;
+  if (!date || !farm || !driver) { alert('필수 항목을 입력하세요'); return; }
   const d = gd(driver);
   const data = {
     date, farm, driver,
