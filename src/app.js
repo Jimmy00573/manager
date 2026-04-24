@@ -5,7 +5,7 @@
 
 const PER = 7;
 const OT = ['노랑', '초록', '헌콘'];
-const td = () => td();
+const td = () => new Date().toISOString().slice(0, 10);
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
