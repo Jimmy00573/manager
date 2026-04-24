@@ -999,11 +999,11 @@ function renderDisp() {
     <td>${d.qty > 0 ? d.qty+'개' : '<span class="badge b-warn">미정</span>'}</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td><td>${esc(d.car || '-')}</td>
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
     <td><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
-    <td style="display:flex;gap:4px">
+    <td><div style="display:flex;gap:4px;align-items:center">
       ${d.status !== '배출완료' ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>` : ''}
       <button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>
       <button class="btn del" onclick="delDisp(${d.id})">삭제</button>
-    </td>
+    </div></td>
   </tr>`).join('') : emr(14, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
   mkPg('disp2-pg', f.length, _d2p, 'goD2P');
 }
