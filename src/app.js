@@ -1733,7 +1733,12 @@ function renderCal() {
     h.status === '수확중' && h.date < todayStr &&
     !calTodayEvents.find(e => e.farm === h.farm)
   );
-  const allTodayItems = [...calTodayEvents, ...ongoingHarvests];
+  // 농가 기준 중복 제거 (같은 농가 1차/2차 등 여러 배차가 있을 때)
+  const seenFarms = new Set();
+  const allTodayItems = [...calTodayEvents, ...ongoingHarvests].filter(e => {
+    if (seenFarms.has(e.farm)) return false;
+    seenFarms.add(e.farm); return true;
+  });
 
   const todayEl = document.getElementById('cal-today-strip');
   if (todayEl) {
