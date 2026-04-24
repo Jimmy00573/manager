@@ -523,6 +523,27 @@ function buildMsg(d) {
   const it = d.item ? `🍊 품목: ${d.item}\n` : '';
   return `[감귤 콘테이너 배출 안내]\n\n안녕하세요, ${esc(d.driver)} 기사님.\n배출 업무 안내드립니다.\n\n📅 배출일: ${d.date}\n🏡 농가명: ${esc(d.farm)}\n📍 주소: ${esc(f.addr || '농가에 직접 확인')}\n${ft}📦 콘테이너: ${esc(d.ctype)} ${d.qty}개\n${ht}${it}${d.note && d.note !== '[자동]' ? '📝 특이사항: ' + esc(d.note) + '\n' : ''}\n배출 완료 후 앱에서 완료 등록 부탁드립니다.\n감사합니다.`;
 }
+function buildBkMsg(d) {
+  const f = gf(d.farm);
+  const ft = f.tel ? `📞 농가주 연락처: ${f.tel}\n` : '';
+  const qtyStr = d.qty > 0 ? `${d.qty}개` : '현장 확인';
+  return `[빈 콘테이너 회수 안내]\n\n안녕하세요, ${esc(d.driver)} 기사님.\n빈 콘테이너 회수 업무 안내드립니다.\n\n📅 회수일: ${d.date}\n🏡 농가명: ${esc(d.farm)}\n📍 주소: ${esc(f.addr || '농가에 직접 확인')}\n${ft}📦 회수 수량: ${qtyStr}\n${d.note ? '📝 비고: ' + esc(d.note) + '\n' : ''}\n감사합니다.`;
+}
+function previewBkMsg() {
+  const farm = gv('bk-farm'), drv = gv('bk-drv'), date = gv('bk-date');
+  if (!farm || !drv || !date) { alert('날짜, 농가명, 기사를 먼저 입력하세요'); return; }
+  const d = gd(drv);
+  openBkMsg({ date, farm, driver: drv, dtel: d.tel || '', qty: n('bk-qty'), note: gv('bk-note') });
+}
+function openBkMsg(d) {
+  const drv = drivers.find(x => x.name === d.driver);
+  _msgTxt = buildBkMsg(d); _msgDrvTel = d.dtel || drv?.tel || '';
+  document.getElementById('msg-text').textContent = _msgTxt;
+  sv('sms-to', _msgDrvTel); sv('sms-body', _msgTxt);
+  const ss = document.getElementById('sms-stat'); if (ss) ss.style.display = 'none';
+  switchMsgTab('c');
+  document.getElementById('modal-msg').style.display = 'flex';
+}
 
 function openMsg(d) {
   _msgTxt = buildMsg(d); _msgDrvTel = d.dtel || '';
@@ -1057,7 +1078,7 @@ async function addBkCol() {
     picks.unshift(row);
     clr('bk-qty', 'bk-note');
     renderBkCol(); renderDash();
-    showToast(`⬜ 빈콘 회수 등록 완료 — ${farm} ${qty}개`);
+    openBkMsg({ date, farm, driver: drvName, qty, note: gv('bk-note') });
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delBkCol(id) {
@@ -1070,9 +1091,12 @@ function renderBkCol() {
   const tb = document.getElementById('bk-tb'); if (!tb) return;
   tb.innerHTML = list.length ? list.map(p => `<tr>
     <td>${p.date}</td><td class="nm">${esc(p.farm)}</td>
-    <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td>
+    <td>${p.qty > 0 ? p.qty+'개' : '-'}</td><td>${esc(p.driver || '-')}</td>
     <td>${esc(p.note || '-')}</td>
-    <td><button class="btn del" onclick="delBkCol(${p.id})">삭제</button></td>
+    <td style="display:flex;gap:4px">
+      ${p.driver ? `<button class="btn copy" style="padding:4px 8px" onclick="openBkMsg({date:'${p.date}',farm:'${p.farm.replace(/'/g,"\\'")}',driver:'${(p.driver||'').replace(/'/g,"\\'")}',qty:${p.qty},note:'${(p.note||'').replace(/'/g,"\\'")}',dtel:''})">📱</button>` : ''}
+      <button class="btn del" onclick="delBkCol(${p.id})">삭제</button>
+    </td>
   </tr>`).join('') : emr(6, '빈콘 회수 기록 없음');
 }
 function showToast(msg) {
