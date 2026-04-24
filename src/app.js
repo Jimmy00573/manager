@@ -1073,9 +1073,11 @@ function renderDDash() {
     const isToday = date === today, isLate = date < today;
     const dateLabel = isToday ? `오늘 <span style="color:#C05800">${date}</span>` : isLate ? `<span style="color:#C62828">⚠ ${date} 지연</span>` : date;
 
-    const am = dayItems.filter(d => d.timeslot === '오전');
-    const pm = dayItems.filter(d => d.timeslot === '오후');
-    const none = dayItems.filter(d => !d.timeslot);
+    const tripOrder = t => ({ '1차': 1, '2차': 2, '3차': 3 }[t] || 99);
+    const sortTrip = arr => [...arr].sort((a, b) => tripOrder(a.trip) - tripOrder(b.trip));
+    const am = sortTrip(dayItems.filter(d => d.timeslot === '오전'));
+    const pm = sortTrip(dayItems.filter(d => d.timeslot === '오후'));
+    const none = sortTrip(dayItems.filter(d => !d.timeslot));
 
     function slot(label, icon, items, bg, border) {
       if (!items.length) return '';
