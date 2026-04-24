@@ -1360,9 +1360,9 @@ function renderDSchedule() {
   const el = document.getElementById('dboard-sched'); if (!el) return;
   const today = new Date().toISOString().slice(0, 10);
 
-  // D-4 ~ 오늘 날짜 배열
+  // 오늘 → D-1 → D-2 → D-3 → D-4 순
   const dates = [];
-  for (let i = 4; i >= 0; i--) {
+  for (let i = 0; i <= 4; i++) {
     const d = new Date(); d.setDate(d.getDate() - i);
     dates.push(d.toISOString().slice(0, 10));
   }
@@ -1373,7 +1373,9 @@ function renderDSchedule() {
   const dayLabel = (date) => {
     if (date === today) return `<div style="font-size:11px;font-weight:700;color:#C05800">오늘</div><div style="font-size:10px;color:#C05800">${date.slice(5).replace('-','/')}</div>`;
     const diff = Math.round((new Date(today) - new Date(date)) / 86400000);
-    return `<div style="font-size:10px;color:#888;font-weight:600">D-${diff}</div><div style="font-size:10px;color:#aaa">${date.slice(5).replace('-','/')}</div>`;
+    const names = ['', '어제', '그제'];
+    const label = names[diff] || `D-${diff}`;
+    return `<div style="font-size:10px;color:#888;font-weight:600">${label}</div><div style="font-size:10px;color:#aaa">${date.slice(5).replace('-','/')}</div>`;
   };
 
   function cell(drv, date) {
@@ -1396,31 +1398,44 @@ function renderDSchedule() {
     return `<td style="background:${date===today?'#FFFDE7':'#fff'};vertical-align:top;padding:6px;min-width:120px">${cards}</td>`;
   }
 
+  // 기간 내 배차 있는 기사 / 없는 기사 분리
+  const withWork = active.filter(drv => dates.some(date => dispatches.some(d => d.driver === drv.name && d.date === date)));
+  const noWork   = active.filter(drv => !dates.some(date => dispatches.some(d => d.driver === drv.name && d.date === date)));
+
   const headerCells = dates.map(date =>
     `<th style="text-align:center;background:${date===today?'#FFF3E0':'#f8f8f8'};padding:8px 10px;min-width:120px">${dayLabel(date)}</th>`
   ).join('');
 
-  const rows = active.map(drv => {
-    const hasAny = dates.some(date => dispatches.some(d => d.driver === drv.name && d.date === date));
-    return `<tr style="${!hasAny ? 'opacity:.5' : ''}">
-      <td style="background:#fafafa;padding:8px 12px;white-space:nowrap;position:sticky;left:0;z-index:1;border-right:1px solid #e0e0e0">
-        <div style="font-size:13px;font-weight:600">${esc(drv.name)}</div>
-        <div style="display:flex;gap:4px;margin-top:2px">
-          <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
-          ${drv.car ? `<span style="font-size:10px;color:#aaa">${esc(drv.car)}</span>` : ''}
-        </div>
-      </td>
-      ${dates.map(date => cell(drv, date)).join('')}
-    </tr>`;
-  }).join('');
+  const rows = withWork.map(drv => `<tr>
+    <td style="background:#fafafa;padding:8px 12px;white-space:nowrap;position:sticky;left:0;z-index:1;border-right:1px solid #e0e0e0">
+      <div style="font-size:13px;font-weight:600">${esc(drv.name)}</div>
+      <div style="display:flex;gap:4px;margin-top:2px">
+        <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
+        ${drv.car ? `<span style="font-size:10px;color:#aaa">${esc(drv.car)}</span>` : ''}
+      </div>
+    </td>
+    ${dates.map(date => cell(drv, date)).join('')}
+  </tr>`).join('');
 
-  el.innerHTML = `<div class="tbl-wrap"><table style="min-width:0">
-    <thead><tr>
-      <th style="background:#f8f8f8;padding:8px 12px;position:sticky;left:0;z-index:2;min-width:90px">기사</th>
-      ${headerCells}
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table></div>`;
+  const noWorkList = noWork.length ? `
+    <div style="margin-top:14px;background:#fff;border-radius:10px;border:1px solid #e0e0e0;padding:12px 16px">
+      <div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:8px">이 기간 배차 없음 (${noWork.length}명)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${noWork.map(drv => `<span style="font-size:12px;padding:4px 10px;background:#f5f5f5;border-radius:20px;color:#888">
+          ${esc(drv.name)} <span style="font-size:10px;color:#bbb">${drv.type||'내부'}</span>
+        </span>`).join('')}
+      </div>
+    </div>` : '';
+
+  el.innerHTML = `
+    <div class="tbl-wrap"><table style="min-width:0">
+      <thead><tr>
+        <th style="background:#f8f8f8;padding:8px 12px;position:sticky;left:0;z-index:2;min-width:90px">기사</th>
+        ${headerCells}
+      </tr></thead>
+      <tbody>${rows || `<tr><td colspan="${dates.length+1}" style="text-align:center;padding:20px;color:#aaa;font-size:13px">이 기간 배차 없음</td></tr>`}</tbody>
+    </table></div>
+    ${noWorkList}`;
 }
 
 function renderDBoard() {
