@@ -1243,6 +1243,16 @@ let calSelectedDate = null;
 let calUpPage = 1;
 
 function calSortOrder(s) { return s === '배차없음' ? 0 : s === '배차완료' ? 1 : 2; }
+function calGoDisp(farm, harvestDate, item) {
+  T('disp');
+  const fd = document.getElementById('dp-farm');
+  if (fd) { fd.value = farm; afF('dp'); }
+  const hd = document.getElementById('dp-harvest');
+  if (hd) hd.value = harvestDate || '';
+  const it = document.getElementById('dp-item');
+  if (it && item) it.value = item;
+  document.getElementById('p-disp')?.querySelector('.form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function calSortItems(arr) {
   return [...arr].sort((a, b) => {
     const od = calSortOrder(a.status) - calSortOrder(b.status);
@@ -1364,7 +1374,7 @@ function calSelectDay(dStr) {
         <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
         <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?ctIcon[e.ctype]+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
       </div>
-      <span class="badge ${bdg}">${e.status}</span>
+      ${e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button>` : `<span class="badge ${bdg}">${e.status}</span>`}
     </div>`;
   }).join('');
   panel.style.display = 'block';
@@ -1408,9 +1418,9 @@ function renderCalUpcoming() {
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)} ${e.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;margin-left:4px;${itemColor(e.item)}">${esc(e.item)}</span>` : ''}</div>
-        <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':'<span style="color:#C62828">배차 미등록</span>'}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':''}</div>
       </div>
-     <span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>
+     ${e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button>` : `<span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>`}
     </div>`;
   }).join('');
 
