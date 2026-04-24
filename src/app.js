@@ -369,8 +369,8 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'stats', 'cal', 'export'][i] === id));
-  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'stats', 'cal', 'export'].forEach(p => {
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'][i] === id));
+  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
@@ -378,6 +378,7 @@ function T(id) {
   if (id === 'cal') renderCal();
   if (id === 'drv') renderAdmPinChange();
   if (id === 'stats') renderStats();
+  if (id === 'dboard') renderDBoard();
   if (id === 'export') {
     const t = new Date().toISOString().slice(0, 10);
     const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -1258,6 +1259,78 @@ function renderDash() {
 }
 
 function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPinChange(); }
+
+function renderDBoard() {
+  const el = document.getElementById('dboard-body'); if (!el) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 기사별로 배출 대기 배차 묶기
+  const active = drivers.filter(d => d.pin_active !== false);
+  if (!active.length) { el.innerHTML = '<div style="padding:20px;color:#aaa;text-align:center">등록된 기사가 없습니다</div>'; return; }
+
+  const pending = dispatches.filter(d => d.status === '배차완료');
+  const done    = dispatches.filter(d => d.status === '배출완료');
+
+  // 배출 대기 있는 기사 먼저, 없는 기사 뒤에
+  const withWork = active.filter(drv => pending.some(d => d.driver === drv.name));
+  const noWork   = active.filter(drv => !pending.some(d => d.driver === drv.name));
+
+  function driverCard(drv) {
+    const myPending = pending.filter(d => d.driver === drv.name).sort((a, b) => a.date > b.date ? 1 : -1);
+    const myDone    = done.filter(d => d.driver === drv.name).length;
+    const typeBadge = `<span class="badge ${drv.type === '외부' ? 'b-pur' : 'b-ok'}" style="font-size:10px">${drv.type || '내부'}</span>`;
+    const hasPending = myPending.length > 0;
+
+    const rows = hasPending ? myPending.map(d => {
+      const farm = gf(d.farm);
+      const isToday = d.date === today;
+      const isBefore = d.date < today;
+      const dateStyle = isBefore ? 'color:#C62828;font-weight:600' : isToday ? 'color:#C05800;font-weight:600' : 'color:#555';
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-bottom:0.5px solid #f5f5f5;flex-wrap:wrap">
+        <div style="min-width:60px;text-align:center">
+          <div style="font-size:11px;${dateStyle}">${d.date.slice(5).replace('-','/')}</div>
+          ${isToday ? '<div style="font-size:9px;color:#C05800;font-weight:600">오늘</div>' : isBefore ? '<div style="font-size:9px;color:#C62828">지연</div>' : ''}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:#222">${esc(d.farm)}${d.trip ? ` <span class="badge b-neu" style="font-size:10px">${esc(d.trip)}</span>` : ''}</div>
+          ${farm.addr ? `<div style="font-size:10px;color:#aaa;margin-top:1px">${esc(farm.addr)}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:70px">
+          <div style="font-size:12px;font-weight:500">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100">수량 미정</span>'}</div>
+          <div style="font-size:11px">${ctB(d.ctype)}</div>
+        </div>
+      </div>`;
+    }).join('') : `<div style="padding:12px;font-size:12px;color:#aaa;text-align:center">배출 대기 없음</div>`;
+
+    const borderColor = hasPending ? (myPending.some(d => d.date < today) ? '#C62828' : '#C05800') : '#e0e0e0';
+    return `<div style="background:#fff;border-radius:12px;border:1px solid ${borderColor};overflow:hidden;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:${hasPending ? '#FFF8F0' : '#fafafa'};flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-size:15px;font-weight:700;color:#222">${esc(drv.name)}</div>
+          ${typeBadge}
+          ${drv.car ? `<span style="font-size:11px;color:#888">${esc(drv.car)}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${drv.tel ? `<span style="font-size:11px;color:#888">${esc(drv.tel)}</span>` : ''}
+          ${hasPending ? `<span class="badge b-warn" style="font-size:11px">대기 ${myPending.length}건</span>` : '<span class="badge b-ok" style="font-size:11px">대기 없음</span>'}
+          <span style="font-size:11px;color:#aaa">완료 ${myDone}건</span>
+        </div>
+      </div>
+      ${rows}
+    </div>`;
+  }
+
+  let html = '';
+  if (withWork.length) {
+    html += `<div style="font-size:11px;color:#888;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">배출 대기 ${withWork.length}명</div>`;
+    html += withWork.map(driverCard).join('');
+  }
+  if (noWork.length) {
+    html += `<div style="font-size:11px;color:#bbb;font-weight:600;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px">대기 없음 ${noWork.length}명</div>`;
+    html += noWork.map(driverCard).join('');
+  }
+  el.innerHTML = html;
+}
 // ── 수확 캘린더
 const CAL_PER = 5;
 let calYear = new Date().getFullYear();
