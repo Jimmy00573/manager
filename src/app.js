@@ -718,6 +718,7 @@ function openDispEdit(id) {
   document.getElementById('ed-harvest').value = d.harvest || '';
   document.getElementById('ed-item').value = d.item || '';
   document.getElementById('ed-note').value = d.note || '';
+  document.getElementById('ed-trip').value = d.trip || '';
   document.getElementById('modal-disp').style.display = 'flex';
 }
 
@@ -734,7 +735,8 @@ async function saveDispEdit() {
     ctype: document.getElementById('ed-ctype').value,
     harvest: document.getElementById('ed-harvest').value || null,
     item: document.getElementById('ed-item').value || null,
-    note: document.getElementById('ed-note').value || null
+    note: document.getElementById('ed-note').value || null,
+    trip: document.getElementById('ed-trip').value || null
   };
   try {
     await dbUpdateDispatch(_editDispId, data);
@@ -828,12 +830,12 @@ async function addDisp() {
   if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
   const d = gd(drv);
   try {
-    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, status: '배차완료' });
+    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, status: '배차완료' });
     dispatches.unshift(row);
     // 배출 자동 pick 생성
     await dbInsertPick({ date, farm, type: '배출', qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true });
     picks = await dbGetPicks();
-    clr('dp-qty', 'dp-note', 'dp-harvest'); sv('dp-ctype', '');
+    clr('dp-qty', 'dp-note', 'dp-harvest'); sv('dp-ctype', ''); sv('dp-trip', '');
     document.querySelectorAll('.ctype-btn').forEach(b => b.classList.remove('sel'));
     document.getElementById('dp-stw').style.display = 'none';
     openMsg(row);
@@ -874,11 +876,12 @@ function renderDDash() {
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('d-disp-tb').innerHTML = page.length ? page.map(d => `<tr>
     <td>${d.date}</td><td class="nm">${esc(d.farm)}</td><td>${esc(d.driver)}</td>
+    <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
     <td>${d.qty}개</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td>
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
     <td>${_dt === 'w' ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">✅ 완료처리</button>` : ''}</td>
-  </tr>`).join('') : emr(10, _dt === 'w' ? '배출 대기 없음' : '배출 완료 없음');
+  </tr>`).join('') : emr(11, _dt === 'w' ? '배출 대기 없음' : '배출 완료 없음');
   mkPg('disp-pg', f.length, _dp, 'goDP');
   const w = dispatches.filter(d => d.status === '배차완료').length, dn = dispatches.filter(d => d.status === '배출완료').length;
   document.getElementById('disp-dash-badges').innerHTML = `<span class="badge b-info">배출 대기 ${w}건</span><span class="badge b-ok">배출 완료 ${dn}건</span>`;
@@ -890,6 +893,7 @@ function renderDisp() {
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('disp-tb').innerHTML = page.length ? page.map(d => `<tr>
     <td>${d.date}</td><td class="nm">${esc(d.farm)}</td><td>${esc(d.driver)}</td>
+    <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
     <td>${d.qty}개</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td><td>${esc(d.car || '-')}</td>
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
@@ -899,7 +903,7 @@ function renderDisp() {
       <button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>
       <button class="btn del" onclick="delDisp(${d.id})">삭제</button>
     </td>
-  </tr>`).join('') : emr(12, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
+  </tr>`).join('') : emr(13, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
   mkPg('disp2-pg', f.length, _d2p, 'goD2P');
 }
 
