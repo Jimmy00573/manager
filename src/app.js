@@ -1669,8 +1669,13 @@ function calFmtShort(s) {
 }
 function calGetEvents(dStr) {
   const fromDisp = dispatches.filter(d => d.harvest === dStr);
-  const fromHarvest = harvests.filter(h => h.date === dStr).map(h => ({
-    ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: '배차없음'
+  const fromHarvest = harvests.filter(h =>
+    h.date === dStr ||
+    (h.date <= dStr && h.end_date && h.end_date >= dStr) ||
+    (h.status === '수확중' && h.date < dStr && !h.end_date)
+  ).map(h => ({
+    ...h, harvest: h.date, driver: null, qty: null, ctype: null,
+    status: h.status || '배차없음'
   }));
   const dispFarms = fromDisp.map(d => d.farm);
   const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm));
@@ -1678,10 +1683,13 @@ function calGetEvents(dStr) {
 }
 function calGetAllItems() {
   const mStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
+  const mStart = mStr + '-01';
+  const mEnd = mStr + '-31';
   const fromDisp = dispatches.filter(d => d.harvest && d.harvest.startsWith(mStr));
-  const fromHarvest = harvests.filter(h => h.date && h.date.startsWith(mStr)).map(h => ({
-    ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: '배차없음'
-  }));
+  const fromHarvest = harvests.filter(h =>
+    (h.date && h.date.startsWith(mStr)) ||
+    (h.date && h.end_date && h.date <= mEnd && h.end_date >= mStart)
+  ).map(h => ({ ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: h.status || '배차없음' }));
   const dispFarms = fromDisp.map(d => d.farm + d.harvest);
   const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm + h.date));
   return calSortItems([...fromDisp, ...extra]);
