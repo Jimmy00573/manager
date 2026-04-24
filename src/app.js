@@ -892,7 +892,7 @@ function renderDDash() {
   const page = f.slice((_dp - 1) * PER, _dp * PER);
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('d-disp-tb').innerHTML = page.length ? page.map(d => `<tr>
-    <td>${d.date}</td><td class="nm">${esc(d.farm)}</td><td>${esc(d.driver)}</td>
+    <td>${d.date}</td><td class="nm">${esc(d.farm)}${gf(d.farm).addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:2px">${esc(gf(d.farm).addr)}</div>` : ''}</td><td>${esc(d.driver)}</td>
     <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
     <td>${d.qty}개</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td>
@@ -909,7 +909,7 @@ function renderDisp() {
   const page = f.slice((_d2p - 1) * PER, _d2p * PER);
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('disp-tb').innerHTML = page.length ? page.map(d => `<tr>
-    <td>${d.date}</td><td class="nm">${esc(d.farm)}</td><td>${esc(d.driver)}</td>
+    <td>${d.date}</td><td class="nm">${esc(d.farm)}${gf(d.farm).addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:2px">${esc(gf(d.farm).addr)}</div>` : ''}</td><td>${esc(d.driver)}</td>
     <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
     <td>${d.qty}개</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td><td>${esc(d.car || '-')}</td>
