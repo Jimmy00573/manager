@@ -8,7 +8,7 @@ const OT = ['노랑', '초록', '헌콘'];
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
-let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [];
+let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -65,6 +65,7 @@ nhfOuts = data.nhfOuts;
 reports = data.reports;
 stock = data.stockData;
 harvests = data.harvests || [];
+vehicles = data.vehicles || [];
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -727,15 +728,17 @@ function renderFarm() {
 
 // ── 기사·PIN
 async function addDriver() {
-  const name = gv('dv-name'), tel = gv('dv-tel');
+  const name = gv('dv-name'), tel = gv('dv-tel'), type = gv('dv-type');
   if (!name || !tel) { alert('기사명과 연락처를 입력하세요'); return; }
   if (drivers.find(d => d.name === name)) { alert('이미 등록된 기사입니다'); return; }
+  const car = type === '내부' ? (document.getElementById('dv-car-sel')?.value || '') : (gv('dv-car') || '');
   const pin = genPin();
   try {
-    const row = await dbInsertDriver({ name, tel, car: gv('dv-car'), type: gv('dv-type'), note: gv('dv-note'), pin, pin_active: true });
+    const row = await dbInsertDriver({ name, tel, car, type, note: gv('dv-note'), pin, pin_active: true });
     drivers.push(row);
     clr('dv-name', 'dv-tel', 'dv-car', 'dv-note');
-    popSels(); renderDrivers();
+    if (document.getElementById('dv-car-sel')) document.getElementById('dv-car-sel').value = '';
+    popSels(); renderDrivers(); renderVehicles();
     alert(`✅ ${name} 기사 등록!\n\n📌 발급 PIN: ${pin}\n\n기사에게 전달해 주세요.`);
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -868,6 +871,109 @@ function renderDrivers() {
       </div>
     </div>`;
   }).join('');
+}
+
+// ── 차량 관리
+let _editVehicleId = null;
+
+function renderVehicles() {
+  const el = document.getElementById('vehicle-list'); if (!el) return;
+  const assignedCars = new Set(drivers.map(d => d.car).filter(Boolean));
+  if (!vehicles.length) {
+    el.innerHTML = '<div class="note">등록된 차량이 없습니다</div>';
+    document.getElementById('vehicle-avail').innerHTML = '';
+    return;
+  }
+  const free = vehicles.filter(v => !assignedCars.has(v.number));
+  document.getElementById('vehicle-avail').innerHTML = free.length
+    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        <span style="font-size:11px;color:#888;font-weight:600;align-self:center">미배정 차량 ${free.length}대:</span>
+        ${free.map(v => `<span style="padding:4px 10px;background:#E8F5E9;color:#2E7D32;border-radius:20px;font-size:12px;font-weight:500">${esc(v.number)} <span style="font-size:10px;color:#888">${v.capacity_default||'-'}개</span></span>`).join('')}
+      </div>`
+    : '';
+  el.innerHTML = vehicles.map(v => {
+    const assigned = drivers.find(d => d.car === v.number);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:10px;margin-bottom:6px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px">
+        <div style="font-size:13px;font-weight:600">${esc(v.number)}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">기본 ${v.capacity_default||'-'}개 · 최대 ${v.capacity_max||'-'}개${v.note ? ' · '+esc(v.note) : ''}</div>
+      </div>
+      <div>
+        ${assigned
+          ? `<span class="badge b-info" style="font-size:11px">${esc(assigned.name)} 배정</span>`
+          : `<span class="badge b-ok" style="font-size:11px">미배정</span>`}
+      </div>
+      <div style="display:flex;gap:4px">
+        <button class="btn edt" onclick="openVehicleEdit(${v.id})">✏️</button>
+        <button class="btn del" onclick="delVehicle(${v.id})">삭제</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // 기사 등록 차량 셀렉트 갱신
+  const sel = document.getElementById('dv-car-sel');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">미배정</option>' + vehicles.map(v => `<option value="${esc(v.number)}">${esc(v.number)} (기본${v.capacity_default||'-'}개)</option>`).join('');
+    sel.value = cur;
+  }
+}
+
+async function addVehicle() {
+  const number = document.getElementById('vc-number')?.value?.trim();
+  const capacity_default = parseInt(document.getElementById('vc-cap-def')?.value) || null;
+  const capacity_max = parseInt(document.getElementById('vc-cap-max')?.value) || null;
+  const note = document.getElementById('vc-note')?.value?.trim() || null;
+  if (!number) { alert('차량번호를 입력하세요'); return; }
+  try {
+    const row = await dbInsertVehicle({ number, capacity_default, capacity_max, note });
+    vehicles.push(row);
+    document.getElementById('vc-number').value = '';
+    document.getElementById('vc-cap-def').value = '';
+    document.getElementById('vc-cap-max').value = '';
+    document.getElementById('vc-note').value = '';
+    renderVehicles();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+
+function openVehicleEdit(id) {
+  const v = vehicles.find(x => x.id === id); if (!v) return;
+  _editVehicleId = id;
+  document.getElementById('mvc-number').value = v.number || '';
+  document.getElementById('mvc-cap-def').value = v.capacity_default || '';
+  document.getElementById('mvc-cap-max').value = v.capacity_max || '';
+  document.getElementById('mvc-note').value = v.note || '';
+  document.getElementById('modal-vehicle').style.display = 'flex';
+}
+
+async function saveVehicleEdit() {
+  const number = document.getElementById('mvc-number').value.trim();
+  if (!number) { alert('차량번호를 입력하세요'); return; }
+  const data = {
+    number,
+    capacity_default: parseInt(document.getElementById('mvc-cap-def').value) || null,
+    capacity_max: parseInt(document.getElementById('mvc-cap-max').value) || null,
+    note: document.getElementById('mvc-note').value.trim() || null
+  };
+  try {
+    await dbUpdateVehicle(_editVehicleId, data);
+    vehicles = vehicles.map(v => v.id === _editVehicleId ? { ...v, ...data } : v);
+    CM('vehicle'); renderVehicles();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+
+async function delVehicle(id) {
+  if (!cDel('차량 삭제')) return;
+  try { await dbDeleteVehicle(id); vehicles = vehicles.filter(v => v.id !== id); renderVehicles(); }
+  catch(e) { alert('오류: ' + e.message); }
+}
+
+function onDrvTypeChange() {
+  const type = document.getElementById('dv-type')?.value;
+  const carSel = document.getElementById('dv-car-sel-wrap');
+  const carTxt = document.getElementById('dv-car-txt-wrap');
+  if (carSel) carSel.style.display = type === '내부' ? '' : 'none';
+  if (carTxt) carTxt.style.display = type === '외부' ? '' : 'none';
 }
 
 // ── 배차
@@ -1331,8 +1437,13 @@ function renderDash() {
   renderSC();
   const fhi = farms.map(f => { const st = getFCS(f.name); const ow = gOwnSt(f.name); const total = st.hold + ow.left; if (total <= 0) return null; return { name: f.name, ctypes: getFCtypes(f.name), ownLeft: ow.left, total }; }).filter(Boolean);
   const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, detail: `${type} ${st.left}개 반납필요`, total: st.left } : null; }).filter(Boolean);
-  document.getElementById('afc').textContent = fhi.length; document.getElementById('arc').textContent = ri.length;
-  document.getElementById('afb').innerHTML = fhi.length ? fhi.map(i => `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt w">${i.total}개</span></div><div class="alert-item-ctypes">${i.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}${i.ownLeft > 0 ? `<span class="ct" style="background:#F3E5F5;color:#6A1B9A">자가 ${i.ownLeft}개</span>` : ''}</div></div>`).join('') : '<div class="alert-none">처리 필요 없음 🎉</div>';
+  document.getElementById('afc').textContent = fhi.length + '곳'; document.getElementById('arc').textContent = ri.length + '건';
+  document.getElementById('afb').innerHTML = fhi.length ? fhi.map(i => {
+    const st = getFCS(i.name);
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt w">${i.total}개</span></div>
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 잉여회수 ${st.ret}개 = <strong style="color:#C05800">${st.hold}개</strong> 보유</div>
+    <div class="alert-item-ctypes">${i.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}${i.ownLeft > 0 ? `<span class="ct" style="background:#F3E5F5;color:#6A1B9A">자가 ${i.ownLeft}개</span>` : ''}</div></div>`;
+  }).join('') : '<div class="alert-none">처리 필요 없음 🎉</div>';
   document.getElementById('arb').innerHTML = ri.length ? ri.map(i => `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt g">${i.total}개</span></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div></div>`).join('') : '<div class="alert-none">반납 필요 없음</div>';
   const tf = fhi.reduce((s, i) => s + i.total, 0), tr = ri.reduce((s, i) => s + i.total, 0);
   document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 농가보유 ${fhi.length}곳 · ${tf}개</span><span class="badge b-ok">🟢 반납필요 ${ri.length}건 · ${tr}개</span>`;
@@ -1353,7 +1464,7 @@ function renderDash() {
   if (bkBadge) bkBadge.innerHTML = `<span class="badge b-neu">총 ${picks.filter(p => p.type === '빈콘회수').length}건</span><span class="badge b-ok">누적 ${bkTotal}개 회수</span>`;
 }
 
-function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPinChange(); }
+function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderVehicles(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPinChange(); }
 
 let _dbView = 'sched';
 function switchDBView(v) {

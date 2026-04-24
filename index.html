@@ -123,6 +123,20 @@
   </div>
 </div>
 
+<!-- 차량 수정 모달 -->
+<div id="modal-vehicle" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('vehicle')">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">🚛 차량 수정</div><button class="modal-close" onclick="CM('vehicle')">✕</button></div>
+    <div class="modal-grid">
+      <div class="fg"><label>차량번호 *</label><input id="mvc-number"></div>
+      <div class="fg"><label>기본 적재(개)</label><input id="mvc-cap-def" type="number"></div>
+      <div class="fg"><label>최대 적재(개)</label><input id="mvc-cap-max" type="number"></div>
+      <div class="fg"><label>비고</label><input id="mvc-note"></div>
+    </div>
+    <div class="modal-actions"><button class="btn cancel" onclick="CM('vehicle')">취소</button><button class="btn pri" onclick="saveVehicleEdit()">저장</button></div>
+  </div>
+</div>
+
 <!-- 문자 모달 -->
 <div id="modal-msg" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('msg')">
   <div class="msg-wrap">
@@ -378,8 +392,31 @@
 <!-- 기사·PIN 관리 -->
 <div id="p-drv" class="panel">
   <div id="adm-pin-change"></div>
+
+  <!-- 차량 관리 -->
+  <div class="form-card"><div class="form-title">🚛 차량 등록 (회사 차량)</div>
+    <div class="form-grid">
+      <div class="fg"><label>차량번호 *</label><input id="vc-number" placeholder="예) 제주 12가 3456"></div>
+      <div class="fg"><label>기본 적재(개)</label><input id="vc-cap-def" type="number" placeholder="예) 135"></div>
+      <div class="fg"><label>최대 적재(개)</label><input id="vc-cap-max" type="number" placeholder="예) 150"></div>
+      <div class="fg"><label>비고</label><input id="vc-note" placeholder="메모"></div>
+    </div>
+    <div class="form-actions"><button class="btn pri" onclick="addVehicle()">차량 등록</button></div>
+  </div>
+  <div id="vehicle-avail"></div>
+  <div style="font-size:12px;color:#888;margin:4px 0 8px">등록된 차량</div>
+  <div id="vehicle-list" style="margin-bottom:20px"></div>
+
+  <!-- 기사 등록 -->
   <div class="form-card"><div class="form-title">기사 등록</div>
-    <div class="form-grid"><div class="fg"><label>기사명 *</label><input id="dv-name" placeholder="예) 홍길동"></div><div class="fg"><label>연락처 *</label><input id="dv-tel" placeholder="010-0000-0000"></div><div class="fg"><label>차량번호</label><input id="dv-car" placeholder="제주 12가 3456"></div><div class="fg"><label>소속</label><select id="dv-type"><option value="내부">내부 직원</option><option value="외부">외부 용역</option></select></div><div class="fg"><label>비고</label><input id="dv-note" placeholder="메모"></div></div>
+    <div class="form-grid">
+      <div class="fg"><label>기사명 *</label><input id="dv-name" placeholder="예) 홍길동"></div>
+      <div class="fg"><label>연락처 *</label><input id="dv-tel" placeholder="010-0000-0000"></div>
+      <div class="fg"><label>소속</label><select id="dv-type" onchange="onDrvTypeChange()"><option value="내부">내부 직원</option><option value="외부">외부 용역</option></select></div>
+      <div class="fg" id="dv-car-sel-wrap"><label>배정 차량 <span style="font-size:10px;color:#aaa">(회사 차량)</span></label><select id="dv-car-sel"><option value="">미배정</option></select></div>
+      <div class="fg" id="dv-car-txt-wrap" style="display:none"><label>차량번호 <span style="font-size:10px;color:#aaa">(자가 차량)</span></label><input id="dv-car" placeholder="예) 제주 12가 3456"></div>
+      <div class="fg"><label>비고</label><input id="dv-note" placeholder="메모"></div>
+    </div>
     <div class="form-actions"><button class="btn pri" onclick="addDriver()">등록</button></div>
   </div>
   <div class="note">💡 PIN은 기본으로 표시됩니다. 🔄 재발급으로 새 PIN 발급. 퇴사 기사는 🚫 차단하면 즉시 로그인 불가.</div>

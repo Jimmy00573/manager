@@ -69,13 +69,18 @@ async function dbGetReports() { return sbGet('reports', 'order=date.desc,created
 async function dbInsertReport(data) { const r = await sbInsert('reports', data); return r[0]; }
 
 async function loadAllData() {
-  const [farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests] = await Promise.all([
+  const [farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests, vehicles] = await Promise.all([
     dbGetFarms(), dbGetDrivers(), dbGetDispatches(), dbGetPicks(),
     dbGetOwnIns(), dbGetOwnOuts(), dbGetNhfIns(), dbGetNhfOuts(),
-    dbGetReports(), getStockSettings(), dbGetHarvests()
+    dbGetReports(), getStockSettings(), dbGetHarvests(), dbGetVehicles()
   ]);
-  return { farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests };
+  return { farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests, vehicles };
 }
+
+async function dbGetVehicles() { try { return await sbGet('vehicles', 'order=number'); } catch(e) { return []; } }
+async function dbInsertVehicle(data) { const r = await sbInsert('vehicles', data); return r[0]; }
+async function dbUpdateVehicle(id, data) { const r = await sbUpdate('vehicles', id, data); return r[0]; }
+async function dbDeleteVehicle(id) { return sbDelete('vehicles', id); }
 // ── 수확 일정
 async function dbGetHarvests() { return sbGet('harvests', 'order=date'); }
 async function dbInsertHarvest(data) { const r = await sbInsert('harvests', data); return r[0]; }
