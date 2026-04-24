@@ -378,7 +378,7 @@ function T(id) {
   if (id === 'cal') renderCal();
   if (id === 'drv') renderAdmPinChange();
   if (id === 'stats') renderStats();
-  if (id === 'dboard') renderDBoard();
+  if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
   if (id === 'export') {
     const t = new Date().toISOString().slice(0, 10);
     const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -1344,6 +1344,84 @@ function renderDash() {
 }
 
 function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPinChange(); }
+
+let _dbView = 'sched';
+function switchDBView(v) {
+  _dbView = v;
+  document.getElementById('dbv-sched').className = 'dtab' + (v === 'sched' ? ' active' : '');
+  document.getElementById('dbv-card').className  = 'dtab' + (v === 'card'  ? ' active' : '');
+  document.getElementById('dboard-sched').style.display = v === 'sched' ? '' : 'none';
+  document.getElementById('dboard-body').style.display  = v === 'card'  ? '' : 'none';
+  if (v === 'sched') renderDSchedule();
+  else renderDBoard();
+}
+
+function renderDSchedule() {
+  const el = document.getElementById('dboard-sched'); if (!el) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // D-4 ~ 오늘 날짜 배열
+  const dates = [];
+  for (let i = 4; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  const active = drivers.filter(d => d.pin_active !== false);
+  if (!active.length) { el.innerHTML = '<div style="padding:20px;color:#aaa;text-align:center">등록된 기사가 없습니다</div>'; return; }
+
+  const dayLabel = (date) => {
+    if (date === today) return `<div style="font-size:11px;font-weight:700;color:#C05800">오늘</div><div style="font-size:10px;color:#C05800">${date.slice(5).replace('-','/')}</div>`;
+    const diff = Math.round((new Date(today) - new Date(date)) / 86400000);
+    return `<div style="font-size:10px;color:#888;font-weight:600">D-${diff}</div><div style="font-size:10px;color:#aaa">${date.slice(5).replace('-','/')}</div>`;
+  };
+
+  function cell(drv, date) {
+    const items = dispatches.filter(d => d.driver === drv.name && d.date === date);
+    if (!items.length) return `<td style="background:${date===today?'#FFFDE7':'#fafafa'};text-align:center;color:#ddd;font-size:18px">—</td>`;
+    const cards = items.map(d => {
+      const done = d.status === '배출완료';
+      const bg = done ? '#F1F8E9' : '#FFF8F0';
+      const border = done ? '#C8E6C9' : '#FFE0B2';
+      return `<div style="background:${bg};border:1px solid ${border};border-radius:6px;padding:4px 7px;margin-bottom:3px;font-size:11px;line-height:1.5">
+        <div style="font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px">${esc(d.farm)}</div>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:2px">
+          ${d.timeslot ? tsBadge(d.timeslot) : ''}
+          ${d.trip ? tripBadge(d.trip) : ''}
+          ${done ? '<span style="font-size:9px;color:#2E7D32;font-weight:600">✅완료</span>' : ''}
+        </div>
+        <div style="color:#666;font-size:10px;margin-top:1px">${d.qty > 0 ? d.qty+'개 ' : '미정 '}${ctB(d.ctype)}</div>
+      </div>`;
+    }).join('');
+    return `<td style="background:${date===today?'#FFFDE7':'#fff'};vertical-align:top;padding:6px;min-width:120px">${cards}</td>`;
+  }
+
+  const headerCells = dates.map(date =>
+    `<th style="text-align:center;background:${date===today?'#FFF3E0':'#f8f8f8'};padding:8px 10px;min-width:120px">${dayLabel(date)}</th>`
+  ).join('');
+
+  const rows = active.map(drv => {
+    const hasAny = dates.some(date => dispatches.some(d => d.driver === drv.name && d.date === date));
+    return `<tr style="${!hasAny ? 'opacity:.5' : ''}">
+      <td style="background:#fafafa;padding:8px 12px;white-space:nowrap;position:sticky;left:0;z-index:1;border-right:1px solid #e0e0e0">
+        <div style="font-size:13px;font-weight:600">${esc(drv.name)}</div>
+        <div style="display:flex;gap:4px;margin-top:2px">
+          <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
+          ${drv.car ? `<span style="font-size:10px;color:#aaa">${esc(drv.car)}</span>` : ''}
+        </div>
+      </td>
+      ${dates.map(date => cell(drv, date)).join('')}
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div class="tbl-wrap"><table style="min-width:0">
+    <thead><tr>
+      <th style="background:#f8f8f8;padding:8px 12px;position:sticky;left:0;z-index:2;min-width:90px">기사</th>
+      ${headerCells}
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
 
 function renderDBoard() {
   const el = document.getElementById('dboard-body'); if (!el) return;

@@ -445,7 +445,12 @@
   
 <!-- 기사별 배차 현황 -->
 <div id="p-dboard" class="panel">
-  <div id="dboard-body"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button id="dbv-sched" class="dtab active" onclick="switchDBView('sched')">📅 수송 스케쥴</button>
+    <button id="dbv-card"  class="dtab"        onclick="switchDBView('card')">🚛 배차 현황</button>
+  </div>
+  <div id="dboard-sched"></div>
+  <div id="dboard-body" style="display:none"></div>
 </div>
 
 <!-- 내보내기 -->
