@@ -1064,7 +1064,10 @@ function renderDDash() {
       <span style="font-size:12px">${esc(d.driver)}</span>
       <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
       <span style="font-size:12px;color:#555;margin-left:2px">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100;font-size:11px">수량미정</span>'} ${ctB(d.ctype)}</span>
-      ${_dt === 'w' ? `<button class="btn grn" style="padding:3px 8px;font-size:11px;margin-left:auto" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>` : ''}
+      <div style="display:flex;gap:4px;margin-left:auto">
+        <button class="btn edt" style="padding:3px 8px;font-size:11px" onclick="openDispEdit(${d.id})">✏️</button>
+        ${_dt === 'w' ? `<button class="btn grn" style="padding:3px 8px;font-size:11px" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>` : ''}
+      </div>
     </div>`;
   }
 
