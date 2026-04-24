@@ -199,7 +199,6 @@
 <div id="anav" class="nav">
   <button class="nbtn active" onclick="T('dash')">현황판</button>
   <button class="nbtn" onclick="T('disp')">배차·배출</button>
-  <button class="nbtn" onclick="T('pick')">수거 관리</button>
   <button class="nbtn" onclick="T('ext')">외부 용기</button>
   <button class="nbtn" onclick="T('farm')">농가 관리</button>
   <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
@@ -239,53 +238,61 @@
   <div id="bk-dash-detail"><div id="bk-dash-list"></div></div>
 </div>
 
-<!-- 배차·배출 -->
+<!-- 배차·배출 + 수거 -->
 <div id="p-disp" class="panel">
-  <div class="note">💡 배차 등록 → 재고 자동 차감 → 등록 후 문자 발송 팝업</div>
-  <div class="form-card"><div class="form-title">배차 등록</div>
-    <div class="form-grid">
-      <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
-      <div class="fg"><label>농가명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
-      <div class="fg"><label>농가 연락처</label><input id="dp-ftel" class="auto" readonly></div>
-      <div class="fg"><label>주소</label><input id="dp-addr" class="auto" readonly></div>
-      <div class="fg"><label>기사 *</label><select id="dp-drv" onchange="afD('dp')"><option value="">선택</option></select></div>
-      <div class="fg"><label>기사 연락처</label><input id="dp-dtel" class="auto" readonly></div>
-      <div class="fg"><label>차량</label><input id="dp-car" class="auto" readonly></div>
-      <div class="fg"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
-      <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
-      <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
-      <div class="fg"><label>🍊 품목</label><input id="dp-item" list="dl-v" placeholder="예) 노지감귤"></div>
-      <div class="fg" style="grid-column:1/-1">
-        <label>콘테이너 종류 * <span style="font-size:10px;color:#aaa">→ 재고 자동 차감</span></label>
-        <div class="ctype-btns"><button class="ctype-btn" onclick="selCt('노랑')">🟡 노랑</button><button class="ctype-btn" onclick="selCt('초록')">🟢 초록</button><button class="ctype-btn" onclick="selCt('헌콘')">⬜ 헌콘</button></div>
-        <input id="dp-ctype" readonly placeholder="위에서 선택" style="cursor:pointer">
-      </div>
-      <div class="fg"><label>특이사항</label><input id="dp-note" placeholder="메모"></div>
-    </div>
-    <div id="dp-stw" style="display:none" class="stock-warn-banner"></div>
-    <div class="form-actions"><button class="btn copy" onclick="previewMsg()">📋 문자 미리보기</button><button class="btn pri" onclick="addDisp()">배차 등록</button></div>
+  <div class="disp-tabs" style="margin-bottom:14px">
+    <button class="dtab active" id="ptab-disp" onclick="switchPT('disp')">🚛 배차·배출</button>
+    <button class="dtab" id="ptab-pick" onclick="switchPT('pick')">📦 수거 기록</button>
   </div>
-  <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
-  <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th>문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
-  <div class="pagination" id="disp2-pg"></div></div>
-</div>
 
-<!-- 수거 관리 -->
-<div id="p-pick" class="panel">
-  <div class="form-card"><div class="form-title">수거 기록</div>
-    <div class="form-grid">
-      <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
-      <div class="fg"><label>농가명 *</label><select id="pk-farm" onchange="afF('pk')"><option value="">선택</option></select></div>
-      <div class="fg"><label>연락처</label><input id="pk-tel" class="auto" readonly></div>
-      <div class="fg"><label>구분 *</label><select id="pk-type"><option value="">선택</option><option value="원물수거">원물수거</option><option value="잉여회수">잉여회수</option></select></div>
-      <div class="fg"><label>수량(개) *</label><input id="pk-qty" type="number" placeholder="0"></div>
-      <div class="fg"><label>기사</label><select id="pk-drv" onchange="afD('pk')"><option value="">선택사항</option></select></div>
-      <div class="fg"><label>차량</label><input id="pk-car" class="auto" readonly></div>
-      <div class="fg"><label>비고</label><input id="pk-note" placeholder="메모"></div>
+  <!-- 배차·배출 섹션 -->
+  <div id="pt-disp-sec">
+    <div class="note">💡 배차 등록 → 재고 자동 차감 → 등록 후 문자 발송 팝업</div>
+    <div class="form-card"><div class="form-title">배차 등록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
+        <div class="fg"><label>농가명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
+        <div class="fg"><label>농가 연락처</label><input id="dp-ftel" class="auto" readonly></div>
+        <div class="fg"><label>주소</label><input id="dp-addr" class="auto" readonly></div>
+        <div class="fg"><label>기사 *</label><select id="dp-drv" onchange="afD('dp')"><option value="">선택</option></select></div>
+        <div class="fg"><label>기사 연락처</label><input id="dp-dtel" class="auto" readonly></div>
+        <div class="fg"><label>차량</label><input id="dp-car" class="auto" readonly></div>
+        <div class="fg"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
+        <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
+        <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
+        <div class="fg"><label>🍊 품목</label><input id="dp-item" list="dl-v" placeholder="예) 노지감귤"></div>
+        <div class="fg" style="grid-column:1/-1">
+          <label>콘테이너 종류 * <span style="font-size:10px;color:#aaa">→ 재고 자동 차감</span></label>
+          <div class="ctype-btns"><button class="ctype-btn" onclick="selCt('노랑')">🟡 노랑</button><button class="ctype-btn" onclick="selCt('초록')">🟢 초록</button><button class="ctype-btn" onclick="selCt('헌콘')">⬜ 헌콘</button></div>
+          <input id="dp-ctype" readonly placeholder="위에서 선택" style="cursor:pointer">
+        </div>
+        <div class="fg"><label>특이사항</label><input id="dp-note" placeholder="메모"></div>
+      </div>
+      <div id="dp-stw" style="display:none" class="stock-warn-banner"></div>
+      <div class="form-actions"><button class="btn copy" onclick="previewMsg()">📋 문자 미리보기</button><button class="btn pri" onclick="addDisp()">배차 등록</button></div>
     </div>
-    <div class="form-actions"><button class="btn pri" onclick="addPick()">수거 기록 추가</button></div>
+    <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
+    <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th>문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
+    <div class="pagination" id="disp2-pg"></div></div>
   </div>
-  <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>기사</th><th>차량</th><th>비고</th><th>수정시간</th><th></th></tr></thead><tbody id="pick-tb"></tbody></table></div>
+
+  <!-- 수거 기록 섹션 -->
+  <div id="pt-pick-sec" style="display:none">
+    <div class="form-card"><div class="form-title">수거 기록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
+        <div class="fg"><label>농가명 *</label><select id="pk-farm" onchange="afF('pk')"><option value="">선택</option></select></div>
+        <div class="fg"><label>연락처</label><input id="pk-tel" class="auto" readonly></div>
+        <div class="fg"><label>구분 *</label><select id="pk-type"><option value="">선택</option><option value="원물수거">원물수거</option><option value="잉여회수">잉여회수</option></select></div>
+        <div class="fg"><label>수량(개) *</label><input id="pk-qty" type="number" placeholder="0"></div>
+        <div class="fg"><label>기사</label><select id="pk-drv" onchange="afD('pk')"><option value="">선택사항</option></select></div>
+        <div class="fg"><label>차량</label><input id="pk-car" class="auto" readonly></div>
+        <div class="fg"><label>비고</label><input id="pk-note" placeholder="메모"></div>
+      </div>
+      <div class="form-actions"><button class="btn pri" onclick="addPick()">수거 기록 추가</button></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>기사</th><th>차량</th><th>비고</th><th>수정시간</th><th></th></tr></thead><tbody id="pick-tb"></tbody></table></div>
+  </div>
 </div>
 
 <!-- 외부 용기 -->

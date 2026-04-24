@@ -369,8 +369,8 @@ function setRole(r) {
 }}
 
 function T(id) {
-  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'][i] === id));
-  ['dash', 'disp', 'pick', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'].forEach(p => {
+  document.querySelectorAll('#anav .nbtn').forEach((b, i) => b.classList.toggle('active', ['dash', 'disp', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'][i] === id));
+  ['dash', 'disp', 'ext', 'farm', 'drv', 'stats', 'cal', 'dboard', 'export'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
@@ -413,6 +413,13 @@ function nhfTab(t) {
   document.getElementById('nt-o').className = 'etab' + (t === 'o' ? ' an' : '');
   document.getElementById('nhf-in').style.display = t === 'i' ? '' : 'none';
   document.getElementById('nhf-out').style.display = t === 'o' ? '' : 'none';
+}
+function switchPT(t) {
+  document.getElementById('pt-disp-sec').style.display = t === 'disp' ? '' : 'none';
+  document.getElementById('pt-pick-sec').style.display = t === 'pick' ? '' : 'none';
+  document.getElementById('ptab-disp').className = 'dtab' + (t === 'disp' ? ' active' : '');
+  document.getElementById('ptab-pick').className = 'dtab' + (t === 'pick' ? ' active' : '');
+  if (t === 'pick') renderPick();
 }
 function switchDT(t) { _dt = t; _dp = 1; document.getElementById('dtab-w').className = 'dtab' + (t === 'w' ? ' active' : ''); document.getElementById('dtab-d').className = 'dtab' + (t === 'd' ? ' active' : ''); renderDDash(); }
 function switchDT2(t) { _dt2 = t; _d2p = 1; document.getElementById('dtab2-w').className = 'dtab' + (t === 'w' ? ' active' : ''); document.getElementById('dtab2-d').className = 'dtab' + (t === 'd' ? ' active' : ''); renderDisp(); }
@@ -1340,7 +1347,7 @@ let calUpPage = 1;
 
 function calSortOrder(s) { return s === '배차없음' ? 0 : s === '배차완료' ? 1 : 2; }
 function calGoDisp(farm, harvestDate, item) {
-  T('disp');
+  T('disp'); switchPT('disp');
   const fd = document.getElementById('dp-farm');
   if (fd) { fd.value = farm; afF('dp'); }
   const hd = document.getElementById('dp-harvest');
