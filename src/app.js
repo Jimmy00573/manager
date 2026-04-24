@@ -1681,6 +1681,7 @@ function calGetAllItems() {
 }
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
+  const todayStr = new Date().toISOString().slice(0, 10);
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   document.getElementById('cal-month-title').textContent = `${calYear}년 ${months[calMonth]}`;
 
@@ -1759,7 +1760,6 @@ function renderCal() {
   ).join('');
 
   // 달력 셀
-  const todayStr = new Date().toISOString().slice(0, 10);
   const first = new Date(calYear, calMonth, 1);
   const last = new Date(calYear, calMonth + 1, 0);
   const startDay = first.getDay();
