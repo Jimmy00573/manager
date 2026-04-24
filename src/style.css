@@ -3,6 +3,7 @@
    ============================================================ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { overflow-x: hidden; max-width: 100%; }
 
 :root {
   --orange: #C05800;
@@ -170,9 +171,9 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
 .form-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
 .form-title { font-size: 13px; font-weight: 600; color: var(--orange); margin-bottom: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
-.fg { display: flex; flex-direction: column; gap: 4px; }
+.fg { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow: hidden; }
 .fg label { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
-.fg input, .fg select, .fg textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 13px; font-family: inherit; width: 100%; }
+.fg input, .fg select, .fg textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 13px; font-family: inherit; width: 100%; min-width: 0; }
 .fg input:focus, .fg select:focus, .fg textarea:focus { outline: none; border-color: var(--orange-light); box-shadow: 0 0 0 2px rgba(242,140,40,.12); }
 .fg input.auto { background: #E3F2FD; color: #1565C0; }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
@@ -272,7 +273,11 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
   .modal-grid { grid-template-columns: 1fr; }
   .stock-grid { grid-template-columns: 1fr; }
   .alert-cats { grid-template-columns: 1fr; }
-  .form-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .hdr-title { font-size: 13px; }
+}
+@media (max-width: 380px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }
