@@ -1066,7 +1066,9 @@ function renderDDash() {
       <span style="font-size:12px;color:#555;margin-left:2px">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100;font-size:11px">수량미정</span>'} ${ctB(d.ctype)}</span>
       <div style="display:flex;gap:4px;margin-left:auto">
         <button class="btn edt" style="padding:3px 8px;font-size:11px" onclick="openDispEdit(${d.id})">✏️</button>
-        ${_dt === 'w' ? `<button class="btn grn" style="padding:3px 8px;font-size:11px" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>` : ''}
+        ${_dt === 'w'
+          ? `<button class="btn grn" style="padding:3px 8px;font-size:11px" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>`
+          : `<button class="btn" style="padding:3px 8px;font-size:11px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="updDisp(${d.id},'배차완료')">↩ 되돌리기</button>`}
       </div>
     </div>`;
   }
@@ -1165,7 +1167,9 @@ function renderDisp() {
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
     <td><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
     <td><div style="display:flex;gap:4px;align-items:center">
-      ${d.status !== '배출완료' ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>` : ''}
+      ${d.status !== '배출완료'
+        ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>`
+        : `<button class="btn" style="background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="updDisp(${d.id},'배차완료')">↩ 되돌리기</button>`}
       <button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>
       <button class="btn del" onclick="delDisp(${d.id})">삭제</button>
     </div></td>
