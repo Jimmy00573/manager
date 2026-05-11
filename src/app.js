@@ -2419,19 +2419,23 @@ function renderInvSummary() {
 
   const detailTable = (detail, badgeClass) => {
     if (empty(detail)) return '<div class="alert-none">데이터 없음</div>';
+    const rows = [];
+    Object.entries(detail).forEach(([farm, products]) => {
+      Object.entries(products).forEach(([product, qty]) => {
+        rows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
+          <td style="padding:5px 6px;color:var(--text)">${esc(farm)}</td>
+          <td style="padding:5px 6px">${esc(product)}</td>
+          <td style="padding:5px 6px;text-align:right"><span class="badge ${badgeClass}">${qty} CT</span></td>
+        </tr>`);
+      });
+    });
     return `<table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="border-bottom:1px solid var(--border)">
         <th style="text-align:left;padding:5px 6px;color:var(--text-secondary);font-weight:500">농가명</th>
         <th style="text-align:left;padding:5px 6px;color:var(--text-secondary);font-weight:500">품목</th>
         <th style="text-align:right;padding:5px 6px;color:var(--text-secondary);font-weight:500">수량</th>
       </tr></thead>
-      <tbody>${Object.entries(detail).map(([farm, products]) =>
-        Object.entries(products).map(([product, qty], i) => `<tr style="border-bottom:0.5px solid #f0f0f0">
-          <td style="padding:5px 6px">${i === 0 ? esc(farm) : ''}</td>
-          <td style="padding:5px 6px">${esc(product)}</td>
-          <td style="padding:5px 6px;text-align:right"><span class="badge ${badgeClass}">${qty} CT</span></td>
-        </tr>`).join('')).join('')}
-      </tbody>
+      <tbody>${rows.join('')}</tbody>
     </table>`;
   };
 
