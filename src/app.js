@@ -11,6 +11,7 @@ const td = () => new Date().toISOString().slice(0, 10);
 let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
+let invSizeConfig = {};
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -2357,23 +2358,111 @@ function exportExcel(type) {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function invTab(t) {
-  ['sum', 'uns', 'srt', 'wj'].forEach(s => {
-    document.getElementById('inv-' + s + '-div').style.display = t === s ? '' : 'none';
-    document.getElementById('it-' + s).className = 'etab' + (t === s ? ' af' : '');
+  ['sum', 'uns', 'srt', 'wj', 'cfg'].forEach(s => {
+    const div = document.getElementById('inv-' + s + '-div');
+    const btn = document.getElementById('it-' + s);
+    if (div) div.style.display = t === s ? '' : 'none';
+    if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
   const bar = document.getElementById('inv-date-bar');
-  if (bar) bar.style.display = t !== 'sum' ? 'flex' : 'none';
+  if (bar) bar.style.display = (t !== 'sum' && t !== 'cfg') ? 'flex' : 'none';
+  if (t === 'cfg') renderSizeCfg();
 }
 
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    [invUnsorted, invSorted, invWaste, invJuice] = await Promise.all([
-      dbGetUnsorted(null), dbGetSorted(null), dbGetWaste(null), dbGetJuice(null)
+    [invUnsorted, invSorted, invWaste, invJuice, invSizeConfig] = await Promise.all([
+      dbGetUnsorted(null), dbGetSorted(null), dbGetWaste(null), dbGetJuice(null), loadSizeConfig()
     ]);
   } catch(e) { console.error('재고 로드 오류:', e); }
   hideLoading();
   renderInvAll();
+}
+
+// 선과 크기 기준 설정 UI
+const SIZE_PRODUCTS = ['카라향', '한라봉', '천혜향', '레드향', '수라향', '비가림', '타이벡'];
+const SIZE_DEFAULT = { '한라봉': { 대과: 10, 중과: 13 } };
+const getSizeCfg = p => invSizeConfig[p] || SIZE_DEFAULT[p] || { 대과: 14, 중과: 22 };
+
+function renderSizeCfg() {
+  const el = document.getElementById('inv-cfg-div');
+  if (!el) return;
+  const rows = SIZE_PRODUCTS.map(p => {
+    const cfg = getSizeCfg(p);
+    return `<tr style="border-bottom:0.5px solid #f0f0f0">
+      <td style="padding:9px 12px;font-weight:500">${p}</td>
+      <td style="padding:9px 12px;text-align:center">
+        <input type="number" id="scfg-dae-${p}" value="${cfg.대과}" min="1" max="50"
+          style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:center;font-family:inherit;font-size:13px"
+          oninput="updateSoPreview('${p}')">
+        수 이하
+      </td>
+      <td style="padding:9px 12px;text-align:center">
+        <input type="number" id="scfg-jung-${p}" value="${cfg.중과}" min="1" max="50"
+          style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:center;font-family:inherit;font-size:13px"
+          oninput="updateSoPreview('${p}')">
+        수 이하
+      </td>
+      <td id="scfg-so-${p}" style="padding:9px 12px;text-align:center;color:var(--text-secondary);font-size:12px">
+        ${cfg.중과 + 1}수 이상
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="form-card">
+      <div class="form-title">⚙️ 선과 크기 분류 기준</div>
+      <div class="note">💡 수(數)가 낮을수록 큰 과일입니다. 각 품목의 대과·중과 기준 수를 설정하세요. 소과는 중과 기준 초과 시 자동 분류됩니다.</div>
+      <div class="tbl-wrap" style="margin-top:12px">
+        <table style="width:100%;border-collapse:collapse;min-width:360px">
+          <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
+            <th style="padding:8px 12px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
+            <th style="padding:8px 12px;text-align:center;font-weight:500;color:var(--text-secondary)">🟢 대과 기준</th>
+            <th style="padding:8px 12px;text-align:center;font-weight:500;color:var(--text-secondary)">🟡 중과 기준</th>
+            <th style="padding:8px 12px;text-align:center;font-weight:500;color:var(--text-secondary)">🔴 소과</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="form-actions" style="margin-top:14px">
+        <button class="btn pri" onclick="saveSizeCfg()">저장</button>
+        <button class="btn" onclick="resetSizeCfg()">기본값 초기화</button>
+      </div>
+    </div>`;
+}
+
+function updateSoPreview(p) {
+  const jung = parseInt(document.getElementById('scfg-jung-' + p)?.value) || 0;
+  const soEl = document.getElementById('scfg-so-' + p);
+  if (soEl) soEl.textContent = (jung + 1) + '수 이상';
+}
+
+async function saveSizeCfg() {
+  const cfg = {};
+  SIZE_PRODUCTS.forEach(p => {
+    const dae = parseInt(document.getElementById('scfg-dae-' + p)?.value) || 14;
+    const jung = parseInt(document.getElementById('scfg-jung-' + p)?.value) || 22;
+    cfg[p] = { 대과: dae, 중과: jung };
+  });
+  try {
+    await saveSizeConfig(cfg);
+    invSizeConfig = cfg;
+    alert('저장되었습니다.');
+    renderInvSummary();
+  } catch(e) { alert('저장 오류: ' + e.message); }
+}
+
+function resetSizeCfg() {
+  if (!confirm('기본값으로 초기화하시겠습니까?')) return;
+  SIZE_PRODUCTS.forEach(p => {
+    const def = SIZE_DEFAULT[p] || { 대과: 14, 중과: 22 };
+    const daeEl = document.getElementById('scfg-dae-' + p);
+    const jungEl = document.getElementById('scfg-jung-' + p);
+    if (daeEl) daeEl.value = def.대과;
+    if (jungEl) jungEl.value = def.중과;
+    updateSoPreview(p);
+  });
 }
 
 function renderInvAll() {
@@ -2398,7 +2487,7 @@ function renderInvSummary() {
   const [y, mo, d] = td().split('-');
   const dateLabel = `${y}년 ${mo}월 ${d}일`;
 
-  // 선과 수(크기) → 대과/중과/소과 분류
+  // 선과 수(크기) → 대과/중과/소과 분류 (설정값 반영)
   const parseCount = s => {
     if (!s) return null;
     if (s === '79g이하') return 99;
@@ -2408,8 +2497,9 @@ function renderInvSummary() {
   const sizeOf = (product, countNum) => {
     const n = parseCount(countNum);
     if (n === null) return '중과';
-    if (product.includes('한라봉')) return n <= 10 ? '대과' : n <= 13 ? '중과' : '소과';
-    return n <= 14 ? '대과' : n <= 22 ? '중과' : '소과';
+    const key = SIZE_PRODUCTS.find(k => product.includes(k));
+    const cfg = getSizeCfg(key || product);
+    return n <= cfg.대과 ? '대과' : n <= cfg.중과 ? '중과' : '소과';
   };
 
   // 파치 규격 (kg/CT)

@@ -87,6 +87,27 @@ async function dbInsertHarvest(data) { const r = await sbInsert('harvests', data
 async function dbUpdateHarvest(id, data) { const r = await sbUpdate('harvests', id, data); return r[0]; }
 async function dbDeleteHarvest(id) { return sbDelete('harvests', id); }
 
+// ── 재고: 선과 크기 설정
+async function loadSizeConfig() {
+  try {
+    const rows = await sbGet('settings', 'key=eq.inv_size_config');
+    if (rows && rows.length > 0) return rows[0].value || {};
+  } catch(e) {}
+  return {};
+}
+async function saveSizeConfig(data) {
+  const rows = await sbGet('settings', 'key=eq.inv_size_config');
+  if (rows && rows.length > 0) {
+    await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.inv_size_config`, {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ value: data, updated_at: new Date().toISOString() })
+    });
+  } else {
+    await sbInsert('settings', { key: 'inv_size_config', value: data });
+  }
+}
+
 // ── 재고: 미선과
 async function dbGetUnsorted(date) {
   const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
