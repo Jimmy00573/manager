@@ -10,6 +10,7 @@ const td = () => new Date().toISOString().slice(0, 10);
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -369,7 +370,7 @@ function setRole(r) {
 function T(id) {
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export'].forEach(p => {
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
@@ -379,6 +380,7 @@ function T(id) {
   if (id === 'vehicle') renderVehicles();
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
+  if (id === 'inv') loadAndRenderInv();
   if (id === 'export') {
     const t = td();
     const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -480,11 +482,18 @@ function popSels() {
 });
   const rf = document.getElementById('rp-farm');
   if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
+  ['un-farm', 'so-farm'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const v = el.value; el.innerHTML = '<option value="">선택</option>';
+    farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+    el.value = v;
+  });
 }
 
 function setDates() {
   const t = td();
-  ['dp-date', 'pk-date', 'oi-date', 'oo-date', 'ni-date', 'no-date', 'rp-date', 'bk-date'].forEach(id => {
+  ['dp-date', 'pk-date', 'oi-date', 'oo-date', 'ni-date', 'no-date', 'rp-date', 'bk-date',
+   'un-date', 'so-date', 'wa-date', 'ju-date'].forEach(id => {
     const el = document.getElementById(id); if (el && !el.value) el.value = t;
   });
   const now = new Date();
@@ -2343,6 +2352,278 @@ function exportExcel(type) {
   if (type === 'all') {
     alert('✅ 전체 파일 다운로드 완료!\n배차내역, 수거내역, 농가목록, 기사목록 4개 파일이 저장됩니다.');
   }
+}
+
+// ── 재고관리 ──────────────────────────────────────────────────
+
+function invTab(t) {
+  ['sum', 'uns', 'srt', 'wj'].forEach(s => {
+    document.getElementById('inv-' + s + '-div').style.display = t === s ? '' : 'none';
+    document.getElementById('it-' + s).className = 'etab' + (t === s ? ' af' : '');
+  });
+  const bar = document.getElementById('inv-date-bar');
+  if (bar) bar.style.display = t !== 'sum' ? 'flex' : 'none';
+}
+
+async function loadAndRenderInv() {
+  showLoading('재고 불러오는 중...');
+  try {
+    [invUnsorted, invSorted, invWaste, invJuice] = await Promise.all([
+      dbGetUnsorted(null), dbGetSorted(null), dbGetWaste(null), dbGetJuice(null)
+    ]);
+  } catch(e) { console.error('재고 로드 오류:', e); }
+  hideLoading();
+  renderInvAll();
+}
+
+function renderInvAll() {
+  renderInvSummary();
+  renderUnsortedList();
+  renderSortedList();
+  renderWasteList();
+  renderJuiceList();
+}
+
+function _invFilter() { return gv('inv-date') || null; }
+function _filterDate(arr) {
+  const f = _invFilter();
+  return f ? arr.filter(r => r.date === f) : arr;
+}
+
+function renderInvSummary() {
+  const el = document.getElementById('inv-summary-cards');
+  if (!el) return;
+  const unsMap = {}, sortMap = {}, wasteMap = {}, juiceMap = {};
+  invUnsorted.forEach(r => { unsMap[r.product] = (unsMap[r.product] || 0) + (r.quantity || 0); });
+  invSorted.forEach(r => { sortMap[r.product] = (sortMap[r.product] || 0) + (r.quantity || 0); });
+  invWaste.forEach(r => { wasteMap[r.product] = (wasteMap[r.product] || 0) + (r.quantity || 0); });
+  invJuice.forEach(r => { juiceMap[r.product] = (juiceMap[r.product] || 0) + (r.total_qty || 0); });
+  const empty = map => Object.keys(map).length === 0;
+  el.innerHTML = `<div class="ext-grid">
+    <div class="ext-card">
+      <div class="ext-card-title">🍊 미선과 재고</div>
+      ${empty(unsMap) ? '<div class="alert-none">데이터 없음</div>' :
+        Object.entries(unsMap).map(([p, q]) =>
+          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-warn">${q} CT</span></div>`).join('')}
+    </div>
+    <div class="ext-card">
+      <div class="ext-card-title">📦 선과 재고</div>
+      ${empty(sortMap) ? '<div class="alert-none">데이터 없음</div>' :
+        Object.entries(sortMap).map(([p, q]) =>
+          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-info">${q} CT<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">≈${(q * 17).toFixed(0)}kg</span></span></div>`).join('')}
+    </div>
+    <div class="ext-card">
+      <div class="ext-card-title">🧹 파치 재고</div>
+      ${empty(wasteMap) ? '<div class="alert-none">데이터 없음</div>' :
+        Object.entries(wasteMap).map(([p, q]) =>
+          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-neu">${q} CT<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">≈${(q * 17).toFixed(0)}kg</span></span></div>`).join('')}
+    </div>
+    <div class="ext-card">
+      <div class="ext-card-title">🧃 주스/청 재고</div>
+      ${empty(juiceMap) ? '<div class="alert-none">데이터 없음</div>' :
+        Object.entries(juiceMap).map(([p, q]) =>
+          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-ok">${q}</span></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function renderUnsortedList() {
+  const tbody = document.getElementById('un-tb');
+  if (!tbody) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const data = _filterDate(invUnsorted);
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">입고 기록 없음</td></tr>'; return; }
+  tbody.innerHTML = data.map(r => `<tr>
+    <td>${r.date}</td>
+    <td class="nm">${esc(r.farm_name)}</td>
+    <td>${esc(r.product)}</td>
+    <td>${r.quantity} CT</td>
+    <td>${r.sub_quantity != null ? r.sub_quantity + ' CT' : '-'}</td>
+    <td>${esc(r.location)}</td>
+    <td>${r.brix_min != null || r.brix_max != null ? (r.brix_min ?? '?') + '~' + (r.brix_max ?? '?') : '-'}</td>
+    <td>${r.acid_min != null || r.acid_max != null ? (r.acid_min ?? '?') + '~' + (r.acid_max ?? '?') : '-'}</td>
+    <td style="white-space:normal;min-width:80px">${esc(r.note || '-')}</td>
+    <td>${isAdm ? `<button class="btn del" onclick="deleteUnsorted('${r.id}')">삭제</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+function renderSortedList() {
+  const tbody = document.getElementById('so-tb');
+  if (!tbody) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const data = _filterDate(invSorted);
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">선과 기록 없음</td></tr>'; return; }
+  tbody.innerHTML = data.map(r => `<tr>
+    <td>${r.date}</td>
+    <td class="nm">${esc(r.farm_name)}</td>
+    <td>${esc(r.product)}</td>
+    <td>${esc(r.product_type)}</td>
+    <td>${esc(r.count_num)}</td>
+    <td>${r.quantity} CT</td>
+    <td>${esc(r.location || '-')}</td>
+    <td>${isAdm ? `<button class="btn del" onclick="deleteSorted('${r.id}')">삭제</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+function renderWasteList() {
+  const tbody = document.getElementById('wa-tb');
+  if (!tbody) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const data = _filterDate(invWaste);
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">파치 기록 없음</td></tr>'; return; }
+  tbody.innerHTML = data.map(r => `<tr>
+    <td>${r.date}</td>
+    <td>${esc(r.product)}</td>
+    <td>${r.quantity} CT</td>
+    <td>${esc(r.location)}</td>
+    <td>${esc(r.purpose)}</td>
+    <td>${isAdm ? `<button class="btn del" onclick="deleteWaste('${r.id}')">삭제</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+function renderJuiceList() {
+  const tbody = document.getElementById('ju-tb');
+  if (!tbody) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const data = _filterDate(invJuice);
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">주스/청 기록 없음</td></tr>'; return; }
+  tbody.innerHTML = data.map(r => `<tr>
+    <td>${r.date}</td>
+    <td class="nm">${esc(r.product)}</td>
+    <td>${r.total_qty} ${esc(r.unit)}</td>
+    <td>${r.expiry_date || '-'}</td>
+    <td>${isAdm ? `<button class="btn del" onclick="deleteJuice('${r.id}')">삭제</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+async function addUnsorted() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const date = gv('un-date'), product = gv('un-product'), farm_name = gv('un-farm');
+  const qty = parseInt(document.getElementById('un-qty').value) || 0;
+  const loc = gv('un-loc');
+  if (!date || !product || !farm_name || !qty || !loc) return alert('날짜, 품목, 농가명, 수량, 위치는 필수입니다.');
+  const brixMin = document.getElementById('un-brix-min').value;
+  const brixMax = document.getElementById('un-brix-max').value;
+  const acidMin = document.getElementById('un-acid-min').value;
+  const acidMax = document.getElementById('un-acid-max').value;
+  const data = {
+    date, product, farm_name, quantity: qty,
+    sub_quantity: parseInt(document.getElementById('un-subqty').value) || null,
+    location: loc,
+    brix_min: brixMin ? parseFloat(brixMin) : null,
+    brix_max: brixMax ? parseFloat(brixMax) : null,
+    acid_min: acidMin ? parseFloat(acidMin) : null,
+    acid_max: acidMax ? parseFloat(acidMax) : null,
+    size_dist: gv('un-size') || null,
+    note: gv('un-note') || null
+  };
+  try {
+    const row = await dbInsertUnsorted(data);
+    invUnsorted.unshift(row);
+    renderInvSummary(); renderUnsortedList();
+    ['un-qty', 'un-subqty', 'un-size', 'un-note'].forEach(id => sv(id, ''));
+    ['un-brix-min', 'un-brix-max', 'un-acid-min', 'un-acid-max'].forEach(id => sv(id, ''));
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
+async function deleteUnsorted(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!confirm('삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteUnsorted(id);
+    invUnsorted = invUnsorted.filter(r => r.id !== id);
+    renderInvSummary(); renderUnsortedList();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function addSorted() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const date = gv('so-date'), product = gv('so-product'), product_type = gv('so-ptype');
+  const farm_name = gv('so-farm'), count_num = gv('so-count');
+  const qty = parseFloat(document.getElementById('so-qty').value) || 0;
+  if (!date || !product || !product_type || !farm_name || !count_num || !qty)
+    return alert('모든 필수 항목을 입력해주세요.');
+  const data = { date, product, product_type, farm_name, count_num, quantity: qty, location: gv('so-loc') || null };
+  try {
+    const row = await dbInsertSorted(data);
+    invSorted.unshift(row);
+    renderInvSummary(); renderSortedList();
+    sv('so-qty', ''); sv('so-loc', '');
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
+async function deleteSorted(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!confirm('삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteSorted(id);
+    invSorted = invSorted.filter(r => r.id !== id);
+    renderInvSummary(); renderSortedList();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function addWaste() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const date = gv('wa-date'), product = gv('wa-product');
+  const qty = parseInt(document.getElementById('wa-qty').value) || 0;
+  const loc = gv('wa-loc'), purpose = gv('wa-purpose');
+  if (!date || !product || !qty || !loc || !purpose) return alert('모든 필수 항목을 입력해주세요.');
+  const data = { date, product, quantity: qty, location: loc, purpose, note: gv('wa-note') || null };
+  try {
+    const row = await dbInsertWaste(data);
+    invWaste.unshift(row);
+    renderInvSummary(); renderWasteList();
+    ['wa-qty', 'wa-purpose', 'wa-note'].forEach(id => sv(id, ''));
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
+async function deleteWaste(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!confirm('삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteWaste(id);
+    invWaste = invWaste.filter(r => r.id !== id);
+    renderInvSummary(); renderWasteList();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+function calcJuiceTotal() {
+  const box = parseInt(document.getElementById('ju-box').value) || 0;
+  const single = parseInt(document.getElementById('ju-single').value) || 0;
+  sv('ju-total', box + single);
+}
+
+async function addJuice() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const date = gv('ju-date'), product = gv('ju-product'), unit = gv('ju-unit');
+  const total_qty = parseInt(document.getElementById('ju-total').value) || 0;
+  if (!date || !product || !unit || !total_qty) return alert('날짜, 품명, 단위, 수량은 필수입니다.');
+  const boxVal = document.getElementById('ju-box').value;
+  const singleVal = document.getElementById('ju-single').value;
+  const data = {
+    date, product, unit, total_qty,
+    box_qty: boxVal ? parseInt(boxVal) : null,
+    single_qty: singleVal ? parseInt(singleVal) : null,
+    expiry_date: gv('ju-expiry') || null,
+    note: gv('ju-note') || null
+  };
+  try {
+    const row = await dbInsertJuice(data);
+    invJuice.unshift(row);
+    renderInvSummary(); renderJuiceList();
+    ['ju-product', 'ju-note'].forEach(id => sv(id, ''));
+    ['ju-box', 'ju-single', 'ju-total', 'ju-expiry'].forEach(id => sv(id, ''));
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
+async function deleteJuice(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!confirm('삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteJuice(id);
+    invJuice = invJuice.filter(r => r.id !== id);
+    renderInvSummary(); renderJuiceList();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
 // ── 시작

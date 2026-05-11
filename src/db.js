@@ -86,3 +86,38 @@ async function dbGetHarvests() { return sbGet('harvests', 'order=date'); }
 async function dbInsertHarvest(data) { const r = await sbInsert('harvests', data); return r[0]; }
 async function dbUpdateHarvest(id, data) { const r = await sbUpdate('harvests', id, data); return r[0]; }
 async function dbDeleteHarvest(id) { return sbDelete('harvests', id); }
+
+// ── 재고: 미선과
+async function dbGetUnsorted(date) {
+  const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
+  try { return await sbGet('inventory_unsorted', q); } catch(e) { return []; }
+}
+async function dbInsertUnsorted(data) { const r = await sbInsert('inventory_unsorted', data); return r[0]; }
+async function dbUpdateUnsorted(id, data) { const r = await sbUpdate('inventory_unsorted', id, data); return r[0]; }
+async function dbDeleteUnsorted(id) { return sbDelete('inventory_unsorted', id); }
+
+// ── 재고: 선과
+async function dbGetSorted(date) {
+  const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
+  try { return await sbGet('inventory_sorted', q); } catch(e) { return []; }
+}
+async function dbInsertSorted(data) { const r = await sbInsert('inventory_sorted', data); return r[0]; }
+async function dbUpdateSorted(id, data) { const r = await sbUpdate('inventory_sorted', id, data); return r[0]; }
+async function dbDeleteSorted(id) { return sbDelete('inventory_sorted', id); }
+
+// ── 재고: 파치
+async function dbGetWaste(date) {
+  const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
+  try { return await sbGet('inventory_waste', q); } catch(e) { return []; }
+}
+async function dbInsertWaste(data) { const r = await sbInsert('inventory_waste', data); return r[0]; }
+async function dbDeleteWaste(id) { return sbDelete('inventory_waste', id); }
+
+// ── 재고: 주스/청
+async function dbGetJuice(date) {
+  const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
+  try { return await sbGet('inventory_juice', q); } catch(e) { return []; }
+}
+async function dbInsertJuice(data) { const r = await sbInsert('inventory_juice', data); return r[0]; }
+async function dbUpdateJuice(id, data) { const r = await sbUpdate('inventory_juice', id, data); return r[0]; }
+async function dbDeleteJuice(id) { return sbDelete('inventory_juice', id); }

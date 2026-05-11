@@ -232,6 +232,7 @@
   <button class="nbtn" onclick="T('ext')">외부 용기</button>
   <button class="nbtn" onclick="T('cal')">수확 캘린더</button>
   <button class="nbtn" onclick="T('dboard')">🚛 기사별 배차</button>
+  <button class="nbtn" onclick="T('inv')">📦 재고관리</button>
   <div style="flex:1"></div>
   <button class="nbtn" onclick="T('farm')" style="border-left:1px solid var(--border)">농가 관리</button>
   <button class="nbtn" onclick="T('drv')">기사·PIN 관리</button>
@@ -535,6 +536,172 @@
   <div id="rep-history" style="display:none">
     <div class="date-range"><span>기간</span><input type="date" id="rp-from" onchange="renderRep()"><span>~</span><input type="date" id="rp-to" onchange="renderRep()"><button class="btn sm" onclick="clearRepF()">전체</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>기사명</th><th>농가명</th><th>수량</th><th>특이사항</th></tr></thead><tbody id="rep-tb"></tbody></table><div class="pagination" id="rep-pg"></div></div>
+  </div>
+</div>
+
+<!-- 재고관리 -->
+<div id="p-inv" class="panel">
+  <div class="ext-tabs">
+    <button class="etab af" id="it-sum" onclick="invTab('sum')">📊 전체현황</button>
+    <button class="etab" id="it-uns" onclick="invTab('uns')">🍊 미선과</button>
+    <button class="etab" id="it-srt" onclick="invTab('srt')">📦 선과</button>
+    <button class="etab" id="it-wj" onclick="invTab('wj')">🧹 파치/주스</button>
+  </div>
+
+  <!-- 날짜 필터 (미선과·선과·파치/주스 탭에서 표시) -->
+  <div id="inv-date-bar" style="display:none;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;background:#f8f8f8;padding:10px 12px;border-radius:8px">
+    <label style="font-size:12px;color:var(--text-secondary);font-weight:600">날짜 필터</label>
+    <input type="date" id="inv-date" onchange="renderInvAll()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:#fff">
+    <button class="btn sm" onclick="sv('inv-date',td());renderInvAll()">오늘</button>
+    <button class="btn sm" onclick="sv('inv-date','');renderInvAll()">전체</button>
+  </div>
+
+  <!-- 전체현황 -->
+  <div id="inv-sum-div">
+    <div class="note">💡 전체 등록 내역 기준 품목별 재고 현황입니다. 탭 재진입 시 자동 갱신됩니다.</div>
+    <div id="inv-summary-cards"></div>
+  </div>
+
+  <!-- 미선과 입고 -->
+  <div id="inv-uns-div" style="display:none">
+    <div class="form-card">
+      <div class="form-title">미선과 입고 등록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="un-date" type="date"></div>
+        <div class="fg"><label>품목 *</label>
+          <select id="un-product">
+            <option value="">선택</option>
+            <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option>
+          </select>
+        </div>
+        <div class="fg"><label>농가명 *</label><select id="un-farm"><option value="">선택</option></select></div>
+        <div class="fg"><label>수량(CT) *</label><input id="un-qty" type="number" placeholder="0" min="0"></div>
+        <div class="fg"><label>소과 수량(CT)</label><input id="un-subqty" type="number" placeholder="0" min="0"></div>
+        <div class="fg"><label>위치 *</label>
+          <select id="un-loc">
+            <option value="">선택</option>
+            <option>냉장고1</option><option>냉장고2</option><option>냉장고3</option><option>1층</option><option>지하</option>
+          </select>
+        </div>
+        <div class="fg"><label>당도 최소</label><input id="un-brix-min" type="number" step="0.1" placeholder="예) 11.5"></div>
+        <div class="fg"><label>당도 최대</label><input id="un-brix-max" type="number" step="0.1" placeholder="예) 13.0"></div>
+        <div class="fg"><label>산도 최소</label><input id="un-acid-min" type="number" step="0.01" placeholder="예) 0.80"></div>
+        <div class="fg"><label>산도 최대</label><input id="un-acid-max" type="number" step="0.01" placeholder="예) 1.20"></div>
+        <div class="fg" style="grid-column:1/-1"><label>크기분포</label><input id="un-size" placeholder="예) 3L:20% 2L:40% L:30% M:10%"></div>
+        <div class="fg" style="grid-column:1/-1"><label>특이사항</label><input id="un-note"></div>
+      </div>
+      <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addUnsorted()">등록</button></div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>날짜</th><th>농가명</th><th>품목</th><th>수량</th><th>소과</th><th>위치</th><th>당도</th><th>산도</th><th>특이사항</th><th></th></tr></thead>
+        <tbody id="un-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 선과 재고 -->
+  <div id="inv-srt-div" style="display:none">
+    <div class="form-card">
+      <div class="form-title">선과 재고 등록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="so-date" type="date"></div>
+        <div class="fg"><label>품목 *</label>
+          <select id="so-product">
+            <option value="">선택</option>
+            <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option><option>비가림</option><option>타이벡</option>
+          </select>
+        </div>
+        <div class="fg"><label>종류 *</label>
+          <select id="so-ptype">
+            <option value="">선택</option>
+            <option>일반</option><option>고당</option><option>공판장용</option><option>선물세트</option>
+          </select>
+        </div>
+        <div class="fg"><label>농가명 *</label><select id="so-farm"><option value="">선택</option></select></div>
+        <div class="fg"><label>수(크기) *</label>
+          <select id="so-count">
+            <option value="">선택</option>
+            <option>79g이하</option>
+            <option>5수</option><option>6수</option><option>7수</option><option>8수</option><option>9수</option><option>10수</option>
+            <option>11수</option><option>12수</option><option>13수</option><option>14수</option><option>15수</option><option>16수</option>
+            <option>17수</option><option>18수</option><option>19수</option><option>20수</option><option>21수</option><option>22수</option>
+            <option>23수</option><option>24수</option><option>25수</option><option>26수</option>
+          </select>
+        </div>
+        <div class="fg"><label>수량(CT) *</label><input id="so-qty" type="number" step="0.5" placeholder="0" min="0"></div>
+        <div class="fg" style="grid-column:1/-1"><label>위치</label><input id="so-loc" placeholder="선택사항"></div>
+      </div>
+      <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addSorted()">등록</button></div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>날짜</th><th>농가명</th><th>품목</th><th>종류</th><th>수</th><th>수량(CT)</th><th>위치</th><th></th></tr></thead>
+        <tbody id="so-tb"><tr><td colspan="8" class="empty">선과 기록 없음</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 파치/주스·청 -->
+  <div id="inv-wj-div" style="display:none">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px">
+      <div class="form-card" style="margin-bottom:0">
+        <div class="form-title">🧹 파치 등록</div>
+        <div class="form-grid">
+          <div class="fg"><label>날짜 *</label><input id="wa-date" type="date"></div>
+          <div class="fg"><label>품목 *</label>
+            <select id="wa-product">
+              <option value="">선택</option>
+              <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option>
+            </select>
+          </div>
+          <div class="fg"><label>수량(CT) *</label><input id="wa-qty" type="number" placeholder="0" min="0"></div>
+          <div class="fg"><label>위치 *</label>
+            <select id="wa-loc">
+              <option value="">선택</option>
+              <option>냉장고1</option><option>냉장고2</option><option>냉장고3</option><option>1층</option><option>지하</option>
+            </select>
+          </div>
+          <div class="fg" style="grid-column:1/-1"><label>사용처 *</label><input id="wa-purpose" placeholder="예) 오름, 주스용"></div>
+          <div class="fg" style="grid-column:1/-1"><label>특이사항</label><input id="wa-note"></div>
+        </div>
+        <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addWaste()">등록</button></div>
+      </div>
+      <div class="form-card" style="margin-bottom:0">
+        <div class="form-title">🧃 주스/청 등록</div>
+        <div class="form-grid">
+          <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
+          <div class="fg"><label>단위 *</label><select id="ju-unit"><option value="병">병</option><option value="박스">박스</option></select></div>
+          <div class="fg" style="grid-column:1/-1"><label>품명 *</label><input id="ju-product" placeholder="예) 카라향 원액, 천혜향청"></div>
+          <div class="fg"><label>박스수량</label><input id="ju-box" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
+          <div class="fg"><label>낱개수량</label><input id="ju-single" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
+          <div class="fg"><label>총수량(자동)</label><input id="ju-total" type="number" readonly class="auto"></div>
+          <div class="fg"><label>소비기한</label><input id="ju-expiry" type="date"></div>
+          <div class="fg" style="grid-column:1/-1"><label>비고</label><input id="ju-note"></div>
+        </div>
+        <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addJuice()">등록</button></div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+      <div>
+        <div class="sec-hdr"><div class="sec-title">파치 내역</div></div>
+        <div class="tbl-wrap">
+          <table style="min-width:320px">
+            <thead><tr><th>날짜</th><th>품목</th><th>수량</th><th>위치</th><th>사용처</th><th></th></tr></thead>
+            <tbody id="wa-tb"><tr><td colspan="6" class="empty">파치 기록 없음</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div class="sec-hdr"><div class="sec-title">주스/청 내역</div></div>
+        <div class="tbl-wrap">
+          <table style="min-width:320px">
+            <thead><tr><th>날짜</th><th>품명</th><th>총수량</th><th>소비기한</th><th></th></tr></thead>
+            <tbody id="ju-tb"><tr><td colspan="5" class="empty">주스/청 기록 없음</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -150,5 +150,76 @@ CREATE POLICY "allow_all_nhf_outs"   ON nhf_outs   FOR ALL TO anon USING (true) 
 CREATE POLICY "allow_all_reports"    ON reports    FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ============================================================
+--  재고 관리 테이블 (현장재고 관리 기능)
+-- ============================================================
+
+-- 10. 미선과 입고 테이블
+CREATE TABLE IF NOT EXISTS inventory_unsorted (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  date          DATE NOT NULL,
+  farm_name     TEXT NOT NULL,
+  product       TEXT NOT NULL,
+  quantity      INTEGER NOT NULL,
+  sub_quantity  INTEGER,
+  size_dist     TEXT,
+  location      TEXT NOT NULL,
+  brix_min      NUMERIC,
+  brix_max      NUMERIC,
+  acid_min      NUMERIC,
+  acid_max      NUMERIC,
+  note          TEXT
+);
+
+-- 11. 선과 재고 테이블
+CREATE TABLE IF NOT EXISTS inventory_sorted (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  date          DATE NOT NULL,
+  farm_name     TEXT NOT NULL,
+  product       TEXT NOT NULL,
+  product_type  TEXT NOT NULL,
+  count_num     TEXT NOT NULL,
+  quantity      NUMERIC NOT NULL,
+  location      TEXT
+);
+
+-- 12. 파치 재고 테이블
+CREATE TABLE IF NOT EXISTS inventory_waste (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  date          DATE NOT NULL,
+  product       TEXT NOT NULL,
+  quantity      INTEGER NOT NULL,
+  location      TEXT NOT NULL,
+  purpose       TEXT NOT NULL,
+  note          TEXT
+);
+
+-- 13. 주스/청 재고 테이블
+CREATE TABLE IF NOT EXISTS inventory_juice (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  date          DATE NOT NULL,
+  product       TEXT NOT NULL,
+  unit          TEXT NOT NULL,
+  box_qty       INTEGER,
+  single_qty    INTEGER,
+  total_qty     INTEGER NOT NULL,
+  expiry_date   DATE,
+  note          TEXT
+);
+
+ALTER TABLE inventory_unsorted ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_sorted   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_waste    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_juice    ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all_inv_unsorted" ON inventory_unsorted FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_inv_sorted"   ON inventory_sorted   FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_inv_waste"    ON inventory_waste    FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_inv_juice"    ON inventory_juice    FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================================
 --  완료! 이제 앱에서 데이터를 저장할 수 있습니다.
 -- ============================================================
