@@ -3351,19 +3351,44 @@ async function deleteProcessing(id) {
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
+function _daysSince(dateStr) {
+  if (!dateStr) return 999;
+  const today = new Date(td() + 'T00:00:00');
+  const d = new Date(dateStr + 'T00:00:00');
+  return Math.max(0, Math.floor((today - d) / 86400000));
+}
+function _dateChip(dates) {
+  if (!dates || !dates.length) return '';
+  const sorted = [...dates].sort();
+  const oldest = sorted[0];
+  const days = _daysSince(oldest);
+  const color = days <= 3 ? '#2E7D32' : days <= 7 ? '#F57F17' : '#C62828';
+  const mmdd = d => d.slice(5);
+  const dLabel = n => n === 0 ? '오늘 🆕' : n === 1 ? '1일 전' : `${n}일 전`;
+  const text = sorted.length === 1
+    ? `📅 ${mmdd(oldest)} (${dLabel(days)})`
+    : `📅 ${mmdd(oldest)}~${mmdd(sorted[sorted.length - 1])} (${sorted.length}건)`;
+  return `<span style="font-size:11px;color:${color};white-space:nowrap;flex-shrink:0;margin-left:6px">${text}</span>`;
+}
+
 function setSortedView(v) {
   sortedView = v;
   const listDiv = document.getElementById('srt-list-div');
   const aggDiv  = document.getElementById('srt-agg-div');
+  const farmDiv = document.getElementById('srt-farm-div');
   const filters = document.getElementById('srt-agg-filters');
   const btnList = document.getElementById('srt-v-list');
   const btnAgg  = document.getElementById('srt-v-agg');
+  const btnFarm = document.getElementById('srt-v-farm');
   if (listDiv) listDiv.style.display = v === 'list' ? '' : 'none';
   if (aggDiv)  aggDiv.style.display  = v === 'agg'  ? '' : 'none';
-  if (filters) filters.style.display = v === 'agg'  ? 'flex' : 'none';
+  if (farmDiv) farmDiv.style.display = v === 'farm' ? '' : 'none';
+  if (filters) filters.style.display = (v === 'agg' || v === 'farm') ? 'flex' : 'none';
   if (btnList) btnList.className = 'etab' + (v === 'list' ? ' af' : '');
   if (btnAgg)  btnAgg.className  = 'etab' + (v === 'agg'  ? ' af' : '');
-  if (v === 'agg') renderSortedAgg();
+  if (btnFarm) btnFarm.className = 'etab' + (v === 'farm' ? ' af' : '');
+  if (v === 'agg')  renderSortedAgg();
+  if (v === 'farm') renderSortedAggFarm();
 }
 
 function renderSortedAgg() {
@@ -3396,8 +3421,8 @@ function renderSortedAgg() {
       const qty = Number(r.quantity) || 0;
       const eKey = `${r.farm_name}||${r.product}||${r.product_type}`;
       const ex = map[key].entries.find(e => e._key === eKey);
-      if (ex) { ex.qty += qty; }
-      else map[key].entries.push({ _key: eKey, farm_name: r.farm_name, product: r.product, product_type: r.product_type, qty });
+      if (ex) { ex.qty += qty; if (r.date && !ex.dates.includes(r.date)) ex.dates.push(r.date); }
+      else map[key].entries.push({ _key: eKey, farm_name: r.farm_name, product: r.product, product_type: r.product_type, qty, dates: r.date ? [r.date] : [] });
       map[key].total += qty;
     });
     return map;
@@ -3462,11 +3487,12 @@ function renderSortedAgg() {
         const isBest = sorted.length > 1 && e.qty === maxEntry;
         const ptLabel = e.product_type && e.product_type !== '일반'
           ? ` <span style="font-size:11px;color:#999">[${esc(e.product_type)}]</span>` : '';
-        return `<div style="display:flex;align-items:center;padding:7px 14px 7px 18px;${last ? '' : 'border-bottom:1px solid #f5f5f5'}">
-          <span style="color:#ccc;font-size:11px;margin-right:8px;flex-shrink:0">${last ? '└─' : '├─'}</span>
-          <span style="flex:1;font-size:13px;font-weight:500;color:#333">${esc(e.farm_name)}</span>
-          <span style="font-size:12px;color:#888;margin:0 8px">${esc(e.product)}${ptLabel}</span>
-          <span style="font-weight:700;color:${eColor};font-size:13px;min-width:55px;text-align:right">${e.qty} CT${isBest ? ' ⭐' : ''}</span>
+        return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:7px 14px 7px 18px;${last ? '' : 'border-bottom:1px solid #f5f5f5'}">
+          <span style="color:#ccc;font-size:11px;margin-right:6px;flex-shrink:0">${last ? '└─' : '├─'}</span>
+          <span style="font-size:13px;font-weight:500;color:#333;flex:1;min-width:80px">${esc(e.farm_name)}</span>
+          <span style="font-size:12px;color:#888;margin-right:6px">${esc(e.product)}${ptLabel}</span>
+          <span style="font-weight:700;color:${eColor};font-size:13px;min-width:50px;text-align:right">${e.qty} CT${isBest ? ' ⭐' : ''}</span>
+          ${_dateChip(e.dates)}
         </div>`;
       }).join('');
 
@@ -3512,6 +3538,133 @@ function renderSortedAgg() {
   el.innerHTML = html;
 }
 
+function renderSortedAggFarm() {
+  const el = document.getElementById('srt-farm-div');
+  if (!el) return;
+
+  const filterCat  = document.getElementById('srt-filter-cat')?.value || '';
+  const filterFarm = (document.getElementById('srt-filter-farm')?.value || '').trim().toLowerCase();
+
+  let data = invSorted;
+  if (filterFarm) data = data.filter(r => r.farm_name.toLowerCase().includes(filterFarm));
+
+  const getItemCatType = p => {
+    const item = _getItemDef(p);
+    if (!item) return 'count';
+    const cat = _getCatById(item.category_id);
+    return cat ? cat.classification_type : 'count';
+  };
+
+  // farm → product+type → count_num → {qty, dates[]}
+  const groupByFarm = rows => {
+    const map = {};
+    rows.forEach(r => {
+      if (!map[r.farm_name]) map[r.farm_name] = { total: 0, products: {} };
+      const pk = `${r.product}||${r.product_type}`;
+      if (!map[r.farm_name].products[pk])
+        map[r.farm_name].products[pk] = { product: r.product, product_type: r.product_type, total: 0, counts: {} };
+      if (!map[r.farm_name].products[pk].counts[r.count_num])
+        map[r.farm_name].products[pk].counts[r.count_num] = { qty: 0, dates: [] };
+      const qty = Number(r.quantity) || 0;
+      map[r.farm_name].products[pk].counts[r.count_num].qty += qty;
+      if (r.date && !map[r.farm_name].products[pk].counts[r.count_num].dates.includes(r.date))
+        map[r.farm_name].products[pk].counts[r.count_num].dates.push(r.date);
+      map[r.farm_name].products[pk].total += qty;
+      map[r.farm_name].total += qty;
+    });
+    return map;
+  };
+
+  const sortCountKeys = keys => keys.sort((a, b) => {
+    const oa = sizeGrades.find(g => g.grade_name === a)?.sort_order;
+    const ob = sizeGrades.find(g => g.grade_name === b)?.sort_order;
+    if (oa !== undefined && ob !== undefined) return oa - ob;
+    return (parseInt(a) || 0) - (parseInt(b) || 0);
+  });
+
+  const renderFarmSection = map => {
+    const farms = Object.keys(map).sort((a, b) => map[b].total - map[a].total);
+    if (!farms.length) return '<div style="padding:20px;text-align:center;color:#bbb;font-size:13px">재고 없음</div>';
+
+    const catTotal = farms.reduce((s, f) => s + map[f].total, 0);
+    let html = '';
+
+    farms.forEach(farm => {
+      const { total, products } = map[farm];
+      const borderColor = total >= 50 ? '#2E7D32' : total >= 10 ? '#F57F17' : '#C62828';
+      const prodKeys = Object.keys(products);
+
+      const prodRows = prodKeys.map((pk, pi) => {
+        const prod = products[pk];
+        const isLastProd = pi === prodKeys.length - 1;
+        const ptLabel = prod.product_type && prod.product_type !== '일반' ? ` [${esc(prod.product_type)}]` : '';
+        const countKeys = sortCountKeys(Object.keys(prod.counts));
+
+        const countRows = countKeys.map((ck, ci) => {
+          const { qty, dates } = prod.counts[ck];
+          const isLast = ci === countKeys.length - 1;
+          const eColor = qty >= 50 ? '#2E7D32' : qty >= 10 ? '#E65100' : '#C62828';
+          return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:6px 14px 6px 40px;${isLast ? '' : 'border-bottom:1px solid #f8f8f8'}">
+            <span style="color:#ddd;font-size:11px;margin-right:6px;flex-shrink:0">${isLast ? '└─' : '├─'}</span>
+            <span style="font-weight:600;color:#444;font-size:13px;min-width:52px">${esc(ck)}</span>
+            <span style="font-weight:700;color:${eColor};font-size:13px;min-width:48px;text-align:right">${qty} CT</span>
+            ${_dateChip(dates)}
+          </div>`;
+        }).join('');
+
+        return `<div>
+          <div style="display:flex;align-items:center;padding:7px 14px 7px 20px;background:#f5f7fa;${isLastProd ? '' : 'border-bottom:1px solid #ebebeb'}">
+            <span style="color:#bbb;font-size:11px;margin-right:8px;flex-shrink:0">${isLastProd ? '└─' : '├─'}</span>
+            <span style="font-size:13px;font-weight:600;color:#1565C0">🍊 ${esc(prod.product)}${ptLabel}</span>
+            <span style="font-size:12px;color:#888;margin-left:8px">(${prod.total} CT)</span>
+          </div>
+          ${countRows}
+        </div>`;
+      }).join('');
+
+      html += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa">
+          <span style="font-size:16px">👨‍🌾</span>
+          <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
+          <span style="font-size:13px;color:#555">(총 <strong style="color:#1565C0">${total}</strong> CT)</span>
+        </div>
+        <div style="border-top:1px solid #f0f0f0">${prodRows}</div>
+      </div>`;
+    });
+
+    html += `<div style="text-align:right;padding:10px 4px 4px;font-size:13px;color:#555;border-top:2px solid #ddd;margin-top:4px">
+      합계: <strong style="color:#1565C0;font-size:15px">${catTotal} CT</strong>
+    </div>`;
+    return html;
+  };
+
+  let html = '';
+  const showCount = !filterCat || filterCat === 'count';
+  const showGrade = !filterCat || filterCat === 'grade';
+
+  if (showCount) {
+    const map = groupByFarm(data.filter(r => getItemCatType(r.product) === 'count'));
+    html += `<div style="margin-bottom:18px">
+      <div style="background:#0D47A1;color:#fff;padding:9px 14px;border-radius:8px 8px 0 0;font-size:13px;font-weight:700">🍊 만감류 — 농가별 재고</div>
+      <div style="background:#F0F4FF;border:1px solid #90CAF9;border-top:none;border-radius:0 0 8px 8px;padding:12px">
+        ${renderFarmSection(map)}
+      </div>
+    </div>`;
+  }
+  if (showGrade) {
+    const map = groupByFarm(data.filter(r => getItemCatType(r.product) === 'grade'));
+    html += `<div style="margin-bottom:18px">
+      <div style="background:#1B5E20;color:#fff;padding:9px 14px;border-radius:8px 8px 0 0;font-size:13px;font-weight:700">🍋 감귤류 — 농가별 재고</div>
+      <div style="background:#F1F8F1;border:1px solid #A5D6A7;border-top:none;border-radius:0 0 8px 8px;padding:12px">
+        ${renderFarmSection(map)}
+      </div>
+    </div>`;
+  }
+  if (!html) html = '<div style="text-align:center;padding:48px;color:#bbb">표시할 데이터가 없습니다</div>';
+
+  el.innerHTML = html;
+}
+
 function renderSortedList() {
   const tbody = document.getElementById('so-tb');
   if (!tbody) return;
@@ -3528,7 +3681,8 @@ function renderSortedList() {
     <td>${esc(r.location || '-')}</td>
     <td>${isAdm ? `<button class="btn del" onclick="deleteSorted('${r.id}')">삭제</button>` : ''}</td>
   </tr>`).join('');
-  if (sortedView === 'agg') renderSortedAgg();
+  if (sortedView === 'agg')  renderSortedAgg();
+  if (sortedView === 'farm') renderSortedAggFarm();
 }
 
 function renderWasteList() {

@@ -644,7 +644,8 @@
     <!-- 보기 전환 바 -->
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap">
       <button class="etab af" id="srt-v-list" onclick="setSortedView('list')">📋 목록</button>
-      <button class="etab" id="srt-v-agg" onclick="setSortedView('agg')">📊 과수별 집계</button>
+      <button class="etab" id="srt-v-agg" onclick="setSortedView('agg')">📊 과수별</button>
+      <button class="etab" id="srt-v-farm" onclick="setSortedView('farm')">👨‍🌾 농가별</button>
       <div id="srt-agg-filters" style="display:none;flex-wrap:wrap;align-items:center;gap:6px;padding-left:8px;border-left:1px solid var(--border)">
         <select id="srt-filter-cat" onchange="renderSortedAgg()" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:#fff">
           <option value="">전체 카테고리</option>
@@ -695,8 +696,11 @@
       </div>
     </div>
 
-    <!-- 집계 뷰 -->
+    <!-- 과수별 집계 뷰 -->
     <div id="srt-agg-div" style="display:none"></div>
+
+    <!-- 농가별 집계 뷰 -->
+    <div id="srt-farm-div" style="display:none"></div>
 
   </div>
 
