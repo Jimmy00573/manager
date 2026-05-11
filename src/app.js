@@ -2518,21 +2518,28 @@ function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-
 function _cfgTD(txt, center) { return `<td style="padding:7px 10px${center ? ';text-align:center' : ''}">${txt}</td>`; }
 
 function _renderCfgCatHTML() {
+  const ACT = 'width:100px;background:#f5f5f5';
   const catRows = categories.length
-    ? categories.map(c => `<tr style="border-bottom:0.5px solid #f0f0f0">
+    ? categories.map(c => `<tr id="cat-tr-${c.id}" style="border-bottom:0.5px solid #f0f0f0">
         ${_cfgTD(esc(c.name))}
         ${_cfgTD(c.classification_type === 'grade' ? '🍊 등급형' : '🔢 과수형')}
-        ${_cfgTD(`<button class="btn del sm" onclick="deleteCat(${c.id})">삭제</button>`, true)}
+        <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+          <button class="btn sm" onclick="editCatRow(${c.id})" style="margin-right:3px">수정</button>
+          <button class="btn del sm" onclick="deleteCat(${c.id})">삭제</button>
+        </td>
       </tr>`).join('')
     : `<tr><td colspan="3" style="padding:12px;text-align:center;color:#bbb">카테고리 없음</td></tr>`;
 
   const itemRows = itemDefs.length
     ? itemDefs.map(i => {
         const cat = categories.find(c => c.id === i.category_id);
-        return `<tr style="border-bottom:0.5px solid #f0f0f0">
+        return `<tr id="item-tr-${i.id}" style="border-bottom:0.5px solid #f0f0f0">
           ${_cfgTD(`<strong>${esc(i.name)}</strong>`)}
           ${_cfgTD(cat ? esc(cat.name) : '-')}
-          ${_cfgTD(`<button class="btn del sm" onclick="deleteItem(${i.id})">삭제</button>`, true)}
+          <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+            <button class="btn sm" onclick="editItemRow(${i.id})" style="margin-right:3px">수정</button>
+            <button class="btn del sm" onclick="deleteItem(${i.id})">삭제</button>
+          </td>
         </tr>`;
       }).join('')
     : `<tr><td colspan="3" style="padding:12px;text-align:center;color:#bbb">품목 없음</td></tr>`;
@@ -2576,11 +2583,14 @@ function _renderCfgGradeHTML() {
   if (!gradeCat) return '<div class="note">등급형 카테고리가 없습니다. 카테고리·품목 탭에서 추가하세요.</div>';
   const catGrades = sizeGrades.filter(g => g.category_id === gradeCat.id);
   const gradeRows = catGrades.length
-    ? catGrades.map(g => `<tr style="border-bottom:0.5px solid #f0f0f0">
+    ? catGrades.map(g => `<tr id="grade-tr-${g.id}" style="border-bottom:0.5px solid #f0f0f0">
         ${_cfgTD(g.sort_order, true)}
         ${_cfgTD(`<strong>${esc(g.grade_name)}</strong>`)}
         ${_cfgTD(esc(g.group_name))}
-        ${_cfgTD(`<button class="btn del sm" onclick="deleteSizeGrade(${g.id})">삭제</button>`, true)}
+        <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+          <button class="btn sm" onclick="editGradeRow(${g.id})" style="margin-right:3px">수정</button>
+          <button class="btn del sm" onclick="deleteSizeGrade(${g.id})">삭제</button>
+        </td>
       </tr>`).join('')
     : `<tr><td colspan="4" style="padding:12px;text-align:center;color:#bbb">등록된 등급 없음</td></tr>`;
   const groups = [...new Set(catGrades.map(g => g.group_name))].join(' · ');
@@ -2606,11 +2616,14 @@ function _renderCfgRuleHTML() {
   const sections = countItems.map(item => {
     const rules = itemSizeRules.filter(r => r.item_id === item.id).sort((a, b) => a.min_su - b.min_su);
     const ruleRows = rules.length
-      ? rules.map(r => `<tr style="border-bottom:0.5px solid #f0f0f0">
+      ? rules.map(r => `<tr id="rule-tr-${r.id}" style="border-bottom:0.5px solid #f0f0f0">
           ${_cfgTD(`<strong>${esc(r.group_name)}</strong>`)}
           ${_cfgTD(r.min_su + '수', true)}
           ${_cfgTD(r.max_su + '수', true)}
-          ${_cfgTD(`<button class="btn del sm" onclick="deleteItemRule(${r.id})">삭제</button>`, true)}
+          <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+            <button class="btn sm" onclick="editRuleRow(${r.id})" style="margin-right:3px">수정</button>
+            <button class="btn del sm" onclick="deleteItemRule(${r.id})">삭제</button>
+          </td>
         </tr>`).join('')
       : `<tr><td colspan="4" style="padding:10px;text-align:center;color:#bbb">기준 없음</td></tr>`;
     return `<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
@@ -2628,6 +2641,153 @@ function _renderCfgRuleHTML() {
     </div>`;
   }).join('');
   return `<div class="note" style="margin-bottom:12px">💡 수(數)가 낮을수록 큰 과일입니다. 각 품목의 그룹별 수 범위를 설정하세요.</div>${sections}`;
+}
+
+// ── 인라인 편집 공통
+const _inp = (id, val, w) =>
+  `<input id="${id}" value="${esc(val)}" style="width:${w || '100%'};padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">`;
+const _num = (id, val, w) =>
+  `<input id="${id}" type="number" value="${val}" min="1" max="99" style="width:${w || '65px'};padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;text-align:center">`;
+const _actCell = (saveCall, cancelTab) =>
+  `<td style="padding:5px 8px;text-align:center;white-space:nowrap">
+    <button class="btn pri sm" onclick="${saveCall}">저장</button>
+    <button class="btn sm" onclick="cancelEdit('${cancelTab}')" style="margin-left:3px">취소</button>
+  </td>`;
+
+function cancelEdit(tab) {
+  renderSizeCfg();
+  if (tab !== 'cat') cfgSubTab(tab);
+}
+
+// 카테고리 수정
+function editCatRow(id) {
+  const c = categories.find(x => x.id === id);
+  if (!c) return;
+  const tr = document.getElementById('cat-tr-' + id);
+  if (!tr) return;
+  tr.innerHTML = `
+    <td style="padding:5px 8px">${_inp('ecat-name-' + id, c.name)}</td>
+    <td style="padding:5px 8px">
+      <select id="ecat-type-${id}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+        <option value="count" ${c.classification_type === 'count' ? 'selected' : ''}>🔢 과수형</option>
+        <option value="grade" ${c.classification_type === 'grade' ? 'selected' : ''}>🍊 등급형</option>
+      </select>
+    </td>
+    ${_actCell('saveCatEdit(' + id + ')', 'cat')}`;
+}
+async function saveCatEdit(id) {
+  const name = (document.getElementById('ecat-name-' + id)?.value || '').trim();
+  const type = document.getElementById('ecat-type-' + id)?.value;
+  if (!name) return alert('카테고리명을 입력하세요.');
+  if (categories.some(c => c.id !== id && c.name === name)) return alert('같은 이름의 카테고리가 이미 있습니다.');
+  const prev = categories.find(c => c.id === id);
+  if (prev && prev.classification_type !== type) {
+    const n = itemDefs.filter(i => i.category_id === id).length;
+    if (n > 0 && !confirm(`분류 방식 변경은 기존 ${n}개 품목에 영향을 줍니다. 계속할까요?`)) return;
+  }
+  try {
+    await dbUpdateCategory(id, { name, classification_type: type });
+    const idx = categories.findIndex(c => c.id === id);
+    if (idx !== -1) categories[idx] = { ...categories[idx], name, classification_type: type };
+    renderSizeCfg(); popInvProductSelects(); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+
+// 품목 수정
+function editItemRow(id) {
+  const item = itemDefs.find(x => x.id === id);
+  if (!item) return;
+  const tr = document.getElementById('item-tr-' + id);
+  if (!tr) return;
+  const catOpts = categories.map(c =>
+    `<option value="${c.id}" ${c.id === item.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  tr.innerHTML = `
+    <td style="padding:5px 8px">${_inp('eitem-name-' + id, item.name)}</td>
+    <td style="padding:5px 8px">
+      <select id="eitem-cat-${id}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+        <option value="">카테고리 없음</option>${catOpts}
+      </select>
+    </td>
+    ${_actCell('saveItemEdit(' + id + ')', 'cat')}`;
+}
+async function saveItemEdit(id) {
+  const name  = (document.getElementById('eitem-name-' + id)?.value || '').trim();
+  const catId = parseInt(document.getElementById('eitem-cat-' + id)?.value) || null;
+  if (!name) return alert('품목명을 입력하세요.');
+  if (itemDefs.some(i => i.id !== id && i.name === name)) return alert('같은 이름의 품목이 이미 있습니다.');
+  try {
+    await dbUpdateItem(id, { name, category_id: catId });
+    const idx = itemDefs.findIndex(i => i.id === id);
+    if (idx !== -1) itemDefs[idx] = { ...itemDefs[idx], name, category_id: catId };
+    renderSizeCfg(); popInvProductSelects(); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+
+// 감귤류 등급 수정
+function editGradeRow(id) {
+  const g = sizeGrades.find(x => x.id === id);
+  if (!g) return;
+  const tr = document.getElementById('grade-tr-' + id);
+  if (!tr) return;
+  const existGrps = [...new Set(sizeGrades.filter(s => s.category_id === g.category_id).map(s => s.group_name))];
+  const grpList = existGrps.map(grp => `<option value="${esc(grp)}">`).join('');
+  tr.innerHTML = `
+    <td style="padding:5px 8px;text-align:center">${_num('egrade-ord-' + id, g.sort_order, '55px')}</td>
+    <td style="padding:5px 8px">${_inp('egrade-name-' + id, g.grade_name, '80px')}</td>
+    <td style="padding:5px 8px">
+      <input id="egrade-grp-${id}" value="${esc(g.group_name)}" list="egrp-dl-${id}"
+        style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+      <datalist id="egrp-dl-${id}">${grpList}</datalist>
+    </td>
+    ${_actCell('saveGradeEdit(' + id + ')', 'grade')}`;
+}
+async function saveGradeEdit(id) {
+  const g = sizeGrades.find(x => x.id === id);
+  if (!g) return;
+  const name = (document.getElementById('egrade-name-' + id)?.value || '').trim();
+  const grp  = (document.getElementById('egrade-grp-' + id)?.value || '').trim();
+  const ord  = parseInt(document.getElementById('egrade-ord-' + id)?.value) || g.sort_order;
+  if (!name || !grp) return alert('등급명과 그룹명을 입력하세요.');
+  if (sizeGrades.some(s => s.id !== id && s.category_id === g.category_id && s.grade_name === name))
+    return alert('같은 이름의 등급이 이미 있습니다.');
+  try {
+    await dbUpdateSizeGrade(id, { grade_name: name, group_name: grp, sort_order: ord });
+    const idx = sizeGrades.findIndex(s => s.id === id);
+    if (idx !== -1) sizeGrades[idx] = { ...sizeGrades[idx], grade_name: name, group_name: grp, sort_order: ord };
+    sizeGrades.sort((a, b) => a.sort_order - b.sort_order);
+    renderSizeCfg(); cfgSubTab('grade'); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+
+// 만감류 과수 기준 수정
+function editRuleRow(id) {
+  const r = itemSizeRules.find(x => x.id === id);
+  if (!r) return;
+  const tr = document.getElementById('rule-tr-' + id);
+  if (!tr) return;
+  tr.innerHTML = `
+    <td style="padding:5px 8px">${_inp('erule-grp-' + id, r.group_name)}</td>
+    <td style="padding:5px 8px;text-align:center">${_num('erule-min-' + id, r.min_su)} 수</td>
+    <td style="padding:5px 8px;text-align:center">${_num('erule-max-' + id, r.max_su)} 수</td>
+    ${_actCell('saveRuleEdit(' + id + ')', 'rule')}`;
+}
+async function saveRuleEdit(id) {
+  const r = itemSizeRules.find(x => x.id === id);
+  if (!r) return;
+  const grp = (document.getElementById('erule-grp-' + id)?.value || '').trim();
+  const min = parseInt(document.getElementById('erule-min-' + id)?.value) || 0;
+  const max = parseInt(document.getElementById('erule-max-' + id)?.value) || 0;
+  if (!grp) return alert('그룹명을 입력하세요.');
+  if (!min || !max) return alert('최소수와 최대수를 입력하세요.');
+  if (min > max) return alert('최소수가 최대수보다 클 수 없습니다.');
+  const overlap = itemSizeRules.find(o => o.item_id === r.item_id && o.id !== id && min <= o.max_su && max >= o.min_su);
+  if (overlap && !confirm(`'${overlap.group_name}' 그룹(${overlap.min_su}~${overlap.max_su}수)과 수 범위가 겹칩니다. 계속할까요?`)) return;
+  try {
+    await dbUpdateItemSizeRule(id, { group_name: grp, min_su: min, max_su: max });
+    const idx = itemSizeRules.findIndex(o => o.id === id);
+    if (idx !== -1) itemSizeRules[idx] = { ...itemSizeRules[idx], group_name: grp, min_su: min, max_su: max };
+    renderSizeCfg(); cfgSubTab('rule'); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
 }
 
 // ── 카테고리 CRUD
