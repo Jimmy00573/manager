@@ -14,6 +14,7 @@ let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [];
+let sortedView = 'list';
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -3350,6 +3351,167 @@ async function deleteProcessing(id) {
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
+function setSortedView(v) {
+  sortedView = v;
+  const listDiv = document.getElementById('srt-list-div');
+  const aggDiv  = document.getElementById('srt-agg-div');
+  const filters = document.getElementById('srt-agg-filters');
+  const btnList = document.getElementById('srt-v-list');
+  const btnAgg  = document.getElementById('srt-v-agg');
+  if (listDiv) listDiv.style.display = v === 'list' ? '' : 'none';
+  if (aggDiv)  aggDiv.style.display  = v === 'agg'  ? '' : 'none';
+  if (filters) filters.style.display = v === 'agg'  ? 'flex' : 'none';
+  if (btnList) btnList.className = 'etab' + (v === 'list' ? ' af' : '');
+  if (btnAgg)  btnAgg.className  = 'etab' + (v === 'agg'  ? ' af' : '');
+  if (v === 'agg') renderSortedAgg();
+}
+
+function renderSortedAgg() {
+  const el = document.getElementById('srt-agg-div');
+  if (!el) return;
+
+  const hideEmpty  = document.getElementById('srt-hide-empty')?.checked ?? true;
+  const filterCat  = document.getElementById('srt-filter-cat')?.value || '';
+  const filterFarm = (document.getElementById('srt-filter-farm')?.value || '').trim().toLowerCase();
+
+  let data = invSorted;
+  if (filterFarm) data = data.filter(r => r.farm_name.toLowerCase().includes(filterFarm));
+
+  const getItemCatType = p => {
+    const item = _getItemDef(p);
+    if (!item) return 'count';
+    const cat = _getCatById(item.category_id);
+    return cat ? cat.classification_type : 'count';
+  };
+
+  const countData = data.filter(r => getItemCatType(r.product) === 'count');
+  const gradeData = data.filter(r => getItemCatType(r.product) === 'grade');
+
+  // count_num 별 집계: { total, entries: [{farm_name, product, product_type, qty}] }
+  const groupBy = rows => {
+    const map = {};
+    rows.forEach(r => {
+      const key = r.count_num;
+      if (!map[key]) map[key] = { total: 0, entries: [] };
+      const qty = Number(r.quantity) || 0;
+      const eKey = `${r.farm_name}||${r.product}||${r.product_type}`;
+      const ex = map[key].entries.find(e => e._key === eKey);
+      if (ex) { ex.qty += qty; }
+      else map[key].entries.push({ _key: eKey, farm_name: r.farm_name, product: r.product, product_type: r.product_type, qty });
+      map[key].total += qty;
+    });
+    return map;
+  };
+
+  const countMap = groupBy(countData);
+  const gradeMap = groupBy(gradeData);
+
+  // 만감류: 재고 없는 항목 숨기지 않을 때 5~26수 전부 표시
+  if (!hideEmpty) {
+    for (let i = 5; i <= 26; i++) {
+      const k = `${i}수`;
+      if (!countMap[k]) countMap[k] = { total: 0, entries: [] };
+    }
+    const gradeCatId = categories.find(c => c.classification_type === 'grade')?.id;
+    if (gradeCatId) {
+      sizeGrades.filter(g => g.category_id === gradeCatId).forEach(g => {
+        if (!gradeMap[g.grade_name]) gradeMap[g.grade_name] = { total: 0, entries: [] };
+      });
+    }
+  }
+
+  const sortCountKeys = keys => keys.sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
+  const sortGradeKeys = keys => keys.sort((a, b) => {
+    const oa = sizeGrades.find(g => g.grade_name === a)?.sort_order ?? 999;
+    const ob = sizeGrades.find(g => g.grade_name === b)?.sort_order ?? 999;
+    return oa - ob;
+  });
+
+  const renderSection = (map, sortFn) => {
+    let keys = sortFn(Object.keys(map));
+    if (hideEmpty) keys = keys.filter(k => map[k].total > 0);
+    if (!keys.length) return '<div style="padding:20px;text-align:center;color:#bbb;font-size:13px">재고 없음</div>';
+
+    const catTotal = keys.reduce((s, k) => s + map[k].total, 0);
+    const maxTotal = Math.max(...keys.map(k => map[k].total));
+    let html = '';
+
+    keys.forEach(key => {
+      const { total, entries } = map[key];
+      let borderColor, tag;
+      if (total >= 50) {
+        borderColor = '#2E7D32';
+        tag = '<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">충분</span>';
+      } else if (total >= 10) {
+        borderColor = '#F57F17';
+        tag = '<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">보통</span>';
+      } else if (total > 0) {
+        borderColor = '#C62828';
+        tag = '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">부족</span>';
+      } else {
+        borderColor = '#BDBDBD';
+        tag = '<span style="background:#f5f5f5;color:#bbb;padding:2px 8px;border-radius:10px;font-size:11px">없음</span>';
+      }
+      const isTop = total > 0 && total === maxTotal && keys.filter(k => map[k].total > 0).length > 1;
+      const sorted = [...entries].sort((a, b) => b.qty - a.qty);
+      const maxEntry = sorted[0]?.qty ?? 0;
+
+      const rows = sorted.map((e, i) => {
+        const last = i === sorted.length - 1;
+        const eColor = e.qty >= 50 ? '#2E7D32' : e.qty >= 10 ? '#E65100' : '#C62828';
+        const isBest = sorted.length > 1 && e.qty === maxEntry;
+        const ptLabel = e.product_type && e.product_type !== '일반'
+          ? ` <span style="font-size:11px;color:#999">[${esc(e.product_type)}]</span>` : '';
+        return `<div style="display:flex;align-items:center;padding:7px 14px 7px 18px;${last ? '' : 'border-bottom:1px solid #f5f5f5'}">
+          <span style="color:#ccc;font-size:11px;margin-right:8px;flex-shrink:0">${last ? '└─' : '├─'}</span>
+          <span style="flex:1;font-size:13px;font-weight:500;color:#333">${esc(e.farm_name)}</span>
+          <span style="font-size:12px;color:#888;margin:0 8px">${esc(e.product)}${ptLabel}</span>
+          <span style="font-weight:700;color:${eColor};font-size:13px;min-width:55px;text-align:right">${e.qty} CT${isBest ? ' ⭐' : ''}</span>
+        </div>`;
+      }).join('');
+
+      html += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:15px;color:#222;min-width:48px">${esc(key)}</span>
+          <span style="font-size:13px;color:#555">(총 <strong style="color:#1565C0">${total}</strong> CT)</span>
+          ${tag}
+          ${isTop ? '<span style="font-size:12px;color:#F57F17;font-weight:600">⭐ 최다</span>' : ''}
+        </div>
+        ${total > 0 ? `<div style="border-top:1px solid #f0f0f0">${rows}</div>` : ''}
+      </div>`;
+    });
+
+    html += `<div style="text-align:right;padding:10px 4px 4px;font-size:13px;color:#555;border-top:2px solid #ddd;margin-top:4px">
+      합계: <strong style="color:#1565C0;font-size:15px">${catTotal} CT</strong>
+    </div>`;
+    return html;
+  };
+
+  let html = '';
+  const showCount = !filterCat || filterCat === 'count';
+  const showGrade = !filterCat || filterCat === 'grade';
+
+  if (showCount) {
+    html += `<div style="margin-bottom:18px">
+      <div style="background:#0D47A1;color:#fff;padding:9px 14px;border-radius:8px 8px 0 0;font-size:13px;font-weight:700">🍊 만감류 — 과수별 재고</div>
+      <div style="background:#F0F4FF;border:1px solid #90CAF9;border-top:none;border-radius:0 0 8px 8px;padding:12px">
+        ${renderSection(countMap, sortCountKeys)}
+      </div>
+    </div>`;
+  }
+  if (showGrade) {
+    html += `<div style="margin-bottom:18px">
+      <div style="background:#1B5E20;color:#fff;padding:9px 14px;border-radius:8px 8px 0 0;font-size:13px;font-weight:700">🍋 감귤류 — 등급별 재고</div>
+      <div style="background:#F1F8F1;border:1px solid #A5D6A7;border-top:none;border-radius:0 0 8px 8px;padding:12px">
+        ${renderSection(gradeMap, sortGradeKeys)}
+      </div>
+    </div>`;
+  }
+  if (!html) html = '<div style="text-align:center;padding:48px;color:#bbb">표시할 데이터가 없습니다</div>';
+
+  el.innerHTML = html;
+}
+
 function renderSortedList() {
   const tbody = document.getElementById('so-tb');
   if (!tbody) return;
@@ -3366,6 +3528,7 @@ function renderSortedList() {
     <td>${esc(r.location || '-')}</td>
     <td>${isAdm ? `<button class="btn del" onclick="deleteSorted('${r.id}')">삭제</button>` : ''}</td>
   </tr>`).join('');
+  if (sortedView === 'agg') renderSortedAgg();
 }
 
 function renderWasteList() {
