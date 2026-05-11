@@ -2417,25 +2417,41 @@ function renderInvSummary() {
 
   const empty = map => Object.keys(map).length === 0;
 
-  const detailTable = (detail, badgeClass) => {
+  const detailTable = (detail) => {
     if (empty(detail)) return '<div class="alert-none">데이터 없음</div>';
     const rows = [];
+    let grandTotal = 0;
     Object.entries(detail).forEach(([farm, products]) => {
-      Object.entries(products).forEach(([product, qty]) => {
+      const entries = Object.entries(products);
+      let farmTotal = 0;
+      entries.forEach(([product, qty], i) => {
+        farmTotal += qty;
+        grandTotal += qty;
         rows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
-          <td style="padding:5px 6px;color:var(--text)">${esc(farm)}</td>
-          <td style="padding:5px 6px">${esc(product)}</td>
-          <td style="padding:5px 6px;text-align:right"><span class="badge ${badgeClass}">${qty} CT</span></td>
+          <td style="padding:6px 8px;vertical-align:top;color:var(--text)">${i === 0 ? esc(farm) : ''}</td>
+          <td style="padding:6px 8px">${esc(product)}</td>
+          <td style="padding:6px 8px;text-align:right;font-weight:500">${qty} CT</td>
         </tr>`);
       });
+      if (entries.length > 1) {
+        rows.push(`<tr style="border-bottom:1px solid #e0e0e0;background:#fafafa">
+          <td style="padding:4px 8px;font-size:12px;color:var(--text-secondary)">소계</td>
+          <td></td>
+          <td style="padding:4px 8px;text-align:right;font-weight:600;font-size:12px;color:var(--text-secondary)">${farmTotal} CT</td>
+        </tr>`);
+      }
     });
     return `<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="border-bottom:1px solid var(--border)">
-        <th style="text-align:left;padding:5px 6px;color:var(--text-secondary);font-weight:500">농가명</th>
-        <th style="text-align:left;padding:5px 6px;color:var(--text-secondary);font-weight:500">품목</th>
-        <th style="text-align:right;padding:5px 6px;color:var(--text-secondary);font-weight:500">수량</th>
+      <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:7px 8px;color:var(--text-secondary);font-weight:500">농가명</th>
+        <th style="text-align:left;padding:7px 8px;color:var(--text-secondary);font-weight:500">품목</th>
+        <th style="text-align:right;padding:7px 8px;color:var(--text-secondary);font-weight:500">수량</th>
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
+      <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
+        <td colspan="2" style="padding:7px 8px;font-weight:600">전체 합계</td>
+        <td style="padding:7px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} CT</td>
+      </tr></tfoot>
     </table>`;
   };
 
@@ -2469,11 +2485,11 @@ function renderInvSummary() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
       <div class="ext-card">
         <div class="ext-card-title">🍊 미선과 — 농가별·품목별</div>
-        ${detailTable(unsDetail, 'b-warn')}
+        ${detailTable(unsDetail)}
       </div>
       <div class="ext-card">
         <div class="ext-card-title">📦 선과 — 농가별·품목별</div>
-        ${detailTable(sortDetail, 'b-info')}
+        ${detailTable(sortDetail)}
       </div>
     </div>`;
 }
