@@ -2393,38 +2393,85 @@ function _filterDate(arr) {
 function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
   if (!el) return;
-  const unsMap = {}, sortMap = {}, wasteMap = {}, juiceMap = {};
-  invUnsorted.forEach(r => { unsMap[r.product] = (unsMap[r.product] || 0) + (r.quantity || 0); });
-  invSorted.forEach(r => { sortMap[r.product] = (sortMap[r.product] || 0) + (r.quantity || 0); });
-  invWaste.forEach(r => { wasteMap[r.product] = (wasteMap[r.product] || 0) + (r.quantity || 0); });
-  invJuice.forEach(r => { juiceMap[r.product] = (juiceMap[r.product] || 0) + (r.total_qty || 0); });
+
+  // 품목별 합계
+  const unsTotal = {}, sortTotal = {}, wasteTotal = {}, juiceTotal = {};
+  invUnsorted.forEach(r => { unsTotal[r.product] = (unsTotal[r.product] || 0) + (r.quantity || 0); });
+  invSorted.forEach(r => { sortTotal[r.product] = (sortTotal[r.product] || 0) + (r.quantity || 0); });
+  invWaste.forEach(r => { wasteTotal[r.product] = (wasteTotal[r.product] || 0) + (r.quantity || 0); });
+  invJuice.forEach(r => { juiceTotal[r.product] = (juiceTotal[r.product] || 0) + (r.total_qty || 0); });
+
+  // 농가별·품목별 상세 (미선과)
+  const unsDetail = {};
+  invUnsorted.forEach(r => {
+    if (!unsDetail[r.farm_name]) unsDetail[r.farm_name] = {};
+    unsDetail[r.farm_name][r.product] = (unsDetail[r.farm_name][r.product] || 0) + (r.quantity || 0);
+  });
+
+  // 농가별·품목별 상세 (선과)
+  const sortDetail = {};
+  invSorted.forEach(r => {
+    if (!sortDetail[r.farm_name]) sortDetail[r.farm_name] = {};
+    sortDetail[r.farm_name][r.product] = (sortDetail[r.farm_name][r.product] || 0) + (r.quantity || 0);
+  });
+
   const empty = map => Object.keys(map).length === 0;
-  el.innerHTML = `<div class="ext-grid">
-    <div class="ext-card">
-      <div class="ext-card-title">🍊 미선과 재고</div>
-      ${empty(unsMap) ? '<div class="alert-none">데이터 없음</div>' :
-        Object.entries(unsMap).map(([p, q]) =>
-          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-warn">${q} CT</span></div>`).join('')}
+
+  const detailTable = (detail, badgeClass) => {
+    if (empty(detail)) return '<div class="alert-none">데이터 없음</div>';
+    return `<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:5px 6px;color:var(--text-secondary);font-weight:500">농가명</th>
+        <th style="text-align:left;padding:5px 6px;color:var(--text-secondary);font-weight:500">품목</th>
+        <th style="text-align:right;padding:5px 6px;color:var(--text-secondary);font-weight:500">수량</th>
+      </tr></thead>
+      <tbody>${Object.entries(detail).map(([farm, products]) =>
+        Object.entries(products).map(([product, qty], i) => `<tr style="border-bottom:0.5px solid #f0f0f0">
+          <td style="padding:5px 6px">${i === 0 ? esc(farm) : ''}</td>
+          <td style="padding:5px 6px">${esc(product)}</td>
+          <td style="padding:5px 6px;text-align:right"><span class="badge ${badgeClass}">${qty} CT</span></td>
+        </tr>`).join('')).join('')}
+      </tbody>
+    </table>`;
+  };
+
+  el.innerHTML = `
+    <div class="ext-grid" style="margin-bottom:14px">
+      <div class="ext-card">
+        <div class="ext-card-title">🍊 미선과 합계</div>
+        ${empty(unsTotal) ? '<div class="alert-none">데이터 없음</div>' :
+          Object.entries(unsTotal).map(([p, q]) =>
+            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-warn">${q} CT</span></div>`).join('')}
+      </div>
+      <div class="ext-card">
+        <div class="ext-card-title">📦 선과 합계</div>
+        ${empty(sortTotal) ? '<div class="alert-none">데이터 없음</div>' :
+          Object.entries(sortTotal).map(([p, q]) =>
+            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-info">${q} CT<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">≈${(q*17).toFixed(0)}kg</span></span></div>`).join('')}
+      </div>
+      <div class="ext-card">
+        <div class="ext-card-title">🧹 파치 합계</div>
+        ${empty(wasteTotal) ? '<div class="alert-none">데이터 없음</div>' :
+          Object.entries(wasteTotal).map(([p, q]) =>
+            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-neu">${q} CT</span></div>`).join('')}
+      </div>
+      <div class="ext-card">
+        <div class="ext-card-title">🧃 주스/청 합계</div>
+        ${empty(juiceTotal) ? '<div class="alert-none">데이터 없음</div>' :
+          Object.entries(juiceTotal).map(([p, q]) =>
+            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-ok">${q}</span></div>`).join('')}
+      </div>
     </div>
-    <div class="ext-card">
-      <div class="ext-card-title">📦 선과 재고</div>
-      ${empty(sortMap) ? '<div class="alert-none">데이터 없음</div>' :
-        Object.entries(sortMap).map(([p, q]) =>
-          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-info">${q} CT<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">≈${(q * 17).toFixed(0)}kg</span></span></div>`).join('')}
-    </div>
-    <div class="ext-card">
-      <div class="ext-card-title">🧹 파치 재고</div>
-      ${empty(wasteMap) ? '<div class="alert-none">데이터 없음</div>' :
-        Object.entries(wasteMap).map(([p, q]) =>
-          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-neu">${q} CT<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">≈${(q * 17).toFixed(0)}kg</span></span></div>`).join('')}
-    </div>
-    <div class="ext-card">
-      <div class="ext-card-title">🧃 주스/청 재고</div>
-      ${empty(juiceMap) ? '<div class="alert-none">데이터 없음</div>' :
-        Object.entries(juiceMap).map(([p, q]) =>
-          `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-ok">${q}</span></div>`).join('')}
-    </div>
-  </div>`;
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
+      <div class="ext-card">
+        <div class="ext-card-title">🍊 미선과 — 농가별·품목별</div>
+        ${detailTable(unsDetail, 'b-warn')}
+      </div>
+      <div class="ext-card">
+        <div class="ext-card-title">📦 선과 — 농가별·품목별</div>
+        ${detailTable(sortDetail, 'b-info')}
+      </div>
+    </div>`;
 }
 
 function renderUnsortedList() {
