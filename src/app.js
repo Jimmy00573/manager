@@ -2417,41 +2417,48 @@ function renderInvSummary() {
 
   const empty = map => Object.keys(map).length === 0;
 
-  // 농가별·품목별 카드 (3컬럼: 농가명·품목·수량)
+  // 농가별·품목별 카드 — 데스크톱 테이블 + 모바일 카드 동시 렌더
   const makeFarmDetailCard = (detail, title) => {
     if (empty(detail)) return `
       <div class="ext-card">
         <div class="ext-card-title">${title}</div>
         <div class="alert-none">데이터 없음</div>
       </div>`;
-    const rows = [];
+    const tRows = [], mFarms = [];
     let grandTotal = 0;
     Object.entries(detail).forEach(([farm, products]) => {
       const entries = Object.entries(products);
       let farmTotal = 0;
+      const mRows = [];
       entries.forEach(([product, qty], i) => {
         const q = Number(qty) || 0;
         farmTotal += q;
         grandTotal += q;
-        rows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
-          <td style="padding:5px 8px;width:120px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i === 0 ? esc(farm) : ''}</td>
-          <td style="padding:5px 8px;width:120px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(product)}</td>
-          <td style="padding:5px 8px;width:80px;text-align:right;font-weight:500">${q} CT</td>
+        tRows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
+          <td style="padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i === 0 ? esc(farm) : ''}</td>
+          <td style="padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(product)}</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:500">${q} CT</td>
         </tr>`);
+        mRows.push(`<div class="inv-mc-row"><span>${esc(product)}</span><span>${q} CT</span></div>`);
       });
       if (entries.length > 1) {
-        rows.push(`<tr style="border-bottom:1px solid #e0e0e0;background:#f9f9f9;font-size:12px;color:var(--text-secondary)">
+        tRows.push(`<tr style="border-bottom:1px solid #e0e0e0;background:#f9f9f9;font-size:12px;color:var(--text-secondary)">
           <td style="padding:4px 8px">소계</td><td></td>
           <td style="padding:4px 8px;text-align:right;font-weight:600">${farmTotal} CT</td>
         </tr>`);
       }
+      mFarms.push(`<div class="inv-mc-farm">
+        <div class="inv-mc-fname">${esc(farm)}</div>
+        ${mRows.join('')}
+        ${entries.length > 1 ? `<div class="inv-mc-sub"><span>소계</span><span>${farmTotal} CT</span></div>` : ''}
+      </div>`);
     });
     return `
       <div class="ext-card" style="padding:0;overflow:hidden">
         <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
           <div class="ext-card-title" style="margin:0">${title}</div>
         </div>
-        <div style="overflow-x:auto">
+        <div class="inv-dt" style="overflow-x:auto">
           <table style="border-collapse:collapse;font-size:13px;width:100%;table-layout:fixed;min-width:300px">
             <colgroup><col style="width:120px"><col style="width:120px"><col style="width:80px"></colgroup>
             <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
@@ -2459,17 +2466,21 @@ function renderInvSummary() {
               <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
               <th style="padding:6px 8px;text-align:right;font-weight:500;color:var(--text-secondary)">수량(CT)</th>
             </tr></thead>
-            <tbody>${rows.join('')}</tbody>
+            <tbody>${tRows.join('')}</tbody>
             <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
               <td colspan="2" style="padding:6px 8px;font-weight:600">전체 합계</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} CT</td>
             </tr></tfoot>
           </table>
         </div>
+        <div class="inv-mc" style="padding:10px 12px">
+          ${mFarms.join('')}
+          <div class="inv-mc-total"><span>전체 합계</span><span>${grandTotal} CT</span></div>
+        </div>
       </div>`;
   };
 
-  // 품목별 카드 (2컬럼: 품목·수량) — 파치·주스용
+  // 품목별 카드 — 파치·주스용 (데스크톱 테이블 + 모바일 카드)
   const makeProductDetailCard = (detail, title, unit = 'CT') => {
     if (empty(detail)) return `
       <div class="ext-card">
@@ -2477,38 +2488,44 @@ function renderInvSummary() {
         <div class="alert-none">데이터 없음</div>
       </div>`;
     let grandTotal = 0;
-    const rows = Object.entries(detail).map(([product, qty]) => {
+    const tRows = [], mRows = [];
+    Object.entries(detail).forEach(([product, qty]) => {
       const q = Number(qty) || 0;
       grandTotal += q;
-      return `<tr style="border-bottom:0.5px solid #f0f0f0">
+      tRows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
         <td style="padding:5px 8px">${esc(product)}</td>
-        <td style="padding:5px 8px;text-align:right;font-weight:500;width:80px">${q} ${unit}</td>
-      </tr>`;
+        <td style="padding:5px 8px;text-align:right;font-weight:500">${q} ${unit}</td>
+      </tr>`);
+      mRows.push(`<div class="inv-mc-row"><span>${esc(product)}</span><span>${q} ${unit}</span></div>`);
     });
     return `
       <div class="ext-card" style="padding:0;overflow:hidden">
         <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
           <div class="ext-card-title" style="margin:0">${title}</div>
         </div>
-        <div style="overflow-x:auto">
+        <div class="inv-dt" style="overflow-x:auto">
           <table style="border-collapse:collapse;font-size:13px;width:100%;table-layout:fixed;min-width:200px">
             <colgroup><col><col style="width:80px"></colgroup>
             <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
               <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
               <th style="padding:6px 8px;text-align:right;font-weight:500;color:var(--text-secondary)">수량</th>
             </tr></thead>
-            <tbody>${rows.join('')}</tbody>
+            <tbody>${tRows.join('')}</tbody>
             <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
               <td style="padding:6px 8px;font-weight:600">전체 합계</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} ${unit}</td>
             </tr></tfoot>
           </table>
         </div>
+        <div class="inv-mc" style="padding:10px 12px">
+          <div class="inv-mc-farm">${mRows.join('')}</div>
+          <div class="inv-mc-total"><span>전체 합계</span><span>${grandTotal} ${unit}</span></div>
+        </div>
       </div>`;
   };
 
   el.innerHTML = `
-    <div class="ext-grid" style="margin-bottom:14px">
+    <div class="ext-grid inv-sum-grid" style="margin-bottom:14px">
       <div class="ext-card">
         <div class="ext-card-title">🍊 미선과 합계</div>
         ${empty(unsTotal) ? '<div class="alert-none">데이터 없음</div>' :
