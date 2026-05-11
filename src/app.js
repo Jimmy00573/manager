@@ -2386,14 +2386,30 @@ function ibTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [a, b, c, d, e, f, g] = await Promise.all([
-      dbGetInbounds(), dbGetProcessings(),
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys] = await Promise.all([
+      dbGetInbounds().catch(() => []),
+      dbGetProcessings().catch(() => []),
+      dbGetUnsorted(null).catch(() => []),
       dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
       loadSizeConfig(), loadCategorySystem()
     ]);
-    [inboundRecords, processingRecords] = [a, b];
-    [invSorted, invWaste, invJuice, invSizeConfig] = [c, d, e, f];
-    categories = g.cats; sizeGrades = g.grades; itemDefs = g.itemList; itemSizeRules = g.rules;
+    // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
+    // 마이그레이션 후에는 newIn에 데이터가 채워짐
+    if (newIn.length === 0 && legacyIn.length > 0) {
+      // 레거시 데이터를 inbound_records 형식으로 변환해서 표시
+      inboundRecords = legacyIn.map(r => ({
+        id: r.id, date: r.date, farm_name: r.farm_name, product: r.product,
+        quantity: (r.quantity || 0) + (r.sub_quantity || 0),
+        location: r.location, note: r.note, created_at: r.created_at,
+        _legacy: true
+      }));
+    } else {
+      inboundRecords = newIn;
+    }
+    processingRecords = newProc;
+    invUnsorted = legacyIn;
+    [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
+    categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     popInvProductSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
   hideLoading();
@@ -3161,10 +3177,16 @@ function renderInboundList() {
     return;
   }
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
-  tbody.innerHTML = inboundRecords.map(r => {
+  const hasLegacy = inboundRecords.some(r => r._legacy);
+  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="9" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
+    ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
+  </td></tr>`] : []).concat(inboundRecords.map(r => {
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
     const remStyle = remaining <= 0 ? 'color:#999;text-align:right' : 'font-weight:700;color:#E65100;text-align:right';
+    const actionCell = (isAdm && !r._legacy)
+      ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button>`
+      : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : '');
     return `<tr id="ib-tr-${r.id}">
       <td>${r.date}</td>
       <td class="nm">${esc(r.farm_name)}</td>
@@ -3174,9 +3196,9 @@ function renderInboundList() {
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
       <td>${esc(r.location || '-')}</td>
       <td style="white-space:normal;min-width:80px">${esc(r.note || '-')}</td>
-      <td>${isAdm ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button>` : ''}</td>
+      <td>${actionCell}</td>
     </tr>`;
-  }).join('');
+  })).join('');
 }
 
 function renderProcessingTab() {

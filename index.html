@@ -577,7 +577,14 @@
         <div class="form-title">미선과 입고 등록</div>
         <div class="form-grid">
           <div class="fg"><label>날짜 *</label><input id="ib-date" type="date"></div>
-          <div class="fg"><label>품목 *</label><select id="ib-product"><option value="">선택</option></select></div>
+          <div class="fg"><label>품목 *</label>
+            <select id="ib-product">
+              <option value="">선택</option>
+              <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option>
+              <option>황금향</option><option>수라향</option><option>노지감귤</option>
+              <option>하우스감귤</option><option>비가림</option><option>타이벡</option>
+            </select>
+          </div>
           <div class="fg"><label>농가명 *</label><select id="ib-farm"><option value="">선택</option></select></div>
           <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1"></div>
           <div class="fg"><label>위치</label><input id="ib-loc" placeholder="선택사항"></div>
