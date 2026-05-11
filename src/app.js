@@ -2450,15 +2450,37 @@ function onSortedProductChange() {
   if (sel) sel.innerHTML = buildCountSelectOpts(product);
 }
 
+function buildProductOptgroupHTML() {
+  let html = '<option value="">선택</option>';
+  if (!itemDefs.length) return html;
+  // 카테고리 순서: id 순 (categories 배열 순서 유지)
+  categories.forEach(cat => {
+    const catItems = itemDefs
+      .filter(i => i.category_id === cat.id)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!catItems.length) return;
+    html += `<optgroup label="${esc(cat.name)}">`;
+    catItems.forEach(i => { html += `<option value="${esc(i.name)}">${esc(i.name)}</option>`; });
+    html += '</optgroup>';
+  });
+  // 카테고리 미지정 품목
+  const uncategorized = itemDefs.filter(i => !i.category_id).sort((a, b) => a.name.localeCompare(b.name));
+  if (uncategorized.length) {
+    html += '<optgroup label="기타">';
+    uncategorized.forEach(i => { html += `<option value="${esc(i.name)}">${esc(i.name)}</option>`; });
+    html += '</optgroup>';
+  }
+  return html;
+}
+
 function popInvProductSelects() {
   if (!itemDefs.length) return;
-  const allNames = itemDefs.map(i => i.name).sort((a, b) => a.localeCompare(b));
+  const optHtml = buildProductOptgroupHTML();
   ['un-product', 'so-product', 'wa-product'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     const cur = el.value;
-    el.innerHTML = '<option value="">선택</option>';
-    allNames.forEach(n => { el.innerHTML += `<option value="${esc(n)}">${esc(n)}</option>`; });
+    el.innerHTML = optHtml;
     if (cur) el.value = cur;
   });
   onSortedProductChange();
