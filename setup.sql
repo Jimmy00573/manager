@@ -223,3 +223,116 @@ CREATE POLICY "allow_all_inv_juice"    ON inventory_juice    FOR ALL TO anon USI
 -- ============================================================
 --  완료! 이제 앱에서 데이터를 저장할 수 있습니다.
 -- ============================================================
+
+-- ============================================================
+--  카테고리 기반 크기 분류 시스템 (v2)
+-- ============================================================
+
+-- 14. 카테고리 테이블
+CREATE TABLE IF NOT EXISTS categories (
+  id                  BIGSERIAL PRIMARY KEY,
+  name                TEXT NOT NULL UNIQUE,
+  classification_type TEXT NOT NULL DEFAULT 'count'
+    CHECK (classification_type IN ('grade', 'count'))
+);
+
+-- 15. 크기 등급 테이블 (감귤류용)
+CREATE TABLE IF NOT EXISTS size_grades (
+  id          BIGSERIAL PRIMARY KEY,
+  category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  grade_name  TEXT NOT NULL,
+  group_name  TEXT NOT NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (category_id, grade_name)
+);
+
+-- 16. 품목 테이블
+CREATE TABLE IF NOT EXISTS items (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL
+);
+
+-- 17. 만감류 품목별 과수 기준
+CREATE TABLE IF NOT EXISTS item_size_rules (
+  id          BIGSERIAL PRIMARY KEY,
+  item_id     BIGINT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  group_name  TEXT NOT NULL,
+  min_su      INTEGER NOT NULL,
+  max_su      INTEGER NOT NULL,
+  UNIQUE (item_id, group_name)
+);
+
+ALTER TABLE categories      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE size_grades     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE items           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE item_size_rules ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all_categories"      ON categories      FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_size_grades"     ON size_grades     FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_items"           ON items           FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_item_size_rules" ON item_size_rules FOR ALL TO anon USING (true) WITH CHECK (true);
+
+GRANT ALL ON TABLE categories      TO anon;
+GRANT ALL ON TABLE size_grades     TO anon;
+GRANT ALL ON TABLE items           TO anon;
+GRANT ALL ON TABLE item_size_rules TO anon;
+GRANT USAGE, SELECT ON SEQUENCE categories_id_seq      TO anon;
+GRANT USAGE, SELECT ON SEQUENCE size_grades_id_seq     TO anon;
+GRANT USAGE, SELECT ON SEQUENCE items_id_seq           TO anon;
+GRANT USAGE, SELECT ON SEQUENCE item_size_rules_id_seq TO anon;
+
+-- 기본 카테고리
+INSERT INTO categories (name, classification_type) VALUES
+  ('감귤류', 'grade'),
+  ('만감류', 'count')
+ON CONFLICT (name) DO NOTHING;
+
+-- 감귤류 크기 등급 (13개)
+INSERT INTO size_grades (category_id, grade_name, group_name, sort_order)
+SELECT c.id, v.gn, v.grp, v.ord
+FROM categories c
+CROSS JOIN (VALUES
+  ('0',   '극소과', 1),  ('00',  '극소과', 2),
+  ('3S',  '소과',   3),  ('2S1', '소과',   4),  ('2S2', '소과',   5),
+  ('S1',  '로얄과', 6),  ('S2',  '로얄과', 7),  ('M1',  '로얄과', 8),  ('M2',  '로얄과', 9),
+  ('L',   '중과',   10), ('2L',  '중과',   11),
+  ('왕1', '대과',   12), ('왕2', '대과',   13)
+) AS v(gn, grp, ord)
+WHERE c.name = '감귤류'
+ON CONFLICT (category_id, grade_name) DO NOTHING;
+
+-- 만감류 품목
+INSERT INTO items (name, category_id)
+SELECT v.n, c.id FROM categories c
+CROSS JOIN (VALUES ('카라향'), ('한라봉'), ('천혜향'), ('레드향'), ('황금향'), ('수라향')) AS v(n)
+WHERE c.name = '만감류'
+ON CONFLICT (name) DO NOTHING;
+
+-- 감귤류 품목
+INSERT INTO items (name, category_id)
+SELECT v.n, c.id FROM categories c
+CROSS JOIN (VALUES ('노지감귤'), ('하우스감귤'), ('비가림'), ('타이벡')) AS v(n)
+WHERE c.name = '감귤류'
+ON CONFLICT (name) DO NOTHING;
+
+-- 카라향 기본 과수 기준
+INSERT INTO item_size_rules (item_id, group_name, min_su, max_su)
+SELECT i.id, v.grp, v.mn, v.mx FROM items i
+CROSS JOIN (VALUES ('대과', 5, 14), ('중과', 15, 22), ('소과', 23, 26)) AS v(grp, mn, mx)
+WHERE i.name = '카라향'
+ON CONFLICT (item_id, group_name) DO NOTHING;
+
+-- 한라봉 기본 과수 기준
+INSERT INTO item_size_rules (item_id, group_name, min_su, max_su)
+SELECT i.id, v.grp, v.mn, v.mx FROM items i
+CROSS JOIN (VALUES ('대과', 5, 10), ('중과', 11, 13), ('소과', 14, 26)) AS v(grp, mn, mx)
+WHERE i.name = '한라봉'
+ON CONFLICT (item_id, group_name) DO NOTHING;
+
+-- 천혜향 기본 과수 기준
+INSERT INTO item_size_rules (item_id, group_name, min_su, max_su)
+SELECT i.id, v.grp, v.mn, v.mx FROM items i
+CROSS JOIN (VALUES ('대과', 5, 14), ('중과', 15, 22), ('소과', 23, 26)) AS v(grp, mn, mx)
+WHERE i.name = '천혜향'
+ON CONFLICT (item_id, group_name) DO NOTHING;

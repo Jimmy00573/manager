@@ -12,6 +12,7 @@ let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
+let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -2372,97 +2373,386 @@ function invTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    [invUnsorted, invSorted, invWaste, invJuice, invSizeConfig] = await Promise.all([
-      dbGetUnsorted(null), dbGetSorted(null), dbGetWaste(null), dbGetJuice(null), loadSizeConfig()
+    const [a, b, c, d, e, f] = await Promise.all([
+      dbGetUnsorted(null), dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
+      loadSizeConfig(), loadCategorySystem()
     ]);
+    [invUnsorted, invSorted, invWaste, invJuice, invSizeConfig] = [a, b, c, d, e];
+    categories = f.cats; sizeGrades = f.grades; itemDefs = f.itemList; itemSizeRules = f.rules;
+    popInvProductSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
   hideLoading();
   renderInvAll();
 }
 
-// 선과 크기 기준 설정 UI
-const SIZE_PRODUCTS = ['카라향', '한라봉', '천혜향', '레드향', '수라향', '비가림', '타이벡'];
-const SIZE_DEFAULT = { '한라봉': { 대과: 10, 중과: 13 } };
-const getSizeCfg = p => invSizeConfig[p] || SIZE_DEFAULT[p] || { 대과: 14, 중과: 22 };
+// ── 카테고리 시스템 헬퍼
+function _parseCountNum(s) {
+  if (!s) return null;
+  const m = String(s).match(/(\d+)/);
+  return m ? parseInt(m[1]) : null;
+}
 
+function _getCatById(id) { return categories.find(c => c.id === id) || null; }
+function _getItemDef(productName) { return itemDefs.find(i => i.name === productName) || null; }
+function _getCatForProduct(productName) {
+  const item = _getItemDef(productName);
+  return item ? _getCatById(item.category_id) : null;
+}
+
+function getGroupForSorted(product, countNum) {
+  const item = _getItemDef(product);
+  if (!item) {
+    // fallback: old count-based logic
+    const n = _parseCountNum(countNum);
+    const cfg = invSizeConfig[product] || { 대과: 14, 중과: 22 };
+    return n === null ? '중과' : n <= cfg.대과 ? '대과' : n <= cfg.중과 ? '중과' : '소과';
+  }
+  const cat = _getCatById(item.category_id);
+  if (!cat) return countNum;
+  if (cat.classification_type === 'grade') {
+    const grade = sizeGrades.find(g => g.category_id === cat.id && g.grade_name === countNum);
+    return grade ? grade.group_name : countNum;
+  } else {
+    const n = _parseCountNum(countNum);
+    if (n === null) return '기타';
+    const rules = itemSizeRules.filter(r => r.item_id === item.id);
+    const matched = rules.find(r => n >= r.min_su && n <= r.max_su);
+    return matched ? matched.group_name : '기타';
+  }
+}
+
+function buildCountSelectOpts(product) {
+  const cat = _getCatForProduct(product);
+  if (cat && cat.classification_type === 'grade') {
+    const catGrades = sizeGrades.filter(g => g.category_id === cat.id);
+    const groupOrder = [], groupMap = {};
+    catGrades.forEach(g => {
+      if (!groupMap[g.group_name]) { groupMap[g.group_name] = []; groupOrder.push(g.group_name); }
+      groupMap[g.group_name].push(g.grade_name);
+    });
+    let opts = '<option value="">선택</option>';
+    groupOrder.forEach(grp => {
+      opts += `<optgroup label="━ ${esc(grp)} ━">`;
+      groupMap[grp].forEach(gn => { opts += `<option value="${esc(gn)}">${esc(gn)}</option>`; });
+      opts += '</optgroup>';
+    });
+    return opts;
+  }
+  // default: count-based 5~26수
+  let opts = '<option value="">선택</option>';
+  for (let i = 5; i <= 26; i++) opts += `<option value="${i}수">${i}수</option>`;
+  return opts;
+}
+
+function onSortedProductChange() {
+  const product = gv('so-product');
+  const sel = document.getElementById('so-count');
+  if (sel) sel.innerHTML = buildCountSelectOpts(product);
+}
+
+function popInvProductSelects() {
+  if (!itemDefs.length) return;
+  const allNames = itemDefs.map(i => i.name).sort((a, b) => a.localeCompare(b));
+  ['un-product', 'so-product', 'wa-product'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">선택</option>';
+    allNames.forEach(n => { el.innerHTML += `<option value="${esc(n)}">${esc(n)}</option>`; });
+    if (cur) el.value = cur;
+  });
+  onSortedProductChange();
+}
+
+// ── 크기 설정 UI (v2: 카테고리·등급·과수 기준 통합)
 function renderSizeCfg() {
   const el = document.getElementById('inv-cfg-div');
   if (!el) return;
-  const rows = SIZE_PRODUCTS.map(p => {
-    const cfg = getSizeCfg(p);
-    return `<tr style="border-bottom:0.5px solid #f0f0f0">
-      <td style="padding:9px 12px;font-weight:500">${p}</td>
-      <td style="padding:9px 12px;text-align:center">
-        <input type="number" id="scfg-dae-${p}" value="${cfg.대과}" min="1" max="50"
-          style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:center;font-family:inherit;font-size:13px"
-          oninput="updateSoPreview('${p}')">
-        수 이하
-      </td>
-      <td style="padding:9px 12px;text-align:center">
-        <input type="number" id="scfg-jung-${p}" value="${cfg.중과}" min="1" max="50"
-          style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:center;font-family:inherit;font-size:13px"
-          oninput="updateSoPreview('${p}')">
-        수 이하
-      </td>
-      <td id="scfg-so-${p}" style="padding:9px 12px;text-align:center;color:var(--text-secondary);font-size:12px">
-        ${cfg.중과 + 1}수 이상
-      </td>
-    </tr>`;
-  }).join('');
-
   el.innerHTML = `
     <div class="form-card">
-      <div class="form-title">⚙️ 선과 크기 분류 기준</div>
-      <div class="note">💡 수(數)가 낮을수록 큰 과일입니다. 각 품목의 대과·중과 기준 수를 설정하세요. 소과는 중과 기준 초과 시 자동 분류됩니다.</div>
-      <div class="tbl-wrap" style="margin-top:12px">
-        <table style="width:100%;border-collapse:collapse;min-width:360px">
-          <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
-            <th style="padding:8px 12px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
-            <th style="padding:8px 12px;text-align:center;font-weight:500;color:var(--text-secondary)">🟢 대과 기준</th>
-            <th style="padding:8px 12px;text-align:center;font-weight:500;color:var(--text-secondary)">🟡 중과 기준</th>
-            <th style="padding:8px 12px;text-align:center;font-weight:500;color:var(--text-secondary)">🔴 소과</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+      <div class="form-title">⚙️ 품목 분류 시스템 설정</div>
+      <div class="note">💡 카테고리·품목·크기 기준을 설정합니다. 변경 후 전체현황에 즉시 반영됩니다.</div>
+      <div style="display:flex;gap:0;margin:12px 0 0;border-bottom:1px solid var(--border)">
+        <button class="cfg-stab af" id="cst-cat"   onclick="cfgSubTab('cat')">📁 카테고리·품목</button>
+        <button class="cfg-stab"   id="cst-grade" onclick="cfgSubTab('grade')">🍊 감귤류 등급</button>
+        <button class="cfg-stab"   id="cst-rule"  onclick="cfgSubTab('rule')">📐 만감류 기준</button>
       </div>
-      <div class="form-actions" style="margin-top:14px">
-        <button class="btn pri" onclick="saveSizeCfg()">저장</button>
-        <button class="btn" onclick="resetSizeCfg()">기본값 초기화</button>
+      <div id="csp-cat"   style="padding-top:14px">${_renderCfgCatHTML()}</div>
+      <div id="csp-grade" style="display:none;padding-top:14px">${_renderCfgGradeHTML()}</div>
+      <div id="csp-rule"  style="display:none;padding-top:14px">${_renderCfgRuleHTML()}</div>
+    </div>`;
+}
+
+function cfgSubTab(t) {
+  ['cat', 'grade', 'rule'].forEach(s => {
+    const btn = document.getElementById('cst-' + s);
+    const div = document.getElementById('csp-' + s);
+    if (btn) btn.className = 'cfg-stab' + (t === s ? ' af' : '');
+    if (div) div.style.display = t === s ? '' : 'none';
+  });
+}
+
+function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-size:12px;color:#666;font-weight:500;background:#f5f5f5">${txt}</th>`; }
+function _cfgTD(txt, center) { return `<td style="padding:7px 10px${center ? ';text-align:center' : ''}">${txt}</td>`; }
+
+function _renderCfgCatHTML() {
+  const catRows = categories.length
+    ? categories.map(c => `<tr style="border-bottom:0.5px solid #f0f0f0">
+        ${_cfgTD(esc(c.name))}
+        ${_cfgTD(c.classification_type === 'grade' ? '🍊 등급형' : '🔢 과수형')}
+        ${_cfgTD(`<button class="btn del sm" onclick="deleteCat(${c.id})">삭제</button>`, true)}
+      </tr>`).join('')
+    : `<tr><td colspan="3" style="padding:12px;text-align:center;color:#bbb">카테고리 없음</td></tr>`;
+
+  const itemRows = itemDefs.length
+    ? itemDefs.map(i => {
+        const cat = categories.find(c => c.id === i.category_id);
+        return `<tr style="border-bottom:0.5px solid #f0f0f0">
+          ${_cfgTD(`<strong>${esc(i.name)}</strong>`)}
+          ${_cfgTD(cat ? esc(cat.name) : '-')}
+          ${_cfgTD(`<button class="btn del sm" onclick="deleteItem(${i.id})">삭제</button>`, true)}
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="3" style="padding:12px;text-align:center;color:#bbb">품목 없음</td></tr>`;
+
+  const catOpts = categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+
+  return `
+    <div style="margin-bottom:20px">
+      <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">카테고리 목록</div>
+      <div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%;border-collapse:collapse">
+        <thead><tr>${_cfgTH('이름')}${_cfgTH('분류 방식')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+        <tbody>${catRows}</tbody>
+      </table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="new-cat-name" placeholder="카테고리명" style="flex:1;min-width:90px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+        <select id="new-cat-type" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+          <option value="count">과수형</option>
+          <option value="grade">등급형</option>
+        </select>
+        <button class="btn pri" onclick="addCat()">추가</button>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">품목 목록</div>
+      <div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%;border-collapse:collapse">
+        <thead><tr>${_cfgTH('품목명')}${_cfgTH('카테고리')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="new-item-name" placeholder="품목명" style="flex:1;min-width:90px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+        <select id="new-item-cat" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+          <option value="">카테고리 선택</option>${catOpts}
+        </select>
+        <button class="btn pri" onclick="addItem()">추가</button>
       </div>
     </div>`;
 }
 
-function updateSoPreview(p) {
-  const jung = parseInt(document.getElementById('scfg-jung-' + p)?.value) || 0;
-  const soEl = document.getElementById('scfg-so-' + p);
-  if (soEl) soEl.textContent = (jung + 1) + '수 이상';
+function _renderCfgGradeHTML() {
+  const gradeCat = categories.find(c => c.classification_type === 'grade');
+  if (!gradeCat) return '<div class="note">등급형 카테고리가 없습니다. 카테고리·품목 탭에서 추가하세요.</div>';
+  const catGrades = sizeGrades.filter(g => g.category_id === gradeCat.id);
+  const gradeRows = catGrades.length
+    ? catGrades.map(g => `<tr style="border-bottom:0.5px solid #f0f0f0">
+        ${_cfgTD(g.sort_order, true)}
+        ${_cfgTD(`<strong>${esc(g.grade_name)}</strong>`)}
+        ${_cfgTD(esc(g.group_name))}
+        ${_cfgTD(`<button class="btn del sm" onclick="deleteSizeGrade(${g.id})">삭제</button>`, true)}
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="padding:12px;text-align:center;color:#bbb">등록된 등급 없음</td></tr>`;
+  const groups = [...new Set(catGrades.map(g => g.group_name))].join(' · ');
+  return `
+    <div class="note" style="margin-bottom:10px">💡 ${esc(gradeCat.name)}의 크기 등급을 관리합니다. 현재 그룹: <strong>${groups || '없음'}</strong></div>
+    <div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%;border-collapse:collapse">
+      <thead><tr>${_cfgTH('순서')}${_cfgTH('등급명')}${_cfgTH('그룹')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+      <tbody>${gradeRows}</tbody>
+    </table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="new-grade-name"  placeholder="등급명 (예: S1)"  style="width:90px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+      <input id="new-grade-group" placeholder="그룹 (예: 로얄과)" style="width:110px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+      <input id="new-grade-order" type="number" placeholder="순서" style="width:65px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">
+      <button class="btn pri" onclick="addSizeGrade(${gradeCat.id})">추가</button>
+    </div>`;
 }
 
-async function saveSizeCfg() {
-  const cfg = {};
-  SIZE_PRODUCTS.forEach(p => {
-    const dae = parseInt(document.getElementById('scfg-dae-' + p)?.value) || 14;
-    const jung = parseInt(document.getElementById('scfg-jung-' + p)?.value) || 22;
-    cfg[p] = { 대과: dae, 중과: jung };
-  });
+function _renderCfgRuleHTML() {
+  const countCat = categories.find(c => c.classification_type === 'count');
+  if (!countCat) return '<div class="note">과수형 카테고리가 없습니다. 카테고리·품목 탭에서 추가하세요.</div>';
+  const countItems = itemDefs.filter(i => i.category_id === countCat.id);
+  if (!countItems.length) return '<div class="note">과수형 카테고리에 품목이 없습니다. 카테고리·품목 탭에서 추가하세요.</div>';
+  const sections = countItems.map(item => {
+    const rules = itemSizeRules.filter(r => r.item_id === item.id).sort((a, b) => a.min_su - b.min_su);
+    const ruleRows = rules.length
+      ? rules.map(r => `<tr style="border-bottom:0.5px solid #f0f0f0">
+          ${_cfgTD(`<strong>${esc(r.group_name)}</strong>`)}
+          ${_cfgTD(r.min_su + '수', true)}
+          ${_cfgTD(r.max_su + '수', true)}
+          ${_cfgTD(`<button class="btn del sm" onclick="deleteItemRule(${r.id})">삭제</button>`, true)}
+        </tr>`).join('')
+      : `<tr><td colspan="4" style="padding:10px;text-align:center;color:#bbb">기준 없음</td></tr>`;
+    return `<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <div style="background:#EEF2FF;padding:9px 12px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">${esc(item.name)}</div>
+      <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+        <thead><tr>${_cfgTH('그룹')}${_cfgTH('최소 수')}${_cfgTH('최대 수')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+        <tbody>${ruleRows}</tbody>
+      </table></div>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#fafafa;border-top:1px solid var(--border)">
+        <input id="nr-grp-${item.id}" placeholder="그룹 (예: 대과)" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px">
+        <input id="nr-min-${item.id}" type="number" placeholder="최소 수" min="1" max="99" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px">
+        <input id="nr-max-${item.id}" type="number" placeholder="최대 수" min="1" max="99" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px">
+        <button class="btn pri" style="font-size:12px;padding:6px 12px" onclick="addItemRule(${item.id})">추가</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="note" style="margin-bottom:12px">💡 수(數)가 낮을수록 큰 과일입니다. 각 품목의 그룹별 수 범위를 설정하세요.</div>${sections}`;
+}
+
+// ── 카테고리 CRUD
+async function addCat() {
+  const name = (document.getElementById('new-cat-name')?.value || '').trim();
+  const type = document.getElementById('new-cat-type')?.value || 'count';
+  if (!name) return alert('카테고리명을 입력하세요.');
   try {
-    await saveSizeConfig(cfg);
-    invSizeConfig = cfg;
-    alert('저장되었습니다.');
+    const row = await dbInsertCategory({ name, classification_type: type });
+    categories.push(row);
+    sv('new-cat-name', '');
+    renderSizeCfg();
+    popInvProductSelects(); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function deleteCat(id) {
+  if (!confirm('카테고리를 삭제하면 관련 등급도 모두 삭제됩니다. 계속하시겠습니까?')) return;
+  try {
+    await dbDeleteCategory(id);
+    categories = categories.filter(c => c.id !== id);
+    sizeGrades = sizeGrades.filter(g => g.category_id !== id);
+    itemDefs = itemDefs.map(i => i.category_id === id ? { ...i, category_id: null } : i);
+    renderSizeCfg();
+    popInvProductSelects(); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function addSizeGrade(catId) {
+  const name = (document.getElementById('new-grade-name')?.value || '').trim();
+  const grp  = (document.getElementById('new-grade-group')?.value || '').trim();
+  const ord  = parseInt(document.getElementById('new-grade-order')?.value) ||
+    (sizeGrades.filter(g => g.category_id === catId).length + 1);
+  if (!name || !grp) return alert('등급명과 그룹명을 입력하세요.');
+  try {
+    const row = await dbInsertSizeGrade({ category_id: catId, grade_name: name, group_name: grp, sort_order: ord });
+    sizeGrades.push(row);
+    sizeGrades.sort((a, b) => a.sort_order - b.sort_order);
+    renderSizeCfg(); cfgSubTab('grade');
     renderInvSummary();
-  } catch(e) { alert('저장 오류: ' + e.message); }
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function deleteSizeGrade(id) {
+  if (!confirm('삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteSizeGrade(id);
+    sizeGrades = sizeGrades.filter(g => g.id !== id);
+    renderSizeCfg(); cfgSubTab('grade');
+    renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function addItem() {
+  const name  = (document.getElementById('new-item-name')?.value || '').trim();
+  const catId = parseInt(document.getElementById('new-item-cat')?.value) || null;
+  if (!name) return alert('품목명을 입력하세요.');
+  try {
+    const row = await dbInsertItem({ name, category_id: catId });
+    itemDefs.push(row);
+    sv('new-item-name', '');
+    renderSizeCfg();
+    popInvProductSelects(); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function deleteItem(id) {
+  if (!confirm('품목과 관련 과수 기준을 모두 삭제합니다. 계속하시겠습니까?')) return;
+  try {
+    await dbDeleteItem(id);
+    itemDefs = itemDefs.filter(i => i.id !== id);
+    itemSizeRules = itemSizeRules.filter(r => r.item_id !== id);
+    renderSizeCfg();
+    popInvProductSelects(); renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function addItemRule(itemId) {
+  const grp = (document.getElementById('nr-grp-' + itemId)?.value || '').trim();
+  const min = parseInt(document.getElementById('nr-min-' + itemId)?.value) || 0;
+  const max = parseInt(document.getElementById('nr-max-' + itemId)?.value) || 0;
+  if (!grp || !min || !max) return alert('그룹명, 최소수, 최대수를 입력하세요.');
+  if (min > max) return alert('최소수가 최대수보다 클 수 없습니다.');
+  try {
+    const row = await dbInsertItemSizeRule({ item_id: itemId, group_name: grp, min_su: min, max_su: max });
+    itemSizeRules.push(row);
+    renderSizeCfg(); cfgSubTab('rule');
+    renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
+}
+async function deleteItemRule(id) {
+  if (!confirm('삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteItemSizeRule(id);
+    itemSizeRules = itemSizeRules.filter(r => r.id !== id);
+    renderSizeCfg(); cfgSubTab('rule');
+    renderInvSummary();
+  } catch(e) { alert('오류: ' + e.message); }
 }
 
-function resetSizeCfg() {
-  if (!confirm('기본값으로 초기화하시겠습니까?')) return;
-  SIZE_PRODUCTS.forEach(p => {
-    const def = SIZE_DEFAULT[p] || { 대과: 14, 중과: 22 };
-    const daeEl = document.getElementById('scfg-dae-' + p);
-    const jungEl = document.getElementById('scfg-jung-' + p);
-    if (daeEl) daeEl.value = def.대과;
-    if (jungEl) jungEl.value = def.중과;
-    updateSoPreview(p);
-  });
+function _renderSortedSummarySection(num, title, dataMap, catType) {
+  const TH  = 'background:#1565C0;color:#fff;padding:8px 10px;font-size:12px;font-weight:600;text-align:center;border:1px solid #0D47A1';
+  const NUM = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
+  const NUMhl = NUM + ';background:#FFF8E1';
+  const EMPTY = 'padding:10px;border:1px solid #e0e0e0;font-size:13px;text-align:center;color:#bbb';
+  const fmt = v => v ? Number(v).toLocaleString() : '';
+  const secHdr = (n, t) => `<div style="background:#1565C0;color:#fff;text-align:center;padding:9px;font-size:14px;font-weight:700;border-radius:8px 8px 0 0;margin-top:18px">${n}. ${t}</div>`;
+  const wrap = inner => `<div class="tbl-wrap" style="border:1px solid #e0e0e0;border-radius:0 0 8px 8px;overflow:hidden">${inner}</div>`;
+
+  // Determine columns
+  let colNames;
+  if (catType === 'grade') {
+    const gradeCatId = categories.find(c => c.classification_type === 'grade')?.id;
+    colNames = [...new Set(
+      sizeGrades.filter(g => g.category_id === gradeCatId)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(g => g.group_name)
+    )];
+    if (!colNames.length) colNames = ['대과', '중과', '소과'];
+  } else {
+    const usedGroups = new Set();
+    Object.values(dataMap).forEach(m => Object.keys(m).forEach(k => usedGroups.add(k)));
+    const preferred = ['대과', '중과', '소과'];
+    const extras = [...usedGroups].filter(g => !preferred.includes(g));
+    colNames = [...preferred.filter(g => usedGroups.has(g)), ...extras];
+    if (!colNames.length) colNames = ['대과', '중과', '소과'];
+  }
+
+  const products = Object.keys(dataMap);
+  const bodyRows = products.length === 0
+    ? `<tr><td colspan="${colNames.length + 2}" style="${EMPTY}">데이터 없음</td></tr>`
+    : products.map(p => {
+        const m = dataMap[p] || {};
+        const tot = Object.values(m).reduce((s, v) => s + v, 0);
+        const cells = colNames.map(col => `<td style="${NUM}">${m[col] ? fmt(m[col]) + ' kg' : ''}</td>`).join('');
+        return `<tr>
+          <td style="padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:left">${esc(p)}</td>
+          ${cells}
+          <td style="${NUMhl}">${tot ? fmt(tot) + ' kg' : ''}</td>
+        </tr>`;
+      }).join('');
+
+  const thCols = colNames.map(col => `<th style="${TH}">${esc(col)} (kg)</th>`).join('');
+  const minW = Math.max(340, 130 + colNames.length * 110) + 'px';
+
+  return secHdr(num, title) + wrap(`<table style="width:100%;border-collapse:collapse;min-width:${minW}">
+    <thead><tr>
+      <th style="${TH}">품목</th>
+      ${thCols}
+      <th style="${TH}">합계 (kg)</th>
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>`);
 }
 
 function renderInvAll() {
@@ -2487,23 +2777,27 @@ function renderInvSummary() {
   const [y, mo, d] = td().split('-');
   const dateLabel = `${y}년 ${mo}월 ${d}일`;
 
-  // 선과 수(크기) → 대과/중과/소과 분류 (설정값 반영)
-  const parseCount = s => {
-    if (!s) return null;
-    if (s === '79g이하') return 99;
-    const m = s.match(/(\d+)/);
-    return m ? parseInt(m[1]) : null;
-  };
-  const sizeOf = (product, countNum) => {
-    const n = parseCount(countNum);
-    if (n === null) return '중과';
-    const key = SIZE_PRODUCTS.find(k => product.includes(k));
-    const cfg = getSizeCfg(key || product);
-    return n <= cfg.대과 ? '대과' : n <= cfg.중과 ? '중과' : '소과';
-  };
+  const kgPerCtOf = p => (p && p.includes('한라봉')) ? 13 : 17;
 
-  // 파치 규격 (kg/CT)
-  const kgPerCtOf = p => p.includes('한라봉') ? 13 : 17;
+  // 선과: 카테고리 타입별 분류
+  const sortGrade = {}, sortCount = {};
+  const gradeCatId = categories.find(c => c.classification_type === 'grade')?.id;
+  const countCatId = categories.find(c => c.classification_type === 'count')?.id;
+
+  invSorted.forEach(r => {
+    const item = _getItemDef(r.product);
+    const cat = item ? _getCatById(item.category_id) : null;
+    const catType = cat ? cat.classification_type : 'count';
+    const group = getGroupForSorted(r.product, r.count_num);
+    const kg = (Number(r.quantity) || 0) * kgPerCtOf(r.product);
+    if (catType === 'grade') {
+      if (!sortGrade[r.product]) sortGrade[r.product] = {};
+      sortGrade[r.product][group] = (sortGrade[r.product][group] || 0) + kg;
+    } else {
+      if (!sortCount[r.product]) sortCount[r.product] = {};
+      sortCount[r.product][group] = (sortCount[r.product][group] || 0) + kg;
+    }
+  });
 
   // 집계
   const unsMap = {};
@@ -2511,12 +2805,6 @@ function renderInvSummary() {
     if (!unsMap[r.product]) unsMap[r.product] = { qty: 0, sub: 0 };
     unsMap[r.product].qty += Number(r.quantity) || 0;
     unsMap[r.product].sub += Number(r.sub_quantity) || 0;
-  });
-
-  const sortMap = {};
-  invSorted.forEach(r => {
-    if (!sortMap[r.product]) sortMap[r.product] = { 대과: 0, 중과: 0, 소과: 0 };
-    sortMap[r.product][sizeOf(r.product, r.count_num)] += (Number(r.quantity) || 0) * 17;
   });
 
   const wasteMap = {};
@@ -2534,7 +2822,6 @@ function renderInvSummary() {
 
   // 스타일 상수
   const TH  = 'background:#1565C0;color:#fff;padding:8px 10px;font-size:12px;font-weight:600;text-align:center;border:1px solid #0D47A1';
-  const TH2 = 'background:#1976D2;color:#fff;padding:5px 8px;font-size:11px;font-weight:400;text-align:center;border:1px solid #0D47A1;line-height:1.4';
   const TD  = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:center';
   const NUM = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
   const NUMhl = NUM + ';background:#FFF8E1';
@@ -2558,20 +2845,6 @@ function renderInvSummary() {
           <td style="${NUM}">${fmt(v.qty)}</td>
           <td style="${NUM}">${v.sub ? fmt(v.sub) : ''}</td>
           <td style="${NUMhl}">${tot ? fmt(tot) + ' CT' : ''}</td>
-        </tr>`;
-      }).join('');
-
-  // 2. 선과
-  const sortRows = Object.keys(sortMap).length === 0
-    ? `<tr><td colspan="5" style="${EMPTY}">데이터 없음</td></tr>`
-    : Object.entries(sortMap).map(([p, v]) => {
-        const tot = v.대과 + v.중과 + v.소과;
-        return `<tr>
-          <td style="${TD};text-align:left">${esc(p)}</td>
-          <td style="${NUM}">${v.대과 ? fmt(v.대과) + ' kg' : ''}</td>
-          <td style="${NUM}">${v.중과 ? fmt(v.중과) + ' kg' : ''}</td>
-          <td style="${NUM}">${v.소과 ? fmt(v.소과) + ' kg' : ''}</td>
-          <td style="${NUMhl}">${tot ? fmt(tot) + ' kg' : ''}</td>
         </tr>`;
       }).join('');
 
@@ -2618,24 +2891,8 @@ function renderInvSummary() {
         <tbody>${unsRows}</tbody>
       </table>`)}
 
-      ${secHdr(2, '만감 선과 재고 (단위 : kg)')}
-      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:460px">
-        <thead>
-          <tr>
-            <th style="${TH}" rowspan="2">품목</th>
-            <th style="${TH}">대과 (kg)</th>
-            <th style="${TH}">중과 (kg)</th>
-            <th style="${TH}">소과 (kg)</th>
-            <th style="${TH}" rowspan="2">품목 합계 (kg)</th>
-          </tr>
-          <tr>
-            <th style="${TH2}">카라향 ≤14수<br>한라봉 7~10수</th>
-            <th style="${TH2}">카라향 15~22수<br>한라봉 11~13수</th>
-            <th style="${TH2}">카라향 23수~<br>한라봉 14수~</th>
-          </tr>
-        </thead>
-        <tbody>${sortRows}</tbody>
-      </table>`)}
+      ${_renderSortedSummarySection(2, '만감류 선과 재고 (단위: kg)', sortCount, 'count')}
+      ${_renderSortedSummarySection(3, '감귤류 선과 재고 (단위: kg)', sortGrade, 'grade')}
 
       ${secHdr(4, '파치 재고')}
       ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:300px">

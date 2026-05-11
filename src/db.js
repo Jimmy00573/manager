@@ -142,3 +142,31 @@ async function dbGetJuice(date) {
 async function dbInsertJuice(data) { const r = await sbInsert('inventory_juice', data); return r[0]; }
 async function dbUpdateJuice(id, data) { const r = await sbUpdate('inventory_juice', id, data); return r[0]; }
 async function dbDeleteJuice(id) { return sbDelete('inventory_juice', id); }
+
+// ── 카테고리 시스템
+async function dbGetCategories() { try { return await sbGet('categories', 'order=id'); } catch(e) { return []; } }
+async function dbInsertCategory(data) { const r = await sbInsert('categories', data); return r[0]; }
+async function dbUpdateCategory(id, data) { const r = await sbUpdate('categories', id, data); return r[0]; }
+async function dbDeleteCategory(id) { return sbDelete('categories', id); }
+
+async function dbGetSizeGrades() { try { return await sbGet('size_grades', 'order=sort_order'); } catch(e) { return []; } }
+async function dbInsertSizeGrade(data) { const r = await sbInsert('size_grades', data); return r[0]; }
+async function dbUpdateSizeGrade(id, data) { const r = await sbUpdate('size_grades', id, data); return r[0]; }
+async function dbDeleteSizeGrade(id) { return sbDelete('size_grades', id); }
+
+async function dbGetItems() { try { return await sbGet('items', 'order=name'); } catch(e) { return []; } }
+async function dbInsertItem(data) { const r = await sbInsert('items', data); return r[0]; }
+async function dbUpdateItem(id, data) { const r = await sbUpdate('items', id, data); return r[0]; }
+async function dbDeleteItem(id) { return sbDelete('items', id); }
+
+async function dbGetItemSizeRules() { try { return await sbGet('item_size_rules', 'order=item_id,min_su'); } catch(e) { return []; } }
+async function dbInsertItemSizeRule(data) { const r = await sbInsert('item_size_rules', data); return r[0]; }
+async function dbUpdateItemSizeRule(id, data) { const r = await sbUpdate('item_size_rules', id, data); return r[0]; }
+async function dbDeleteItemSizeRule(id) { return sbDelete('item_size_rules', id); }
+
+async function loadCategorySystem() {
+  const [cats, grades, itemList, rules] = await Promise.all([
+    dbGetCategories(), dbGetSizeGrades(), dbGetItems(), dbGetItemSizeRules()
+  ]);
+  return { cats, grades, itemList, rules };
+}

@@ -608,7 +608,7 @@
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="so-date" type="date"></div>
         <div class="fg"><label>품목 *</label>
-          <select id="so-product">
+          <select id="so-product" onchange="onSortedProductChange()">
             <option value="">선택</option>
             <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option><option>비가림</option><option>타이벡</option>
           </select>
@@ -620,14 +620,9 @@
           </select>
         </div>
         <div class="fg"><label>농가명 *</label><select id="so-farm"><option value="">선택</option></select></div>
-        <div class="fg"><label>수(크기) *</label>
+        <div class="fg"><label>수·등급 *</label>
           <select id="so-count">
-            <option value="">선택</option>
-            <option>79g이하</option>
-            <option>5수</option><option>6수</option><option>7수</option><option>8수</option><option>9수</option><option>10수</option>
-            <option>11수</option><option>12수</option><option>13수</option><option>14수</option><option>15수</option><option>16수</option>
-            <option>17수</option><option>18수</option><option>19수</option><option>20수</option><option>21수</option><option>22수</option>
-            <option>23수</option><option>24수</option><option>25수</option><option>26수</option>
+            <option value="">품목 먼저 선택</option>
           </select>
         </div>
         <div class="fg"><label>수량(CT) *</label><input id="so-qty" type="number" step="0.5" placeholder="0" min="0"></div>
