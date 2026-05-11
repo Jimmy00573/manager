@@ -296,3 +296,14 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
   .form-grid { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+
+/* ── 인쇄 */
+@media print {
+  .hdr, #anav, #dnav, #pin-screen, .btn, [onclick="window.print()"] { display: none !important; }
+  .panel { display: none !important; }
+  #p-inv { display: block !important; }
+  .main { max-width: 100%; padding: 0; }
+  .inv-excel-wrap { max-width: 100%; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

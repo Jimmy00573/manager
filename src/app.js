@@ -2394,168 +2394,184 @@ function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
   if (!el) return;
 
-  // 품목별 합계
-  const unsTotal = {}, sortTotal = {}, wasteTotal = {}, juiceTotal = {};
-  invUnsorted.forEach(r => { unsTotal[r.product] = (unsTotal[r.product] || 0) + (r.quantity || 0); });
-  invSorted.forEach(r => { sortTotal[r.product] = (sortTotal[r.product] || 0) + (r.quantity || 0); });
-  invWaste.forEach(r => { wasteTotal[r.product] = (wasteTotal[r.product] || 0) + (r.quantity || 0); });
-  invJuice.forEach(r => { juiceTotal[r.product] = (juiceTotal[r.product] || 0) + (r.total_qty || 0); });
+  // 날짜 헤더
+  const [y, mo, d] = td().split('-');
+  const dateLabel = `${y}년 ${mo}월 ${d}일`;
 
-  // 농가별·품목별 상세 (미선과)
-  const unsDetail = {};
+  // 선과 수(크기) → 대과/중과/소과 분류
+  const parseCount = s => {
+    if (!s) return null;
+    if (s === '79g이하') return 99;
+    const m = s.match(/(\d+)/);
+    return m ? parseInt(m[1]) : null;
+  };
+  const sizeOf = (product, countNum) => {
+    const n = parseCount(countNum);
+    if (n === null) return '중과';
+    if (product.includes('한라봉')) return n <= 10 ? '대과' : n <= 13 ? '중과' : '소과';
+    return n <= 14 ? '대과' : n <= 22 ? '중과' : '소과';
+  };
+
+  // 파치 규격 (kg/CT)
+  const kgPerCtOf = p => p.includes('한라봉') ? 13 : 17;
+
+  // 집계
+  const unsMap = {};
   invUnsorted.forEach(r => {
-    if (!unsDetail[r.farm_name]) unsDetail[r.farm_name] = {};
-    unsDetail[r.farm_name][r.product] = (unsDetail[r.farm_name][r.product] || 0) + (r.quantity || 0);
+    if (!unsMap[r.product]) unsMap[r.product] = { qty: 0, sub: 0 };
+    unsMap[r.product].qty += Number(r.quantity) || 0;
+    unsMap[r.product].sub += Number(r.sub_quantity) || 0;
   });
 
-  // 농가별·품목별 상세 (선과)
-  const sortDetail = {};
+  const sortMap = {};
   invSorted.forEach(r => {
-    if (!sortDetail[r.farm_name]) sortDetail[r.farm_name] = {};
-    sortDetail[r.farm_name][r.product] = (sortDetail[r.farm_name][r.product] || 0) + (r.quantity || 0);
+    if (!sortMap[r.product]) sortMap[r.product] = { 대과: 0, 중과: 0, 소과: 0 };
+    sortMap[r.product][sizeOf(r.product, r.count_num)] += (Number(r.quantity) || 0) * 17;
   });
 
-  const empty = map => Object.keys(map).length === 0;
+  const wasteMap = {};
+  invWaste.forEach(r => {
+    if (!wasteMap[r.product]) wasteMap[r.product] = { ct: 0, kgPerCt: kgPerCtOf(r.product) };
+    wasteMap[r.product].ct += Number(r.quantity) || 0;
+  });
 
-  // 농가별·품목별 카드 — 데스크톱 테이블 + 모바일 카드 동시 렌더
-  const makeFarmDetailCard = (detail, title) => {
-    if (empty(detail)) return `
-      <div class="ext-card">
-        <div class="ext-card-title">${title}</div>
-        <div class="alert-none">데이터 없음</div>
-      </div>`;
-    const tRows = [], mFarms = [];
-    let grandTotal = 0;
-    Object.entries(detail).forEach(([farm, products]) => {
-      const entries = Object.entries(products);
-      let farmTotal = 0;
-      const mRows = [];
-      entries.forEach(([product, qty], i) => {
-        const q = Number(qty) || 0;
-        farmTotal += q;
-        grandTotal += q;
-        tRows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
-          <td style="padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i === 0 ? esc(farm) : ''}</td>
-          <td style="padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(product)}</td>
-          <td style="padding:5px 8px;text-align:right;font-weight:500">${q} CT</td>
-        </tr>`);
-        mRows.push(`<div class="inv-mc-row"><span>${esc(product)}</span><span>${q} CT</span></div>`);
-      });
-      if (entries.length > 1) {
-        tRows.push(`<tr style="border-bottom:1px solid #e0e0e0;background:#f9f9f9;font-size:12px;color:var(--text-secondary)">
-          <td style="padding:4px 8px">소계</td><td></td>
-          <td style="padding:4px 8px;text-align:right;font-weight:600">${farmTotal} CT</td>
-        </tr>`);
-      }
-      mFarms.push(`<div class="inv-mc-farm">
-        <div class="inv-mc-fname">${esc(farm)}</div>
-        ${mRows.join('')}
-        ${entries.length > 1 ? `<div class="inv-mc-sub"><span>소계</span><span>${farmTotal} CT</span></div>` : ''}
-      </div>`);
-    });
-    return `
-      <div class="ext-card" style="padding:0;overflow:hidden">
-        <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
-          <div class="ext-card-title" style="margin:0">${title}</div>
-        </div>
-        <div class="inv-dt" style="overflow-x:auto">
-          <table style="border-collapse:collapse;font-size:13px;width:100%;table-layout:fixed;min-width:300px">
-            <colgroup><col style="width:120px"><col style="width:120px"><col style="width:80px"></colgroup>
-            <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
-              <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">농가명</th>
-              <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
-              <th style="padding:6px 8px;text-align:right;font-weight:500;color:var(--text-secondary)">수량(CT)</th>
-            </tr></thead>
-            <tbody>${tRows.join('')}</tbody>
-            <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
-              <td colspan="2" style="padding:6px 8px;font-weight:600">전체 합계</td>
-              <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} CT</td>
-            </tr></tfoot>
-          </table>
-        </div>
-        <div class="inv-mc" style="padding:10px 12px">
-          ${mFarms.join('')}
-          <div class="inv-mc-total"><span>전체 합계</span><span>${grandTotal} CT</span></div>
-        </div>
-      </div>`;
-  };
+  const juiceMap = {};
+  invJuice.forEach(r => {
+    if (!juiceMap[r.product]) juiceMap[r.product] = { qty: 0, unit: r.unit || '병', note: r.note || '' };
+    juiceMap[r.product].qty += Number(r.total_qty) || 0;
+    if (r.note && !juiceMap[r.product].note) juiceMap[r.product].note = r.note;
+  });
 
-  // 품목별 카드 — 파치·주스용 (데스크톱 테이블 + 모바일 카드)
-  const makeProductDetailCard = (detail, title, unit = 'CT') => {
-    if (empty(detail)) return `
-      <div class="ext-card">
-        <div class="ext-card-title">${title}</div>
-        <div class="alert-none">데이터 없음</div>
-      </div>`;
-    let grandTotal = 0;
-    const tRows = [], mRows = [];
-    Object.entries(detail).forEach(([product, qty]) => {
-      const q = Number(qty) || 0;
-      grandTotal += q;
-      tRows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
-        <td style="padding:5px 8px">${esc(product)}</td>
-        <td style="padding:5px 8px;text-align:right;font-weight:500">${q} ${unit}</td>
-      </tr>`);
-      mRows.push(`<div class="inv-mc-row"><span>${esc(product)}</span><span>${q} ${unit}</span></div>`);
-    });
-    return `
-      <div class="ext-card" style="padding:0;overflow:hidden">
-        <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
-          <div class="ext-card-title" style="margin:0">${title}</div>
-        </div>
-        <div class="inv-dt" style="overflow-x:auto">
-          <table style="border-collapse:collapse;font-size:13px;width:100%;table-layout:fixed;min-width:200px">
-            <colgroup><col><col style="width:80px"></colgroup>
-            <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
-              <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
-              <th style="padding:6px 8px;text-align:right;font-weight:500;color:var(--text-secondary)">수량</th>
-            </tr></thead>
-            <tbody>${tRows.join('')}</tbody>
-            <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
-              <td style="padding:6px 8px;font-weight:600">전체 합계</td>
-              <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} ${unit}</td>
-            </tr></tfoot>
-          </table>
-        </div>
-        <div class="inv-mc" style="padding:10px 12px">
-          <div class="inv-mc-farm">${mRows.join('')}</div>
-          <div class="inv-mc-total"><span>전체 합계</span><span>${grandTotal} ${unit}</span></div>
-        </div>
-      </div>`;
-  };
+  // 스타일 상수
+  const TH  = 'background:#1565C0;color:#fff;padding:8px 10px;font-size:12px;font-weight:600;text-align:center;border:1px solid #0D47A1';
+  const TH2 = 'background:#1976D2;color:#fff;padding:5px 8px;font-size:11px;font-weight:400;text-align:center;border:1px solid #0D47A1;line-height:1.4';
+  const TD  = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:center';
+  const NUM = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
+  const NUMhl = NUM + ';background:#FFF8E1';
+  const EMPTY = `padding:10px;border:1px solid #e0e0e0;font-size:13px;text-align:center;color:#bbb`;
+  const fmt = v => v ? Number(v).toLocaleString() : '';
+
+  const secHdr = (num, title) => `
+    <div style="background:#1565C0;color:#fff;text-align:center;padding:9px;font-size:14px;font-weight:700;border-radius:8px 8px 0 0;margin-top:18px">
+      ${num}. ${title}
+    </div>`;
+
+  const wrap = inner => `<div class="tbl-wrap" style="border:1px solid #e0e0e0;border-radius:0 0 8px 8px;overflow:hidden">${inner}</div>`;
+
+  // 1. 미선과
+  const unsRows = Object.keys(unsMap).length === 0
+    ? `<tr><td colspan="4" style="${EMPTY}">데이터 없음</td></tr>`
+    : Object.entries(unsMap).map(([p, v]) => {
+        const tot = v.qty + v.sub;
+        return `<tr>
+          <td style="${TD};text-align:left">${esc(p)}</td>
+          <td style="${NUM}">${fmt(v.qty)}</td>
+          <td style="${NUM}">${v.sub ? fmt(v.sub) : ''}</td>
+          <td style="${NUMhl}">${tot ? fmt(tot) + ' CT' : ''}</td>
+        </tr>`;
+      }).join('');
+
+  // 2. 선과
+  const sortRows = Object.keys(sortMap).length === 0
+    ? `<tr><td colspan="5" style="${EMPTY}">데이터 없음</td></tr>`
+    : Object.entries(sortMap).map(([p, v]) => {
+        const tot = v.대과 + v.중과 + v.소과;
+        return `<tr>
+          <td style="${TD};text-align:left">${esc(p)}</td>
+          <td style="${NUM}">${v.대과 ? fmt(v.대과) + ' kg' : ''}</td>
+          <td style="${NUM}">${v.중과 ? fmt(v.중과) + ' kg' : ''}</td>
+          <td style="${NUM}">${v.소과 ? fmt(v.소과) + ' kg' : ''}</td>
+          <td style="${NUMhl}">${tot ? fmt(tot) + ' kg' : ''}</td>
+        </tr>`;
+      }).join('');
+
+  // 4. 파치
+  const wasteRows = Object.keys(wasteMap).length === 0
+    ? `<tr><td colspan="4" style="${EMPTY}">데이터 없음</td></tr>`
+    : Object.entries(wasteMap).map(([p, v]) => {
+        const totalKg = v.ct * v.kgPerCt;
+        return `<tr>
+          <td style="${TD};text-align:left">${esc(p)}</td>
+          <td style="${NUM}">${fmt(v.ct)}</td>
+          <td style="${TD}">${v.kgPerCt}</td>
+          <td style="${NUMhl}">${totalKg ? fmt(totalKg) + 'kg' : ''}</td>
+        </tr>`;
+      }).join('');
+
+  // 5. 주스/청
+  const juiceRows = Object.keys(juiceMap).length === 0
+    ? `<tr><td colspan="4" style="${EMPTY}">데이터 없음</td></tr>`
+    : Object.entries(juiceMap).map(([p, v]) => `<tr>
+        <td style="${TD};text-align:left">${esc(p)}</td>
+        <td style="${NUM}">${fmt(v.qty)}</td>
+        <td style="${TD}">${esc(v.unit)}</td>
+        <td style="${TD}">${esc(v.note)}</td>
+      </tr>`).join('');
 
   el.innerHTML = `
-    <div class="ext-grid inv-sum-grid" style="margin-bottom:14px">
-      <div class="ext-card">
-        <div class="ext-card-title">🍊 미선과 합계</div>
-        ${empty(unsTotal) ? '<div class="alert-none">데이터 없음</div>' :
-          Object.entries(unsTotal).map(([p, q]) =>
-            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-warn">${q} CT</span></div>`).join('')}
+    <div class="inv-excel-wrap">
+      <div style="background:#0D47A1;color:#fff;text-align:center;padding:13px;font-size:17px;font-weight:700;border-radius:10px 10px 0 0">
+        📦 현장 재고 전체 현황
       </div>
-      <div class="ext-card">
-        <div class="ext-card-title">📦 선과 합계</div>
-        ${empty(sortTotal) ? '<div class="alert-none">데이터 없음</div>' :
-          Object.entries(sortTotal).map(([p, q]) =>
-            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-info">${q} CT<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">≈${(q*17).toFixed(0)}kg</span></span></div>`).join('')}
+      <div style="text-align:center;padding:8px;font-size:13px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:0 0 8px 8px;margin-bottom:4px">
+        ${dateLabel} 기준
       </div>
-      <div class="ext-card">
-        <div class="ext-card-title">🧹 파치 합계</div>
-        ${empty(wasteTotal) ? '<div class="alert-none">데이터 없음</div>' :
-          Object.entries(wasteTotal).map(([p, q]) =>
-            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-neu">${q} CT</span></div>`).join('')}
+
+      ${secHdr(1, '미선과 재고 (단위 : CT)')}
+      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:340px">
+        <thead><tr>
+          <th style="${TH}">품목</th>
+          <th style="${TH}">원물 (CT)</th>
+          <th style="${TH}">소과 (CT)</th>
+          <th style="${TH}">합계 (CT)</th>
+        </tr></thead>
+        <tbody>${unsRows}</tbody>
+      </table>`)}
+
+      ${secHdr(2, '만감 선과 재고 (단위 : kg)')}
+      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:460px">
+        <thead>
+          <tr>
+            <th style="${TH}" rowspan="2">품목</th>
+            <th style="${TH}">대과 (kg)</th>
+            <th style="${TH}">중과 (kg)</th>
+            <th style="${TH}">소과 (kg)</th>
+            <th style="${TH}" rowspan="2">품목 합계 (kg)</th>
+          </tr>
+          <tr>
+            <th style="${TH2}">카라향 ≤14수<br>한라봉 7~10수</th>
+            <th style="${TH2}">카라향 15~22수<br>한라봉 11~13수</th>
+            <th style="${TH2}">카라향 23수~<br>한라봉 14수~</th>
+          </tr>
+        </thead>
+        <tbody>${sortRows}</tbody>
+      </table>`)}
+
+      ${secHdr(4, '파치 재고')}
+      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:300px">
+        <thead><tr>
+          <th style="${TH}">품목</th>
+          <th style="${TH}">CT수</th>
+          <th style="${TH}">규격 (kg/CT)</th>
+          <th style="${TH}">총중량 (kg)</th>
+        </tr></thead>
+        <tbody>${wasteRows}</tbody>
+      </table>`)}
+
+      ${secHdr(5, '주스 / 청 재고')}
+      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:280px">
+        <thead><tr>
+          <th style="${TH}">품목</th>
+          <th style="${TH}">수량</th>
+          <th style="${TH}">단위</th>
+          <th style="${TH}">비고</th>
+        </tr></thead>
+        <tbody>${juiceRows}</tbody>
+      </table>`)}
+
+      <div style="text-align:right;margin-top:14px">
+        <button class="btn" onclick="window.print()" style="background:#1565C0;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">🖨️ 인쇄 / PDF</button>
       </div>
-      <div class="ext-card">
-        <div class="ext-card-title">🧃 주스/청 합계</div>
-        ${empty(juiceTotal) ? '<div class="alert-none">데이터 없음</div>' :
-          Object.entries(juiceTotal).map(([p, q]) =>
-            `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-ok">${q}</span></div>`).join('')}
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
-      ${makeFarmDetailCard(unsDetail, '🍊 미선과 — 농가별·품목별')}
-      ${makeFarmDetailCard(sortDetail, '📦 선과 — 농가별·품목별')}
-      ${makeProductDetailCard(wasteTotal, '🧹 파치 — 품목별')}
-      ${makeProductDetailCard(juiceTotal, '🧃 주스/청 — 품목별', '')}
     </div>`;
 }
 
