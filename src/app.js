@@ -2417,8 +2417,13 @@ function renderInvSummary() {
 
   const empty = map => Object.keys(map).length === 0;
 
-  const buildDetailRows = (detail) => {
-    if (empty(detail)) return { rows: '', grandTotal: 0, hasData: false };
+  // 농가별·품목별 카드 (3컬럼: 농가명·품목·수량)
+  const makeFarmDetailCard = (detail, title) => {
+    if (empty(detail)) return `
+      <div class="ext-card">
+        <div class="ext-card-title">${title}</div>
+        <div class="alert-none">데이터 없음</div>
+      </div>`;
     const rows = [];
     let grandTotal = 0;
     Object.entries(detail).forEach(([farm, products]) => {
@@ -2428,38 +2433,77 @@ function renderInvSummary() {
         const q = Number(qty) || 0;
         farmTotal += q;
         grandTotal += q;
-        rows.push(`<tr>
-          <td>${i === 0 ? esc(farm) : ''}</td>
-          <td>${esc(product)}</td>
-          <td style="text-align:right;font-weight:500">${q} CT</td>
+        rows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
+          <td style="padding:5px 8px;width:120px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i === 0 ? esc(farm) : ''}</td>
+          <td style="padding:5px 8px;width:120px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(product)}</td>
+          <td style="padding:5px 8px;width:80px;text-align:right;font-weight:500">${q} CT</td>
         </tr>`);
       });
       if (entries.length > 1) {
-        rows.push(`<tr style="background:#f5f5f5;color:var(--text-secondary);font-size:12px">
-          <td>소계</td><td></td>
-          <td style="text-align:right;font-weight:600">${farmTotal} CT</td>
+        rows.push(`<tr style="border-bottom:1px solid #e0e0e0;background:#f9f9f9;font-size:12px;color:var(--text-secondary)">
+          <td style="padding:4px 8px">소계</td><td></td>
+          <td style="padding:4px 8px;text-align:right;font-weight:600">${farmTotal} CT</td>
         </tr>`);
       }
     });
-    return { rows: rows.join(''), grandTotal, hasData: true };
+    return `
+      <div class="ext-card" style="padding:0;overflow:hidden">
+        <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
+          <div class="ext-card-title" style="margin:0">${title}</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="border-collapse:collapse;font-size:13px;width:100%;table-layout:fixed;min-width:300px">
+            <colgroup><col style="width:120px"><col style="width:120px"><col style="width:80px"></colgroup>
+            <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
+              <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">농가명</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
+              <th style="padding:6px 8px;text-align:right;font-weight:500;color:var(--text-secondary)">수량(CT)</th>
+            </tr></thead>
+            <tbody>${rows.join('')}</tbody>
+            <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
+              <td colspan="2" style="padding:6px 8px;font-weight:600">전체 합계</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} CT</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>`;
   };
 
-  const makeDetailTable = (detail, title) => {
-    const { rows, grandTotal, hasData } = buildDetailRows(detail);
-    if (!hasData) return `
-      <div class="sec-hdr"><div class="sec-title">${title}</div></div>
-      <div class="alert-none">데이터 없음</div>`;
+  // 품목별 카드 (2컬럼: 품목·수량) — 파치·주스용
+  const makeProductDetailCard = (detail, title, unit = 'CT') => {
+    if (empty(detail)) return `
+      <div class="ext-card">
+        <div class="ext-card-title">${title}</div>
+        <div class="alert-none">데이터 없음</div>
+      </div>`;
+    let grandTotal = 0;
+    const rows = Object.entries(detail).map(([product, qty]) => {
+      const q = Number(qty) || 0;
+      grandTotal += q;
+      return `<tr style="border-bottom:0.5px solid #f0f0f0">
+        <td style="padding:5px 8px">${esc(product)}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:500;width:80px">${q} ${unit}</td>
+      </tr>`;
+    });
     return `
-      <div class="sec-hdr"><div class="sec-title">${title}</div></div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>농가명</th><th>품목</th><th style="text-align:right">수량(CT)</th></tr></thead>
-          <tbody>${rows}</tbody>
-          <tfoot><tr style="background:#fff8f0;font-weight:700">
-            <td colspan="2">전체 합계</td>
-            <td style="text-align:right;color:var(--orange)">${grandTotal} CT</td>
-          </tr></tfoot>
-        </table>
+      <div class="ext-card" style="padding:0;overflow:hidden">
+        <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
+          <div class="ext-card-title" style="margin:0">${title}</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="border-collapse:collapse;font-size:13px;width:100%;table-layout:fixed;min-width:200px">
+            <colgroup><col><col style="width:80px"></colgroup>
+            <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
+              <th style="padding:6px 8px;text-align:left;font-weight:500;color:var(--text-secondary)">품목</th>
+              <th style="padding:6px 8px;text-align:right;font-weight:500;color:var(--text-secondary)">수량</th>
+            </tr></thead>
+            <tbody>${rows.join('')}</tbody>
+            <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
+              <td style="padding:6px 8px;font-weight:600">전체 합계</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} ${unit}</td>
+            </tr></tfoot>
+          </table>
+        </div>
       </div>`;
   };
 
@@ -2490,8 +2534,12 @@ function renderInvSummary() {
             `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-ok">${q}</span></div>`).join('')}
       </div>
     </div>
-    ${makeDetailTable(unsDetail, '🍊 미선과 — 농가별·품목별')}
-    ${makeDetailTable(sortDetail, '📦 선과 — 농가별·품목별')}`;
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
+      ${makeFarmDetailCard(unsDetail, '🍊 미선과 — 농가별·품목별')}
+      ${makeFarmDetailCard(sortDetail, '📦 선과 — 농가별·품목별')}
+      ${makeProductDetailCard(wasteTotal, '🧹 파치 — 품목별')}
+      ${makeProductDetailCard(juiceTotal, '🧃 주스/청 — 품목별', '')}
+    </div>`;
 }
 
 function renderUnsortedList() {
