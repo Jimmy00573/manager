@@ -13,6 +13,7 @@ let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
+let inboundRecords = [], processingRecords = [];
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
@@ -484,7 +485,7 @@ function popSels() {
 });
   const rf = document.getElementById('rp-farm');
   if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
-  ['un-farm', 'so-farm'].forEach(id => {
+  ['ib-farm', 'so-farm'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value; el.innerHTML = '<option value="">선택</option>';
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
@@ -495,7 +496,7 @@ function popSels() {
 function setDates() {
   const t = td();
   ['dp-date', 'pk-date', 'oi-date', 'oo-date', 'ni-date', 'no-date', 'rp-date', 'bk-date',
-   'un-date', 'so-date', 'wa-date', 'ju-date'].forEach(id => {
+   'ib-date', 'proc-date', 'so-date', 'wa-date', 'ju-date'].forEach(id => {
     const el = document.getElementById(id); if (el && !el.value) el.value = t;
   });
   const now = new Date();
@@ -2372,15 +2373,27 @@ function invTab(t) {
   if (t === 'cfg') renderSizeCfg();
 }
 
+function ibTab(t) {
+  ['list', 'proc'].forEach(s => {
+    const div = document.getElementById('ib-' + s + '-div');
+    const btn = document.getElementById('ib-t-' + s);
+    if (div) div.style.display = t === s ? '' : 'none';
+    if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
+  });
+  if (t === 'proc') renderProcessingTab();
+}
+
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [a, b, c, d, e, f] = await Promise.all([
-      dbGetUnsorted(null), dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
+    const [a, b, c, d, e, f, g] = await Promise.all([
+      dbGetInbounds(), dbGetProcessings(),
+      dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
       loadSizeConfig(), loadCategorySystem()
     ]);
-    [invUnsorted, invSorted, invWaste, invJuice, invSizeConfig] = [a, b, c, d, e];
-    categories = f.cats; sizeGrades = f.grades; itemDefs = f.itemList; itemSizeRules = f.rules;
+    [inboundRecords, processingRecords] = [a, b];
+    [invSorted, invWaste, invJuice, invSizeConfig] = [c, d, e, f];
+    categories = g.cats; sizeGrades = g.grades; itemDefs = g.itemList; itemSizeRules = g.rules;
     popInvProductSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
   hideLoading();
@@ -2478,7 +2491,7 @@ function buildProductOptgroupHTML() {
 function popInvProductSelects() {
   if (!itemDefs.length) return;
   const optHtml = buildProductOptgroupHTML();
-  ['un-product', 'so-product', 'wa-product'].forEach(id => {
+  ['ib-product', 'so-product', 'wa-product'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     const cur = el.value;
@@ -2986,7 +2999,7 @@ function _buildSortedTableWrap(dataMap, catType) {
 
 function renderInvAll() {
   renderInvSummary();
-  renderUnsortedList();
+  renderInboundList();
   renderSortedList();
   renderWasteList();
   renderJuiceList();
@@ -3028,12 +3041,15 @@ function renderInvSummary() {
     }
   });
 
-  // 집계
+  // 미선과 재고 = 입고 합계 - 처리 합계 (실시간)
+  const processedByInbound = {};
+  processingRecords.forEach(r => {
+    processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
+  });
   const unsMap = {};
-  invUnsorted.forEach(r => {
-    if (!unsMap[r.product]) unsMap[r.product] = { qty: 0, sub: 0 };
-    unsMap[r.product].qty += Number(r.quantity) || 0;
-    unsMap[r.product].sub += Number(r.sub_quantity) || 0;
+  inboundRecords.forEach(r => {
+    const remaining = r.quantity - (processedByInbound[r.id] || 0);
+    if (remaining > 0) unsMap[r.product] = (unsMap[r.product] || 0) + remaining;
   });
 
   const wasteMap = {};
@@ -3066,19 +3082,13 @@ function renderInvSummary() {
   const sections = [];
 
   if (Object.keys(unsMap).length > 0) {
-    const rows = Object.entries(unsMap).map(([p, v]) => {
-      const tot = v.qty + v.sub;
-      return `<tr>
-        <td style="${TD};text-align:left">${esc(p)}</td>
-        <td style="${NUM}">${fmt(v.qty)}</td>
-        <td style="${NUM}">${v.sub ? fmt(v.sub) : ''}</td>
-        <td style="${NUMhl}">${tot ? fmt(tot) + ' CT' : ''}</td>
-      </tr>`;
-    }).join('');
-    sections.push({ title: '미선과 재고 (단위 : CT)', body: wrap(`<table style="width:100%;border-collapse:collapse;min-width:340px">
-      <thead><tr>
-        <th style="${TH}">품목</th><th style="${TH}">원물 (CT)</th><th style="${TH}">소과 (CT)</th><th style="${TH}">합계 (CT)</th>
-      </tr></thead><tbody>${rows}</tbody>
+    const rows = Object.entries(unsMap).map(([p, qty]) => `<tr>
+      <td style="${TD};text-align:left">${esc(p)}</td>
+      <td style="${NUMhl}">${fmt(qty)} CT</td>
+    </tr>`).join('');
+    sections.push({ title: '미선과 재고 (단위 : CT)', body: wrap(`<table style="width:100%;border-collapse:collapse;min-width:280px">
+      <thead><tr><th style="${TH}">품목</th><th style="${TH}">재고 (CT)</th></tr></thead>
+      <tbody>${rows}</tbody>
     </table>`) });
   }
 
@@ -3138,24 +3148,184 @@ function renderInvSummary() {
     </div>`;
 }
 
-function renderUnsortedList() {
-  const tbody = document.getElementById('un-tb');
+function getProcessedForInbound(id) {
+  return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
+}
+
+function renderInboundList() {
+  const tbody = document.getElementById('ib-tb');
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const data = _filterDate(invUnsorted);
-  if (!data.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">입고 기록 없음</td></tr>'; return; }
-  tbody.innerHTML = data.map(r => `<tr>
-    <td>${r.date}</td>
-    <td class="nm">${esc(r.farm_name)}</td>
-    <td>${esc(r.product)}</td>
-    <td>${r.quantity} CT</td>
-    <td>${r.sub_quantity != null ? r.sub_quantity + ' CT' : '-'}</td>
-    <td>${esc(r.location)}</td>
-    <td>${r.brix_min != null || r.brix_max != null ? (r.brix_min ?? '?') + '~' + (r.brix_max ?? '?') : '-'}</td>
-    <td>${r.acid_min != null || r.acid_max != null ? (r.acid_min ?? '?') + '~' + (r.acid_max ?? '?') : '-'}</td>
-    <td style="white-space:normal;min-width:80px">${esc(r.note || '-')}</td>
-    <td>${isAdm ? `<button class="btn del" onclick="deleteUnsorted('${r.id}')">삭제</button>` : ''}</td>
-  </tr>`).join('');
+  if (!inboundRecords.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">입고 기록 없음</td></tr>';
+    return;
+  }
+  const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
+  tbody.innerHTML = inboundRecords.map(r => {
+    const processed = getProcessedForInbound(r.id);
+    const remaining = r.quantity - processed;
+    const remStyle = remaining <= 0 ? 'color:#999;text-align:right' : 'font-weight:700;color:#E65100;text-align:right';
+    return `<tr id="ib-tr-${r.id}">
+      <td>${r.date}</td>
+      <td class="nm">${esc(r.farm_name)}</td>
+      <td>${esc(r.product)}</td>
+      <td style="text-align:right">${r.quantity}</td>
+      <td style="text-align:right">${processed || ''}</td>
+      <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
+      <td>${esc(r.location || '-')}</td>
+      <td style="white-space:normal;min-width:80px">${esc(r.note || '-')}</td>
+      <td>${isAdm ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProcessingTab() {
+  const sel = document.getElementById('proc-inbound');
+  if (sel) {
+    const active = inboundRecords.filter(r => r.quantity - getProcessedForInbound(r.id) > 0);
+    sel.innerHTML = '<option value="">선택</option>' + active.map(r => {
+      const rem = r.quantity - getProcessedForInbound(r.id);
+      return `<option value="${r.id}">${esc(r.product)} | ${esc(r.farm_name)} | ${r.date} (${rem}CT 남음)</option>`;
+    }).join('');
+  }
+  const tbody = document.getElementById('proc-tb');
+  if (!tbody) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  if (!processingRecords.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">처리 기록 없음</td></tr>';
+    return;
+  }
+  tbody.innerHTML = processingRecords.map(pr => {
+    const ib = inboundRecords.find(r => r.id === pr.inbound_id);
+    const ibLabel = ib ? `${esc(ib.product)} / ${esc(ib.farm_name)} <small style="color:var(--text-secondary)">${ib.date}</small>` : '(삭제된 입고)';
+    return `<tr id="proc-tr-${pr.id}">
+      <td>${pr.date}</td>
+      <td style="white-space:normal">${ibLabel}</td>
+      <td>${esc(pr.process_type)}</td>
+      <td style="text-align:right;font-weight:700">${pr.quantity}</td>
+      <td style="white-space:normal;min-width:80px">${esc(pr.note || '-')}</td>
+      <td>${isAdm ? `<button class="btn sm del" onclick="deleteProcessing('${pr.id}')">삭제</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function editInboundRow(id) {
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  const tr = document.getElementById('ib-tr-' + id);
+  if (!tr) return;
+  const processed = getProcessedForInbound(id);
+  const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
+  tr.innerHTML = `
+    <td style="padding:5px 8px"><input id="eib-date-${id}" type="date" value="${r.date}" style="${IS}"></td>
+    <td style="padding:5px 8px">${esc(r.farm_name)}</td>
+    <td style="padding:5px 8px">${esc(r.product)}</td>
+    <td style="padding:5px 8px">
+      <input id="eib-qty-${id}" type="number" value="${r.quantity}" min="${processed || 1}" style="${IS};width:80px">
+      ${processed > 0 ? `<div style="font-size:11px;color:#e65100;margin-top:2px">최소 ${processed}CT</div>` : ''}
+    </td>
+    <td style="padding:5px 8px">${processed || 0}</td>
+    <td style="padding:5px 8px"></td>
+    <td style="padding:5px 8px"><input id="eib-loc-${id}" value="${esc(r.location || '')}" style="${IS}"></td>
+    <td style="padding:5px 8px"><input id="eib-note-${id}" value="${esc(r.note || '')}" style="${IS}"></td>
+    <td style="padding:5px 8px">
+      <div style="margin-bottom:5px"><small style="color:#e65100;font-weight:600">수정 사유 *</small></div>
+      <input id="eib-reason-${id}" placeholder="사유 입력" style="${IS};margin-bottom:5px">
+      <div style="display:flex;gap:4px">
+        <button class="btn pri sm" onclick="saveInboundEdit('${id}')">저장</button>
+        <button class="btn sm" onclick="renderInboundList()">취소</button>
+      </div>
+    </td>`;
+}
+
+async function saveInboundEdit(id) {
+  const date = document.getElementById('eib-date-' + id)?.value;
+  const qty = parseInt(document.getElementById('eib-qty-' + id)?.value) || 0;
+  const location = document.getElementById('eib-loc-' + id)?.value || '';
+  const note = document.getElementById('eib-note-' + id)?.value || '';
+  const reason = (document.getElementById('eib-reason-' + id)?.value || '').trim();
+  if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
+  if (!reason) return alert('수정 사유를 입력해주세요.');
+  const processed = getProcessedForInbound(id);
+  if (qty < processed) return alert(`이미 ${processed}CT가 처리되었습니다. ${processed}CT 미만으로 줄일 수 없습니다.`);
+  if (!confirm('이 입고기록을 수정합니다. 관련 처리(선과 등)가 있을 경우 재고에 영향을 줄 수 있습니다. 계속할까요?')) return;
+  const prev = inboundRecords.find(r => r.id === id);
+  try {
+    const updated = await dbUpdateInbound(id, { date, quantity: qty, location: location || null, note: note || null });
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note },
+      after_val: { date, quantity: qty, location: location || null, note: note || null },
+      reason, staff: 'admin'
+    });
+    const idx = inboundRecords.findIndex(r => r.id === id);
+    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], date, quantity: qty, location: location || null, note: note || null };
+    renderInvSummary(); renderInboundList();
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deleteInbound(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const processed = getProcessedForInbound(id);
+  if (processed > 0) return alert(`이 입고건에 ${processed}CT가 이미 처리(선과 등)되었습니다.\n먼저 관련 처리 기록을 삭제해주세요.`);
+  if (!confirm('이 입고 기록을 삭제하시겠습니까?')) return;
+  try {
+    await dbDeleteInbound(id);
+    inboundRecords = inboundRecords.filter(r => r.id !== id);
+    renderInvSummary(); renderInboundList();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function addInbound() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
+  const qty = parseInt(document.getElementById('ib-qty').value) || 0;
+  if (!date || !product || !farm_name || !qty) return alert('날짜, 품목, 농가명, 수량은 필수입니다.');
+  const data = {
+    date, product, farm_name, quantity: qty,
+    location: gv('ib-loc') || null,
+    note: gv('ib-note') || null,
+    staff: 'admin'
+  };
+  try {
+    const row = await dbInsertInbound(data);
+    inboundRecords.unshift(row);
+    renderInvSummary(); renderInboundList();
+    sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
+async function addProcessing() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const inboundId = gv('proc-inbound');
+  const processType = gv('proc-type');
+  const date = gv('proc-date');
+  const qty = parseInt(document.getElementById('proc-qty').value) || 0;
+  if (!inboundId || !date || !qty) return alert('입고 건, 처리일, 수량은 필수입니다.');
+  const ib = inboundRecords.find(r => r.id === inboundId);
+  if (!ib) return alert('선택한 입고 건을 찾을 수 없습니다.');
+  const remaining = ib.quantity - getProcessedForInbound(inboundId);
+  if (qty > remaining) return alert(`처리 수량(${qty}CT)이 남은 재고(${remaining}CT)를 초과합니다.`);
+  const data = {
+    inbound_id: inboundId, date, process_type: processType, quantity: qty,
+    note: gv('proc-note') || null, staff: 'admin'
+  };
+  try {
+    const row = await dbInsertProcessing(data);
+    processingRecords.unshift(row);
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+    sv('proc-qty', ''); sv('proc-note', '');
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
+async function deleteProcessing(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!confirm('처리 기록을 삭제하시겠습니까? 삭제 시 미선과 재고가 복원됩니다.')) return;
+  try {
+    await dbDeleteProcessing(id);
+    processingRecords = processingRecords.filter(r => r.id !== id);
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
 function renderSortedList() {
@@ -3207,45 +3377,6 @@ function renderJuiceList() {
   </tr>`).join('');
 }
 
-async function addUnsorted() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
-  const date = gv('un-date'), product = gv('un-product'), farm_name = gv('un-farm');
-  const qty = parseInt(document.getElementById('un-qty').value) || 0;
-  const loc = gv('un-loc');
-  if (!date || !product || !farm_name || !qty || !loc) return alert('날짜, 품목, 농가명, 수량, 위치는 필수입니다.');
-  const brixMin = document.getElementById('un-brix-min').value;
-  const brixMax = document.getElementById('un-brix-max').value;
-  const acidMin = document.getElementById('un-acid-min').value;
-  const acidMax = document.getElementById('un-acid-max').value;
-  const data = {
-    date, product, farm_name, quantity: qty,
-    sub_quantity: parseInt(document.getElementById('un-subqty').value) || null,
-    location: loc,
-    brix_min: brixMin ? parseFloat(brixMin) : null,
-    brix_max: brixMax ? parseFloat(brixMax) : null,
-    acid_min: acidMin ? parseFloat(acidMin) : null,
-    acid_max: acidMax ? parseFloat(acidMax) : null,
-    size_dist: gv('un-size') || null,
-    note: gv('un-note') || null
-  };
-  try {
-    const row = await dbInsertUnsorted(data);
-    invUnsorted.unshift(row);
-    renderInvSummary(); renderUnsortedList();
-    ['un-qty', 'un-subqty', 'un-size', 'un-note'].forEach(id => sv(id, ''));
-    ['un-brix-min', 'un-brix-max', 'un-acid-min', 'un-acid-max'].forEach(id => sv(id, ''));
-  } catch(e) { alert('등록 오류: ' + e.message); }
-}
-
-async function deleteUnsorted(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!confirm('삭제하시겠습니까?')) return;
-  try {
-    await dbDeleteUnsorted(id);
-    invUnsorted = invUnsorted.filter(r => r.id !== id);
-    renderInvSummary(); renderUnsortedList();
-  } catch(e) { alert('삭제 오류: ' + e.message); }
-}
 
 async function addSorted() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');

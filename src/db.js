@@ -170,3 +170,21 @@ async function loadCategorySystem() {
   ]);
   return { cats, grades, itemList, rules };
 }
+
+// ── 입고 기록
+async function dbGetInbounds() {
+  return sbGet('inbound_records', 'order=date.desc,created_at.desc');
+}
+async function dbInsertInbound(data) { const r = await sbInsert('inbound_records', data); return r[0]; }
+async function dbUpdateInbound(id, data) { const r = await sbUpdate('inbound_records', id, data); return r[0]; }
+async function dbDeleteInbound(id) { return sbDelete('inbound_records', id); }
+
+// ── 처리 기록
+async function dbGetProcessings() {
+  return sbGet('processing_records', 'order=date.desc,created_at.desc');
+}
+async function dbInsertProcessing(data) { const r = await sbInsert('processing_records', data); return r[0]; }
+async function dbDeleteProcessing(id) { return sbDelete('processing_records', id); }
+
+// ── 수정 이력
+async function dbInsertAuditLog(data) { return sbInsert('audit_logs', data); }

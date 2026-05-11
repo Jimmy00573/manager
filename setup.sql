@@ -336,3 +336,62 @@ SELECT i.id, v.grp, v.mn, v.mx FROM items i
 CROSS JOIN (VALUES ('대과', 5, 14), ('중과', 15, 22), ('소과', 23, 26)) AS v(grp, mn, mx)
 WHERE i.name = '천혜향'
 ON CONFLICT (item_id, group_name) DO NOTHING;
+
+-- ============================================================
+--  재고관리 구조 개선 (1단계)
+--  입고 기록과 처리 기록 분리
+-- ============================================================
+
+-- 18. 입고 기록 테이블
+CREATE TABLE IF NOT EXISTS inbound_records (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  date        DATE NOT NULL,
+  farm_name   TEXT NOT NULL,
+  product     TEXT NOT NULL,
+  quantity    INTEGER NOT NULL CHECK (quantity > 0),
+  location    TEXT,
+  note        TEXT,
+  staff       TEXT
+);
+
+-- 19. 처리 기록 테이블 (선과, 원물수거, 잉여회수 등)
+CREATE TABLE IF NOT EXISTS processing_records (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  inbound_id   UUID NOT NULL REFERENCES inbound_records(id),
+  date         DATE NOT NULL,
+  process_type TEXT NOT NULL DEFAULT '선과',
+  quantity     INTEGER NOT NULL CHECK (quantity > 0),
+  note         TEXT,
+  staff        TEXT
+);
+
+-- 20. 수정 이력 테이블
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  target_table TEXT NOT NULL,
+  target_id    TEXT NOT NULL,
+  before_val   JSONB,
+  after_val    JSONB,
+  reason       TEXT,
+  staff        TEXT
+);
+
+ALTER TABLE inbound_records    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE processing_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs         ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all_inbound"    ON inbound_records    FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_processing" ON processing_records FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all_audit"      ON audit_logs         FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================================
+--  마이그레이션: inventory_unsorted → inbound_records
+--  기존 미선과 데이터가 있는 경우 아래 주석을 해제하고 실행하세요.
+-- ============================================================
+-- INSERT INTO inbound_records (created_at, date, farm_name, product, quantity, location, note)
+-- SELECT created_at, date, farm_name, product,
+--        quantity + COALESCE(sub_quantity, 0), location, note
+-- FROM inventory_unsorted;
