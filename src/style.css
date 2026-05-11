@@ -308,7 +308,7 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
   @page { size: A4 portrait; margin: 14mm 12mm; }
 
   /* 앱 UI 전체 숨김, 인쇄 컨테이너만 표시 */
-  .hdr, #anav, #dnav, .main, #pin-screen { display: none !important; }
+  .hdr, .main, #pin-screen { display: none !important; }
   #print-container { display: block !important; }
 
   /* 레이아웃 */

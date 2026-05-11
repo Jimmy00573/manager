@@ -3769,11 +3769,8 @@ function preparePrint() {
   const container = document.getElementById('print-container');
   if (!container) { window.print(); return; }
   container.innerHTML = buildPrintLayout();
-  // 브라우저가 DOM을 렌더링한 뒤 print 다이얼로그 열기
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    window.print();
-    setTimeout(() => { container.innerHTML = ''; }, 1500);
-  }));
+  window.print();
+  setTimeout(() => { container.innerHTML = ''; }, 1500);
 }
 
 // ── 시작
