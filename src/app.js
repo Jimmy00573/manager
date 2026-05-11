@@ -2417,42 +2417,50 @@ function renderInvSummary() {
 
   const empty = map => Object.keys(map).length === 0;
 
-  const detailTable = (detail) => {
-    if (empty(detail)) return '<div class="alert-none">데이터 없음</div>';
+  const buildDetailRows = (detail) => {
+    if (empty(detail)) return { rows: '', grandTotal: 0, hasData: false };
     const rows = [];
     let grandTotal = 0;
     Object.entries(detail).forEach(([farm, products]) => {
       const entries = Object.entries(products);
       let farmTotal = 0;
       entries.forEach(([product, qty], i) => {
-        farmTotal += qty;
-        grandTotal += qty;
-        rows.push(`<tr style="border-bottom:0.5px solid #f0f0f0">
-          <td style="padding:6px 8px;vertical-align:top;color:var(--text)">${i === 0 ? esc(farm) : ''}</td>
-          <td style="padding:6px 8px">${esc(product)}</td>
-          <td style="padding:6px 8px;text-align:right;font-weight:500">${qty} CT</td>
+        const q = Number(qty) || 0;
+        farmTotal += q;
+        grandTotal += q;
+        rows.push(`<tr>
+          <td>${i === 0 ? esc(farm) : ''}</td>
+          <td>${esc(product)}</td>
+          <td style="text-align:right;font-weight:500">${q} CT</td>
         </tr>`);
       });
       if (entries.length > 1) {
-        rows.push(`<tr style="border-bottom:1px solid #e0e0e0;background:#fafafa">
-          <td style="padding:4px 8px;font-size:12px;color:var(--text-secondary)">소계</td>
-          <td></td>
-          <td style="padding:4px 8px;text-align:right;font-weight:600;font-size:12px;color:var(--text-secondary)">${farmTotal} CT</td>
+        rows.push(`<tr style="background:#f5f5f5;color:var(--text-secondary);font-size:12px">
+          <td>소계</td><td></td>
+          <td style="text-align:right;font-weight:600">${farmTotal} CT</td>
         </tr>`);
       }
     });
-    return `<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
-        <th style="text-align:left;padding:7px 8px;color:var(--text-secondary);font-weight:500">농가명</th>
-        <th style="text-align:left;padding:7px 8px;color:var(--text-secondary);font-weight:500">품목</th>
-        <th style="text-align:right;padding:7px 8px;color:var(--text-secondary);font-weight:500">수량</th>
-      </tr></thead>
-      <tbody>${rows.join('')}</tbody>
-      <tfoot><tr style="border-top:2px solid var(--border);background:#fff8f0">
-        <td colspan="2" style="padding:7px 8px;font-weight:600">전체 합계</td>
-        <td style="padding:7px 8px;text-align:right;font-weight:700;color:var(--orange)">${grandTotal} CT</td>
-      </tr></tfoot>
-    </table>`;
+    return { rows: rows.join(''), grandTotal, hasData: true };
+  };
+
+  const makeDetailTable = (detail, title) => {
+    const { rows, grandTotal, hasData } = buildDetailRows(detail);
+    if (!hasData) return `
+      <div class="sec-hdr"><div class="sec-title">${title}</div></div>
+      <div class="alert-none">데이터 없음</div>`;
+    return `
+      <div class="sec-hdr"><div class="sec-title">${title}</div></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>농가명</th><th>품목</th><th style="text-align:right">수량(CT)</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr style="background:#fff8f0;font-weight:700">
+            <td colspan="2">전체 합계</td>
+            <td style="text-align:right;color:var(--orange)">${grandTotal} CT</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
   };
 
   el.innerHTML = `
@@ -2482,16 +2490,8 @@ function renderInvSummary() {
             `<div class="ext-row"><span>${esc(p)}</span><span class="badge b-ok">${q}</span></div>`).join('')}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
-      <div class="ext-card">
-        <div class="ext-card-title">🍊 미선과 — 농가별·품목별</div>
-        ${detailTable(unsDetail)}
-      </div>
-      <div class="ext-card">
-        <div class="ext-card-title">📦 선과 — 농가별·품목별</div>
-        ${detailTable(sortDetail)}
-      </div>
-    </div>`;
+    ${makeDetailTable(unsDetail, '🍊 미선과 — 농가별·품목별')}
+    ${makeDetailTable(sortDetail, '📦 선과 — 농가별·품목별')}`;
 }
 
 function renderUnsortedList() {
