@@ -3149,17 +3149,38 @@ function renderInvSummary() {
     ? '<div style="text-align:center;padding:48px 20px;color:#bbb;font-size:15px">등록된 재고가 없습니다</div>'
     : sections.map((s, i) => secHdr(i + 1, s.title) + s.body).join('');
 
+  const printTime = new Date().toLocaleString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
   el.innerHTML = `
     <div class="inv-excel-wrap">
-      <div style="background:#0D47A1;color:#fff;text-align:center;padding:13px;font-size:17px;font-weight:700;border-radius:10px 10px 0 0">
+
+      <!-- 인쇄 전용 헤더 (화면에서는 숨김) -->
+      <div class="print-only" style="text-align:center;margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid #1565C0">
+        <div style="font-size:18pt;font-weight:700;color:#1565C0;margin-bottom:4px">🍊 현장 재고 전체 현황</div>
+        <div style="font-size:10pt;color:#555">${dateLabel} 기준 &nbsp;|&nbsp; 출력시각: ${printTime}</div>
+      </div>
+
+      <!-- 화면 헤더 -->
+      <div class="no-print" style="background:#0D47A1;color:#fff;text-align:center;padding:13px;font-size:17px;font-weight:700;border-radius:10px 10px 0 0">
         📦 현장 재고 전체 현황
       </div>
-      <div style="text-align:center;padding:8px;font-size:13px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:0 0 8px 8px;margin-bottom:4px">
+      <div class="no-print" style="text-align:center;padding:8px;font-size:13px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:0 0 8px 8px;margin-bottom:4px">
         ${dateLabel} 기준
       </div>
+
       ${mainBody}
-      <div style="text-align:right;margin-top:14px">
-        <button class="btn" onclick="window.print()" style="background:#1565C0;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">🖨️ 인쇄 / PDF</button>
+
+      <!-- 인쇄 전용 푸터 -->
+      <div class="print-only" style="margin-top:28px;border-top:1px solid #ccc;padding-top:10px;display:flex;justify-content:space-between;font-size:9pt;color:#888">
+        <span>감귤 수송·콘테이너 통합 관리 시스템</span>
+        <span>${dateLabel}</span>
+      </div>
+
+      <!-- 화면 버튼 -->
+      <div class="no-print" style="text-align:right;margin-top:14px">
+        <button onclick="window.print()" style="background:#1565C0;color:#fff;border:none;padding:9px 22px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">
+          🖨️ 인쇄 / PDF 저장
+        </button>
       </div>
     </div>`;
 }
