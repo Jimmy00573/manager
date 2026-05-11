@@ -1081,6 +1081,8 @@ async function updDisp(id, s) {
 async function delDisp(id) {
   if (!cDel('배차 기록 삭제')) return;
   try {
+    const autoPicks = picks.filter(p => p.dispatch_id === id);
+    await Promise.all(autoPicks.map(p => dbDeletePick(p.id)));
     await dbDeleteDispatch(id);
     dispatches = dispatches.filter(d => d.id !== id);
     picks = picks.filter(p => p.dispatch_id !== id);
