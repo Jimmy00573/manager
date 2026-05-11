@@ -2777,6 +2777,51 @@ function _renderSortedSummarySection(num, title, dataMap, catType) {
   </table>`);
 }
 
+function _buildSortedTableWrap(dataMap, catType) {
+  const TH    = 'background:#1565C0;color:#fff;padding:8px 10px;font-size:12px;font-weight:600;text-align:center;border:1px solid #0D47A1';
+  const NUM   = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
+  const NUMhl = NUM + ';background:#FFF8E1';
+  const fmt   = v => v ? Number(v).toLocaleString() : '';
+  const wrap  = inner => `<div class="tbl-wrap" style="border:1px solid #e0e0e0;border-radius:0 0 8px 8px;overflow:hidden">${inner}</div>`;
+
+  let colNames;
+  if (catType === 'grade') {
+    const gradeCatId = categories.find(c => c.classification_type === 'grade')?.id;
+    colNames = [...new Set(
+      sizeGrades.filter(g => g.category_id === gradeCatId)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(g => g.group_name)
+    )];
+    if (!colNames.length) colNames = ['대과', '중과', '소과'];
+  } else {
+    const usedGroups = new Set();
+    Object.values(dataMap).forEach(m => Object.keys(m).forEach(k => usedGroups.add(k)));
+    const preferred = ['대과', '중과', '소과'];
+    const extras = [...usedGroups].filter(g => !preferred.includes(g));
+    colNames = [...preferred.filter(g => usedGroups.has(g)), ...extras];
+    if (!colNames.length) colNames = ['대과', '중과', '소과'];
+  }
+
+  const rows = Object.entries(dataMap).map(([p, m]) => {
+    const tot = Object.values(m).reduce((s, v) => s + v, 0);
+    const cells = colNames.map(col => `<td style="${NUM}">${m[col] ? fmt(m[col]) + ' kg' : ''}</td>`).join('');
+    return `<tr>
+      <td style="padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:left">${esc(p)}</td>
+      ${cells}
+      <td style="${NUMhl}">${tot ? fmt(tot) + ' kg' : ''}</td>
+    </tr>`;
+  }).join('');
+
+  const thCols = colNames.map(col => `<th style="${TH}">${esc(col)} (kg)</th>`).join('');
+  const minW = Math.max(340, 130 + colNames.length * 110) + 'px';
+  return wrap(`<table style="width:100%;border-collapse:collapse;min-width:${minW}">
+    <thead><tr>
+      <th style="${TH}">품목</th>${thCols}<th style="${TH}">합계 (kg)</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`);
+}
+
 function renderInvAll() {
   renderInvSummary();
   renderUnsortedList();
@@ -2847,51 +2892,74 @@ function renderInvSummary() {
   const TD  = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:center';
   const NUM = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
   const NUMhl = NUM + ';background:#FFF8E1';
-  const EMPTY = `padding:10px;border:1px solid #e0e0e0;font-size:13px;text-align:center;color:#bbb`;
   const fmt = v => v ? Number(v).toLocaleString() : '';
 
   const secHdr = (num, title) => `
     <div style="background:#1565C0;color:#fff;text-align:center;padding:9px;font-size:14px;font-weight:700;border-radius:8px 8px 0 0;margin-top:18px">
       ${num}. ${title}
     </div>`;
-
   const wrap = inner => `<div class="tbl-wrap" style="border:1px solid #e0e0e0;border-radius:0 0 8px 8px;overflow:hidden">${inner}</div>`;
 
-  // 1. 미선과
-  const unsRows = Object.keys(unsMap).length === 0
-    ? `<tr><td colspan="4" style="${EMPTY}">데이터 없음</td></tr>`
-    : Object.entries(unsMap).map(([p, v]) => {
-        const tot = v.qty + v.sub;
-        return `<tr>
-          <td style="${TD};text-align:left">${esc(p)}</td>
-          <td style="${NUM}">${fmt(v.qty)}</td>
-          <td style="${NUM}">${v.sub ? fmt(v.sub) : ''}</td>
-          <td style="${NUMhl}">${tot ? fmt(tot) + ' CT' : ''}</td>
-        </tr>`;
-      }).join('');
+  // 데이터 있는 섹션만 수집
+  const sections = [];
 
-  // 4. 파치
-  const wasteRows = Object.keys(wasteMap).length === 0
-    ? `<tr><td colspan="4" style="${EMPTY}">데이터 없음</td></tr>`
-    : Object.entries(wasteMap).map(([p, v]) => {
-        const totalKg = v.ct * v.kgPerCt;
-        return `<tr>
-          <td style="${TD};text-align:left">${esc(p)}</td>
-          <td style="${NUM}">${fmt(v.ct)}</td>
-          <td style="${TD}">${v.kgPerCt}</td>
-          <td style="${NUMhl}">${totalKg ? fmt(totalKg) + 'kg' : ''}</td>
-        </tr>`;
-      }).join('');
-
-  // 5. 주스/청
-  const juiceRows = Object.keys(juiceMap).length === 0
-    ? `<tr><td colspan="4" style="${EMPTY}">데이터 없음</td></tr>`
-    : Object.entries(juiceMap).map(([p, v]) => `<tr>
+  if (Object.keys(unsMap).length > 0) {
+    const rows = Object.entries(unsMap).map(([p, v]) => {
+      const tot = v.qty + v.sub;
+      return `<tr>
         <td style="${TD};text-align:left">${esc(p)}</td>
         <td style="${NUM}">${fmt(v.qty)}</td>
-        <td style="${TD}">${esc(v.unit)}</td>
-        <td style="${TD}">${esc(v.note)}</td>
-      </tr>`).join('');
+        <td style="${NUM}">${v.sub ? fmt(v.sub) : ''}</td>
+        <td style="${NUMhl}">${tot ? fmt(tot) + ' CT' : ''}</td>
+      </tr>`;
+    }).join('');
+    sections.push({ title: '미선과 재고 (단위 : CT)', body: wrap(`<table style="width:100%;border-collapse:collapse;min-width:340px">
+      <thead><tr>
+        <th style="${TH}">품목</th><th style="${TH}">원물 (CT)</th><th style="${TH}">소과 (CT)</th><th style="${TH}">합계 (CT)</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table>`) });
+  }
+
+  if (Object.keys(sortCount).length > 0)
+    sections.push({ title: '만감류 선과 재고 (단위: kg)', body: _buildSortedTableWrap(sortCount, 'count') });
+
+  if (Object.keys(sortGrade).length > 0)
+    sections.push({ title: '감귤류 선과 재고 (단위: kg)', body: _buildSortedTableWrap(sortGrade, 'grade') });
+
+  if (Object.keys(wasteMap).length > 0) {
+    const rows = Object.entries(wasteMap).map(([p, v]) => {
+      const totalKg = v.ct * v.kgPerCt;
+      return `<tr>
+        <td style="${TD};text-align:left">${esc(p)}</td>
+        <td style="${NUM}">${fmt(v.ct)}</td>
+        <td style="${TD}">${v.kgPerCt}</td>
+        <td style="${NUMhl}">${totalKg ? fmt(totalKg) + 'kg' : ''}</td>
+      </tr>`;
+    }).join('');
+    sections.push({ title: '파치 재고', body: wrap(`<table style="width:100%;border-collapse:collapse;min-width:300px">
+      <thead><tr>
+        <th style="${TH}">품목</th><th style="${TH}">CT수</th><th style="${TH}">규격 (kg/CT)</th><th style="${TH}">총중량 (kg)</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table>`) });
+  }
+
+  if (Object.keys(juiceMap).length > 0) {
+    const rows = Object.entries(juiceMap).map(([p, v]) => `<tr>
+      <td style="${TD};text-align:left">${esc(p)}</td>
+      <td style="${NUM}">${fmt(v.qty)}</td>
+      <td style="${TD}">${esc(v.unit)}</td>
+      <td style="${TD}">${esc(v.note)}</td>
+    </tr>`).join('');
+    sections.push({ title: '주스 / 청 재고', body: wrap(`<table style="width:100%;border-collapse:collapse;min-width:280px">
+      <thead><tr>
+        <th style="${TH}">품목</th><th style="${TH}">수량</th><th style="${TH}">단위</th><th style="${TH}">비고</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table>`) });
+  }
+
+  const mainBody = sections.length === 0
+    ? '<div style="text-align:center;padding:48px 20px;color:#bbb;font-size:15px">등록된 재고가 없습니다</div>'
+    : sections.map((s, i) => secHdr(i + 1, s.title) + s.body).join('');
 
   el.innerHTML = `
     <div class="inv-excel-wrap">
@@ -2901,43 +2969,7 @@ function renderInvSummary() {
       <div style="text-align:center;padding:8px;font-size:13px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:0 0 8px 8px;margin-bottom:4px">
         ${dateLabel} 기준
       </div>
-
-      ${secHdr(1, '미선과 재고 (단위 : CT)')}
-      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:340px">
-        <thead><tr>
-          <th style="${TH}">품목</th>
-          <th style="${TH}">원물 (CT)</th>
-          <th style="${TH}">소과 (CT)</th>
-          <th style="${TH}">합계 (CT)</th>
-        </tr></thead>
-        <tbody>${unsRows}</tbody>
-      </table>`)}
-
-      ${_renderSortedSummarySection(2, '만감류 선과 재고 (단위: kg)', sortCount, 'count')}
-      ${_renderSortedSummarySection(3, '감귤류 선과 재고 (단위: kg)', sortGrade, 'grade')}
-
-      ${secHdr(4, '파치 재고')}
-      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:300px">
-        <thead><tr>
-          <th style="${TH}">품목</th>
-          <th style="${TH}">CT수</th>
-          <th style="${TH}">규격 (kg/CT)</th>
-          <th style="${TH}">총중량 (kg)</th>
-        </tr></thead>
-        <tbody>${wasteRows}</tbody>
-      </table>`)}
-
-      ${secHdr(5, '주스 / 청 재고')}
-      ${wrap(`<table style="width:100%;border-collapse:collapse;min-width:280px">
-        <thead><tr>
-          <th style="${TH}">품목</th>
-          <th style="${TH}">수량</th>
-          <th style="${TH}">단위</th>
-          <th style="${TH}">비고</th>
-        </tr></thead>
-        <tbody>${juiceRows}</tbody>
-      </table>`)}
-
+      ${mainBody}
       <div style="text-align:right;margin-top:14px">
         <button class="btn" onclick="window.print()" style="background:#1565C0;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">🖨️ 인쇄 / PDF</button>
       </div>
