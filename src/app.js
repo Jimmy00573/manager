@@ -3184,7 +3184,6 @@ function qualityDisplay(r) {
   const parts = [];
   if (r.brix_range) parts.push(`당도 ${esc(r.brix_range)}`);
   if (r.acidity_range) parts.push(`산도 ${esc(r.acidity_range)}`);
-  if (r.sub_acidity) parts.push(`소과산 ${esc(r.sub_acidity)}`);
   if (r.size_distribution) parts.push(`크기: ${esc(r.size_distribution)}`);
   if (r.brix && !r.brix_range) parts.push(`당 ${r.brix}°`);
   if (r.acidity && !r.acidity_range) parts.push(`산 ${r.acidity}`);
@@ -3311,7 +3310,6 @@ function editInboundRow(id) {
       <input id="eib-note-${id}" value="${esc(r.note || '')}" placeholder="메모" style="${IS};margin-bottom:4px">
       <input id="eib-brix-range-${id}" value="${esc(r.brix_range || '')}" placeholder="당도 범위 (예: 13.5~16.5)" style="${IS};margin-bottom:4px">
       <input id="eib-acid-range-${id}" value="${esc(r.acidity_range || '')}" placeholder="산도 범위 (예: 평균1~1.7)" style="${IS};margin-bottom:4px">
-      <input id="eib-sub-acid-${id}" value="${esc(r.sub_acidity || '')}" placeholder="소과 산도" style="${IS};margin-bottom:4px">
       <input id="eib-size-${id}" value="${esc(r.size_distribution || '')}" placeholder="크기 분포" style="${IS};margin-bottom:4px">
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
         <input type="checkbox" id="eib-priority-${id}"${r.is_priority ? ' checked' : ''}> ⭐ 우선 사용
@@ -3336,7 +3334,6 @@ async function saveInboundEdit(id) {
   const inbound_category = document.getElementById('eib-cat-' + id)?.value || '상품';
   const brix_range = document.getElementById('eib-brix-range-' + id)?.value.trim() || null;
   const acidity_range = document.getElementById('eib-acid-range-' + id)?.value.trim() || null;
-  const sub_acidity = document.getElementById('eib-sub-acid-' + id)?.value.trim() || null;
   const size_distribution = document.getElementById('eib-size-' + id)?.value.trim() || null;
   const is_priority = document.getElementById('eib-priority-' + id)?.checked || false;
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
@@ -3350,7 +3347,6 @@ async function saveInboundEdit(id) {
     inbound_category, is_priority,
     ...(brix_range !== null && { brix_range }),
     ...(acidity_range !== null && { acidity_range }),
-    ...(sub_acidity !== null && { sub_acidity }),
     ...(size_distribution !== null && { size_distribution }),
   };
   try {
@@ -3363,7 +3359,7 @@ async function saveInboundEdit(id) {
     });
     const idx = inboundRecords.findIndex(r => r.id === id);
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], date, quantity: qty, location: location || null,
-      note: note || null, inbound_category, is_priority, brix_range, acidity_range, sub_acidity, size_distribution };
+      note: note || null, inbound_category, is_priority, brix_range, acidity_range, size_distribution };
     renderInvSummary(); renderInboundList();
   } catch(e) { alert('수정 오류: ' + e.message); }
 }
@@ -3469,7 +3465,6 @@ async function addInbound() {
   const inbound_category = gv('ib-category') || '상품';
   const brix_range = (document.getElementById('ib-brix-range')?.value || '').trim() || null;
   const acidity_range = (document.getElementById('ib-acidity-range')?.value || '').trim() || null;
-  const sub_acidity = (document.getElementById('ib-sub-acidity')?.value || '').trim() || null;
   const size_distribution = (document.getElementById('ib-size-dist')?.value || '').trim() || null;
   const is_priority = document.getElementById('ib-priority')?.checked || false;
   const data = {
@@ -3481,7 +3476,6 @@ async function addInbound() {
     is_priority,
     ...(brix_range && { brix_range }),
     ...(acidity_range && { acidity_range }),
-    ...(sub_acidity && { sub_acidity }),
     ...(size_distribution && { size_distribution }),
   };
   try {
@@ -3489,7 +3483,7 @@ async function addInbound() {
     inboundRecords.unshift(row);
     renderInvSummary(); renderInboundList();
     sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
-    const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-sub-acidity', 'ib-size-dist'];
+    const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist'];
     clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const priEl = document.getElementById('ib-priority');
     if (priEl) priEl.checked = false;
