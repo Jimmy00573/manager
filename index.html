@@ -1160,10 +1160,11 @@
       <div class="modal-title" id="qc-modal-title">품질 기준 편집</div>
       <button class="modal-close" onclick="closeQcModal()">✕</button>
     </div>
-    <div class="fg" style="margin-bottom:12px">
-      <label>품목명</label>
-      <input id="qc-product" placeholder="예: 카라향">
+    <div class="fg" style="margin-bottom:4px">
+      <label>품목</label>
+      <select id="qc-product"><option value="">품목 선택</option></select>
     </div>
+    <div id="qc-product-hint" style="font-size:11px;color:var(--text-tertiary);margin-bottom:12px"></div>
     <div class="ib-section-label">당도 기준 (Brix) — 높을수록 상</div>
     <div class="form-grid" style="margin-bottom:12px">
       <div class="fg">

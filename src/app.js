@@ -2438,6 +2438,31 @@ function renderQualityCriteria() {
       : `<div class="empty">등록된 품질 기준이 없습니다.<br>품목 추가 버튼으로 기준을 등록해주세요.</div>`}`;
 }
 
+function buildQcProductOpts(editProductName) {
+  const registered = new Set(qualityCriteria.map(q => q.product_name));
+  const optItem = name => {
+    const alreadyReg = registered.has(name) && name !== editProductName;
+    return alreadyReg
+      ? `<option value="${esc(name)}" disabled style="color:#bbb">${esc(name)} (이미 등록됨)</option>`
+      : `<option value="${esc(name)}">${esc(name)}</option>`;
+  };
+  let html = '<option value="">품목 선택</option>';
+  categories.forEach(cat => {
+    const items = itemDefs.filter(i => i.category_id === cat.id).sort((a, b) => a.name.localeCompare(b.name));
+    if (!items.length) return;
+    html += `<optgroup label="${esc(cat.name)}">`;
+    items.forEach(i => { html += optItem(i.name); });
+    html += '</optgroup>';
+  });
+  const uncategorized = itemDefs.filter(i => !i.category_id).sort((a, b) => a.name.localeCompare(b.name));
+  if (uncategorized.length) {
+    html += '<optgroup label="기타">';
+    uncategorized.forEach(i => { html += optItem(i.name); });
+    html += '</optgroup>';
+  }
+  return html;
+}
+
 function openQcModal(id) {
   _editQcId = id;
   const isNew = !id;
@@ -2446,9 +2471,19 @@ function openQcModal(id) {
   if (deleteBtn) deleteBtn.style.display = isNew ? 'none' : '';
   const qc = id ? qualityCriteria.find(q => q.id === id) : null;
   const prodEl = document.getElementById('qc-product');
+  const hintEl = document.getElementById('qc-product-hint');
+  if (isNew) {
+    prodEl.innerHTML = buildQcProductOpts(null);
+    prodEl.disabled = false;
+    prodEl.style.background = '';
+    if (hintEl) hintEl.textContent = itemDefs.length ? '' : '⚠️ 품목 마스터가 비어 있습니다. ⚙️ 선과 기준 탭에서 품목을 먼저 추가하세요.';
+  } else {
+    prodEl.innerHTML = `<option value="${esc(qc.product_name)}">${esc(qc.product_name)}</option>`;
+    prodEl.disabled = true;
+    prodEl.style.background = '#f5f5f5';
+    if (hintEl) hintEl.textContent = '품목명은 변경할 수 없습니다.';
+  }
   prodEl.value = qc ? qc.product_name : '';
-  prodEl.readOnly = !isNew;
-  prodEl.style.background = isNew ? '' : '#f5f5f5';
   document.getElementById('qc-brix-high').value = qc?.brix_high_min ?? '';
   document.getElementById('qc-brix-mid').value = qc?.brix_mid_min ?? '';
   document.getElementById('qc-acid-high').value = qc?.acidity_high_min ?? '';
@@ -2464,7 +2499,9 @@ function closeQcModal() {
 
 async function saveQcCriteria() {
   const productName = document.getElementById('qc-product').value.trim();
-  if (!productName) return alert('품목명을 입력해주세요.');
+  if (!productName) return alert('품목을 선택해주세요.');
+  if (!_editQcId && !itemDefs.some(i => i.name === productName))
+    return alert('선택한 품목이 품목 마스터에 존재하지 않습니다.\n⚙️ 선과 기준 탭에서 먼저 품목을 등록해주세요.');
   const brixHigh = parseFloat(document.getElementById('qc-brix-high').value) || null;
   const brixMid  = parseFloat(document.getElementById('qc-brix-mid').value)  || null;
   const acidHigh = parseFloat(document.getElementById('qc-acid-high').value) || null;
