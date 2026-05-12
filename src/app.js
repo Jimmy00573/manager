@@ -2438,6 +2438,85 @@ function setLocSelectValue(selectId, value) {
   el.value = value;
 }
 
+// ── 분산 저장 UI ────────────────────────────────────────────────
+
+function toggleLocMulti(pfx) {
+  const isMulti = document.getElementById(`${pfx}-loc-multi`).checked;
+  document.getElementById(`${pfx}-loc-single`).style.display = isMulti ? 'none' : '';
+  document.getElementById(`${pfx}-loc-rows`).style.display = isMulti ? '' : 'none';
+  if (isMulti && document.getElementById(`${pfx}-loc-list`).children.length === 0) {
+    addLocRow(pfx);
+  }
+}
+
+function addLocRow(pfx, locName = '', qty = '') {
+  const list = document.getElementById(`${pfx}-loc-list`);
+  const row = document.createElement('div');
+  row.className = 'loc-dist-row';
+  row.innerHTML = `
+    <select class="loc-dist-sel">${buildLocOptHtml()}</select>
+    <input class="loc-dist-qty" type="number" placeholder="CT" min="1" style="width:80px" value="${qty}">
+    <button type="button" class="btn del" style="padding:4px 8px;font-size:12px" onclick="this.closest('.loc-dist-row').remove()">✕</button>
+  `;
+  list.appendChild(row);
+  if (locName) {
+    const sel = row.querySelector('.loc-dist-sel');
+    if ([...sel.options].some(o => o.value === locName)) {
+      sel.value = locName;
+    } else {
+      const opt = document.createElement('option');
+      opt.value = locName; opt.textContent = locName + ' (기존값)';
+      opt.style.color = '#888';
+      sel.appendChild(opt);
+      sel.value = locName;
+    }
+  }
+}
+
+function getLocValue(pfx) {
+  const isMulti = document.getElementById(`${pfx}-loc-multi`)?.checked;
+  if (!isMulti) {
+    const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
+    return document.getElementById(selId)?.value || null;
+  }
+  const rows = document.querySelectorAll(`#${pfx}-loc-list .loc-dist-row`);
+  const parts = [];
+  rows.forEach(row => {
+    const name = row.querySelector('.loc-dist-sel')?.value;
+    const qty = row.querySelector('.loc-dist-qty')?.value;
+    if (name) parts.push(qty ? `${name}(${qty})` : name);
+  });
+  return parts.length ? parts.join('/') : null;
+}
+
+function setLocValue(pfx, locStr) {
+  const parsed = parseLocationStr(locStr);
+  const isMulti = parsed.length > 1 || (parsed.length === 1 && parsed[0].qty !== null);
+  const multiChk = document.getElementById(`${pfx}-loc-multi`);
+  if (!multiChk) return;
+  multiChk.checked = isMulti;
+  toggleLocMulti(pfx);
+  if (isMulti) {
+    document.getElementById(`${pfx}-loc-list`).innerHTML = '';
+    parsed.forEach(p => addLocRow(pfx, p.name, p.qty !== null ? p.qty : ''));
+  } else {
+    const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
+    setLocSelectValue(selId, locStr || '');
+  }
+}
+
+function resetLocForm(pfx) {
+  const multiChk = document.getElementById(`${pfx}-loc-multi`);
+  if (!multiChk) return;
+  multiChk.checked = false;
+  document.getElementById(`${pfx}-loc-single`).style.display = '';
+  document.getElementById(`${pfx}-loc-rows`).style.display = 'none';
+  document.getElementById(`${pfx}-loc-list`).innerHTML = '';
+  const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
+  const sel = document.getElementById(selId);
+  if (sel) sel.value = '';
+}
+
 function renderStorageLocations() {
   const el = document.getElementById('inv-loc-div');
   if (!el) return;
@@ -4372,7 +4451,7 @@ function editInboundRow(id) {
   document.getElementById('eib-m-date').value = r.date || '';
   document.getElementById('eib-m-product').value = r.product || '';
   document.getElementById('eib-m-farm').value = r.farm_name || '';
-  setLocSelectValue('eib-m-loc', r.location || '');
+  setLocValue('eib', r.location || '');
   document.getElementById('eib-m-qty').value = r.quantity || '';
   document.getElementById('eib-m-qty').min = processed || 1;
   const hint = document.getElementById('eib-m-qty-hint');
@@ -4412,7 +4491,7 @@ function closeEditInboundModal() {
     const changed =
       document.getElementById('eib-m-date').value !== (r.date || '') ||
       document.getElementById('eib-m-qty').value !== String(r.quantity) ||
-      document.getElementById('eib-m-loc').value !== (r.location || '') ||
+      getLocValue('eib') !== (r.location || null) ||
       document.getElementById('eib-m-note').value !== (r.note || '') ||
       document.getElementById('eib-m-cat').value !== (r.inbound_category || '상품') ||
       getGradeVal('eib-m-brix-grade') !== (r.brix_grade || null) ||
@@ -4437,7 +4516,7 @@ async function saveInboundModal() {
   if (!id) return;
   const date = document.getElementById('eib-m-date').value;
   const qty = parseInt(document.getElementById('eib-m-qty').value) || 0;
-  const location = document.getElementById('eib-m-loc').value.trim() || null;
+  const location = getLocValue('eib') || null;
   const note = document.getElementById('eib-m-note').value.trim() || null;
   const inbound_category = document.getElementById('eib-m-cat').value || '상품';
   const brix_grade = getGradeVal('eib-m-brix-grade');
@@ -4629,7 +4708,7 @@ async function addInbound() {
   const original_work_date = isReclass ? (document.getElementById('ib-reclass-date')?.value || null) : null;
   const data = {
     date, product, farm_name, quantity: qty,
-    location: gv('ib-loc') || null,
+    location: getLocValue('ib') || null,
     note: gv('ib-note') || null,
     staff: 'admin',
     inbound_category,
@@ -4649,7 +4728,7 @@ async function addInbound() {
     const row = await dbInsertInbound(data);
     inboundRecords.unshift(row);
     renderInvSummary(); renderInboundList();
-    sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
+    sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib');
     clearGrades('ib');
     const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
                       'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date'];

@@ -216,6 +216,11 @@ textarea {
 .btn.sm { padding: 5px 12px; font-size: 12px; }
 .btn.cancel { background: #f0f0f0; color: #666; }
 
+/* ── 분산 저장 행 ── */
+.loc-dist-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.loc-dist-row select { flex: 1; }
+.loc-dist-row input { width: 80px; flex-shrink: 0; }
+
 /* ── 등급 버튼 ── */
 .grade-group { display: flex; gap: 6px; }
 .grade-btn { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--border); background: #f5f5f5; color: var(--text-secondary); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
