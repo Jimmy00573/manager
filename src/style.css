@@ -219,7 +219,14 @@ textarea {
 /* ── 결점 칩 ── */
 .defect-chip { display: inline-flex; align-items: center; padding: 2px 6px; font-size: 0.65rem; font-weight: 500; border-radius: 4px; border: 1px solid; white-space: nowrap; cursor: default; }
 
-/* ── 메모 미리보기 ── */
+/* ── 메모 아이콘 버튼 ── */
+.memo-icon-btn { background: none; border: none; cursor: pointer; font-size: 15px; padding: 2px 4px; border-radius: 4px; opacity: 0.7; transition: opacity .15s; }
+.memo-icon-btn:hover { opacity: 1; background: #f0f0f0; }
+
+/* ── 인라인 메모 펼침 ── */
+.memo-expanded { background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; color: #333; }
+
+/* ── 메모 미리보기 (레거시 — 현재 미사용) ── */
 .memo-preview { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; max-width: 180px; font-size: 12px; color: #555; line-height: 1.4; vertical-align: middle; }
 
 /* ── 위치별 재고 카드 ── */

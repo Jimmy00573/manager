@@ -3806,6 +3806,39 @@ function hasQualityDetail(r) {
             r.brix_range || r.acidity_range || r.size_distribution);
 }
 
+let _expandedMemoId = null;
+
+function toggleMemo(id) {
+  const prev = _expandedMemoId;
+  // 항상 이전 메모 행 제거
+  if (prev) {
+    const oldRow = document.getElementById(`ib-memo-row-${prev}`);
+    if (oldRow) oldRow.remove();
+    _expandedMemoId = null;
+  }
+  if (prev === id) return; // 같은 행이면 닫기만
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r || !r.note) return;
+  const mainRow = document.getElementById(`ib-tr-${id}`);
+  if (!mainRow) return;
+  const colCount = mainRow.cells.length;
+  const tr = document.createElement('tr');
+  tr.id = `ib-memo-row-${id}`;
+  tr.innerHTML = `<td colspan="${colCount}" style="padding:0 10px 10px">
+    <div class="memo-expanded">${esc(r.note).replace(/\n/g, '<br>')}</div>
+  </td>`;
+  mainRow.after(tr);
+  _expandedMemoId = id;
+}
+
+function toggleFarmMemo(id) {
+  const el = document.getElementById(`farm-memo-${id}`);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  document.querySelectorAll('[id^="farm-memo-"]').forEach(e => { e.style.display = 'none'; });
+  if (!isOpen) el.style.display = '';
+}
+
 let _qModalId = null;
 function openQualityModal(id) {
   const r = inboundRecords.find(x => x.id === id);
@@ -4345,10 +4378,12 @@ function renderIbFarmView() {
       .map((r, i, arr) => {
         const isLast = i === arr.length - 1;
         const remColor = r.rem <= 0 ? '#aaa' : r.rem < 50 ? '#C62828' : '#E65100';
-        const notePreview = r.note ? `<span style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;display:inline-block;vertical-align:middle"> · ${esc(r.note)}</span>` : '';
-        const qBtn = hasQualityDetail(r) || r.note
+        const memoBtn = r.note ? `<button class="memo-icon-btn" onclick="toggleFarmMemo('${r.id}')" title="${esc(r.note)}" style="font-size:13px;margin-left:2px">📝</button>` : '';
+        const qBtn = hasQualityDetail(r)
           ? `<button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:2px 5px;font-size:11px;margin-left:4px">📋</button>` : '';
         const compactGrade = qualityCompact(r, r.id);
+        const memoDiv = r.note
+          ? `<div id="farm-memo-${r.id}" class="memo-expanded" style="display:none;margin:4px 0 0 20px">${esc(r.note).replace(/\n/g, '<br>')}</div>` : '';
         return `<div style="padding:5px 14px 5px 36px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5'}">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="color:#ccc;font-size:11px">${isLast ? '└─' : '├─'}</span>
@@ -4358,8 +4393,9 @@ function renderIbFarmView() {
             ${r.location ? `<span style="font-size:11px;color:#888">(${esc(r.location)})</span>` : ''}
             ${r.is_priority ? '<span style="font-size:11px">⭐</span>' : ''}
             ${compactGrade}
-            ${notePreview}${qBtn}
+            ${memoBtn}${qBtn}
           </div>
+          ${memoDiv}
         </div>`;
       }).join('');
 
@@ -4555,6 +4591,7 @@ function renderIbCatSummary() {
 }
 
 function renderInboundList() {
+  _expandedMemoId = null;
   renderIbCatSummary();
 
   // void count는 뷰 모드 무관하게 항상 업데이트
@@ -4626,15 +4663,15 @@ function renderInboundList() {
       ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${moveBtn} ${histBtn}`
       : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : histBtn);
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
-    const gradeCell = qualityCompact(r, r.id) || '<span style="color:#e0e0e0;font-size:12px">—</span>';
-    const hasDetail = hasQualityDetail(r) || (r.note && r.note.length > 0);
-    const memoPreview = r.note
-      ? `<span class="memo-preview">${esc(r.note)}</span>`
-      : '<span style="color:#e0e0e0">—</span>';
+    const hasDetail = hasQualityDetail(r);
+    const qCompact = qualityCompact(r, r.id);
     const detailBtn = hasDetail
-      ? `<button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:3px 7px;margin-left:4px;flex-shrink:0">📋</button>`
+      ? `<div style="margin-top:3px"><button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:2px 5px;font-size:11px">📋 상세</button></div>`
       : '';
-    const memoCell = `<div style="display:flex;align-items:center;gap:0">${memoPreview}${detailBtn}</div>`;
+    const gradeCell = (qCompact || '<span style="color:#e0e0e0;font-size:12px">—</span>') + detailBtn;
+    const memoCell = r.note
+      ? `<button class="memo-icon-btn" onclick="toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>`
+      : `<span style="color:#D1D5DB">-</span>`;
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
       <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
@@ -4645,7 +4682,7 @@ function renderInboundList() {
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
       <td>${esc(r.location || '-')}</td>
       <td style="min-width:80px">${gradeCell}</td>
-      <td style="max-width:200px">${memoCell}</td>
+      <td style="width:40px;text-align:center">${memoCell}</td>
       <td>${actionCell}</td>
     </tr>`;
   })).join('');
@@ -5573,6 +5610,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('modal-quality')?.style.display !== 'none') { closeQualityModal(); return; }
   if (document.getElementById('modal-move-loc')?.style.display !== 'none') { closeMoveModal(); return; }
+  if (_expandedMemoId) { toggleMemo(_expandedMemoId); return; }
   if (document.getElementById('modal-record-history')?.style.display !== 'none') { CM('record-history'); return; }
   if (document.getElementById('modal-edit-inbound')?.style.display !== 'none') { closeEditInboundModal(); return; }
   if (document.getElementById('modal-void-inbound')?.style.display !== 'none') { CM('void-inbound'); return; }
