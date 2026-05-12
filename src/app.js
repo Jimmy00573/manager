@@ -3212,8 +3212,19 @@ function qualityDisplay(r) {
   if (r.size_distribution) parts.push(`크기: ${esc(r.size_distribution)}`);
   if (r.brix && !r.brix_range) parts.push(`당 ${r.brix}°`);
   if (r.acidity && !r.acidity_range) parts.push(`산 ${r.acidity}`);
-  if (!parts.length) return '';
-  return `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${parts.join(' / ')}</div>`;
+  const qualLine = parts.length
+    ? `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${parts.join(' / ')}</div>`
+    : '';
+  const reclassParts = [];
+  if (r.inbound_category === '재선별') {
+    if (r.reclassification_source) reclassParts.push(`출처: ${esc(r.reclassification_source)}`);
+    if (r.reclassification_reason) reclassParts.push(esc(r.reclassification_reason));
+    if (r.original_work_date) reclassParts.push(`원본 ${r.original_work_date}`);
+  }
+  const reclassLine = reclassParts.length
+    ? `<div style="font-size:11px;color:#7C3AED;margin-top:3px;line-height:1.6">${reclassParts.join(' / ')}</div>`
+    : '';
+  return qualLine + reclassLine;
 }
 
 // ── 변경 이력 ──────────────────────────────────────────────────
