@@ -14,6 +14,8 @@ let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [];
+let showVoidData = false;
+let _voidTargetId = null;
 let sortedView = 'list';
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
@@ -115,6 +117,7 @@ async function initApp() {
     });
     document.getElementById('pin-screen').style.display = 'flex';
   }
+  initImeNotice();
   hideLoading();
 }
 
@@ -3058,13 +3061,13 @@ function renderInvSummary() {
     }
   });
 
-  // 미선과 재고 = 입고 합계 - 처리 합계 (실시간)
+  // 미선과 재고 = 입고 합계 - 처리 합계 (실시간, 무효 제외)
   const processedByInbound = {};
   processingRecords.forEach(r => {
     processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
   });
   const unsMap = {};
-  inboundRecords.forEach(r => {
+  inboundRecords.filter(r => !r.is_void).forEach(r => {
     const remaining = r.quantity - (processedByInbound[r.id] || 0);
     if (remaining > 0) unsMap[r.product] = (unsMap[r.product] || 0) + remaining;
   });
@@ -3169,19 +3172,60 @@ function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
 
+function brixDisplay(r) {
+  if (!r.brix && !r.acidity) return '';
+  const ratio = (r.brix && r.acidity) ? r.brix / r.acidity : null;
+  let ratioStr = '';
+  if (ratio) {
+    const chip = ratio >= 11 ? '🟢' : ratio >= 8 ? '🟡' : '🔴';
+    ratioStr = ` / 당산비 ${ratio.toFixed(1)} ${chip}`;
+  }
+  const parts = [];
+  if (r.brix) parts.push(`당 ${r.brix}°`);
+  if (r.acidity) parts.push(`산 ${r.acidity}`);
+  return `<div style="font-size:11px;color:#1565C0;margin-top:3px">${parts.join(' / ')}${ratioStr}</div>`;
+}
+
 function renderInboundList() {
   const tbody = document.getElementById('ib-tb');
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  if (!inboundRecords.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">입고 기록 없음</td></tr>';
+
+  const voidCount = inboundRecords.filter(r => r.is_void).length;
+  const voidCountEl = document.getElementById('ib-void-count');
+  if (voidCountEl) voidCountEl.textContent = voidCount > 0 ? `(무효 ${voidCount}건)` : '';
+
+  const visible = showVoidData ? inboundRecords : inboundRecords.filter(r => !r.is_void);
+
+  if (!visible.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${!inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}</td></tr>`;
     return;
   }
+
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
-  const hasLegacy = inboundRecords.some(r => r._legacy);
+  const hasLegacy = visible.some(r => r._legacy);
   tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="9" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
-  </td></tr>`] : []).concat(inboundRecords.map(r => {
+  </td></tr>`] : []).concat(visible.map(r => {
+    if (r.is_void) {
+      const voidDate = r.void_at ? r.void_at.slice(0, 10) : '';
+      const voidInfo = `사유: ${esc(r.void_reason || '-')}${voidDate ? ` (${voidDate})` : ''}`;
+      return `<tr id="ib-tr-${r.id}" style="opacity:0.55;background:#f5f5f5">
+        <td style="text-decoration:line-through;color:#999">${r.date}</td>
+        <td class="nm" style="text-decoration:line-through;color:#999">${esc(r.farm_name)}</td>
+        <td style="text-decoration:line-through;color:#999">${esc(r.product)}</td>
+        <td style="text-align:right;text-decoration:line-through;color:#999">${r.quantity}</td>
+        <td style="text-align:right;color:#999">-</td>
+        <td style="text-align:right;color:#999">-</td>
+        <td style="color:#999">${esc(r.location || '-')}</td>
+        <td style="white-space:normal;min-width:80px;color:#999">${esc(r.note || '-')}</td>
+        <td>
+          <span style="background:#ef5350;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;vertical-align:middle">무효</span>
+          ${isAdm && !r._legacy ? `<button class="btn sm" onclick="restoreInbound('${r.id}')" style="margin-left:4px">되돌리기</button>` : ''}
+          <div style="font-size:10px;color:#aaa;margin-top:3px;white-space:normal">${esc(voidInfo)}</div>
+        </td>
+      </tr>`;
+    }
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
     const remStyle = remaining <= 0 ? 'color:#999;text-align:right' : 'font-weight:700;color:#E65100;text-align:right';
@@ -3196,7 +3240,7 @@ function renderInboundList() {
       <td style="text-align:right">${processed || ''}</td>
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
       <td>${esc(r.location || '-')}</td>
-      <td style="white-space:normal;min-width:80px">${esc(r.note || '-')}</td>
+      <td style="white-space:normal;min-width:90px">${r.note ? esc(r.note) : (r.brix || r.acidity ? '' : '-')}${brixDisplay(r)}</td>
       <td>${actionCell}</td>
     </tr>`;
   })).join('');
@@ -3205,7 +3249,7 @@ function renderInboundList() {
 function renderProcessingTab() {
   const sel = document.getElementById('proc-inbound');
   if (sel) {
-    const active = inboundRecords.filter(r => r.quantity - getProcessedForInbound(r.id) > 0);
+    const active = inboundRecords.filter(r => !r.is_void && r.quantity - getProcessedForInbound(r.id) > 0);
     sel.innerHTML = '<option value="">선택</option>' + active.map(r => {
       const rem = r.quantity - getProcessedForInbound(r.id);
       return `<option value="${r.id}">${esc(r.product)} | ${esc(r.farm_name)} | ${r.date} (${rem}CT 남음)</option>`;
@@ -3250,7 +3294,13 @@ function editInboundRow(id) {
     <td style="padding:5px 8px">${processed || 0}</td>
     <td style="padding:5px 8px"></td>
     <td style="padding:5px 8px"><input id="eib-loc-${id}" value="${esc(r.location || '')}" style="${IS}"></td>
-    <td style="padding:5px 8px"><input id="eib-note-${id}" value="${esc(r.note || '')}" style="${IS}"></td>
+    <td style="padding:5px 8px">
+      <input id="eib-note-${id}" value="${esc(r.note || '')}" placeholder="메모" style="${IS};margin-bottom:4px">
+      <div style="display:flex;gap:4px">
+        <input id="eib-brix-${id}" type="number" step="0.1" min="0" max="30" value="${r.brix ?? ''}" placeholder="당도°" style="${IS};width:72px">
+        <input id="eib-acid-${id}" type="number" step="0.01" min="0" max="5" value="${r.acidity ?? ''}" placeholder="산도" style="${IS};width:72px">
+      </div>
+    </td>
     <td style="padding:5px 8px">
       <div style="margin-bottom:5px"><small style="color:#e65100;font-weight:600">수정 사유 *</small></div>
       <input id="eib-reason-${id}" placeholder="사유 입력" style="${IS};margin-bottom:5px">
@@ -3267,22 +3317,28 @@ async function saveInboundEdit(id) {
   const location = document.getElementById('eib-loc-' + id)?.value || '';
   const note = document.getElementById('eib-note-' + id)?.value || '';
   const reason = (document.getElementById('eib-reason-' + id)?.value || '').trim();
+  const brixRaw = document.getElementById('eib-brix-' + id)?.value.trim();
+  const acidRaw = document.getElementById('eib-acid-' + id)?.value.trim();
+  const brix = brixRaw ? parseFloat(brixRaw) : null;
+  const acidity = acidRaw ? parseFloat(acidRaw) : null;
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
   if (!reason) return alert('수정 사유를 입력해주세요.');
   const processed = getProcessedForInbound(id);
   if (qty < processed) return alert(`이미 ${processed}CT가 처리되었습니다. ${processed}CT 미만으로 줄일 수 없습니다.`);
   if (!confirm('이 입고기록을 수정합니다. 관련 처리(선과 등)가 있을 경우 재고에 영향을 줄 수 있습니다. 계속할까요?')) return;
   const prev = inboundRecords.find(r => r.id === id);
+  const updatePayload = { date, quantity: qty, location: location || null, note: note || null,
+    ...(brix !== null && { brix }), ...(acidity !== null && { acidity }) };
   try {
-    const updated = await dbUpdateInbound(id, { date, quantity: qty, location: location || null, note: note || null });
+    await dbUpdateInbound(id, updatePayload);
     await dbInsertAuditLog({
       target_table: 'inbound_records', target_id: id,
-      before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note },
-      after_val: { date, quantity: qty, location: location || null, note: note || null },
+      before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note, brix: prev.brix, acidity: prev.acidity },
+      after_val: { date, quantity: qty, location: location || null, note: note || null, brix, acidity },
       reason, staff: 'admin'
     });
     const idx = inboundRecords.findIndex(r => r.id === id);
-    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], date, quantity: qty, location: location || null, note: note || null };
+    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], date, quantity: qty, location: location || null, note: note || null, brix, acidity };
     renderInvSummary(); renderInboundList();
   } catch(e) { alert('수정 오류: ' + e.message); }
 }
@@ -3290,7 +3346,7 @@ async function saveInboundEdit(id) {
 async function deleteInbound(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const processed = getProcessedForInbound(id);
-  if (processed > 0) return alert(`이 입고건에 ${processed}CT가 이미 처리(선과 등)되었습니다.\n먼저 관련 처리 기록을 삭제해주세요.`);
+  if (processed > 0) { showVoidModal(id); return; }
   if (!confirm('이 입고 기록을 삭제하시겠습니까?')) return;
   try {
     await dbDeleteInbound(id);
@@ -3299,22 +3355,116 @@ async function deleteInbound(id) {
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
+function toggleVoidData() {
+  showVoidData = document.getElementById('ib-show-void').checked;
+  renderInboundList();
+}
+
+function showVoidModal(id) {
+  _voidTargetId = id;
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  const processed = getProcessedForInbound(id);
+  const remaining = r.quantity - processed;
+  document.getElementById('void-modal-info').innerHTML =
+    `<strong>${esc(r.farm_name)}</strong> · ${esc(r.product)} · ${r.date}<br>` +
+    `입고 <strong>${r.quantity}CT</strong> / 처리됨 <strong style="color:#E65100">${processed}CT</strong> / 남은재고 ${remaining}CT`;
+  document.getElementById('void-reason').value = '';
+  document.getElementById('void-opt-void').checked = true;
+  document.getElementById('modal-void-inbound').style.display = 'flex';
+}
+
+async function confirmVoidAction() {
+  const id = _voidTargetId;
+  if (!id) return;
+  const action = document.querySelector('input[name="void-action"]:checked')?.value;
+  const reason = (document.getElementById('void-reason').value || '').trim();
+  if (!reason) return alert('사유를 입력해주세요.');
+  CM('void-inbound');
+  if (action === 'void') {
+    await voidInbound(id, reason);
+  } else if (action === 'force') {
+    await forceDeleteInbound(id, reason);
+  }
+}
+
+async function voidInbound(id, reason) {
+  try {
+    const now = new Date().toISOString();
+    await dbUpdateInbound(id, { is_void: true, void_reason: reason, void_at: now, void_by: 'admin' });
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { is_void: false }, after_val: { is_void: true, void_reason: reason },
+      reason, staff: 'admin'
+    });
+    const idx = inboundRecords.findIndex(r => r.id === id);
+    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], is_void: true, void_reason: reason, void_at: now, void_by: 'admin' };
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+  } catch(e) { alert('무효 처리 오류: ' + e.message); }
+}
+
+async function restoreInbound(id) {
+  if (!confirm('이 입고건을 무효 처리 이전 상태로 되돌리겠습니까?')) return;
+  try {
+    await dbUpdateInbound(id, { is_void: false, void_reason: null, void_at: null, void_by: null });
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { is_void: true }, after_val: { is_void: false },
+      reason: '무효 처리 취소 (되돌리기)', staff: 'admin'
+    });
+    const idx = inboundRecords.findIndex(r => r.id === id);
+    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], is_void: false, void_reason: null, void_at: null, void_by: null };
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+  } catch(e) { alert('복구 오류: ' + e.message); }
+}
+
+async function forceDeleteInbound(id, reason) {
+  if (!confirm(`[강제 삭제] 입고 기록과 연관된 처리 기록 모두 영구 삭제됩니다.\n되돌릴 수 없습니다. 계속할까요?\n\n사유: ${reason}`)) return;
+  try {
+    const r = inboundRecords.find(x => x.id === id);
+    const procs = processingRecords.filter(x => x.inbound_id === id);
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { record: r, processings: procs }, after_val: null,
+      reason, staff: 'admin'
+    });
+    for (const pr of procs) await dbDeleteProcessing(pr.id);
+    await dbDeleteInbound(id);
+    inboundRecords = inboundRecords.filter(x => x.id !== id);
+    processingRecords = processingRecords.filter(x => x.inbound_id !== id);
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+  } catch(e) { alert('강제 삭제 오류: ' + e.message); }
+}
+
 async function addInbound() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   const qty = parseInt(document.getElementById('ib-qty').value) || 0;
   if (!date || !product || !farm_name || !qty) return alert('날짜, 품목, 농가명, 수량은 필수입니다.');
+  const brixRaw = (document.getElementById('ib-brix')?.value || '').trim();
+  const acidRaw = (document.getElementById('ib-acidity')?.value || '').trim();
+  const brix = brixRaw ? parseFloat(brixRaw) : null;
+  const acidity = acidRaw ? parseFloat(acidRaw) : null;
+  if (brix !== null && (brix < 5 || brix > 20))
+    if (!confirm(`당도 ${brix}°는 권장 범위(5~20°)를 벗어납니다. 그래도 저장할까요?`)) return;
+  if (acidity !== null && (acidity < 0.5 || acidity > 3.0))
+    if (!confirm(`산도 ${acidity}는 권장 범위(0.5~3.0)를 벗어납니다. 그래도 저장할까요?`)) return;
+  // brix/acidity 컬럼이 없을 경우 오류 방지: null이면 payload에서 제외
   const data = {
     date, product, farm_name, quantity: qty,
     location: gv('ib-loc') || null,
     note: gv('ib-note') || null,
-    staff: 'admin'
+    staff: 'admin',
+    ...(brix !== null && { brix }),
+    ...(acidity !== null && { acidity }),
   };
   try {
     const row = await dbInsertInbound(data);
     inboundRecords.unshift(row);
     renderInvSummary(); renderInboundList();
     sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
+    if (document.getElementById('ib-brix')) sv('ib-brix', '');
+    if (document.getElementById('ib-acidity')) sv('ib-acidity', '');
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
@@ -3805,6 +3955,22 @@ async function deleteJuice(id) {
     invJuice = invJuice.filter(r => r.id !== id);
     renderInvSummary(); renderJuiceList();
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+// ── IME 안내 배너
+function initImeNotice() {
+  // Windows 이외 환경(Mac, iOS, Android)에서는 이 문제가 없으므로 표시 안 함
+  const isWindows = /Win/i.test(navigator.platform || navigator.userAgent);
+  if (!isWindows) return;
+  if (localStorage.getItem('ime_notice_dismissed') === '1') return;
+  const el = document.getElementById('ime-notice');
+  if (el) el.style.display = 'flex';
+}
+
+function dismissImeNotice() {
+  localStorage.setItem('ime_notice_dismissed', '1');
+  const el = document.getElementById('ime-notice');
+  if (el) el.style.display = 'none';
 }
 
 // ── 시작

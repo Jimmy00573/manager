@@ -190,6 +190,15 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
 .fg label { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
 .fg input, .fg select, .fg textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 13px; font-family: inherit; width: 100%; min-width: 0; }
 .fg input:focus, .fg select:focus, .fg textarea:focus { outline: none; border-color: var(--orange-light); box-shadow: 0 0 0 2px rgba(242,140,40,.12); }
+
+/* ── IME 한국어 입력 유지 힌트 ──
+   ime-mode 는 2017년 deprecated — Chrome/Edge 최신에서는 무효.
+   일부 구형 IE/Firefox 환경에서만 부분 작동.
+   실질적 해결은 OS 설정(기본 입력 언어 = 한국어) 변경 필요. */
+input:not([type="number"]):not([type="date"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+textarea {
+  ime-mode: active;
+}
 .fg input.auto { background: #E3F2FD; color: #1565C0; }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 

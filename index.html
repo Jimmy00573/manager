@@ -249,6 +249,16 @@
 
 <div class="main">
 
+<!-- IME 안내 배너: Windows Chrome/Edge 사용자에게만 표시 -->
+<div id="ime-notice" style="display:none;margin-bottom:10px;background:#E8F5E9;border:1px solid #A5D6A7;border-left:3px solid #2E7D32;border-radius:8px;padding:9px 14px;font-size:12px;color:#1B5E20;align-items:flex-start;gap:10px;line-height:1.6">
+  <span style="font-size:16px;flex-shrink:0">⌨️</span>
+  <div style="flex:1">
+    <strong>한영 전환이 풀리면</strong> 다음 필드 클릭 후 <kbd style="background:#fff;border:1px solid #ccc;border-radius:3px;padding:1px 5px;font-size:11px">한/영</kbd> 키를 다시 눌러주세요.
+    <span style="color:#388E3C;margin-left:4px">Windows IME 특성상 탭 이동 시 입력 언어가 초기화될 수 있습니다. 완벽한 해결은 <strong>Windows 설정 → 시간 및 언어 → 언어 → 기본 입력 언어를 한국어</strong>로 설정하면 줄어듭니다.</span>
+  </div>
+  <button onclick="dismissImeNotice()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#555;padding:0 2px;flex-shrink:0;line-height:1" title="닫기">✕</button>
+</div>
+
 <!-- 현황판 -->
 <div id="p-dash" class="panel active">
   <div class="sec-hdr"><div class="sec-title">🏭 공장 보유 재고</div></div>
@@ -588,9 +598,18 @@
           <div class="fg"><label>농가명 *</label><select id="ib-farm"><option value="">선택</option></select></div>
           <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1"></div>
           <div class="fg"><label>위치</label><input id="ib-loc" placeholder="선택사항"></div>
+          <div class="fg"><label>당도 <small style="font-weight:400;color:var(--text-tertiary)">(Brix, 선택)</small></label><input id="ib-brix" type="number" step="0.1" min="0" max="30" placeholder="예: 12.5"></div>
+          <div class="fg"><label>산도 <small style="font-weight:400;color:var(--text-tertiary)">(%, 선택)</small></label><input id="ib-acidity" type="number" step="0.01" min="0" max="5" placeholder="예: 1.05"></div>
           <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="ib-note" placeholder="특이사항 (선택사항)"></div>
         </div>
         <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addInbound()">등록</button></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);cursor:pointer;user-select:none">
+          <input type="checkbox" id="ib-show-void" onchange="toggleVoidData()" style="cursor:pointer">
+          무효 데이터 포함 보기
+        </label>
+        <span id="ib-void-count" style="font-size:12px;color:#ef5350;font-weight:600"></span>
       </div>
       <div class="tbl-wrap">
         <table>
@@ -772,6 +791,41 @@
 
 <datalist id="dl-v"><option value="노지감귤"><option value="하우스감귤"><option value="한라봉"><option value="천혜향"><option value="레드향"><option value="황금향"><option value="청견"><option value="세토카"></datalist>
 <datalist id="dl-cx"><option value="콘테이너"><option value="파렛트"><option value="사각"><option value="노랑"><option value="초록"><option value="헌콘"></datalist>
+
+<!-- 모달: 입고 무효 처리 / 강제 삭제 -->
+<div id="modal-void-inbound" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('void-inbound')">
+  <div class="modal" style="max-width:460px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title">이 입고건은 이미 처리됨</div>
+      <button class="modal-close" onclick="CM('void-inbound')">✕</button>
+    </div>
+    <div id="void-modal-info" style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.7"></div>
+    <div style="margin-bottom:14px">
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:2px solid #A5D6A7;border-radius:8px;cursor:pointer;margin-bottom:8px;background:#F9FBE7" id="void-opt-void-label">
+        <input type="radio" name="void-action" value="void" id="void-opt-void" checked style="margin-top:3px;cursor:pointer">
+        <div>
+          <div style="font-weight:600;margin-bottom:3px">무효 처리 <span style="font-size:11px;background:#E8F5E9;color:#2E7D32;padding:2px 7px;border-radius:4px;font-weight:700">추천</span></div>
+          <div style="font-size:12px;color:var(--text-secondary)">데이터는 남기되 화면·집계에서 제외됩니다.<br>언제든지 되돌릴 수 있습니다.</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer" id="void-opt-force-label">
+        <input type="radio" name="void-action" value="force" id="void-opt-force" style="margin-top:3px;cursor:pointer">
+        <div>
+          <div style="font-weight:600;color:#C62828;margin-bottom:3px">강제 삭제</div>
+          <div style="font-size:12px;color:var(--text-secondary)">입고 + 처리 기록 모두 영구 삭제됩니다.<br>되돌릴 수 없습니다.</div>
+        </div>
+      </label>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">사유 입력 <span style="color:#C62828">*</span></label>
+      <input id="void-reason" placeholder="예: 농가명 오기재, 품목 오류 등" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box">
+    </div>
+    <div class="modal-actions">
+      <button class="btn cancel" onclick="CM('void-inbound')">취소</button>
+      <button class="btn pri" onclick="confirmVoidAction()">확인</button>
+    </div>
+  </div>
+</div>
 
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js"></script>

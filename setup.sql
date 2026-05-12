@@ -395,3 +395,16 @@ CREATE POLICY "allow_all_audit"      ON audit_logs         FOR ALL TO anon USING
 -- SELECT created_at, date, farm_name, product,
 --        quantity + COALESCE(sub_quantity, 0), location, note
 -- FROM inventory_unsorted;
+
+-- ============================================================
+--  무효 처리 컬럼 추가 (1단계: 입고 삭제 정책 개선)
+--  Supabase SQL Editor에서 실행하세요.
+-- ============================================================
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS is_void     BOOLEAN     DEFAULT FALSE;
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS void_reason TEXT;
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS void_at     TIMESTAMPTZ;
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS void_by     TEXT;
+
+-- 당도/산도 컬럼 추가
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS brix     DECIMAL(4,1);  -- 당도 (예: 12.5 Brix)
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS acidity  DECIMAL(4,2);  -- 산도 (예: 1.05)
