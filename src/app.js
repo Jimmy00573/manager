@@ -2398,6 +2398,46 @@ function computeLocStock() {
   return map;
 }
 
+function buildLocOptHtml() {
+  const active = storageLocations.filter(l => l.is_active !== false);
+  const zones  = [...new Set(active.map(l => l.zone).filter(Boolean))];
+  const noZone = active.filter(l => !l.zone);
+  let html = '<option value="">선택 안 함</option>';
+  zones.forEach(zone => {
+    const items = active.filter(l => l.zone === zone);
+    html += `<optgroup label="${esc(zone)}">`;
+    items.forEach(l => { html += `<option value="${esc(l.name)}">${esc(l.name)}${l.capacity_ct ? ` (최대 ${l.capacity_ct}CT)` : ''}</option>`; });
+    html += '</optgroup>';
+  });
+  noZone.forEach(l => { html += `<option value="${esc(l.name)}">${esc(l.name)}${l.capacity_ct ? ` (최대 ${l.capacity_ct}CT)` : ''}</option>`; });
+  return html;
+}
+
+function popLocSelects() {
+  const optHtml = buildLocOptHtml();
+  ['ib-loc', 'eib-m-loc'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el.tagName !== 'SELECT') return;
+    const cur = el.value;
+    el.innerHTML = optHtml;
+    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  });
+}
+
+function setLocSelectValue(selectId, value) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+  if (!value) { el.value = ''; return; }
+  if ([...el.options].some(o => o.value === value)) { el.value = value; return; }
+  // Value not in master list — add as legacy option so edit round-trips safely
+  const opt = document.createElement('option');
+  opt.value = value;
+  opt.textContent = value + ' (기존값)';
+  opt.style.color = '#888';
+  el.appendChild(opt);
+  el.value = value;
+}
+
 function renderStorageLocations() {
   const el = document.getElementById('inv-loc-div');
   if (!el) return;
@@ -2483,6 +2523,7 @@ async function saveLocation() {
     storageLocations.sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || a.name.localeCompare(b.name, 'ko'));
     closeLocModal();
     renderStorageLocations();
+    popLocSelects();
     showToast(_editLocId ? '위치가 수정되었습니다.' : `"${name}" 위치가 추가되었습니다.`);
   } catch(e) { alert('저장 오류: ' + e.message); }
 }
@@ -2495,6 +2536,7 @@ async function deleteLocation(id) {
     storageLocations = storageLocations.filter(l => l.id !== id);
     if (_editLocId === id) closeLocModal();
     renderStorageLocations();
+    popLocSelects();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
@@ -2732,6 +2774,7 @@ async function loadAndRenderInv() {
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     popInvProductSelects();
+    popLocSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
   hideLoading();
   renderInvAll();
@@ -4329,7 +4372,7 @@ function editInboundRow(id) {
   document.getElementById('eib-m-date').value = r.date || '';
   document.getElementById('eib-m-product').value = r.product || '';
   document.getElementById('eib-m-farm').value = r.farm_name || '';
-  document.getElementById('eib-m-loc').value = r.location || '';
+  setLocSelectValue('eib-m-loc', r.location || '');
   document.getElementById('eib-m-qty').value = r.quantity || '';
   document.getElementById('eib-m-qty').min = processed || 1;
   const hint = document.getElementById('eib-m-qty-hint');
