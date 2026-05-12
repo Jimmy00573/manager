@@ -845,6 +845,70 @@
 <datalist id="dl-v"><option value="노지감귤"><option value="하우스감귤"><option value="한라봉"><option value="천혜향"><option value="레드향"><option value="황금향"><option value="청견"><option value="세토카"></datalist>
 <datalist id="dl-cx"><option value="콘테이너"><option value="파렛트"><option value="사각"><option value="노랑"><option value="초록"><option value="헌콘"></datalist>
 
+<!-- 모달: 입고 수정 -->
+<div id="modal-edit-inbound" class="modal-bg" style="display:none" onclick="if(event.target===this)closeEditInboundModal()">
+  <div class="modal" style="max-width:560px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title">미선과 입고 수정</div>
+      <button class="modal-close" onclick="closeEditInboundModal()">✕</button>
+    </div>
+
+    <div class="ib-section-label">기본 정보</div>
+    <div class="modal-grid">
+      <div class="fg"><label>날짜 *</label><input id="eib-m-date" type="date"></div>
+      <div class="fg"><label>품목</label><input id="eib-m-product" disabled style="background:#f5f5f5;color:#888"></div>
+      <div class="fg"><label>농가명</label><input id="eib-m-farm" disabled style="background:#f5f5f5;color:#888"></div>
+      <div class="fg"><label>위치</label><input id="eib-m-loc" placeholder="선택사항"></div>
+    </div>
+
+    <div class="ib-section-label">수량 정보</div>
+    <div class="modal-grid">
+      <div class="fg">
+        <label>수량(CT) *</label>
+        <input id="eib-m-qty" type="number" min="1">
+        <div id="eib-m-qty-hint" style="font-size:11px;color:#e65100;margin-top:2px;display:none"></div>
+      </div>
+      <div class="fg"><label>카테고리</label>
+        <select id="eib-m-cat">
+          <option value="상품">상품</option>
+          <option value="대과">대과</option>
+          <option value="소과">소과</option>
+          <option value="파치">파치</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
+    <div class="modal-grid">
+      <div class="fg"><label>당도 범위 <small style="font-weight:400;color:var(--text-tertiary)">(Brix)</small></label><input id="eib-m-brix-range" placeholder="예: 13.5~16.5"></div>
+      <div class="fg"><label>산도 범위 <small style="font-weight:400;color:var(--text-tertiary)">(%)</small></label><input id="eib-m-acid-range" placeholder="예: 평균1~1.7"></div>
+      <div class="fg full"><label>크기 분포</label><input id="eib-m-size" placeholder="예: L40% M35% S25%"></div>
+    </div>
+
+    <div class="ib-section-label">추가 정보</div>
+    <div class="modal-grid">
+      <div class="fg full"><label>메모</label><input id="eib-m-note" placeholder="특이사항 (선택사항)"></div>
+      <div class="fg full" style="padding-top:2px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="eib-m-priority" style="width:16px;height:16px;cursor:pointer">
+          ⭐ 우선 사용 (먼저 소진할 물량)
+        </label>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+    <div class="fg" style="margin-bottom:16px">
+      <label style="color:#E65100;font-weight:700">수정 사유 <span style="font-size:11px;font-weight:400;color:#aaa">(변경사항 있을 때 필수)</span></label>
+      <input id="eib-m-reason" placeholder="예: 수량 오기입 수정, 당도 범위 추가">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeEditInboundModal()">취소</button>
+      <button class="btn pri" onclick="saveInboundModal()">저장</button>
+    </div>
+  </div>
+</div>
+
 <!-- 모달: 입고 무효 처리 / 강제 삭제 -->
 <div id="modal-void-inbound" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('void-inbound')">
   <div class="modal" style="max-width:460px;width:95%">
