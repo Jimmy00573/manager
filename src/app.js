@@ -3482,6 +3482,47 @@ function _updateIbFilterBtns() {
   });
 }
 
+async function migrateInboundGrades() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 실행할 수 있습니다.');
+  const parseAvg = str => {
+    if (!str) return null;
+    const m = str.match(/(\d+\.?\d*)~(\d+\.?\d*)/);
+    return m ? (parseFloat(m[1]) + parseFloat(m[2])) / 2 : null;
+  };
+  const toMigrate = inboundRecords.filter(r => !r.is_void && (
+    (r.brix_range && !r.brix_grade) || (r.acidity_range && !r.acidity_grade)
+  ));
+  if (!toMigrate.length) return alert('변환할 데이터가 없습니다.\n(등급이 이미 설정되었거나 수치 범위가 없는 경우)');
+  const preview = toMigrate.slice(0, 5).map(r => {
+    const bAvg = parseAvg(r.brix_range);
+    const aAvg = parseAvg(r.acidity_range);
+    const bG = !r.brix_grade && bAvg !== null ? (bAvg >= 15 ? '상' : bAvg >= 12 ? '중' : '하') : null;
+    const aG = !r.acidity_grade && aAvg !== null ? (aAvg <= 1.0 ? '상' : aAvg <= 1.5 ? '중' : '하') : null;
+    return `${r.date} ${r.product}(${r.farm_name}): 당도${bG || '-'} 산도${aG || '-'}`;
+  }).join('\n');
+  if (!confirm(`${toMigrate.length}건 자동 변환 예정\n\n미리보기 (최대 5건):\n${preview}\n\n계속할까요?`)) return;
+  let count = 0, err = 0;
+  for (const r of toMigrate) {
+    const payload = {};
+    if (r.brix_range && !r.brix_grade) {
+      const avg = parseAvg(r.brix_range);
+      if (avg !== null) payload.brix_grade = avg >= 15 ? '상' : avg >= 12 ? '중' : '하';
+    }
+    if (r.acidity_range && !r.acidity_grade) {
+      const avg = parseAvg(r.acidity_range);
+      if (avg !== null) payload.acidity_grade = avg <= 1.0 ? '상' : avg <= 1.5 ? '중' : '하';
+    }
+    if (!Object.keys(payload).length) continue;
+    try {
+      await dbUpdateInbound(r.id, payload);
+      Object.assign(r, payload);
+      count++;
+    } catch(e) { err++; console.error('마이그레이션 오류:', r.id, e); }
+  }
+  renderInvSummary(); renderInboundList();
+  showToast(`${count}건 변환 완료${err ? ` (오류 ${err}건)` : ''}`);
+}
+
 function setGrade(btn) {
   const group = btn.closest('.grade-group');
   const wasActive = btn.classList.contains('active');
