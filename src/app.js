@@ -3807,6 +3807,30 @@ function hasQualityDetail(r) {
 }
 
 let _expandedMemoId = null;
+let _openMenuId = null;
+
+function toggleRowMenu(id, e) {
+  e.stopPropagation();
+  if (_openMenuId && _openMenuId !== id) {
+    const prev = document.getElementById(`row-menu-${_openMenuId}`);
+    if (prev) prev.style.display = 'none';
+  }
+  const menu = document.getElementById(`row-menu-${id}`);
+  if (!menu) return;
+  const isOpen = menu.style.display !== 'none';
+  menu.style.display = isOpen ? 'none' : '';
+  _openMenuId = isOpen ? null : id;
+}
+
+function qualityInline(r) {
+  const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
+  const gChip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
+  const chips = [
+    gChip('당', r.brix_grade), gChip('산', r.acidity_grade), gChip('외', r.appearance_grade),
+    ...(r.defect_tags ? r.defect_tags.split(',').map(t => defectChip(t.trim())).filter(Boolean) : [])
+  ].filter(Boolean);
+  return chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
+}
 
 function toggleMemo(id) {
   const prev = _expandedMemoId;
@@ -4379,9 +4403,19 @@ function renderIbFarmView() {
         const isLast = i === arr.length - 1;
         const remColor = r.rem <= 0 ? '#aaa' : r.rem < 50 ? '#C62828' : '#E65100';
         const memoBtn = r.note ? `<button class="memo-icon-btn" onclick="toggleFarmMemo('${r.id}')" title="${esc(r.note)}" style="font-size:13px;margin-left:2px">📝</button>` : '';
-        const qBtn = hasQualityDetail(r)
-          ? `<button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:2px 5px;font-size:11px;margin-left:4px">📋</button>` : '';
-        const compactGrade = qualityCompact(r, r.id);
+        const compactGrade = qualityInline(r);
+        const farmMenuItems = isAdm
+          ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
+             ${r.rem > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
+             <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
+             <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
+             <div class="menu-divider"></div>
+             <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
+          : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
+        const farmMenu = `<div style="position:relative;display:inline-block">
+          <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)" style="font-size:13px;width:24px;height:24px">⋮</button>
+          <div id="row-menu-${r.id}" class="row-menu" style="display:none">${farmMenuItems}</div>
+        </div>`;
         const memoDiv = r.note
           ? `<div id="farm-memo-${r.id}" class="memo-expanded" style="display:none;margin:4px 0 0 20px">${esc(r.note).replace(/\n/g, '<br>')}</div>` : '';
         return `<div style="padding:5px 14px 5px 36px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5'}">
@@ -4393,7 +4427,7 @@ function renderIbFarmView() {
             ${r.location ? `<span style="font-size:11px;color:#888">(${esc(r.location)})</span>` : ''}
             ${r.is_priority ? '<span style="font-size:11px">⭐</span>' : ''}
             ${compactGrade}
-            ${memoBtn}${qBtn}
+            ${memoBtn}${farmMenu}
           </div>
           ${memoDiv}
         </div>`;
@@ -4621,7 +4655,7 @@ function renderInboundList() {
   _updateIbFilterBtns();
 
   if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="11" class="empty">${
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${
       ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
       !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'
     }</td></tr>`;
@@ -4630,7 +4664,7 @@ function renderInboundList() {
 
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
   const hasLegacy = visible.some(r => r._legacy);
-  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="11" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
+  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="9" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(visible.map(r => {
     if (r.is_void) {
@@ -4642,11 +4676,9 @@ function renderInboundList() {
         <td style="text-decoration:line-through;color:#999">${esc(r.product)}</td>
         <td style="color:#999">-</td>
         <td style="text-align:right;text-decoration:line-through;color:#999">${r.quantity}</td>
-        <td style="text-align:right;color:#999">-</td>
-        <td style="text-align:right;color:#999">-</td>
         <td style="color:#999">${esc(r.location || '-')}</td>
         <td style="color:#999">—</td>
-        <td style="white-space:normal;min-width:80px;color:#999">${esc(r.note || '-')}</td>
+        <td></td>
         <td>
           <span style="background:#ef5350;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;vertical-align:middle">무효</span>
           ${isAdm && !r._legacy ? `<button class="btn sm" onclick="restoreInbound('${r.id}')" style="margin-left:4px">되돌리기</button>` : ''}
@@ -4656,34 +4688,40 @@ function renderInboundList() {
     }
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
-    const remStyle = remaining <= 0 ? 'color:#999;text-align:right' : 'font-weight:700;color:#E65100;text-align:right';
-    const histBtn = `<button class="btn sm" onclick="openRecordHistory('${r.id}')" title="변경 이력" style="padding:4px 7px">📜</button>`;
-    const moveBtn = remaining > 0 ? `<button class="btn sm" onclick="openMoveModal('${r.id}')" title="위치 이동" style="padding:4px 7px">🚚</button>` : '';
-    const actionCell = (isAdm && !r._legacy)
-      ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${moveBtn} ${histBtn}`
-      : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : histBtn);
+    const qtyTitle = processed > 0 ? `입고 ${r.quantity}CT · 처리 ${processed}CT · 잔여 ${remaining}CT` : `입고 ${r.quantity}CT`;
+    const qtyDisplay = processed > 0
+      ? `<span title="${qtyTitle}" style="cursor:default">${r.quantity}<br><span style="${remaining <= 0 ? 'color:#999' : remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${remaining > 0 ? remaining : '완료'}</span></span>`
+      : `<span title="${qtyTitle}" style="cursor:default">${r.quantity}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
-    const hasDetail = hasQualityDetail(r);
-    const qCompact = qualityCompact(r, r.id);
-    const detailBtn = hasDetail
-      ? `<div style="margin-top:3px"><button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:2px 5px;font-size:11px">📋 상세</button></div>`
-      : '';
-    const gradeCell = (qCompact || '<span style="color:#e0e0e0;font-size:12px">—</span>') + detailBtn;
+    const qInline = qualityInline(r);
+    const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     const memoCell = r.note
       ? `<button class="memo-icon-btn" onclick="toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>`
       : `<span style="color:#D1D5DB">-</span>`;
+    const menuItems = isAdm && !r._legacy
+      ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
+         ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
+         <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
+         <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
+         <div class="menu-divider"></div>
+         <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
+      : r._legacy
+        ? '<span style="padding:6px 12px;font-size:12px;color:#bbb;display:block">마이그레이션 필요</span>'
+        : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
+    const actionCell = `<div style="position:relative;text-align:center">
+      <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)">⋮</button>
+      <div id="row-menu-${r.id}" class="row-menu" style="display:none">${menuItems}</div>
+    </div>`;
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
       <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
       <td>${esc(r.product)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
-      <td style="text-align:right">${r.quantity}</td>
-      <td style="text-align:right">${processed || ''}</td>
-      <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
+      <td style="text-align:right">${qtyDisplay}</td>
       <td>${esc(r.location || '-')}</td>
       <td style="min-width:80px">${gradeCell}</td>
       <td style="width:40px;text-align:center">${memoCell}</td>
-      <td>${actionCell}</td>
+      <td style="width:40px">${actionCell}</td>
     </tr>`;
   })).join('');
 }
@@ -5620,4 +5658,9 @@ document.addEventListener('keydown', e => {
 document.addEventListener('DOMContentLoaded', initApp);
 document.addEventListener('click', e => {
   if (!e.target.classList.contains('grade-hint')) hideGradeHint();
+  if (_openMenuId && !e.target.closest('.row-menu') && !e.target.classList.contains('menu-trigger')) {
+    const menu = document.getElementById(`row-menu-${_openMenuId}`);
+    if (menu) menu.style.display = 'none';
+    _openMenuId = null;
+  }
 });
