@@ -20,6 +20,8 @@ let ibViewMode = 'list';
 let auditLogs = [];
 let auditLogOffset = 0;
 const AUDIT_PAGE_SIZE = 100;
+let auditLogPage = 1;
+const AUDIT_PER_PAGE = 15;
 let sortedView = 'list';
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
@@ -3279,7 +3281,7 @@ async function loadAuditLogs(reset = true) {
     auditLogOffset += rows.length;
     const moreBtn = document.getElementById('audit-load-more');
     if (moreBtn) moreBtn.style.display = rows.length === AUDIT_PAGE_SIZE ? '' : 'none';
-    renderAuditLogs();
+    renderAuditLogs(true);
   } catch(e) {
     const el = document.getElementById('audit-log-list');
     if (el) el.innerHTML = `<div style="padding:20px;color:#C62828">이력 불러오기 실패: ${esc(e.message)}</div>`;
@@ -3292,12 +3294,14 @@ function clearAuditFilters() {
   ['al-date-from','al-date-to','al-search'].forEach(id => sv(id, ''));
   const a = document.getElementById('al-action'); if (a) a.value = '';
   const t = document.getElementById('al-table');  if (t) t.value = '';
-  renderAuditLogs();
+  renderAuditLogs(true);
 }
 
-function renderAuditLogs() {
+function renderAuditLogs(resetPage = false) {
   const el = document.getElementById('audit-log-list');
   if (!el) return;
+
+  if (resetPage) auditLogPage = 1;
 
   const fromDate   = document.getElementById('al-date-from')?.value || '';
   const toDate     = document.getElementById('al-date-to')?.value   || '';
@@ -3305,6 +3309,89 @@ function renderAuditLogs() {
   const tableFilt  = document.getElementById('al-table')?.value     || '';
   const search     = (document.getElementById('al-search')?.value   || '').toLowerCase().trim();
 
+  let filtered = auditLogs;
+  if (fromDate) filtered = filtered.filter(l => l.created_at >= fromDate);
+  if (toDate)   filtered = filtered.filter(l => l.created_at <= toDate + 'T23:59:59');
+  if (tableFilt) filtered = filtered.filter(l => l.target_table === tableFilt);
+  if (actionFilt) filtered = filtered.filter(l => getAuditActionType(l) === actionFilt);
+  if (search) filtered = filtered.filter(l => {
+    const ctx = getAuditContext(l);
+    return (l.reason || '').toLowerCase().includes(search) ||
+           ctx.farm.toLowerCase().includes(search) ||
+           ctx.product.toLowerCase().includes(search);
+  });
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / AUDIT_PER_PAGE));
+  if (auditLogPage > totalPages) auditLogPage = totalPages;
+
+  const countEl = document.getElementById('al-result-count');
+  if (countEl) countEl.textContent = total ? `전체 ${total}건` : '';
+
+  if (!total) {
+    el.innerHTML = `<div style="text-align:center;padding:40px;color:#bbb">
+      <div style="margin-bottom:10px">조건에 맞는 변경 이력이 없습니다.</div>
+      <button class="btn sm" onclick="clearAuditFilters()">필터 초기화</button>
+    </div>`;
+    document.getElementById('al-pagination')?.remove();
+    return;
+  }
+
+  const start = (auditLogPage - 1) * AUDIT_PER_PAGE;
+  const pageItems = filtered.slice(start, start + AUDIT_PER_PAGE);
+
+  el.innerHTML = pageItems.map((log, i) => {
+    const num = start + i + 1;
+    const action = getAuditActionType(log);
+    const st = AUDIT_ACTION_STYLE[action] || { bg: '#f5f5f5', color: '#555', border: '#ddd', icon: '📝' };
+    const ctx = getAuditContext(log);
+    const diff = getAuditDiff(log);
+    const dt = new Date(log.created_at);
+    const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+    const ctxParts = [ctx.farm && esc(ctx.farm), ctx.product && esc(ctx.product), ctx.qty && `${ctx.qty}CT`, ctx.date].filter(Boolean);
+
+    return `<div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${st.border};border-radius:8px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        <span style="font-size:11px;color:#aaa;font-weight:600;min-width:24px">${num}.</span>
+        <span style="background:${st.bg};color:${st.color};font-size:11px;padding:2px 9px;border-radius:10px;font-weight:700;white-space:nowrap">${st.icon} ${action}</span>
+        <span style="font-size:11px;font-weight:600;color:#666;background:#f5f5f5;padding:2px 7px;border-radius:8px">${getAuditTableLabel(log.target_table)}</span>
+        <span style="font-size:11px;color:#aaa;margin-left:auto;white-space:nowrap">${dtStr}</span>
+      </div>
+      ${ctxParts.length ? `<div style="font-size:13px;font-weight:600;color:#222;margin-bottom:${diff.length || log.reason ? '5' : '0'}px;padding-left:32px">${ctxParts.join(' · ')}</div>` : ''}
+      ${diff.length ? `<div style="font-size:12px;color:#555;margin-bottom:${log.reason ? '5' : '0'}px;display:flex;flex-wrap:wrap;gap:4px;padding-left:32px">${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px">${esc(d)}</span>`).join('')}</div>` : ''}
+      ${log.reason ? `<div style="font-size:12px;color:#888;padding-left:32px">사유: <em>"${esc(log.reason)}"</em></div>` : ''}
+    </div>`;
+  }).join('');
+
+  // pagination controls
+  let pgEl = document.getElementById('al-pagination');
+  if (!pgEl) {
+    pgEl = document.createElement('div');
+    pgEl.id = 'al-pagination';
+    el.parentNode.insertBefore(pgEl, el.nextSibling);
+  }
+  pgEl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 0 8px;font-size:13px';
+  const prevDis = auditLogPage <= 1;
+  const nextDis = auditLogPage >= totalPages;
+  pgEl.innerHTML = `
+    <button class="btn sm" onclick="auditLogPrev()" ${prevDis ? 'disabled' : ''} style="min-width:64px">◀ 이전</button>
+    <span style="color:#555;font-weight:600">${auditLogPage} / ${totalPages}</span>
+    <button class="btn sm" onclick="auditLogNext()" ${nextDis ? 'disabled' : ''} style="min-width:64px">다음 ▶</button>
+  `;
+}
+
+function auditLogPrev() { if (auditLogPage > 1) { auditLogPage--; renderAuditLogs(); } }
+function auditLogNext() {
+  const total = _auditFilteredCount();
+  if (auditLogPage < Math.ceil(total / AUDIT_PER_PAGE)) { auditLogPage++; renderAuditLogs(); }
+}
+
+function _auditFilteredCount() {
+  const fromDate   = document.getElementById('al-date-from')?.value || '';
+  const toDate     = document.getElementById('al-date-to')?.value   || '';
+  const actionFilt = document.getElementById('al-action')?.value    || '';
+  const tableFilt  = document.getElementById('al-table')?.value     || '';
+  const search     = (document.getElementById('al-search')?.value   || '').toLowerCase().trim();
   let list = auditLogs;
   if (fromDate) list = list.filter(l => l.created_at >= fromDate);
   if (toDate)   list = list.filter(l => l.created_at <= toDate + 'T23:59:59');
@@ -3316,35 +3403,7 @@ function renderAuditLogs() {
            ctx.farm.toLowerCase().includes(search) ||
            ctx.product.toLowerCase().includes(search);
   });
-
-  const countEl = document.getElementById('al-result-count');
-  if (countEl) countEl.textContent = list.length ? `${list.length}건` : '';
-
-  if (!list.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:#bbb">해당 조건의 이력 없음</div>';
-    return;
-  }
-
-  el.innerHTML = list.map(log => {
-    const action = getAuditActionType(log);
-    const st = AUDIT_ACTION_STYLE[action] || { bg: '#f5f5f5', color: '#555', border: '#ddd', icon: '📝' };
-    const ctx = getAuditContext(log);
-    const diff = getAuditDiff(log);
-    const dt = new Date(log.created_at);
-    const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-    const ctxParts = [ctx.farm && esc(ctx.farm), ctx.product && esc(ctx.product), ctx.qty && `${ctx.qty}CT`, ctx.date].filter(Boolean);
-
-    return `<div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${st.border};border-radius:8px;padding:12px 14px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-        <span style="background:${st.bg};color:${st.color};font-size:11px;padding:2px 9px;border-radius:10px;font-weight:700;white-space:nowrap">${st.icon} ${action}</span>
-        <span style="font-size:11px;font-weight:600;color:#666;background:#f5f5f5;padding:2px 7px;border-radius:8px">${getAuditTableLabel(log.target_table)}</span>
-        <span style="font-size:11px;color:#aaa;margin-left:auto;white-space:nowrap">${dtStr}</span>
-      </div>
-      ${ctxParts.length ? `<div style="font-size:13px;font-weight:600;color:#222;margin-bottom:${diff.length || log.reason ? '5' : '0'}px">${ctxParts.join(' · ')}</div>` : ''}
-      ${diff.length ? `<div style="font-size:12px;color:#555;margin-bottom:${log.reason ? '5' : '0'}px;display:flex;flex-wrap:wrap;gap:4px">${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px">${esc(d)}</span>`).join('')}</div>` : ''}
-      ${log.reason ? `<div style="font-size:12px;color:#888">사유: <em>"${esc(log.reason)}"</em></div>` : ''}
-    </div>`;
-  }).join('');
+  return list.length;
 }
 
 const IB_CATS = [
