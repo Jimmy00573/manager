@@ -3251,6 +3251,7 @@ function getAuditContext(log) {
 const AUDIT_FIELD_LABELS = {
   date: '날짜', quantity: '수량(CT)', location: '위치', note: '메모',
   inbound_category: '카테고리', is_priority: '우선사용',
+  brix_grade: '당도등급', acidity_grade: '산도등급', appearance_grade: '외관등급', defect_tags: '특이사항',
   brix_range: '당도범위', acidity_range: '산도범위', size_distribution: '크기분포',
   is_void: '무효여부',
   reclassification_source: '재선별출처', reclassification_reason: '재선별사유', original_work_date: '원본작업일'
@@ -3472,6 +3473,45 @@ function _updateIbFilterBtns() {
       btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit';
     }
   });
+}
+
+function setGrade(btn) {
+  const group = btn.closest('.grade-group');
+  const wasActive = btn.classList.contains('active');
+  group.querySelectorAll('.grade-btn').forEach(b => b.classList.remove('active'));
+  if (!wasActive) btn.classList.add('active');
+}
+function getGradeVal(groupId) {
+  const active = document.querySelector(`#${groupId} .grade-btn.active`);
+  return active ? active.dataset.val : null;
+}
+function setGradeVal(groupId, val) {
+  document.querySelectorAll(`#${groupId} .grade-btn`).forEach(b => {
+    b.classList.toggle('active', b.dataset.val === val);
+  });
+}
+function getDefectTags(wrapId) {
+  const checked = [...document.querySelectorAll(`#${wrapId} input:checked`)].map(cb => cb.value);
+  return checked.length ? checked.join(',') : null;
+}
+function setDefectTags(wrapId, val) {
+  document.querySelectorAll(`#${wrapId} input`).forEach(cb => {
+    cb.checked = val ? val.split(',').includes(cb.value) : false;
+  });
+}
+function clearGrades(prefix) {
+  ['brix-grade', 'acid-grade', 'appearance-grade'].forEach(suffix => {
+    document.querySelectorAll(`#${prefix}-${suffix} .grade-btn`).forEach(b => b.classList.remove('active'));
+  });
+  setDefectTags(`${prefix}-defect-wrap`, null);
+}
+function toggleAdvQuality(prefix) {
+  const panel = document.getElementById(`${prefix}-adv-quality`);
+  const toggle = document.getElementById(`${prefix}-adv-toggle`);
+  if (!panel || !toggle) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? '' : 'none';
+  toggle.textContent = (open ? '▼' : '▶') + ' 고급 입력 (수치)';
 }
 
 function onIbCatChange(prefix) {
@@ -3891,6 +3931,10 @@ function editInboundRow(id) {
   if (processed > 0) { hint.textContent = `이미 ${processed}CT 처리됨 — ${processed}CT 미만으로 줄일 수 없습니다`; hint.style.display = ''; }
   else hint.style.display = 'none';
   document.getElementById('eib-m-cat').value = r.inbound_category || '상품';
+  setGradeVal('eib-m-brix-grade', r.brix_grade || null);
+  setGradeVal('eib-m-acid-grade', r.acidity_grade || null);
+  setGradeVal('eib-m-appearance-grade', r.appearance_grade || null);
+  setDefectTags('eib-m-defect-wrap', r.defect_tags || null);
   document.getElementById('eib-m-brix-range').value = r.brix_range || '';
   document.getElementById('eib-m-acid-range').value = r.acidity_range || '';
   document.getElementById('eib-m-size').value = r.size_distribution || '';
@@ -3923,6 +3967,10 @@ function closeEditInboundModal() {
       document.getElementById('eib-m-loc').value !== (r.location || '') ||
       document.getElementById('eib-m-note').value !== (r.note || '') ||
       document.getElementById('eib-m-cat').value !== (r.inbound_category || '상품') ||
+      getGradeVal('eib-m-brix-grade') !== (r.brix_grade || null) ||
+      getGradeVal('eib-m-acid-grade') !== (r.acidity_grade || null) ||
+      getGradeVal('eib-m-appearance-grade') !== (r.appearance_grade || null) ||
+      getDefectTags('eib-m-defect-wrap') !== (r.defect_tags || null) ||
       document.getElementById('eib-m-brix-range').value !== (r.brix_range || '') ||
       document.getElementById('eib-m-acid-range').value !== (r.acidity_range || '') ||
       document.getElementById('eib-m-size').value !== (r.size_distribution || '') ||
@@ -3944,6 +3992,10 @@ async function saveInboundModal() {
   const location = document.getElementById('eib-m-loc').value.trim() || null;
   const note = document.getElementById('eib-m-note').value.trim() || null;
   const inbound_category = document.getElementById('eib-m-cat').value || '상품';
+  const brix_grade = getGradeVal('eib-m-brix-grade');
+  const acidity_grade = getGradeVal('eib-m-acid-grade');
+  const appearance_grade = getGradeVal('eib-m-appearance-grade');
+  const defect_tags = getDefectTags('eib-m-defect-wrap');
   const brix_range = document.getElementById('eib-m-brix-range').value.trim() || null;
   const acidity_range = document.getElementById('eib-m-acid-range').value.trim() || null;
   const size_distribution = document.getElementById('eib-m-size').value.trim() || null;
@@ -3963,6 +4015,10 @@ async function saveInboundModal() {
     location !== (prev.location || null) ||
     note !== (prev.note || null) ||
     inbound_category !== (prev.inbound_category || '상품') ||
+    brix_grade !== (prev.brix_grade || null) ||
+    acidity_grade !== (prev.acidity_grade || null) ||
+    appearance_grade !== (prev.appearance_grade || null) ||
+    defect_tags !== (prev.defect_tags || null) ||
     brix_range !== (prev.brix_range || null) ||
     acidity_range !== (prev.acidity_range || null) ||
     size_distribution !== (prev.size_distribution || null) ||
@@ -3978,6 +4034,7 @@ async function saveInboundModal() {
 
   const updatePayload = {
     date, quantity: qty, location, note, inbound_category, is_priority,
+    brix_grade, acidity_grade, appearance_grade, defect_tags,
     brix_range, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
   };
@@ -3988,16 +4045,21 @@ async function saveInboundModal() {
         target_table: 'inbound_records', target_id: id,
         before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note,
           inbound_category: prev.inbound_category, is_priority: prev.is_priority,
+          brix_grade: prev.brix_grade, acidity_grade: prev.acidity_grade, appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
           brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
           reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date },
-        after_val: { date, quantity: qty, location, note, inbound_category, is_priority, brix_range, acidity_range, size_distribution,
+        after_val: { date, quantity: qty, location, note, inbound_category, is_priority,
+          brix_grade, acidity_grade, appearance_grade, defect_tags,
+          brix_range, acidity_range, size_distribution,
           reclassification_source, reclassification_reason, original_work_date },
         reason, staff: 'admin'
       });
     }
     const idx = inboundRecords.findIndex(r => r.id === id);
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx],
-      date, quantity: qty, location, note, inbound_category, is_priority, brix_range, acidity_range, size_distribution,
+      date, quantity: qty, location, note, inbound_category, is_priority,
+      brix_grade, acidity_grade, appearance_grade, defect_tags,
+      brix_range, acidity_range, size_distribution,
       reclassification_source, reclassification_reason, original_work_date };
     document.getElementById('modal-edit-inbound').style.display = 'none';
     _editInboundId = null;
@@ -4105,6 +4167,10 @@ async function addInbound() {
   const qty = parseInt(document.getElementById('ib-qty').value) || 0;
   if (!date || !product || !farm_name || !qty) return alert('날짜, 품목, 농가명, 수량은 필수입니다.');
   const inbound_category = gv('ib-category') || '상품';
+  const brix_grade = getGradeVal('ib-brix-grade');
+  const acidity_grade = getGradeVal('ib-acid-grade');
+  const appearance_grade = getGradeVal('ib-appearance-grade');
+  const defect_tags = getDefectTags('ib-defect-wrap');
   const brix_range = (document.getElementById('ib-brix-range')?.value || '').trim() || null;
   const acidity_range = (document.getElementById('ib-acidity-range')?.value || '').trim() || null;
   const size_distribution = (document.getElementById('ib-size-dist')?.value || '').trim() || null;
@@ -4120,6 +4186,10 @@ async function addInbound() {
     staff: 'admin',
     inbound_category,
     is_priority,
+    ...(brix_grade && { brix_grade }),
+    ...(acidity_grade && { acidity_grade }),
+    ...(appearance_grade && { appearance_grade }),
+    ...(defect_tags && { defect_tags }),
     ...(brix_range && { brix_range }),
     ...(acidity_range && { acidity_range }),
     ...(size_distribution && { size_distribution }),
@@ -4132,6 +4202,7 @@ async function addInbound() {
     inboundRecords.unshift(row);
     renderInvSummary(); renderInboundList();
     sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
+    clearGrades('ib');
     const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
                       'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date'];
     clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });

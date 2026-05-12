@@ -216,6 +216,17 @@ textarea {
 .btn.sm { padding: 5px 12px; font-size: 12px; }
 .btn.cancel { background: #f0f0f0; color: #666; }
 
+/* ── 등급 버튼 ── */
+.grade-group { display: flex; gap: 6px; }
+.grade-btn { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--border); background: #f5f5f5; color: var(--text-secondary); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
+.grade-btn[data-val="상"].active { background: #D1FAE5; color: #059669; border-color: #6EE7B7; }
+.grade-btn[data-val="중"].active { background: #FEF3C7; color: #D97706; border-color: #FCD34D; }
+.grade-btn[data-val="하"].active { background: #FEE2E2; color: #DC2626; border-color: #FCA5A5; }
+.defect-wrap { display: flex; gap: 6px; flex-wrap: wrap; }
+.defect-tag { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; user-select: none; background: #f9f9f9; }
+.defect-tag:has(input:checked) { background: #FFF3E0; border-color: #FFCC80; color: #E65100; font-weight: 600; }
+.grade-hint { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #ddd; color: #666; font-size: 10px; cursor: help; margin-left: 3px; vertical-align: middle; }
+
 /* ── 외부용기 탭 ── */
 .ext-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .etab { padding: 7px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid var(--border); background: #f0f0f0; color: var(--text-secondary); font-family: inherit; }
