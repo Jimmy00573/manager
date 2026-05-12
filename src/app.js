@@ -2415,7 +2415,7 @@ function buildLocOptHtml() {
 
 function popLocSelects() {
   const optHtml = buildLocOptHtml();
-  ['ib-loc', 'eib-m-loc'].forEach(id => {
+  ['ib-loc', 'eib-m-loc', 'mv-loc'].forEach(id => {
     const el = document.getElementById(id);
     if (!el || el.tagName !== 'SELECT') return;
     const cur = el.value;
@@ -2515,6 +2515,52 @@ function resetLocForm(pfx) {
   const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
   const sel = document.getElementById(selId);
   if (sel) sel.value = '';
+}
+
+// ── 위치 이동 모달 ─────────────────────────────────────────────
+
+let _moveInboundId = null;
+
+function openMoveModal(id) {
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  _moveInboundId = id;
+  const processed = getProcessedForInbound(id);
+  const remaining = r.quantity - processed;
+  document.getElementById('mv-info').innerHTML =
+    `<b>${esc(r.product)}</b> | ${esc(r.farm_name)} | ${r.date} | 잔여 <b>${remaining}CT</b>`;
+  document.getElementById('mv-cur-loc').textContent = r.location || '미지정';
+  resetLocForm('mv');
+  popLocSelects();
+  document.getElementById('modal-move-loc').style.display = 'flex';
+}
+
+function closeMoveModal() {
+  document.getElementById('modal-move-loc').style.display = 'none';
+  _moveInboundId = null;
+}
+
+async function saveMoveLocation() {
+  const id = _moveInboundId;
+  if (!id) return;
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  const newLoc = getLocValue('mv') || null;
+  if (newLoc === (r.location || null)) { closeMoveModal(); return; }
+  try {
+    const updated = await dbUpdateInbound(id, { location: newLoc });
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      action: 'UPDATE', changed_by: 'admin',
+      old_data: { location: r.location || null },
+      new_data: { location: newLoc },
+      reason: '위치 이동'
+    });
+    Object.assign(r, updated);
+    renderInvSummary(); renderInboundList();
+    closeMoveModal();
+    showToast('위치가 변경되었습니다.');
+  } catch(e) { alert('저장 오류: ' + e.message); }
 }
 
 function renderStorageLocations() {
@@ -4390,8 +4436,9 @@ function renderInboundList() {
     const remaining = r.quantity - processed;
     const remStyle = remaining <= 0 ? 'color:#999;text-align:right' : 'font-weight:700;color:#E65100;text-align:right';
     const histBtn = `<button class="btn sm" onclick="openRecordHistory('${r.id}')" title="변경 이력" style="padding:4px 7px">📜</button>`;
+    const moveBtn = remaining > 0 ? `<button class="btn sm" onclick="openMoveModal('${r.id}')" title="위치 이동" style="padding:4px 7px">🚚</button>` : '';
     const actionCell = (isAdm && !r._legacy)
-      ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${histBtn}`
+      ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${moveBtn} ${histBtn}`
       : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : histBtn);
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const noteQuality = [r.note ? esc(r.note) : '', qualityDisplay(r)].filter(Boolean).join('') || '-';
