@@ -81,6 +81,12 @@ async function dbGetVehicles() { try { return await sbGet('vehicles', 'order=num
 async function dbInsertVehicle(data) { const r = await sbInsert('vehicles', data); return r[0]; }
 async function dbUpdateVehicle(id, data) { const r = await sbUpdate('vehicles', id, data); return r[0]; }
 async function dbDeleteVehicle(id) { return sbDelete('vehicles', id); }
+// ── 품질 기준
+async function dbGetQualityCriteria() { try { return await sbGet('quality_criteria', 'order=product_name'); } catch(e) { return []; } }
+async function dbInsertQualityCriteria(data) { const r = await sbInsert('quality_criteria', data); return r[0]; }
+async function dbUpdateQualityCriteria(id, data) { const r = await sbUpdate('quality_criteria', id, data); return r[0]; }
+async function dbDeleteQualityCriteria(id) { return sbDelete('quality_criteria', id); }
+
 // ── 수확 일정
 async function dbGetHarvests() { return sbGet('harvests', 'order=date'); }
 async function dbInsertHarvest(data) { const r = await sbInsert('harvests', data); return r[0]; }

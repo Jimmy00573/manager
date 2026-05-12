@@ -13,7 +13,7 @@ let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
-let inboundRecords = [], processingRecords = [];
+let inboundRecords = [], processingRecords = [], qualityCriteria = [];
 let showVoidData = false;
 let _voidTargetId = null;
 let ibViewMode = 'list';
@@ -2371,10 +2371,141 @@ function exportExcel(type) {
   }
 }
 
+// ── 품질 기준 관리 ─────────────────────────────────────────────
+
+let _editQcId = null;
+
+function getQcForProduct(productName) {
+  return qualityCriteria.find(q => q.product_name === productName) || null;
+}
+
+async function loadQualityCriteria() {
+  qualityCriteria = await dbGetQualityCriteria();
+  renderQualityCriteria();
+}
+
+function renderQualityCriteria() {
+  const el = document.getElementById('inv-qc-div');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+
+  const CHIP = {
+    '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7',
+    '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D',
+    '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5',
+  };
+  const chip = g => `<span style="display:inline-block;padding:0 7px;border-radius:4px;border:1px solid;font-size:11px;font-weight:700;${CHIP[g]}">${g}</span>`;
+
+  const gradeRows = (high, mid, unit) => {
+    if (!high && !mid) return `<div style="color:#aaa;font-size:12px">미설정</div>`;
+    return [
+      `<div style="display:flex;align-items:center;gap:6px;line-height:2">${chip('상')} <span style="font-size:12px">${high} ${unit} 이상</span></div>`,
+      `<div style="display:flex;align-items:center;gap:6px;line-height:2">${chip('중')} <span style="font-size:12px">${mid} ~ ${high} ${unit} 미만</span></div>`,
+      `<div style="display:flex;align-items:center;gap:6px;line-height:2">${chip('하')} <span style="font-size:12px">${mid} ${unit} 미만</span></div>`,
+    ].join('');
+  };
+
+  const cards = qualityCriteria.map(qc => `
+    <div class="form-card" style="margin-bottom:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:14px;font-weight:700">🍊 ${esc(qc.product_name)}</div>
+        ${isAdm ? `<button class="btn edt" style="padding:2px 8px;font-size:12px" onclick="openQcModal(${qc.id})">편집</button>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:4px">당도 (Brix)</div>
+          ${gradeRows(qc.brix_high_min, qc.brix_mid_min, '')}
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:4px">산도 (%)</div>
+          ${gradeRows(qc.acidity_high_min, qc.acidity_mid_min, '')}
+        </div>
+      </div>
+      ${qc.notes ? `<div style="margin-top:8px;font-size:11px;color:#888;border-top:1px solid var(--border);padding-top:6px">📝 ${esc(qc.notes)}</div>` : ''}
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">품목별 품질 기준</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">기준 미등록 품목은 고급 입력 수치 범위로만 표시됩니다.</div>
+      </div>
+      ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="openQcModal(null)">+ 품목 추가</button>` : ''}
+    </div>
+    ${qualityCriteria.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">${cards}</div>`
+      : `<div class="empty">등록된 품질 기준이 없습니다.<br>품목 추가 버튼으로 기준을 등록해주세요.</div>`}`;
+}
+
+function openQcModal(id) {
+  _editQcId = id;
+  const isNew = !id;
+  document.getElementById('qc-modal-title').textContent = isNew ? '품목 추가' : '품질 기준 편집';
+  const deleteBtn = document.getElementById('qc-delete-btn');
+  if (deleteBtn) deleteBtn.style.display = isNew ? 'none' : '';
+  const qc = id ? qualityCriteria.find(q => q.id === id) : null;
+  const prodEl = document.getElementById('qc-product');
+  prodEl.value = qc ? qc.product_name : '';
+  prodEl.readOnly = !isNew;
+  prodEl.style.background = isNew ? '' : '#f5f5f5';
+  document.getElementById('qc-brix-high').value = qc?.brix_high_min ?? '';
+  document.getElementById('qc-brix-mid').value = qc?.brix_mid_min ?? '';
+  document.getElementById('qc-acid-high').value = qc?.acidity_high_min ?? '';
+  document.getElementById('qc-acid-mid').value = qc?.acidity_mid_min ?? '';
+  document.getElementById('qc-notes').value = qc?.notes ?? '';
+  document.getElementById('modal-qc').style.display = 'flex';
+}
+
+function closeQcModal() {
+  document.getElementById('modal-qc').style.display = 'none';
+  _editQcId = null;
+}
+
+async function saveQcCriteria() {
+  const productName = document.getElementById('qc-product').value.trim();
+  if (!productName) return alert('품목명을 입력해주세요.');
+  const brixHigh = parseFloat(document.getElementById('qc-brix-high').value) || null;
+  const brixMid  = parseFloat(document.getElementById('qc-brix-mid').value)  || null;
+  const acidHigh = parseFloat(document.getElementById('qc-acid-high').value) || null;
+  const acidMid  = parseFloat(document.getElementById('qc-acid-mid').value)  || null;
+  const notes    = document.getElementById('qc-notes').value.trim() || null;
+  if (brixHigh && brixMid && brixMid >= brixHigh) return alert('당도 중 최소값은 상 최소값보다 낮아야 합니다.');
+  if (acidHigh && acidMid && acidMid >= acidHigh) return alert('산도 중 최소값은 상 최소값보다 낮아야 합니다.');
+  const data = { product_name: productName, brix_high_min: brixHigh, brix_mid_min: brixMid,
+    acidity_high_min: acidHigh, acidity_mid_min: acidMid, notes, updated_at: new Date().toISOString() };
+  try {
+    if (_editQcId) {
+      const updated = await dbUpdateQualityCriteria(_editQcId, data);
+      const idx = qualityCriteria.findIndex(q => q.id === _editQcId);
+      if (idx !== -1) qualityCriteria[idx] = updated;
+    } else {
+      const row = await dbInsertQualityCriteria(data);
+      qualityCriteria.push(row);
+      qualityCriteria.sort((a, b) => a.product_name.localeCompare(b.product_name, 'ko'));
+    }
+    closeQcModal();
+    renderQualityCriteria();
+    showToast(_editQcId ? '품질 기준이 수정되었습니다.' : `"${productName}" 기준이 추가되었습니다.`);
+  } catch(e) { alert('저장 오류: ' + e.message); }
+}
+
+async function deleteQcCriteria() {
+  if (!_editQcId) return;
+  const qc = qualityCriteria.find(q => q.id === _editQcId);
+  if (!qc || !confirm(`"${qc.product_name}" 품질 기준을 삭제할까요?`)) return;
+  try {
+    await dbDeleteQualityCriteria(_editQcId);
+    qualityCriteria = qualityCriteria.filter(q => q.id !== _editQcId);
+    closeQcModal();
+    renderQualityCriteria();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function invTab(t) {
-  ['sum', 'uns', 'srt', 'wj', 'cfg', 'log'].forEach(s => {
+  ['sum', 'uns', 'srt', 'wj', 'qc', 'cfg', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
@@ -2382,6 +2513,7 @@ function invTab(t) {
   });
   if (t === 'cfg') renderSizeCfg();
   if (t === 'log') loadAuditLogs();
+  if (t === 'qc') loadQualityCriteria();
 }
 
 function ibTab(t) {
