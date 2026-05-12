@@ -405,6 +405,19 @@ ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS void_reason TEXT;
 ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS void_at     TIMESTAMPTZ;
 ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS void_by     TEXT;
 
--- 당도/산도 컬럼 추가
-ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS brix     DECIMAL(4,1);  -- 당도 (예: 12.5 Brix)
-ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS acidity  DECIMAL(4,2);  -- 산도 (예: 1.05)
+-- 당도/산도 단일값
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS brix              DECIMAL(4,1);
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS acidity           DECIMAL(4,2);
+
+-- 카테고리·우선사용·상태·집계제외
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS inbound_category  VARCHAR(20)  DEFAULT '상품';
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS is_priority       BOOLEAN      DEFAULT FALSE;
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS status            VARCHAR(20)  DEFAULT '미선과';
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS exclude_from_unsorted BOOLEAN  DEFAULT FALSE;
+
+-- 품질 범위 텍스트
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS brix_range        TEXT;
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS acidity_range     TEXT;
+
+-- 크기 분포 메모
+ALTER TABLE inbound_records ADD COLUMN IF NOT EXISTS size_distribution TEXT;
