@@ -641,7 +641,7 @@
         <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
         <div style="margin-bottom:12px">
           <div style="margin-bottom:8px">
-            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">당도 <span class="grade-hint" title="15Brix이상=상 / 12~15=중 / 12이하=하">?</span></div>
+            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">당도 <span class="grade-hint" onmouseenter="showGradeHint(this,'brix','ib')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'brix','ib')">?</span></div>
             <div class="grade-group" id="ib-brix-grade">
               <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
               <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
@@ -649,7 +649,7 @@
             </div>
           </div>
           <div style="margin-bottom:8px">
-            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">산도 <span class="grade-hint" title="1이하=상 / 1~1.5=중 / 1.5이상=하">?</span></div>
+            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">산도 <span class="grade-hint" onmouseenter="showGradeHint(this,'acid','ib')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'acid','ib')">?</span></div>
             <div class="grade-group" id="ib-acid-grade">
               <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
               <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
@@ -1045,7 +1045,7 @@
     <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
     <div style="margin-bottom:12px">
       <div style="margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">당도 <span class="grade-hint" title="15Brix이상=상 / 12~15=중 / 12이하=하">?</span></div>
+        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">당도 <span class="grade-hint" onmouseenter="showGradeHint(this,'brix','eib-m')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'brix','eib-m')">?</span></div>
         <div class="grade-group" id="eib-m-brix-grade">
           <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
           <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
@@ -1053,7 +1053,7 @@
         </div>
       </div>
       <div style="margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">산도 <span class="grade-hint" title="1이하=상 / 1~1.5=중 / 1.5이상=하">?</span></div>
+        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">산도 <span class="grade-hint" onmouseenter="showGradeHint(this,'acid','eib-m')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'acid','eib-m')">?</span></div>
         <div class="grade-group" id="eib-m-acid-grade">
           <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
           <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
@@ -1149,6 +1149,9 @@
     </div>
   </div>
 </div>
+
+<!-- 품질 기준 툴팁 -->
+<div id="grade-tooltip"></div>
 
 <!-- 모달: 품질 기준 편집 -->
 <div id="modal-qc" class="modal-bg" style="display:none" onclick="if(event.target===this)closeQcModal()">

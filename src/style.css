@@ -226,6 +226,7 @@ textarea {
 .defect-tag { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; user-select: none; background: #f9f9f9; }
 .defect-tag:has(input:checked) { background: #FFF3E0; border-color: #FFCC80; color: #E65100; font-weight: 600; }
 .grade-hint { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #ddd; color: #666; font-size: 10px; cursor: help; margin-left: 3px; vertical-align: middle; }
+#grade-tooltip { position: fixed; z-index: 9999; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; box-shadow: 0 4px 12px rgba(0,0,0,.12); font-size: 12px; line-height: 1.9; display: none; max-width: 210px; pointer-events: none; }
 
 /* ── 외부용기 탭 ── */
 .ext-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }

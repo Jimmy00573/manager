@@ -66,7 +66,7 @@ async function initApp() {
   if (savedAdmPin) window.ADM_PIN = savedAdmPin;
 
   try {
-    const data = await loadAllData();
+    const [data, qcData] = await Promise.all([loadAllData(), dbGetQualityCriteria()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -79,6 +79,7 @@ async function initApp() {
     stock = data.stockData;
     harvests = data.harvests || [];
     vehicles = data.vehicles || [];
+    qualityCriteria = qcData || [];
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -3679,6 +3680,43 @@ function setDefectTags(wrapId, val) {
     cb.checked = val ? val.split(',').includes(cb.value) : false;
   });
 }
+function showGradeHint(el, field, prefix) {
+  const productId = prefix === 'ib' ? 'ib-product' : 'eib-m-product';
+  const productName = (document.getElementById(productId)?.value || '').trim();
+  const qc = getQcForProduct(productName);
+  let title, rows;
+  if (field === 'brix') {
+    title = productName ? `${esc(productName)} 당도 기준` : '당도 기준';
+    const h = qc?.brix_high_min, m = qc?.brix_mid_min;
+    rows = h && m
+      ? `<div>상: <strong>${h}</strong> 이상</div><div>중: <strong>${m} ~ ${h}</strong> 미만</div><div>하: <strong>${m}</strong> 미만</div>`
+      : productName
+        ? `<div style="color:#aaa">이 품목의 기준 미등록</div><div style="color:#aaa;font-size:11px">🎯 품질 기준 탭에서 추가 가능</div>`
+        : `<div style="color:#aaa">품목 선택 시 해당 기준 표시</div>`;
+  } else {
+    title = productName ? `${esc(productName)} 산도 기준` : '산도 기준';
+    const h = qc?.acidity_high_min, m = qc?.acidity_mid_min;
+    rows = h && m
+      ? `<div>상: <strong>${h}%</strong> 이상</div><div>중: <strong>${m} ~ ${h}%</strong> 미만</div><div>하: <strong>${m}%</strong> 미만</div>`
+      : productName
+        ? `<div style="color:#aaa">이 품목의 기준 미등록</div><div style="color:#aaa;font-size:11px">🎯 품질 기준 탭에서 추가 가능</div>`
+        : `<div style="color:#aaa">품목 선택 시 해당 기준 표시</div>`;
+  }
+  const tooltip = document.getElementById('grade-tooltip');
+  if (!tooltip) return;
+  tooltip.innerHTML = `<div style="font-weight:700;color:var(--text);margin-bottom:5px">${title}</div>${rows}`;
+  const rect = el.getBoundingClientRect();
+  const tw = 210;
+  const left = Math.min(rect.left, window.innerWidth - tw - 10);
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = (rect.bottom + 6) + 'px';
+  tooltip.style.display = 'block';
+}
+function hideGradeHint() {
+  const tooltip = document.getElementById('grade-tooltip');
+  if (tooltip) tooltip.style.display = 'none';
+}
+
 function clearGrades(prefix) {
   ['brix-grade', 'acid-grade', 'appearance-grade'].forEach(suffix => {
     document.querySelectorAll(`#${prefix}-${suffix} .grade-btn`).forEach(b => b.classList.remove('active'));
@@ -4986,3 +5024,6 @@ document.addEventListener('keydown', e => {
 
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);
+document.addEventListener('click', e => {
+  if (!e.target.classList.contains('grade-hint')) hideGradeHint();
+});
