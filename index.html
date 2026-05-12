@@ -676,6 +676,30 @@
 
       <!-- 목록 보기 -->
       <div id="ib-view-list">
+
+        <!-- 카테고리 필터 -->
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
+          <span style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-right:2px;white-space:nowrap">카테고리</span>
+          <button class="ib-fcat" data-cat="" onclick="setIbFilter('')"    style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">전체</button>
+          <button class="ib-fcat" data-cat="상품"  onclick="setIbFilter('상품')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">상품</button>
+          <button class="ib-fcat" data-cat="대과"  onclick="setIbFilter('대과')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">대과</button>
+          <button class="ib-fcat" data-cat="소과"  onclick="setIbFilter('소과')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">소과</button>
+          <button class="ib-fcat" data-cat="파치"  onclick="setIbFilter('파치')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">파치</button>
+          <button class="ib-fcat" data-cat="재선별" onclick="setIbFilter('재선별')" style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">재선별 ⭐</button>
+          <!-- 재선별 선택 시: 출처 필터 -->
+          <div id="ib-filter-src-wrap" style="display:none;margin-left:2px">
+            <select id="ib-filter-src" onchange="onIbSrcFilterChange()" style="font-size:12px;padding:3px 9px;border:1px solid #C4B5FD;border-radius:8px;background:#F3E8FF;color:#7C3AED;font-family:inherit;cursor:pointer">
+              <option value="">모든 출처</option>
+              <option value="신규입고">신규 입고</option>
+              <option value="선과결과">선과 결과</option>
+              <option value="포장라인">포장 라인</option>
+              <option value="반품">반품</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+          <span id="ib-filter-count" style="font-size:12px;color:var(--text-secondary);margin-left:auto"></span>
+        </div>
+
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);cursor:pointer;user-select:none">
             <input type="checkbox" id="ib-show-void" onchange="toggleVoidData()" style="cursor:pointer">

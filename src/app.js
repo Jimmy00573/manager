@@ -17,6 +17,8 @@ let inboundRecords = [], processingRecords = [];
 let showVoidData = false;
 let _voidTargetId = null;
 let ibViewMode = 'list';
+let ibFilterCat = '';
+let ibFilterSrc = '';
 let auditLogs = [];
 let auditLogOffset = 0;
 const AUDIT_PAGE_SIZE = 100;
@@ -3440,6 +3442,45 @@ const RECLASS_REASONS = {
   '기타':     [],
 };
 
+// ── 목록 필터
+const IB_FILTER_STYLES = {
+  '상품':  { bg: '#E3F2FD', color: '#1565C0', border: '#90CAF9' },
+  '대과':  { bg: '#FFF3E0', color: '#E65100', border: '#FFCC80' },
+  '소과':  { bg: '#E0F2F1', color: '#00695C', border: '#80CBC4' },
+  '파치':  { bg: '#F5F5F5', color: '#757575', border: '#BDBDBD' },
+  '재선별': { bg: '#F3E8FF', color: '#7C3AED', border: '#C4B5FD' },
+};
+
+function setIbFilter(cat) {
+  ibFilterCat = cat;
+  ibFilterSrc = '';
+  const srcWrap = document.getElementById('ib-filter-src-wrap');
+  if (srcWrap) srcWrap.style.display = cat === '재선별' ? '' : 'none';
+  const srcEl = document.getElementById('ib-filter-src');
+  if (srcEl) srcEl.value = '';
+  _updateIbFilterBtns();
+  renderInboundList();
+}
+
+function onIbSrcFilterChange() {
+  ibFilterSrc = document.getElementById('ib-filter-src')?.value || '';
+  renderInboundList();
+}
+
+function _updateIbFilterBtns() {
+  document.querySelectorAll('.ib-fcat').forEach(btn => {
+    const active = btn.dataset.cat === ibFilterCat;
+    const st = IB_FILTER_STYLES[btn.dataset.cat];
+    if (active && st) {
+      btn.style.cssText = `font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid ${st.border};background:${st.bg};color:${st.color};font-weight:700;cursor:pointer;font-family:inherit`;
+    } else if (active) {
+      btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid #555;background:#333;color:#fff;font-weight:700;cursor:pointer;font-family:inherit';
+    } else {
+      btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit';
+    }
+  });
+}
+
 function onIbCatChange(prefix) {
   const catEl = document.getElementById(prefix === 'ib' ? 'ib-category' : 'eib-m-cat');
   const sec   = document.getElementById(prefix === 'ib' ? 'ib-reclass-section' : 'eib-reclass-section');
@@ -3739,10 +3780,24 @@ function renderInboundList() {
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
-  const visible = showVoidData ? inboundRecords : inboundRecords.filter(r => !r.is_void);
+  let visible = showVoidData ? inboundRecords : inboundRecords.filter(r => !r.is_void);
+
+  // 카테고리·출처 필터 적용
+  if (ibFilterCat) visible = visible.filter(r => (r.inbound_category || '상품') === ibFilterCat);
+  if (ibFilterCat === '재선별' && ibFilterSrc) visible = visible.filter(r => (r.reclassification_source || '') === ibFilterSrc);
+
+  // 필터 카운트 업데이트
+  const fcountEl = document.getElementById('ib-filter-count');
+  if (fcountEl) fcountEl.textContent = ibFilterCat ? `${visible.length}건 표시 중` : '';
+
+  // 버튼 활성 상태 동기화 (뷰 전환 후에도 유지)
+  _updateIbFilterBtns();
 
   if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">${!inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${
+      ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
+      !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'
+    }</td></tr>`;
     return;
   }
 
