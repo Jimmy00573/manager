@@ -557,7 +557,8 @@
     <button class="etab" id="it-srt" onclick="invTab('srt')">📦 선과</button>
     <button class="etab" id="it-wj" onclick="invTab('wj')">🧹 파치/주스</button>
     <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
-    <button class="etab" id="it-qc" onclick="invTab('qc')" style="margin-left:auto;border-left:1px solid var(--border)">🎯 품질 기준</button>
+    <button class="etab" id="it-loc" onclick="invTab('loc')" style="margin-left:auto;border-left:1px solid var(--border)">📍 위치</button>
+    <button class="etab" id="it-qc" onclick="invTab('qc')" style="border-left:1px solid var(--border)">🎯 품질 기준</button>
     <button class="etab" id="it-cfg" onclick="invTab('cfg')" style="border-left:1px solid var(--border)">⚙️ 선과 기준</button>
   </div>
 
@@ -923,6 +924,9 @@
       </div>
     </div>
   </div>
+  <!-- 위치 관리 -->
+  <div id="inv-loc-div" style="display:none"></div>
+
   <!-- 품질 기준 -->
   <div id="inv-qc-div" style="display:none"></div>
 
@@ -1152,6 +1156,49 @@
 
 <!-- 품질 기준 툴팁 -->
 <div id="grade-tooltip"></div>
+
+<!-- 모달: 위치 추가/수정 -->
+<div id="modal-loc" class="modal-bg" style="display:none" onclick="if(event.target===this)closeLocModal()">
+  <div class="modal" style="max-width:400px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title" id="loc-modal-title">위치 추가</div>
+      <button class="modal-close" onclick="closeLocModal()">✕</button>
+    </div>
+    <div class="form-grid" style="margin-bottom:12px">
+      <div class="fg">
+        <label>위치 이름 *</label>
+        <input id="loc-m-name" placeholder="예: 냉장고1">
+      </div>
+      <div class="fg">
+        <label>구역 <small style="font-weight:400;color:var(--text-tertiary)">(선택)</small></label>
+        <input id="loc-m-zone" list="loc-zone-dl" placeholder="예: 본관">
+      </div>
+      <div class="fg">
+        <label>용량 <small style="font-weight:400;color:var(--text-tertiary)">(CT, 선택)</small></label>
+        <input type="number" id="loc-m-capacity" placeholder="없으면 비워두기">
+      </div>
+      <div class="fg">
+        <label>표시 순서</label>
+        <input type="number" id="loc-m-order" placeholder="0">
+      </div>
+    </div>
+    <div class="fg" style="margin-bottom:12px">
+      <label>메모 <small style="font-weight:400;color:var(--text-tertiary)">(선택)</small></label>
+      <input id="loc-m-desc" placeholder="선택사항">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="loc-m-active" checked style="width:16px;height:16px;cursor:pointer">
+        사용 중 <small style="font-weight:400;color:var(--text-tertiary)">(체크 해제 시 드롭다운에서 숨김)</small>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn del" id="loc-delete-btn" onclick="deleteLocation(_editLocId)" style="margin-right:auto">삭제</button>
+      <button class="btn" onclick="closeLocModal()">취소</button>
+      <button class="btn pri" onclick="saveLocation()">저장</button>
+    </div>
+  </div>
+</div>
 
 <!-- 모달: 품질 기준 편집 -->
 <div id="modal-qc" class="modal-bg" style="display:none" onclick="if(event.target===this)closeQcModal()">

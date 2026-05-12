@@ -81,6 +81,12 @@ async function dbGetVehicles() { try { return await sbGet('vehicles', 'order=num
 async function dbInsertVehicle(data) { const r = await sbInsert('vehicles', data); return r[0]; }
 async function dbUpdateVehicle(id, data) { const r = await sbUpdate('vehicles', id, data); return r[0]; }
 async function dbDeleteVehicle(id) { return sbDelete('vehicles', id); }
+// ── 위치 마스터
+async function dbGetLocations() { try { return await sbGet('storage_locations', 'order=sort_order,name'); } catch(e) { return []; } }
+async function dbInsertLocation(data) { const r = await sbInsert('storage_locations', data); return r[0]; }
+async function dbUpdateLocation(id, data) { const r = await sbUpdate('storage_locations', id, data); return r[0]; }
+async function dbDeleteLocation(id) { return sbDelete('storage_locations', id); }
+
 // ── 품질 기준
 async function dbGetQualityCriteria() { try { return await sbGet('quality_criteria', 'order=product_name'); } catch(e) { return []; } }
 async function dbInsertQualityCriteria(data) { const r = await sbInsert('quality_criteria', data); return r[0]; }

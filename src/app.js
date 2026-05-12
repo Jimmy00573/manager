@@ -13,7 +13,8 @@ let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
-let inboundRecords = [], processingRecords = [], qualityCriteria = [];
+let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [];
+let _editLocId = null;
 let showVoidData = false;
 let _voidTargetId = null;
 let ibViewMode = 'list';
@@ -66,7 +67,7 @@ async function initApp() {
   if (savedAdmPin) window.ADM_PIN = savedAdmPin;
 
   try {
-    const [data, qcData] = await Promise.all([loadAllData(), dbGetQualityCriteria()]);
+    const [data, qcData, locData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -80,6 +81,7 @@ async function initApp() {
     harvests = data.harvests || [];
     vehicles = data.vehicles || [];
     qualityCriteria = qcData || [];
+    storageLocations = locData || [];
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -2372,6 +2374,131 @@ function exportExcel(type) {
   }
 }
 
+// ── 위치 마스터 관리 ───────────────────────────────────────────
+
+function parseLocationStr(locStr) {
+  if (!locStr) return [];
+  return locStr.split('/').map(p => {
+    const m = p.trim().match(/^(.+?)\s*\((\d+(?:\.\d+)?)\)$/);
+    return m ? { name: m[1].trim(), qty: parseFloat(m[2]) } : { name: p.trim(), qty: null };
+  });
+}
+
+function computeLocStock() {
+  const pm = _ibProcessedMap();
+  const map = {};
+  inboundRecords.filter(r => !r.is_void).forEach(r => {
+    if (!r.location) return;
+    const rem = r.quantity - (pm[r.id] || 0);
+    if (rem <= 0) return;
+    parseLocationStr(r.location).forEach(({ name, qty }) => {
+      map[name] = (map[name] || 0) + (qty !== null ? Math.min(qty, rem) : rem);
+    });
+  });
+  return map;
+}
+
+function renderStorageLocations() {
+  const el = document.getElementById('inv-loc-div');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const locStock = computeLocStock();
+  const zones = [...new Set(storageLocations.map(l => l.zone).filter(Boolean))];
+  const datalist = `<datalist id="loc-zone-dl">${zones.map(z => `<option value="${esc(z)}">`).join('')}</datalist>`;
+
+  const rows = storageLocations.map(loc => {
+    const stock = locStock[loc.name];
+    const stockStr = stock > 0 ? `<strong style="color:#1565C0">${stock.toLocaleString()} CT</strong>` : '<span style="color:#bbb">—</span>';
+    const activeChip = loc.is_active !== false
+      ? '<span style="color:#059669;font-size:12px;font-weight:600">● 사용</span>'
+      : '<span style="color:#bbb;font-size:12px">○ 미사용</span>';
+    return `<tr>
+      <td style="color:#888;font-size:12px">${esc(loc.zone || '—')}</td>
+      <td style="font-weight:600">${esc(loc.name)}${loc.capacity_ct ? `<span style="font-size:11px;color:#aaa;font-weight:400"> · 최대 ${loc.capacity_ct}CT</span>` : ''}</td>
+      <td style="text-align:right">${stockStr}</td>
+      <td>${activeChip}</td>
+      ${isAdm ? `<td style="white-space:nowrap">
+        <button class="btn edt" onclick="openLocModal(${loc.id})">수정</button>
+        <button class="btn del" onclick="deleteLocation(${loc.id})">삭제</button>
+      </td>` : '<td></td>'}
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `${datalist}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">위치 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">미사용 위치는 드롭다운에서 숨겨집니다.</div>
+      </div>
+      ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="openLocModal(null)">+ 위치 추가</button>` : ''}
+    </div>
+    ${storageLocations.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>구역</th><th>위치명</th><th style="text-align:right">현재 재고</th><th>상태</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 위치가 없습니다.</div>`}`;
+}
+
+function openLocModal(id) {
+  _editLocId = id;
+  const loc = id ? storageLocations.find(l => l.id === id) : null;
+  document.getElementById('loc-modal-title').textContent = loc ? '위치 수정' : '위치 추가';
+  document.getElementById('loc-delete-btn').style.display = loc ? '' : 'none';
+  document.getElementById('loc-m-name').value = loc?.name ?? '';
+  document.getElementById('loc-m-name').readOnly = false;
+  document.getElementById('loc-m-zone').value = loc?.zone ?? '';
+  document.getElementById('loc-m-capacity').value = loc?.capacity_ct ?? '';
+  document.getElementById('loc-m-desc').value = loc?.description ?? '';
+  document.getElementById('loc-m-active').checked = loc?.is_active !== false;
+  document.getElementById('loc-m-order').value = loc?.sort_order ?? (storageLocations.length + 1);
+  document.getElementById('modal-loc').style.display = 'flex';
+}
+
+function closeLocModal() {
+  document.getElementById('modal-loc').style.display = 'none';
+  _editLocId = null;
+}
+
+async function saveLocation() {
+  const name = document.getElementById('loc-m-name').value.trim();
+  if (!name) return alert('위치 이름을 입력해주세요.');
+  if (storageLocations.some(l => l.name === name && l.id !== _editLocId))
+    return alert(`"${name}"은 이미 등록된 위치입니다.`);
+  const data = {
+    name,
+    zone:        document.getElementById('loc-m-zone').value.trim() || null,
+    capacity_ct: parseFloat(document.getElementById('loc-m-capacity').value) || null,
+    description: document.getElementById('loc-m-desc').value.trim() || null,
+    is_active:   document.getElementById('loc-m-active').checked,
+    sort_order:  parseInt(document.getElementById('loc-m-order').value) || 0,
+  };
+  try {
+    if (_editLocId) {
+      const updated = await dbUpdateLocation(_editLocId, data);
+      const idx = storageLocations.findIndex(l => l.id === _editLocId);
+      if (idx !== -1) storageLocations[idx] = updated;
+    } else {
+      storageLocations.push(await dbInsertLocation(data));
+    }
+    storageLocations.sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || a.name.localeCompare(b.name, 'ko'));
+    closeLocModal();
+    renderStorageLocations();
+    showToast(_editLocId ? '위치가 수정되었습니다.' : `"${name}" 위치가 추가되었습니다.`);
+  } catch(e) { alert('저장 오류: ' + e.message); }
+}
+
+async function deleteLocation(id) {
+  const loc = storageLocations.find(l => l.id === id);
+  if (!loc || !confirm(`"${loc.name}" 위치를 삭제할까요?\n입고 내역의 위치값은 유지됩니다.`)) return;
+  try {
+    await dbDeleteLocation(id);
+    storageLocations = storageLocations.filter(l => l.id !== id);
+    if (_editLocId === id) closeLocModal();
+    renderStorageLocations();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
 // ── 품질 기준 관리 ─────────────────────────────────────────────
 
 let _editQcId = null;
@@ -2543,7 +2670,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function invTab(t) {
-  ['sum', 'uns', 'srt', 'wj', 'qc', 'cfg', 'log'].forEach(s => {
+  ['sum', 'uns', 'srt', 'wj', 'loc', 'qc', 'cfg', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
@@ -2551,6 +2678,7 @@ function invTab(t) {
   });
   if (t === 'cfg') renderSizeCfg();
   if (t === 'log') loadAuditLogs();
+  if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
 }
 
