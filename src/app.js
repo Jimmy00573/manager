@@ -3172,18 +3172,24 @@ function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
 
-function brixDisplay(r) {
-  if (!r.brix && !r.acidity) return '';
-  const ratio = (r.brix && r.acidity) ? r.brix / r.acidity : null;
-  let ratioStr = '';
-  if (ratio) {
-    const chip = ratio >= 11 ? '🟢' : ratio >= 8 ? '🟡' : '🔴';
-    ratioStr = ` / 당산비 ${ratio.toFixed(1)} ${chip}`;
-  }
+function categoryBadge(cat) {
+  if (!cat || cat === '상품') return `<span class="badge" style="background:#E3F2FD;color:#1565C0">상품</span>`;
+  if (cat === '대과') return `<span class="badge" style="background:#FFF3E0;color:#E65100">대과</span>`;
+  if (cat === '소과') return `<span class="badge" style="background:#E0F2F1;color:#00695C">소과</span>`;
+  if (cat === '파치') return `<span class="badge" style="background:#F5F5F5;color:#757575">파치</span>`;
+  return `<span class="badge">${esc(cat)}</span>`;
+}
+
+function qualityDisplay(r) {
   const parts = [];
-  if (r.brix) parts.push(`당 ${r.brix}°`);
-  if (r.acidity) parts.push(`산 ${r.acidity}`);
-  return `<div style="font-size:11px;color:#1565C0;margin-top:3px">${parts.join(' / ')}${ratioStr}</div>`;
+  if (r.brix_range) parts.push(`당도 ${esc(r.brix_range)}`);
+  if (r.acidity_range) parts.push(`산도 ${esc(r.acidity_range)}`);
+  if (r.sub_acidity) parts.push(`소과산 ${esc(r.sub_acidity)}`);
+  if (r.size_distribution) parts.push(`크기: ${esc(r.size_distribution)}`);
+  if (r.brix && !r.brix_range) parts.push(`당 ${r.brix}°`);
+  if (r.acidity && !r.acidity_range) parts.push(`산 ${r.acidity}`);
+  if (!parts.length) return '';
+  return `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${parts.join(' / ')}</div>`;
 }
 
 function renderInboundList() {
@@ -3198,13 +3204,13 @@ function renderInboundList() {
   const visible = showVoidData ? inboundRecords : inboundRecords.filter(r => !r.is_void);
 
   if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${!inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${!inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}</td></tr>`;
     return;
   }
 
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
   const hasLegacy = visible.some(r => r._legacy);
-  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="9" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
+  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="10" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(visible.map(r => {
     if (r.is_void) {
@@ -3214,6 +3220,7 @@ function renderInboundList() {
         <td style="text-decoration:line-through;color:#999">${r.date}</td>
         <td class="nm" style="text-decoration:line-through;color:#999">${esc(r.farm_name)}</td>
         <td style="text-decoration:line-through;color:#999">${esc(r.product)}</td>
+        <td style="color:#999">-</td>
         <td style="text-align:right;text-decoration:line-through;color:#999">${r.quantity}</td>
         <td style="text-align:right;color:#999">-</td>
         <td style="text-align:right;color:#999">-</td>
@@ -3232,15 +3239,18 @@ function renderInboundList() {
     const actionCell = (isAdm && !r._legacy)
       ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button>`
       : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : '');
-    return `<tr id="ib-tr-${r.id}">
+    const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
+    const noteQuality = [r.note ? esc(r.note) : '', qualityDisplay(r)].filter(Boolean).join('') || '-';
+    return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
-      <td class="nm">${esc(r.farm_name)}</td>
+      <td class="nm">${esc(r.farm_name)}${r.is_priority ? ' <span title="우선사용" style="color:#F9A825">⭐</span>' : ''}</td>
       <td>${esc(r.product)}</td>
+      <td>${categoryBadge(r.inbound_category)}</td>
       <td style="text-align:right">${r.quantity}</td>
       <td style="text-align:right">${processed || ''}</td>
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
       <td>${esc(r.location || '-')}</td>
-      <td style="white-space:normal;min-width:90px">${r.note ? esc(r.note) : (r.brix || r.acidity ? '' : '-')}${brixDisplay(r)}</td>
+      <td style="white-space:normal;min-width:90px">${noteQuality}</td>
       <td>${actionCell}</td>
     </tr>`;
   })).join('');
@@ -3283,10 +3293,13 @@ function editInboundRow(id) {
   if (!tr) return;
   const processed = getProcessedForInbound(id);
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
+  const catOptions = ['상품','대과','소과','파치'].map(c =>
+    `<option value="${c}"${(r.inbound_category || '상품') === c ? ' selected' : ''}>${c}</option>`).join('');
   tr.innerHTML = `
     <td style="padding:5px 8px"><input id="eib-date-${id}" type="date" value="${r.date}" style="${IS}"></td>
     <td style="padding:5px 8px">${esc(r.farm_name)}</td>
     <td style="padding:5px 8px">${esc(r.product)}</td>
+    <td style="padding:5px 8px"><select id="eib-cat-${id}" style="${IS}">${catOptions}</select></td>
     <td style="padding:5px 8px">
       <input id="eib-qty-${id}" type="number" value="${r.quantity}" min="${processed || 1}" style="${IS};width:80px">
       ${processed > 0 ? `<div style="font-size:11px;color:#e65100;margin-top:2px">최소 ${processed}CT</div>` : ''}
@@ -3296,10 +3309,13 @@ function editInboundRow(id) {
     <td style="padding:5px 8px"><input id="eib-loc-${id}" value="${esc(r.location || '')}" style="${IS}"></td>
     <td style="padding:5px 8px">
       <input id="eib-note-${id}" value="${esc(r.note || '')}" placeholder="메모" style="${IS};margin-bottom:4px">
-      <div style="display:flex;gap:4px">
-        <input id="eib-brix-${id}" type="number" step="0.1" min="0" max="30" value="${r.brix ?? ''}" placeholder="당도°" style="${IS};width:72px">
-        <input id="eib-acid-${id}" type="number" step="0.01" min="0" max="5" value="${r.acidity ?? ''}" placeholder="산도" style="${IS};width:72px">
-      </div>
+      <input id="eib-brix-range-${id}" value="${esc(r.brix_range || '')}" placeholder="당도 범위 (예: 13.5~16.5)" style="${IS};margin-bottom:4px">
+      <input id="eib-acid-range-${id}" value="${esc(r.acidity_range || '')}" placeholder="산도 범위 (예: 평균1~1.7)" style="${IS};margin-bottom:4px">
+      <input id="eib-sub-acid-${id}" value="${esc(r.sub_acidity || '')}" placeholder="소과 산도" style="${IS};margin-bottom:4px">
+      <input id="eib-size-${id}" value="${esc(r.size_distribution || '')}" placeholder="크기 분포" style="${IS};margin-bottom:4px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="eib-priority-${id}"${r.is_priority ? ' checked' : ''}> ⭐ 우선 사용
+      </label>
     </td>
     <td style="padding:5px 8px">
       <div style="margin-bottom:5px"><small style="color:#e65100;font-weight:600">수정 사유 *</small></div>
@@ -3317,28 +3333,37 @@ async function saveInboundEdit(id) {
   const location = document.getElementById('eib-loc-' + id)?.value || '';
   const note = document.getElementById('eib-note-' + id)?.value || '';
   const reason = (document.getElementById('eib-reason-' + id)?.value || '').trim();
-  const brixRaw = document.getElementById('eib-brix-' + id)?.value.trim();
-  const acidRaw = document.getElementById('eib-acid-' + id)?.value.trim();
-  const brix = brixRaw ? parseFloat(brixRaw) : null;
-  const acidity = acidRaw ? parseFloat(acidRaw) : null;
+  const inbound_category = document.getElementById('eib-cat-' + id)?.value || '상품';
+  const brix_range = document.getElementById('eib-brix-range-' + id)?.value.trim() || null;
+  const acidity_range = document.getElementById('eib-acid-range-' + id)?.value.trim() || null;
+  const sub_acidity = document.getElementById('eib-sub-acid-' + id)?.value.trim() || null;
+  const size_distribution = document.getElementById('eib-size-' + id)?.value.trim() || null;
+  const is_priority = document.getElementById('eib-priority-' + id)?.checked || false;
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
   if (!reason) return alert('수정 사유를 입력해주세요.');
   const processed = getProcessedForInbound(id);
   if (qty < processed) return alert(`이미 ${processed}CT가 처리되었습니다. ${processed}CT 미만으로 줄일 수 없습니다.`);
   if (!confirm('이 입고기록을 수정합니다. 관련 처리(선과 등)가 있을 경우 재고에 영향을 줄 수 있습니다. 계속할까요?')) return;
   const prev = inboundRecords.find(r => r.id === id);
-  const updatePayload = { date, quantity: qty, location: location || null, note: note || null,
-    ...(brix !== null && { brix }), ...(acidity !== null && { acidity }) };
+  const updatePayload = {
+    date, quantity: qty, location: location || null, note: note || null,
+    inbound_category, is_priority,
+    ...(brix_range !== null && { brix_range }),
+    ...(acidity_range !== null && { acidity_range }),
+    ...(sub_acidity !== null && { sub_acidity }),
+    ...(size_distribution !== null && { size_distribution }),
+  };
   try {
     await dbUpdateInbound(id, updatePayload);
     await dbInsertAuditLog({
       target_table: 'inbound_records', target_id: id,
-      before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note, brix: prev.brix, acidity: prev.acidity },
-      after_val: { date, quantity: qty, location: location || null, note: note || null, brix, acidity },
+      before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note, inbound_category: prev.inbound_category },
+      after_val: { date, quantity: qty, location: location || null, note: note || null, inbound_category },
       reason, staff: 'admin'
     });
     const idx = inboundRecords.findIndex(r => r.id === id);
-    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], date, quantity: qty, location: location || null, note: note || null, brix, acidity };
+    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], date, quantity: qty, location: location || null,
+      note: note || null, inbound_category, is_priority, brix_range, acidity_range, sub_acidity, size_distribution };
     renderInvSummary(); renderInboundList();
   } catch(e) { alert('수정 오류: ' + e.message); }
 }
@@ -3441,30 +3466,33 @@ async function addInbound() {
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   const qty = parseInt(document.getElementById('ib-qty').value) || 0;
   if (!date || !product || !farm_name || !qty) return alert('날짜, 품목, 농가명, 수량은 필수입니다.');
-  const brixRaw = (document.getElementById('ib-brix')?.value || '').trim();
-  const acidRaw = (document.getElementById('ib-acidity')?.value || '').trim();
-  const brix = brixRaw ? parseFloat(brixRaw) : null;
-  const acidity = acidRaw ? parseFloat(acidRaw) : null;
-  if (brix !== null && (brix < 5 || brix > 20))
-    if (!confirm(`당도 ${brix}°는 권장 범위(5~20°)를 벗어납니다. 그래도 저장할까요?`)) return;
-  if (acidity !== null && (acidity < 0.5 || acidity > 3.0))
-    if (!confirm(`산도 ${acidity}는 권장 범위(0.5~3.0)를 벗어납니다. 그래도 저장할까요?`)) return;
-  // brix/acidity 컬럼이 없을 경우 오류 방지: null이면 payload에서 제외
+  const inbound_category = gv('ib-category') || '상품';
+  const brix_range = (document.getElementById('ib-brix-range')?.value || '').trim() || null;
+  const acidity_range = (document.getElementById('ib-acidity-range')?.value || '').trim() || null;
+  const sub_acidity = (document.getElementById('ib-sub-acidity')?.value || '').trim() || null;
+  const size_distribution = (document.getElementById('ib-size-dist')?.value || '').trim() || null;
+  const is_priority = document.getElementById('ib-priority')?.checked || false;
   const data = {
     date, product, farm_name, quantity: qty,
     location: gv('ib-loc') || null,
     note: gv('ib-note') || null,
     staff: 'admin',
-    ...(brix !== null && { brix }),
-    ...(acidity !== null && { acidity }),
+    inbound_category,
+    is_priority,
+    ...(brix_range && { brix_range }),
+    ...(acidity_range && { acidity_range }),
+    ...(sub_acidity && { sub_acidity }),
+    ...(size_distribution && { size_distribution }),
   };
   try {
     const row = await dbInsertInbound(data);
     inboundRecords.unshift(row);
     renderInvSummary(); renderInboundList();
     sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
-    if (document.getElementById('ib-brix')) sv('ib-brix', '');
-    if (document.getElementById('ib-acidity')) sv('ib-acidity', '');
+    const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-sub-acidity', 'ib-size-dist'];
+    clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const priEl = document.getElementById('ib-priority');
+    if (priEl) priEl.checked = false;
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 

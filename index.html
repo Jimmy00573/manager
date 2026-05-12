@@ -585,6 +585,9 @@
     <div id="ib-list-div">
       <div class="form-card">
         <div class="form-title">미선과 입고 등록</div>
+
+        <!-- 기본 정보 -->
+        <div class="ib-section-label">기본 정보</div>
         <div class="form-grid">
           <div class="fg"><label>날짜 *</label><input id="ib-date" type="date"></div>
           <div class="fg"><label>품목 *</label>
@@ -596,12 +599,44 @@
             </select>
           </div>
           <div class="fg"><label>농가명 *</label><select id="ib-farm"><option value="">선택</option></select></div>
-          <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1"></div>
           <div class="fg"><label>위치</label><input id="ib-loc" placeholder="선택사항"></div>
-          <div class="fg"><label>당도 <small style="font-weight:400;color:var(--text-tertiary)">(Brix, 선택)</small></label><input id="ib-brix" type="number" step="0.1" min="0" max="30" placeholder="예: 12.5"></div>
-          <div class="fg"><label>산도 <small style="font-weight:400;color:var(--text-tertiary)">(%, 선택)</small></label><input id="ib-acidity" type="number" step="0.01" min="0" max="5" placeholder="예: 1.05"></div>
-          <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="ib-note" placeholder="특이사항 (선택사항)"></div>
         </div>
+
+        <!-- 수량 정보 -->
+        <div class="ib-section-label">수량 정보</div>
+        <div class="form-grid">
+          <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1"></div>
+          <div class="fg"><label>카테고리</label>
+            <select id="ib-category">
+              <option value="상품">상품</option>
+              <option value="대과">대과</option>
+              <option value="소과">소과</option>
+              <option value="파치">파치</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 품질 정보 -->
+        <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
+        <div class="form-grid">
+          <div class="fg"><label>당도 범위 <small style="font-weight:400;color:var(--text-tertiary)">(Brix)</small></label><input id="ib-brix-range" placeholder="예: 13.5~16.5"></div>
+          <div class="fg"><label>산도 범위 <small style="font-weight:400;color:var(--text-tertiary)">(%)</small></label><input id="ib-acidity-range" placeholder="예: 평균1~1.7"></div>
+          <div class="fg"><label>소과 산도</label><input id="ib-sub-acidity" placeholder="예: 1.2~1.5"></div>
+          <div class="fg"><label>크기 분포</label><input id="ib-size-dist" placeholder="예: L40% M35% S25%"></div>
+        </div>
+
+        <!-- 추가 정보 -->
+        <div class="ib-section-label">추가 정보</div>
+        <div class="form-grid">
+          <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="ib-note" placeholder="특이사항 (선택사항)"></div>
+          <div class="fg" style="grid-column:1/-1;padding-top:2px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+              <input type="checkbox" id="ib-priority" style="width:16px;height:16px;cursor:pointer">
+              ⭐ 우선 사용 (먼저 소진할 물량)
+            </label>
+          </div>
+        </div>
+
         <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addInbound()">등록</button></div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -614,11 +649,11 @@
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th>날짜</th><th>농가명</th><th>품목</th>
+            <th>날짜</th><th>농가명</th><th>품목</th><th>카테고리</th>
             <th>입고(CT)</th><th>처리됨(CT)</th><th>남은재고(CT)</th>
-            <th>위치</th><th>메모</th><th></th>
+            <th>위치</th><th>메모/품질</th><th></th>
           </tr></thead>
-          <tbody id="ib-tb"><tr><td colspan="9" class="empty">입고 기록 없음</td></tr></tbody>
+          <tbody id="ib-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
         </table>
       </div>
     </div>
