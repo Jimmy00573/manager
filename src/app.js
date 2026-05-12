@@ -3760,6 +3760,61 @@ function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   return `<span class="badge">${esc(cat)}</span>`;
 }
 
+function qualityCompact(r) {
+  const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
+  const chip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
+  const chips = [chip('당', r.brix_grade), chip('산', r.acidity_grade), chip('외', r.appearance_grade)].filter(Boolean);
+  if (!chips.length) return '';
+  return `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>`;
+}
+
+function hasQualityDetail(r) {
+  return !!(r.brix_grade || r.acidity_grade || r.appearance_grade || r.defect_tags ||
+            r.brix_range || r.acidity_range || r.size_distribution);
+}
+
+let _qModalId = null;
+function openQualityModal(id) {
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  _qModalId = id;
+  const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
+  const gradeRow = (lbl, val) => val
+    ? `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+        <span style="color:#888;width:40px;font-size:12px">${lbl}</span>
+        <span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid;${GS[val]};font-weight:700">${val}</span>
+       </div>` : '';
+  const gradeBlock = [gradeRow('당도', r.brix_grade), gradeRow('산도', r.acidity_grade), gradeRow('외관', r.appearance_grade)].filter(Boolean).join('');
+  const defectBlock = r.defect_tags
+    ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${
+        r.defect_tags.split(',').map(t => `<span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid #FFCC80;background:#FFF3E0;color:#E65100;font-weight:600">${esc(t.trim())}</span>`).join('')
+      }</div>` : '';
+  const measureBlock = [
+    r.brix_range     ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">당도 범위</span>${esc(r.brix_range)}</div>` : '',
+    r.acidity_range  ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">산도 범위</span>${esc(r.acidity_range)}</div>` : '',
+    r.size_distribution ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">크기 분포</span>${esc(r.size_distribution)}</div>` : '',
+  ].filter(Boolean).join('');
+  const reclassBlock = r.inbound_category === '재선별' && (r.reclassification_source || r.reclassification_reason)
+    ? `<div style="margin-top:12px"><div style="font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">재선별 정보</div>
+        ${r.reclassification_source ? `<div style="font-size:12px;padding:3px 0"><span style="color:#888;width:60px;display:inline-block">출처</span>${esc(r.reclassification_source)}</div>` : ''}
+        ${r.reclassification_reason ? `<div style="font-size:12px;padding:3px 0;color:#7C3AED">${esc(r.reclassification_reason)}</div>` : ''}
+       </div>` : '';
+
+  document.getElementById('qm-header').textContent = `${r.product} · ${r.farm_name} · ${r.date} · ${r.quantity}CT`;
+  document.getElementById('qm-grades').innerHTML = gradeBlock || '<span style="color:#bbb;font-size:12px">등급 없음</span>';
+  document.getElementById('qm-defects').innerHTML = defectBlock;
+  document.getElementById('qm-memo').textContent = r.note || '';
+  document.getElementById('qm-memo-wrap').style.display = r.note ? '' : 'none';
+  document.getElementById('qm-measures').innerHTML = measureBlock;
+  document.getElementById('qm-measures-wrap').style.display = measureBlock ? '' : 'none';
+  document.getElementById('qm-reclass').innerHTML = reclassBlock;
+  document.getElementById('modal-quality').style.display = 'flex';
+}
+function closeQualityModal() {
+  document.getElementById('modal-quality').style.display = 'none';
+  _qModalId = null;
+}
+
 function qualityDisplay(r) {
   const GRADE_STYLE = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
   const gradeChip = (label, val) => val ? `<span style="font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid;${GRADE_STYLE[val] || ''};font-weight:600">${label} ${esc(val)}</span>` : '';
@@ -4256,20 +4311,22 @@ function renderIbFarmView() {
       .sort((a, b) => b.date.localeCompare(a.date))
       .map((r, i, arr) => {
         const isLast = i === arr.length - 1;
-        const qualStr = qualityDisplay(r) ? `<div style="padding-left:20px;margin-top:2px">${qualityDisplay(r)}</div>` : '';
         const remColor = r.rem <= 0 ? '#aaa' : r.rem < 50 ? '#C62828' : '#E65100';
-        const note = r.note ? `<span style="color:#888;font-size:11px"> · ${esc(r.note)}</span>` : '';
+        const notePreview = r.note ? `<span style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;display:inline-block;vertical-align:middle"> · ${esc(r.note)}</span>` : '';
+        const qBtn = hasQualityDetail(r) || r.note
+          ? `<button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:2px 5px;font-size:11px;margin-left:4px">📋</button>` : '';
+        const compactGrade = qualityCompact(r);
         return `<div style="padding:5px 14px 5px 36px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5'}">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="color:#ccc;font-size:11px">${isLast ? '└─' : '├─'}</span>
             <span style="font-size:12px;color:#555">${r.date}</span>
             <span style="font-size:12px;font-weight:600;color:#222">${esc(r.product)}</span>
             <span style="font-weight:700;color:${remColor};font-size:13px">${r.rem > 0 ? r.rem + ' CT' : '완료'}</span>
-            ${r.location ? `<span style="font-size:11px;color:#888">${esc(r.location)}</span>` : ''}
+            ${r.location ? `<span style="font-size:11px;color:#888">(${esc(r.location)})</span>` : ''}
             ${r.is_priority ? '<span style="font-size:11px">⭐</span>' : ''}
-            ${note}
+            ${compactGrade}
+            ${notePreview}${qBtn}
           </div>
-          ${qualStr}
         </div>`;
       }).join('');
 
@@ -4494,7 +4551,7 @@ function renderInboundList() {
   _updateIbFilterBtns();
 
   if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">${
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">${
       ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
       !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'
     }</td></tr>`;
@@ -4503,7 +4560,7 @@ function renderInboundList() {
 
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
   const hasLegacy = visible.some(r => r._legacy);
-  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="10" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
+  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="11" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(visible.map(r => {
     if (r.is_void) {
@@ -4518,6 +4575,7 @@ function renderInboundList() {
         <td style="text-align:right;color:#999">-</td>
         <td style="text-align:right;color:#999">-</td>
         <td style="color:#999">${esc(r.location || '-')}</td>
+        <td style="color:#999">—</td>
         <td style="white-space:normal;min-width:80px;color:#999">${esc(r.note || '-')}</td>
         <td>
           <span style="background:#ef5350;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;vertical-align:middle">무효</span>
@@ -4535,7 +4593,15 @@ function renderInboundList() {
       ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${moveBtn} ${histBtn}`
       : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : histBtn);
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
-    const noteQuality = [r.note ? esc(r.note) : '', qualityDisplay(r)].filter(Boolean).join('') || '-';
+    const gradeCell = qualityCompact(r) || '<span style="color:#e0e0e0;font-size:12px">—</span>';
+    const hasDetail = hasQualityDetail(r) || (r.note && r.note.length > 0);
+    const memoPreview = r.note
+      ? `<span class="memo-preview">${esc(r.note)}</span>`
+      : '<span style="color:#e0e0e0">—</span>';
+    const detailBtn = hasDetail
+      ? `<button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:3px 7px;margin-left:4px;flex-shrink:0">📋</button>`
+      : '';
+    const memoCell = `<div style="display:flex;align-items:center;gap:0">${memoPreview}${detailBtn}</div>`;
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
       <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
@@ -4545,7 +4611,8 @@ function renderInboundList() {
       <td style="text-align:right">${processed || ''}</td>
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
       <td>${esc(r.location || '-')}</td>
-      <td style="white-space:normal;min-width:90px">${noteQuality}</td>
+      <td style="white-space:nowrap">${gradeCell}</td>
+      <td style="max-width:200px">${memoCell}</td>
       <td>${actionCell}</td>
     </tr>`;
   })).join('');
@@ -5471,6 +5538,8 @@ function renderRecordHistoryModal(logs, record) {
 // ── ESC 키로 모달 닫기
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (document.getElementById('modal-quality')?.style.display !== 'none') { closeQualityModal(); return; }
+  if (document.getElementById('modal-move-loc')?.style.display !== 'none') { closeMoveModal(); return; }
   if (document.getElementById('modal-record-history')?.style.display !== 'none') { CM('record-history'); return; }
   if (document.getElementById('modal-edit-inbound')?.style.display !== 'none') { closeEditInboundModal(); return; }
   if (document.getElementById('modal-void-inbound')?.style.display !== 'none') { CM('void-inbound'); return; }

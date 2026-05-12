@@ -765,9 +765,9 @@
             <thead><tr>
               <th>날짜</th><th>농가명</th><th>품목</th><th>카테고리</th>
               <th>입고(CT)</th><th>처리됨(CT)</th><th>남은재고(CT)</th>
-              <th>위치</th><th>메모/품질</th><th></th>
+              <th>위치</th><th>품질</th><th>메모</th><th></th>
             </tr></thead>
-            <tbody id="ib-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
+            <tbody id="ib-tb"><tr><td colspan="11" class="empty">입고 기록 없음</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1261,6 +1261,34 @@
     <div class="modal-actions">
       <button class="btn" onclick="closeMoveModal()">취소</button>
       <button class="btn pri" onclick="saveMoveLocation()">이동 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 모달: 품질 상세 -->
+<div id="modal-quality" class="modal-bg" style="display:none" onclick="if(event.target===this)closeQualityModal()">
+  <div class="modal" style="max-width:420px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title">📋 품질 상세</div>
+      <button class="modal-close" onclick="closeQualityModal()">✕</button>
+    </div>
+    <div id="qm-header" style="background:#f5f5f5;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:14px"></div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">품질 등급</div>
+      <div id="qm-grades"></div>
+      <div id="qm-defects"></div>
+    </div>
+    <div id="qm-memo-wrap" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">메모</div>
+      <div id="qm-memo" style="font-size:13px;line-height:1.6;white-space:pre-wrap;background:#fafafa;border-radius:6px;padding:8px 10px"></div>
+    </div>
+    <div id="qm-measures-wrap" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">측정값 상세</div>
+      <div id="qm-measures" style="background:#fafafa;border-radius:6px;padding:8px 10px"></div>
+    </div>
+    <div id="qm-reclass"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeQualityModal()">닫기</button>
     </div>
   </div>
 </div>
