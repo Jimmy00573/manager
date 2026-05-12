@@ -3760,12 +3760,45 @@ function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   return `<span class="badge">${esc(cat)}</span>`;
 }
 
-function qualityCompact(r) {
+const DEFECT_QUALITY = new Set(['고산도','저산도','고당도','저당도']);
+const DEFECT_APPEARANCE = new Set(['잔싸비','약해','영덩이파치','부끔','봉나옴','찍힘','변색']);
+const DEFECT_TIPS = {
+  고산도:'산도가 높음', 저산도:'산도가 낮음', 고당도:'당도가 높음', 저당도:'당도가 낮음',
+  잔싸비:'잔류 나방 피해', 약해:'약제 피해', 영덩이파치:'꼭지 반대쪽 부패',
+  부끔:'과피 부패', 봉나옴:'봉 돌출', 찍힘:'압상 피해', 변색:'색깔 이상'
+};
+
+function defectChip(tag) {
+  const t = tag.trim();
+  const style = DEFECT_QUALITY.has(t)
+    ? 'background:#FFF3E0;color:#E65100;border-color:#FFCC80'
+    : DEFECT_APPEARANCE.has(t)
+    ? 'background:#FFEBEE;color:#C62828;border-color:#EF9A9A'
+    : 'background:#F5F5F5;color:#616161;border-color:#E0E0E0';
+  const tip = DEFECT_TIPS[t] ? ` title="${DEFECT_TIPS[t]}"` : '';
+  return `<span class="defect-chip" style="${style}"${tip}>${esc(t)}</span>`;
+}
+
+function defectChipsHtml(tagsStr, recordId, maxShow = 3) {
+  if (!tagsStr) return '';
+  const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+  if (!tags.length) return '';
+  const visible = tags.slice(0, maxShow);
+  const rest = tags.length - maxShow;
+  const moreBtn = rest > 0
+    ? `<button class="btn sm" onclick="openQualityModal('${recordId}')" style="padding:1px 5px;font-size:10px;border-radius:9999px">+${rest}</button>`
+    : '';
+  return `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${visible.map(defectChip).join('')}${moreBtn}</div>`;
+}
+
+function qualityCompact(r, recordId) {
   const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
   const chip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
   const chips = [chip('당', r.brix_grade), chip('산', r.acidity_grade), chip('외', r.appearance_grade)].filter(Boolean);
-  if (!chips.length) return '';
-  return `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>`;
+  const gradeRow = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
+  const defectRow = defectChipsHtml(r.defect_tags, recordId || r.id);
+  if (!gradeRow && !defectRow) return '';
+  return gradeRow + defectRow;
 }
 
 function hasQualityDetail(r) {
@@ -4315,7 +4348,7 @@ function renderIbFarmView() {
         const notePreview = r.note ? `<span style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;display:inline-block;vertical-align:middle"> · ${esc(r.note)}</span>` : '';
         const qBtn = hasQualityDetail(r) || r.note
           ? `<button class="btn sm" onclick="openQualityModal('${r.id}')" title="품질 상세" style="padding:2px 5px;font-size:11px;margin-left:4px">📋</button>` : '';
-        const compactGrade = qualityCompact(r);
+        const compactGrade = qualityCompact(r, r.id);
         return `<div style="padding:5px 14px 5px 36px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5'}">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="color:#ccc;font-size:11px">${isLast ? '└─' : '├─'}</span>
@@ -4593,7 +4626,7 @@ function renderInboundList() {
       ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${moveBtn} ${histBtn}`
       : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : histBtn);
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
-    const gradeCell = qualityCompact(r) || '<span style="color:#e0e0e0;font-size:12px">—</span>';
+    const gradeCell = qualityCompact(r, r.id) || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     const hasDetail = hasQualityDetail(r) || (r.note && r.note.length > 0);
     const memoPreview = r.note
       ? `<span class="memo-preview">${esc(r.note)}</span>`
@@ -4611,7 +4644,7 @@ function renderInboundList() {
       <td style="text-align:right">${processed || ''}</td>
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
       <td>${esc(r.location || '-')}</td>
-      <td style="white-space:nowrap">${gradeCell}</td>
+      <td style="min-width:80px">${gradeCell}</td>
       <td style="max-width:200px">${memoCell}</td>
       <td>${actionCell}</td>
     </tr>`;
