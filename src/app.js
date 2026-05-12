@@ -3623,18 +3623,12 @@ function renderIbCatSummary() {
 
   const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted);
 
-  const CATS = [
-    { key: '상품', color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
-    { key: '대과', color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
-    { key: '소과', color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
-    { key: '파치', color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
-  ];
-
-  // (카테고리, 품목) 조합별 집계
+  // (카테고리, 품목, 출처) 조합별 집계
   const catTotals = {};
-  const catProducts = {};  // cat → { product → qty }
+  const catProducts = {};   // cat → { product → qty }
+  const catSources  = {};   // cat → { source → qty }  (재선별 전용)
   let grandTotal = 0;
-  CATS.forEach(c => { catTotals[c.key] = 0; catProducts[c.key] = {}; });
+  IB_CATS.forEach(c => { catTotals[c.key] = 0; catProducts[c.key] = {}; catSources[c.key] = {}; });
   active.forEach(r => {
     const remaining = r.quantity - (processedByInbound[r.id] || 0);
     if (remaining <= 0) return;
@@ -3642,6 +3636,10 @@ function renderIbCatSummary() {
     if (catTotals[cat] !== undefined) {
       catTotals[cat] += remaining;
       catProducts[cat][r.product] = (catProducts[cat][r.product] || 0) + remaining;
+      if (cat === '재선별') {
+        const src = r.reclassification_source || '미지정';
+        catSources[cat][src] = (catSources[cat][src] || 0) + remaining;
+      }
     }
     grandTotal += remaining;
   });
@@ -3654,15 +3652,26 @@ function renderIbCatSummary() {
     return `<span style="font-size:11px;color:${color};white-space:nowrap">${icon} ${esc(product)} <strong>${qty}</strong></span>`;
   };
 
+  const SRC_LABELS = { '신규입고': '신규', '선과결과': '선과', '포장라인': '포장', '반품': '반품', '기타': '기타', '미지정': '-' };
+
   catEl.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
-      ${CATS.map(c => {
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:8px">
+      ${IB_CATS.map(c => {
         const prods = Object.entries(catProducts[c.key])
           .filter(([, q]) => q > 0)
           .sort(([, a], [, b]) => b - a);
         const prodLine = prods.length
           ? `<div style="border-top:1px solid ${c.border};margin-top:7px;padding-top:6px;display:flex;flex-direction:column;gap:3px;text-align:left">
               ${prods.map(([p, q]) => productChip(p, q)).join('')}
+             </div>`
+          : '';
+        const srcLine = (c.key === '재선별' && Object.keys(catSources[c.key]).length)
+          ? `<div style="border-top:1px solid ${c.border};margin-top:6px;padding-top:5px;display:flex;flex-direction:column;gap:2px;text-align:left">
+              ${Object.entries(catSources[c.key])
+                .filter(([, q]) => q > 0)
+                .sort(([, a], [, b]) => b - a)
+                .map(([s, q]) => `<span style="font-size:10px;color:${c.color};white-space:nowrap">${SRC_LABELS[s] || esc(s)}: <strong>${q}</strong></span>`)
+                .join('')}
              </div>`
           : '';
         return `
@@ -3673,6 +3682,7 @@ function renderIbCatSummary() {
             <div style="font-size:10px;color:#aaa;margin-top:2px">CT</div>
           </div>
           ${prodLine}
+          ${srcLine}
         </div>`;
       }).join('')}
     </div>
