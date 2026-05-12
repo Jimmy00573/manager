@@ -3391,6 +3391,7 @@ function renderIbCatSummary() {
   ];
 
   const catTotals = {};
+  const productMap = {};
   let grandTotal = 0;
   CATS.forEach(c => { catTotals[c.key] = 0; });
   active.forEach(r => {
@@ -3398,11 +3399,24 @@ function renderIbCatSummary() {
     if (remaining <= 0) return;
     const cat = r.inbound_category || '상품';
     if (catTotals[cat] !== undefined) catTotals[cat] += remaining;
+    productMap[r.product] = (productMap[r.product] || 0) + remaining;
     grandTotal += remaining;
   });
 
+  // 품목별 칩 (많은 순, 0 자동 숨김)
+  const productChips = Object.entries(productMap)
+    .filter(([, qty]) => qty > 0)
+    .sort(([, a], [, b]) => b - a)
+    .map(([product, qty]) => {
+      const itemCat = _getCatForProduct(product);
+      const isCount = !itemCat || itemCat.classification_type === 'count';
+      const color = isCount ? '#C05800' : '#2E7D32';
+      const bg    = isCount ? '#FFF3E0' : '#E8F5E9';
+      return `<span style="display:inline-flex;align-items:center;gap:3px;background:${bg};color:${color};font-size:11px;padding:3px 9px;border-radius:10px;font-weight:600;white-space:nowrap">${esc(product)} <strong>${qty}</strong></span>`;
+    }).join('');
+
   catEl.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
       ${CATS.map(c => `
         <div style="background:${c.bg};border:1px solid ${c.border};border-radius:10px;padding:10px 8px;text-align:center">
           <div style="font-size:11px;font-weight:700;color:${c.color};margin-bottom:4px">${c.key}</div>
@@ -3410,6 +3424,11 @@ function renderIbCatSummary() {
           <div style="font-size:10px;color:#aaa;margin-top:2px">CT</div>
         </div>`).join('')}
     </div>
+    ${productChips ? `
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+      <span style="font-size:11px;font-weight:700;color:var(--text-secondary);flex-shrink:0">품목별</span>
+      ${productChips}
+    </div>` : ''}
     <div style="text-align:right;font-size:12px;color:var(--text-secondary);margin-bottom:12px">
       전체 미선과 재고: <strong style="color:var(--text)">${grandTotal.toLocaleString()} CT</strong>
     </div>`;
