@@ -3293,8 +3293,8 @@ function renderIbFarmView() {
     html += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
       <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;flex-wrap:wrap">
         <span style="font-size:16px">👨‍🌾</span>
+        <span style="display:inline-block;width:16px;text-align:center;font-size:13px">${hasPriority ? '⭐' : ''}</span>
         <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
-        ${hasPriority ? '<span style="font-size:12px;color:#E65100">⚠️ 우선사용 포함</span>' : ''}
         <span style="font-size:13px;color:#555">총 남은 재고: <strong style="color:#1565C0">${remaining} CT</strong></span>
         ${statusChip(remaining)}
       </div>
@@ -3494,9 +3494,9 @@ function renderInboundList() {
     const noteQuality = [r.note ? esc(r.note) : '', qualityDisplay(r)].filter(Boolean).join('') || '-';
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
-      <td class="nm">${esc(r.farm_name)}</td>
+      <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
       <td>${esc(r.product)}</td>
-      <td>${categoryBadge(r.inbound_category)}${r.is_priority ? ' <span title="우선사용" style="color:#F9A825;font-size:12px">⭐</span>' : ''}</td>
+      <td>${categoryBadge(r.inbound_category)}</td>
       <td style="text-align:right">${r.quantity}</td>
       <td style="text-align:right">${processed || ''}</td>
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
