@@ -192,3 +192,7 @@ async function dbGetAuditLogs(limit = 100, offset = 0) {
   try { return await sbGet('audit_logs', `order=created_at.desc&limit=${limit}&offset=${offset}`); }
   catch(e) { return []; }
 }
+async function dbGetAuditLogsForRecord(targetTable, targetId) {
+  try { return await sbGet('audit_logs', `target_table=eq.${targetTable}&target_id=eq.${targetId}&order=created_at.asc`); }
+  catch(e) { return []; }
+}

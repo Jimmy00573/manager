@@ -884,6 +884,18 @@
 <datalist id="dl-v"><option value="노지감귤"><option value="하우스감귤"><option value="한라봉"><option value="천혜향"><option value="레드향"><option value="황금향"><option value="청견"><option value="세토카"></datalist>
 <datalist id="dl-cx"><option value="콘테이너"><option value="파렛트"><option value="사각"><option value="노랑"><option value="초록"><option value="헌콘"></datalist>
 
+<!-- 모달: 개별 이력 -->
+<div id="modal-record-history" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('record-history')">
+  <div class="modal" style="max-width:520px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title" id="rh-title">변경 이력</div>
+      <button class="modal-close" onclick="CM('record-history')">✕</button>
+    </div>
+    <div id="rh-record-info" style="background:#f8f8f8;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px"></div>
+    <div id="rh-timeline"></div>
+  </div>
+</div>
+
 <!-- 모달: 입고 수정 -->
 <div id="modal-edit-inbound" class="modal-bg" style="display:none" onclick="if(event.target===this)closeEditInboundModal()">
   <div class="modal" style="max-width:560px;width:95%">

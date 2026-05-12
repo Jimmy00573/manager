@@ -3649,9 +3649,10 @@ function renderInboundList() {
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
     const remStyle = remaining <= 0 ? 'color:#999;text-align:right' : 'font-weight:700;color:#E65100;text-align:right';
+    const histBtn = `<button class="btn sm" onclick="openRecordHistory('${r.id}')" title="변경 이력" style="padding:4px 7px">📜</button>`;
     const actionCell = (isAdm && !r._legacy)
-      ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button>`
-      : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : '');
+      ? `<button class="btn sm" onclick="editInboundRow('${r.id}')">수정</button> <button class="btn sm del" onclick="deleteInbound('${r.id}')">삭제</button> ${histBtn}`
+      : (r._legacy ? '<small style="color:#bbb">마이그레이션 필요</small>' : histBtn);
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const noteQuality = [r.note ? esc(r.note) : '', qualityDisplay(r)].filter(Boolean).join('') || '-';
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
@@ -4437,9 +4438,93 @@ function dismissImeNotice() {
   if (el) el.style.display = 'none';
 }
 
+// ── 개별 이력 모달 ───────────────────────────────────────────
+
+async function openRecordHistory(id) {
+  const r = inboundRecords.find(x => x.id === id);
+  const modal = document.getElementById('modal-record-history');
+  const title = document.getElementById('rh-title');
+  const info  = document.getElementById('rh-record-info');
+  const tl    = document.getElementById('rh-timeline');
+  if (!modal) return;
+
+  // 헤더 정보
+  if (r) {
+    title.textContent = '변경 이력';
+    info.innerHTML = `<strong>${esc(r.farm_name)}</strong> · ${esc(r.product)} · ${r.date}
+      <span style="margin-left:8px;color:#aaa">${r.quantity}CT 입고</span>
+      ${r.is_void ? '<span style="margin-left:6px;background:#ef5350;color:#fff;font-size:10px;padding:1px 6px;border-radius:4px">무효</span>' : ''}`;
+  } else {
+    title.textContent = '변경 이력 (삭제된 기록)';
+    info.innerHTML = '<span style="color:#aaa">삭제된 입고 기록</span>';
+  }
+  tl.innerHTML = '<div style="text-align:center;padding:20px;color:#aaa">불러오는 중...</div>';
+  modal.style.display = 'flex';
+
+  const logs = await dbGetAuditLogsForRecord('inbound_records', id);
+  renderRecordHistoryModal(logs, r);
+}
+
+function renderRecordHistoryModal(logs, record) {
+  const tl = document.getElementById('rh-timeline');
+  if (!tl) return;
+
+  if (!logs.length) {
+    tl.innerHTML = '<div style="text-align:center;padding:24px;color:#bbb;font-size:13px">변경 이력 없음<br><small style="color:#ccc">수정·무효·삭제 시 자동 기록됩니다</small></div>';
+    return;
+  }
+
+  const fmtDt = iso => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+
+  // 현재 상태를 맨 마지막에 "현재" 항목으로 추가
+  const items = [...logs];
+
+  tl.innerHTML = `<div style="position:relative;padding-left:24px">
+    ${items.map((log, i) => {
+      const action = getAuditActionType(log);
+      const st = AUDIT_ACTION_STYLE[action] || { bg: '#f5f5f5', color: '#555', border: '#ddd', icon: '📝' };
+      const diff = getAuditDiff(log);
+      const isLast = i === items.length - 1;
+
+      return `
+        <!-- 타임라인 선 -->
+        <div style="position:absolute;left:7px;top:0;bottom:0;width:2px;background:#e0e0e0;${i === 0 ? 'top:12px' : ''}${isLast ? ';bottom:calc(100% - 24px)' : ''}"></div>
+        <div style="position:relative;margin-bottom:${isLast ? '0' : '14px'}">
+          <!-- 타임라인 점 -->
+          <div style="position:absolute;left:-21px;top:10px;width:10px;height:10px;border-radius:50%;background:${st.border};border:2px solid #fff;box-shadow:0 0 0 2px ${st.border}"></div>
+          <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${diff.length || log.reason ? '6' : '0'}px">
+              <span style="background:${st.bg};color:${st.color};font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${st.icon} ${action}</span>
+              <span style="font-size:11px;color:#aaa;margin-left:auto">${fmtDt(log.created_at)}</span>
+            </div>
+            ${diff.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:${log.reason ? '5' : '0'}px">
+              ${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px;font-size:12px;color:#555">${esc(d)}</span>`).join('')}
+            </div>` : ''}
+            ${log.reason ? `<div style="font-size:12px;color:#888">사유: <em>"${esc(log.reason)}"</em></div>` : ''}
+          </div>
+        </div>`;
+    }).join('')}
+
+    ${record && !record.is_void ? `
+    <div style="position:relative">
+      <div style="position:absolute;left:-21px;top:10px;width:10px;height:10px;border-radius:50%;background:#1565C0;border:2px solid #fff;box-shadow:0 0 0 2px #1565C0"></div>
+      <div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:10px 12px">
+        <div style="font-size:12px;font-weight:700;color:#1565C0">📌 현재 상태</div>
+        <div style="font-size:12px;color:#555;margin-top:4px">
+          ${[record.date, `${record.quantity}CT`, record.location, record.inbound_category, record.note].filter(Boolean).map(v => esc(String(v))).join(' · ')}
+        </div>
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 // ── ESC 키로 모달 닫기
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (document.getElementById('modal-record-history')?.style.display !== 'none') { CM('record-history'); return; }
   if (document.getElementById('modal-edit-inbound')?.style.display !== 'none') { closeEditInboundModal(); return; }
   if (document.getElementById('modal-void-inbound')?.style.display !== 'none') { CM('void-inbound'); return; }
 });
