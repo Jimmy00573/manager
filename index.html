@@ -640,23 +640,40 @@
 
         <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addInbound()">등록</button></div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);cursor:pointer;user-select:none">
-          <input type="checkbox" id="ib-show-void" onchange="toggleVoidData()" style="cursor:pointer">
-          무효 데이터 포함 보기
-        </label>
-        <span id="ib-void-count" style="font-size:12px;color:#ef5350;font-weight:600"></span>
+
+      <!-- 보기 모드 토글 -->
+      <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px">
+        <button class="etab af" id="ib-vt-list" onclick="ibListTab('list')" style="font-size:12px;padding:7px 16px">📋 목록</button>
+        <button class="etab" id="ib-vt-farm" onclick="ibListTab('farm')" style="font-size:12px;padding:7px 16px">👨‍🌾 농가별</button>
+        <button class="etab" id="ib-vt-cat" onclick="ibListTab('cat')" style="font-size:12px;padding:7px 16px">📊 카테고리별</button>
       </div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr>
-            <th>날짜</th><th>농가명</th><th>품목</th><th>카테고리</th>
-            <th>입고(CT)</th><th>처리됨(CT)</th><th>남은재고(CT)</th>
-            <th>위치</th><th>메모/품질</th><th></th>
-          </tr></thead>
-          <tbody id="ib-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
-        </table>
+
+      <!-- 목록 보기 -->
+      <div id="ib-view-list">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);cursor:pointer;user-select:none">
+            <input type="checkbox" id="ib-show-void" onchange="toggleVoidData()" style="cursor:pointer">
+            무효 데이터 포함 보기
+          </label>
+          <span id="ib-void-count" style="font-size:12px;color:#ef5350;font-weight:600"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>날짜</th><th>농가명</th><th>품목</th><th>카테고리</th>
+              <th>입고(CT)</th><th>처리됨(CT)</th><th>남은재고(CT)</th>
+              <th>위치</th><th>메모/품질</th><th></th>
+            </tr></thead>
+            <tbody id="ib-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
+          </table>
+        </div>
       </div>
+
+      <!-- 농가별 보기 -->
+      <div id="ib-view-farm" style="display:none"></div>
+
+      <!-- 카테고리별 보기 -->
+      <div id="ib-view-cat" style="display:none"></div>
     </div>
 
     <!-- 선과 처리 -->
