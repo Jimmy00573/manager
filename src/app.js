@@ -2380,8 +2380,6 @@ function invTab(t) {
     if (div) div.style.display = t === s ? '' : 'none';
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
-  const bar = document.getElementById('inv-date-bar');
-  if (bar) bar.style.display = (t !== 'sum' && t !== 'cfg' && t !== 'log') ? 'flex' : 'none';
   if (t === 'cfg') renderSizeCfg();
   if (t === 'log') loadAuditLogs();
 }
@@ -3046,11 +3044,6 @@ function renderInvAll() {
   renderJuiceList();
 }
 
-function _invFilter() { return gv('inv-date') || null; }
-function _filterDate(arr) {
-  const f = _invFilter();
-  return f ? arr.filter(r => r.date === f) : arr;
-}
 
 function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
@@ -4499,7 +4492,7 @@ function renderSortedList() {
   const tbody = document.getElementById('so-tb');
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const data = _filterDate(invSorted);
+  const data = invSorted;
   if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">선과 기록 없음</td></tr>'; return; }
   tbody.innerHTML = data.map(r => `<tr>
     <td>${r.date}</td>
@@ -4519,7 +4512,7 @@ function renderWasteList() {
   const tbody = document.getElementById('wa-tb');
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const data = _filterDate(invWaste);
+  const data = invWaste;
   if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">파치 기록 없음</td></tr>'; return; }
   tbody.innerHTML = data.map(r => `<tr>
     <td>${r.date}</td>
@@ -4535,7 +4528,7 @@ function renderJuiceList() {
   const tbody = document.getElementById('ju-tb');
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const data = _filterDate(invJuice);
+  const data = invJuice;
   if (!data.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">주스/청 기록 없음</td></tr>'; return; }
   tbody.innerHTML = data.map(r => `<tr>
     <td>${r.date}</td>
