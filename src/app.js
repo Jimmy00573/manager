@@ -3767,16 +3767,25 @@ function renderIbFarmView() {
   const pm = _ibProcessedMap();
   const active = inboundRecords.filter(r => !r.is_void);
 
-  // farm → { remaining, cats{}, rows[], hasPriority }
+  const emptyGrades = () => ({ 상: 0, 중: 0, 하: 0, total: 0 });
+
+  // farm → { remaining, cats{}, rows[], hasPriority, brixG{}, acidG{}, appearG{} }
   const farmMap = {};
   active.forEach(r => {
     const rem = r.quantity - (pm[r.id] || 0);
-    if (!farmMap[r.farm_name]) farmMap[r.farm_name] = { remaining: 0, cats: {}, rows: [], hasPriority: false };
+    if (!farmMap[r.farm_name]) farmMap[r.farm_name] = {
+      remaining: 0, cats: {}, rows: [], hasPriority: false,
+      brixG: emptyGrades(), acidG: emptyGrades(), appearG: emptyGrades()
+    };
+    const f = farmMap[r.farm_name];
     const cat = r.inbound_category || '상품';
-    farmMap[r.farm_name].cats[cat] = (farmMap[r.farm_name].cats[cat] || 0) + rem;
-    farmMap[r.farm_name].remaining += rem;
-    if (r.is_priority) farmMap[r.farm_name].hasPriority = true;
-    farmMap[r.farm_name].rows.push({ ...r, rem });
+    f.cats[cat] = (f.cats[cat] || 0) + rem;
+    f.remaining += rem;
+    if (r.is_priority) f.hasPriority = true;
+    if (r.brix_grade      && f.brixG[r.brix_grade]   !== undefined) { f.brixG[r.brix_grade]++;   f.brixG.total++; }
+    if (r.acidity_grade   && f.acidG[r.acidity_grade]  !== undefined) { f.acidG[r.acidity_grade]++;  f.acidG.total++; }
+    if (r.appearance_grade && f.appearG[r.appearance_grade] !== undefined) { f.appearG[r.appearance_grade]++; f.appearG.total++; }
+    f.rows.push({ ...r, rem });
   });
 
   const farms = Object.keys(farmMap).sort((a, b) => farmMap[b].remaining - farmMap[a].remaining);
@@ -3790,9 +3799,17 @@ function renderIbFarmView() {
     ? `<span style="background:#FFEBEE;color:#C62828;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:700">🔴 부족</span>`
     : `<span style="background:#F5F5F5;color:#9E9E9E;font-size:11px;padding:2px 7px;border-radius:10px">완료</span>`;
 
+  const GCOL = { '상': '#059669', '중': '#D97706', '하': '#DC2626' };
+  const gradeStat = (label, counts) => {
+    if (!counts.total) return '';
+    const parts = ['상', '중', '하'].filter(g => counts[g] > 0)
+      .map(g => `<span style="color:${GCOL[g]};font-weight:700">${g}&thinsp;${counts[g]}</span>`).join(' ');
+    return `<span style="color:#888;margin-right:2px">${label}</span>${parts}`;
+  };
+
   let html = '';
   farms.forEach(farm => {
-    const { remaining, cats, rows, hasPriority } = farmMap[farm];
+    const { remaining, cats, rows, hasPriority, brixG, acidG, appearG } = farmMap[farm];
     const borderColor = remaining >= 200 ? '#2E7D32' : remaining >= 50 ? '#F57F17' : remaining > 0 ? '#C62828' : '#BDBDBD';
 
     // 카테고리 소계 (데이터 있는 것만, IB_CATS 순서)
@@ -3829,6 +3846,14 @@ function renderIbFarmView() {
         </div>`;
       }).join('');
 
+    const gradeParts = [gradeStat('당도', brixG), gradeStat('산도', acidG), gradeStat('외관', appearG)].filter(Boolean);
+    const gradeRow = gradeParts.length
+      ? `<div style="border-top:1px solid #f0f0f0;padding:5px 14px;background:#fafafa;font-size:11px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:10px;font-weight:700;color:#bbb;letter-spacing:.04em;text-transform:uppercase">품질</span>
+          ${gradeParts.join('<span style="color:#e0e0e0">│</span>')}
+         </div>`
+      : '';
+
     html += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
       <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;flex-wrap:wrap">
         <span style="font-size:16px">👨‍🌾</span>
@@ -3837,6 +3862,7 @@ function renderIbFarmView() {
         <span style="font-size:13px;color:#555">총 남은 재고: <strong style="color:#1565C0">${remaining} CT</strong></span>
         ${statusChip(remaining)}
       </div>
+      ${gradeRow}
       ${catRows ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${catRows}</div>` : ''}
       <div style="border-top:1px solid #f0f0f0">${detailRows}</div>
     </div>`;
