@@ -3191,7 +3191,73 @@ function qualityDisplay(r) {
   return `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${parts.join(' / ')}</div>`;
 }
 
+function renderIbCatSummary() {
+  const catEl = document.getElementById('ib-cat-summary');
+  const priEl = document.getElementById('ib-priority-alert');
+  if (!catEl) return;
+
+  const processedByInbound = {};
+  processingRecords.forEach(r => {
+    processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
+  });
+
+  const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted);
+
+  const CATS = [
+    { key: '상품', color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
+    { key: '대과', color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
+    { key: '소과', color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
+    { key: '파치', color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
+  ];
+
+  const catTotals = {};
+  let grandTotal = 0;
+  CATS.forEach(c => { catTotals[c.key] = 0; });
+  active.forEach(r => {
+    const remaining = r.quantity - (processedByInbound[r.id] || 0);
+    if (remaining <= 0) return;
+    const cat = r.inbound_category || '상품';
+    if (catTotals[cat] !== undefined) catTotals[cat] += remaining;
+    grandTotal += remaining;
+  });
+
+  catEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">
+      ${CATS.map(c => `
+        <div style="background:${c.bg};border:1px solid ${c.border};border-radius:10px;padding:10px 8px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${c.color};margin-bottom:4px">${c.key}</div>
+          <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1.1">${catTotals[c.key].toLocaleString()}</div>
+          <div style="font-size:10px;color:#aaa;margin-top:2px">CT</div>
+        </div>`).join('')}
+    </div>
+    <div style="text-align:right;font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+      전체 미선과 재고: <strong style="color:var(--text)">${grandTotal.toLocaleString()} CT</strong>
+    </div>`;
+
+  if (!priEl) return;
+  const priList = active
+    .filter(r => r.is_priority)
+    .map(r => ({ ...r, remaining: r.quantity - (processedByInbound[r.id] || 0) }))
+    .filter(r => r.remaining > 0);
+
+  if (!priList.length) { priEl.innerHTML = ''; return; }
+
+  const totalPriCT = priList.reduce((s, r) => s + r.remaining, 0);
+  priEl.innerHTML = `
+    <div style="background:#FFF8E1;border:1px solid #FFCA28;border-radius:8px;padding:10px 14px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:#E65100;margin-bottom:6px">
+        ⚠️ 우선 처리 필요: ${priList.length}건 (총 ${totalPriCT.toLocaleString()} CT)
+      </div>
+      ${priList.map(r => `
+        <div style="font-size:12px;color:#B71C1C;padding:2px 0">
+          • ${esc(r.farm_name)} ${esc(r.product)} ${r.remaining}CT
+          <span style="color:#aaa">(${r.date})</span>
+        </div>`).join('')}
+    </div>`;
+}
+
 function renderInboundList() {
+  renderIbCatSummary();
   const tbody = document.getElementById('ib-tb');
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
