@@ -3533,45 +3533,52 @@ function renderIbCatSummary() {
     { key: '파치', color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
   ];
 
+  // (카테고리, 품목) 조합별 집계
   const catTotals = {};
-  const productMap = {};
+  const catProducts = {};  // cat → { product → qty }
   let grandTotal = 0;
-  CATS.forEach(c => { catTotals[c.key] = 0; });
+  CATS.forEach(c => { catTotals[c.key] = 0; catProducts[c.key] = {}; });
   active.forEach(r => {
     const remaining = r.quantity - (processedByInbound[r.id] || 0);
     if (remaining <= 0) return;
     const cat = r.inbound_category || '상품';
-    if (catTotals[cat] !== undefined) catTotals[cat] += remaining;
-    productMap[r.product] = (productMap[r.product] || 0) + remaining;
+    if (catTotals[cat] !== undefined) {
+      catTotals[cat] += remaining;
+      catProducts[cat][r.product] = (catProducts[cat][r.product] || 0) + remaining;
+    }
     grandTotal += remaining;
   });
 
-  // 품목별 칩 (많은 순, 0 자동 숨김)
-  const productChips = Object.entries(productMap)
-    .filter(([, qty]) => qty > 0)
-    .sort(([, a], [, b]) => b - a)
-    .map(([product, qty]) => {
-      const itemCat = _getCatForProduct(product);
-      const isCount = !itemCat || itemCat.classification_type === 'count';
-      const color = isCount ? '#C05800' : '#2E7D32';
-      const bg    = isCount ? '#FFF3E0' : '#E8F5E9';
-      return `<span style="display:inline-flex;align-items:center;gap:3px;background:${bg};color:${color};font-size:11px;padding:3px 9px;border-radius:10px;font-weight:600;white-space:nowrap">${esc(product)} <strong>${qty}</strong></span>`;
-    }).join('');
+  const productChip = (product, qty) => {
+    const itemCat = _getCatForProduct(product);
+    const isCount = !itemCat || itemCat.classification_type === 'count';
+    const icon  = isCount ? '🍊' : '🍋';
+    const color = isCount ? '#C05800' : '#2E7D32';
+    return `<span style="font-size:11px;color:${color};white-space:nowrap">${icon} ${esc(product)} <strong>${qty}</strong></span>`;
+  };
 
   catEl.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
-      ${CATS.map(c => `
-        <div style="background:${c.bg};border:1px solid ${c.border};border-radius:10px;padding:10px 8px;text-align:center">
-          <div style="font-size:11px;font-weight:700;color:${c.color};margin-bottom:4px">${c.key}</div>
-          <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1.1">${catTotals[c.key].toLocaleString()}</div>
-          <div style="font-size:10px;color:#aaa;margin-top:2px">CT</div>
-        </div>`).join('')}
+      ${CATS.map(c => {
+        const prods = Object.entries(catProducts[c.key])
+          .filter(([, q]) => q > 0)
+          .sort(([, a], [, b]) => b - a);
+        const prodLine = prods.length
+          ? `<div style="border-top:1px solid ${c.border};margin-top:7px;padding-top:6px;display:flex;flex-direction:column;gap:3px;text-align:left">
+              ${prods.map(([p, q]) => productChip(p, q)).join('')}
+             </div>`
+          : '';
+        return `
+        <div style="background:${c.bg};border:1px solid ${c.border};border-radius:10px;padding:10px 8px">
+          <div style="text-align:center">
+            <div style="font-size:11px;font-weight:700;color:${c.color};margin-bottom:4px">${c.key}</div>
+            <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1.1">${catTotals[c.key].toLocaleString()}</div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px">CT</div>
+          </div>
+          ${prodLine}
+        </div>`;
+      }).join('')}
     </div>
-    ${productChips ? `
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
-      <span style="font-size:11px;font-weight:700;color:var(--text-secondary);flex-shrink:0">품목별</span>
-      ${productChips}
-    </div>` : ''}
     <div style="text-align:right;font-size:12px;color:var(--text-secondary);margin-bottom:12px">
       전체 미선과 재고: <strong style="color:var(--text)">${grandTotal.toLocaleString()} CT</strong>
     </div>`;
