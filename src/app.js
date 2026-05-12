@@ -2563,6 +2563,96 @@ async function saveMoveLocation() {
   } catch(e) { alert('저장 오류: ' + e.message); }
 }
 
+function buildLocStockCards(locStock) {
+  const pm = _ibProcessedMap();
+  // 위치별로 입고 레코드 그룹핑
+  const locMap = {};   // locName → [{r, allocQty}]
+  const unassigned = [];
+  inboundRecords.filter(r => !r.is_void).forEach(r => {
+    const rem = r.quantity - (pm[r.id] || 0);
+    if (rem <= 0) return;
+    if (!r.location) { unassigned.push({ r, allocQty: rem }); return; }
+    const parts = parseLocationStr(r.location);
+    if (parts.length === 1 && parts[0].qty === null) {
+      const name = parts[0].name;
+      if (!locMap[name]) locMap[name] = [];
+      locMap[name].push({ r, allocQty: rem });
+    } else {
+      parts.forEach(({ name, qty }) => {
+        if (!locMap[name]) locMap[name] = [];
+        locMap[name].push({ r, allocQty: qty !== null ? Math.min(qty, rem) : rem });
+      });
+    }
+  });
+
+  const allLocNames = [
+    ...storageLocations.map(l => l.name),
+    ...Object.keys(locMap).filter(n => !storageLocations.some(l => l.name === n))
+  ];
+
+  const cards = allLocNames.map(name => {
+    const entries = locMap[name] || [];
+    const total = entries.reduce((s, e) => s + e.allocQty, 0);
+    if (!total) return '';
+    const loc = storageLocations.find(l => l.name === name);
+    const cap = loc?.capacity_ct;
+    const pct = cap ? Math.min(100, Math.round(total / cap * 100)) : null;
+    const barColor = pct >= 90 ? '#ef5350' : pct >= 70 ? '#FF9800' : '#43A047';
+    const rows = entries.map(({ r, allocQty }) => {
+      const rem = r.quantity - (pm[r.id] || 0);
+      return `<tr>
+        <td>${r.date}</td>
+        <td class="nm">${esc(r.product)}</td>
+        <td class="nm">${esc(r.farm_name)}</td>
+        <td style="text-align:right;font-weight:600;color:#1565C0">${allocQty.toLocaleString()}</td>
+        <td style="text-align:right;color:#888;font-size:12px">${rem.toLocaleString()} 잔여</td>
+        <td><button class="btn sm" onclick="openMoveModal('${r.id}')" title="이동" style="padding:3px 7px">🚚</button></td>
+      </tr>`;
+    }).join('');
+    return `<div class="loc-stock-card">
+      <div class="loc-stock-hdr">
+        <span style="font-weight:700">${esc(name)}</span>
+        <span style="font-size:13px;color:#1565C0;font-weight:700">${total.toLocaleString()} CT</span>
+        ${cap ? `<span style="font-size:12px;color:#888">(최대 ${cap} CT · ${pct}%)</span>` : ''}
+      </div>
+      ${cap ? `<div style="background:#e0e0e0;border-radius:4px;height:6px;margin:6px 0 10px">
+        <div style="width:${pct}%;background:${barColor};height:6px;border-radius:4px;transition:width .3s"></div>
+      </div>` : ''}
+      <div class="tbl-wrap" style="margin:0"><table style="font-size:12px">
+        <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">배정 CT</th><th style="text-align:right">잔여</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  }).filter(Boolean);
+
+  const unCard = unassigned.length ? (() => {
+    const total = unassigned.reduce((s, e) => s + e.allocQty, 0);
+    const rows = unassigned.map(({ r, allocQty }) =>
+      `<tr>
+        <td>${r.date}</td>
+        <td class="nm">${esc(r.product)}</td>
+        <td class="nm">${esc(r.farm_name)}</td>
+        <td style="text-align:right;font-weight:600;color:#888">${allocQty.toLocaleString()}</td>
+        <td></td>
+        <td><button class="btn sm" onclick="openMoveModal('${r.id}')" title="이동" style="padding:3px 7px">🚚</button></td>
+      </tr>`
+    ).join('');
+    return `<div class="loc-stock-card" style="border-color:#e0e0e0">
+      <div class="loc-stock-hdr">
+        <span style="font-weight:700;color:#888">미지정</span>
+        <span style="font-size:13px;color:#888;font-weight:700">${total.toLocaleString()} CT</span>
+      </div>
+      <div class="tbl-wrap" style="margin:0"><table style="font-size:12px">
+        <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">잔여 CT</th><th></th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  })() : '';
+
+  if (!cards.length && !unCard) return '<div class="empty">현재 보관 중인 재고가 없습니다.</div>';
+  return cards.join('') + unCard;
+}
+
 function renderStorageLocations() {
   const el = document.getElementById('inv-loc-div');
   if (!el) return;
@@ -2601,7 +2691,11 @@ function renderStorageLocations() {
     <div class="tbl-wrap"><table>
       <thead><tr><th>구역</th><th>위치명</th><th style="text-align:right">현재 재고</th><th>상태</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>` : `<div class="empty">등록된 위치가 없습니다.</div>`}`;
+    </table></div>` : `<div class="empty">등록된 위치가 없습니다.</div>`}
+    <div style="margin-top:24px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px">📊 위치별 재고 현황</div>
+      ${buildLocStockCards(locStock)}
+    </div>`;
 }
 
 function openLocModal(id) {

@@ -216,6 +216,10 @@ textarea {
 .btn.sm { padding: 5px 12px; font-size: 12px; }
 .btn.cancel { background: #f0f0f0; color: #666; }
 
+/* ── 위치별 재고 카드 ── */
+.loc-stock-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; background: #fff; }
+.loc-stock-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+
 /* ── 분산 저장 행 ── */
 .loc-dist-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .loc-dist-row select { flex: 1; }
