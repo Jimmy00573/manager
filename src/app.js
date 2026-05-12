@@ -3201,14 +3201,21 @@ function categoryBadge(cat, reclassSource, reclassReason, origDate) {
 }
 
 function qualityDisplay(r) {
-  const parts = [];
-  if (r.brix_range) parts.push(`당도 ${esc(r.brix_range)}`);
-  if (r.acidity_range) parts.push(`산도 ${esc(r.acidity_range)}`);
-  if (r.size_distribution) parts.push(`크기: ${esc(r.size_distribution)}`);
-  if (r.brix && !r.brix_range) parts.push(`당 ${r.brix}°`);
-  if (r.acidity && !r.acidity_range) parts.push(`산 ${r.acidity}`);
-  const qualLine = parts.length
-    ? `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${parts.join(' / ')}</div>`
+  const GRADE_STYLE = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
+  const gradeChip = (label, val) => val ? `<span style="font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid;${GRADE_STYLE[val] || ''};font-weight:600">${label} ${esc(val)}</span>` : '';
+  const gradeChips = [gradeChip('당도', r.brix_grade), gradeChip('산도', r.acidity_grade), gradeChip('외관', r.appearance_grade)].filter(Boolean);
+  const defectChips = r.defect_tags ? r.defect_tags.split(',').map(t => `<span style="font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid #FFCC80;background:#FFF3E0;color:#E65100;font-weight:600">${esc(t.trim())}</span>`).join('') : '';
+  const gradeLine = (gradeChips.length || defectChips)
+    ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${gradeChips.join('')}${defectChips}</div>`
+    : '';
+  const textParts = [];
+  if (r.brix_range) textParts.push(`당도 ${esc(r.brix_range)}`);
+  if (r.acidity_range) textParts.push(`산도 ${esc(r.acidity_range)}`);
+  if (r.size_distribution) textParts.push(`크기: ${esc(r.size_distribution)}`);
+  if (r.brix && !r.brix_range) textParts.push(`당 ${r.brix}°`);
+  if (r.acidity && !r.acidity_range) textParts.push(`산 ${r.acidity}`);
+  const textLine = textParts.length
+    ? `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${textParts.join(' / ')}</div>`
     : '';
   const reclassParts = [];
   if (r.inbound_category === '재선별') {
@@ -3219,7 +3226,7 @@ function qualityDisplay(r) {
   const reclassLine = reclassParts.length
     ? `<div style="font-size:11px;color:#7C3AED;margin-top:3px;line-height:1.6">${reclassParts.join(' / ')}</div>`
     : '';
-  return qualLine + reclassLine;
+  return gradeLine + textLine + reclassLine;
 }
 
 // ── 변경 이력 ──────────────────────────────────────────────────
@@ -3594,11 +3601,7 @@ function renderIbFarmView() {
       .sort((a, b) => b.date.localeCompare(a.date))
       .map((r, i, arr) => {
         const isLast = i === arr.length - 1;
-        const qualParts = [];
-        if (r.brix_range) qualParts.push(`당도 ${esc(r.brix_range)}`);
-        if (r.acidity_range) qualParts.push(`산도 ${esc(r.acidity_range)}`);
-        if (r.size_distribution) qualParts.push(`크기: ${esc(r.size_distribution)}`);
-        const qualStr = qualParts.length ? `<div style="font-size:11px;color:#1565C0;margin-top:2px;padding-left:20px">${qualParts.join(' / ')}</div>` : '';
+        const qualStr = qualityDisplay(r) ? `<div style="padding-left:20px;margin-top:2px">${qualityDisplay(r)}</div>` : '';
         const remColor = r.rem <= 0 ? '#aaa' : r.rem < 50 ? '#C62828' : '#E65100';
         const note = r.note ? `<span style="color:#888;font-size:11px"> · ${esc(r.note)}</span>` : '';
         return `<div style="padding:5px 14px 5px 36px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5'}">
