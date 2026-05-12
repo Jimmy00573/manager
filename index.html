@@ -610,12 +610,37 @@
         <div class="form-grid">
           <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1"></div>
           <div class="fg"><label>카테고리</label>
-            <select id="ib-category">
+            <select id="ib-category" onchange="onIbCatChange('ib')">
               <option value="상품">상품</option>
               <option value="대과">대과</option>
               <option value="소과">소과</option>
               <option value="파치">파치</option>
+              <option value="재선별">재선별 ⭐</option>
             </select>
+          </div>
+        </div>
+
+        <!-- 재선별 정보 (조건부) -->
+        <div id="ib-reclass-section" style="display:none">
+          <div class="ib-section-label" style="color:#7C3AED">재선별 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
+          <div class="form-grid">
+            <div class="fg"><label>출처</label>
+              <select id="ib-reclass-src" onchange="syncReclassList('ib')">
+                <option value="">선택안함</option>
+                <option value="신규입고">신규 입고</option>
+                <option value="선과결과">선과 결과</option>
+                <option value="포장라인">포장 라인</option>
+                <option value="반품">반품</option>
+                <option value="기타">기타</option>
+              </select>
+            </div>
+            <div class="fg"><label>분리 사유</label>
+              <input id="ib-reclass-reason" list="ib-reclass-reason-dl" placeholder="선택 또는 직접 입력">
+              <datalist id="ib-reclass-reason-dl"></datalist>
+            </div>
+            <div class="fg"><label>원본 작업일</label>
+              <input type="date" id="ib-reclass-date">
+            </div>
           </div>
         </div>
 
@@ -920,12 +945,37 @@
         <div id="eib-m-qty-hint" style="font-size:11px;color:#e65100;margin-top:2px;display:none"></div>
       </div>
       <div class="fg"><label>카테고리</label>
-        <select id="eib-m-cat">
+        <select id="eib-m-cat" onchange="onIbCatChange('eib')">
           <option value="상품">상품</option>
           <option value="대과">대과</option>
           <option value="소과">소과</option>
           <option value="파치">파치</option>
+          <option value="재선별">재선별 ⭐</option>
         </select>
+      </div>
+    </div>
+
+    <!-- 재선별 정보 (조건부) -->
+    <div id="eib-reclass-section" style="display:none">
+      <div class="ib-section-label" style="color:#7C3AED">재선별 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
+      <div class="modal-grid">
+        <div class="fg"><label>출처</label>
+          <select id="eib-reclass-src" onchange="syncReclassList('eib')">
+            <option value="">선택안함</option>
+            <option value="신규입고">신규 입고</option>
+            <option value="선과결과">선과 결과</option>
+            <option value="포장라인">포장 라인</option>
+            <option value="반품">반품</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div class="fg"><label>분리 사유</label>
+          <input id="eib-reclass-reason" list="eib-reclass-reason-dl" placeholder="선택 또는 직접 입력">
+          <datalist id="eib-reclass-reason-dl"></datalist>
+        </div>
+        <div class="fg"><label>원본 작업일</label>
+          <input type="date" id="eib-reclass-date">
+        </div>
       </div>
     </div>
 

@@ -3191,11 +3191,17 @@ function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
 
-function categoryBadge(cat) {
+function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   if (!cat || cat === '상품') return `<span class="badge" style="background:#E3F2FD;color:#1565C0">상품</span>`;
   if (cat === '대과') return `<span class="badge" style="background:#FFF3E0;color:#E65100">대과</span>`;
   if (cat === '소과') return `<span class="badge" style="background:#E0F2F1;color:#00695C">소과</span>`;
   if (cat === '파치') return `<span class="badge" style="background:#F5F5F5;color:#757575">파치</span>`;
+  if (cat === '재선별') {
+    const srcLabel = { '신규입고': '신규입고', '선과결과': '선과결과', '포장라인': '포장라인', '반품': '반품', '기타': '기타' }[reclassSource] || '';
+    const parts = [srcLabel, reclassReason, origDate && `원본일 ${origDate}`].filter(Boolean);
+    const title = parts.length ? ` title="${esc(parts.join(' / '))}"` : '';
+    return `<span class="badge" style="background:#F3E8FF;color:#7C3AED;cursor:${parts.length ? 'help' : 'default'}"${title}>재선별</span>`;
+  }
   return `<span class="badge">${esc(cat)}</span>`;
 }
 
@@ -3240,7 +3246,8 @@ const AUDIT_FIELD_LABELS = {
   date: '날짜', quantity: '수량(CT)', location: '위치', note: '메모',
   inbound_category: '카테고리', is_priority: '우선사용',
   brix_range: '당도범위', acidity_range: '산도범위', size_distribution: '크기분포',
-  is_void: '무효여부'
+  is_void: '무효여부',
+  reclassification_source: '재선별출처', reclassification_reason: '재선별사유', original_work_date: '원본작업일'
 };
 
 function getAuditDiff(log) {
@@ -3407,11 +3414,42 @@ function _auditFilteredCount() {
 }
 
 const IB_CATS = [
-  { key: '상품', color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
-  { key: '대과', color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
-  { key: '소과', color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
-  { key: '파치', color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
+  { key: '상품',  color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
+  { key: '대과',  color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
+  { key: '소과',  color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
+  { key: '파치',  color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
+  { key: '재선별', color: '#7C3AED', bg: '#F3E8FF', border: '#C4B5FD' },
 ];
+
+const RECLASS_REASONS = {
+  '선과결과': ['고산도', '중품 (애매)', '기타'],
+  '포장라인': ['상처', '변색', '크기 애매', '부패 의심', '기타'],
+  '반품':     ['품질 불만', '운송 손상', '기타'],
+  '신규입고': ['기타'],
+  '기타':     [],
+};
+
+function onIbCatChange(prefix) {
+  const catEl = document.getElementById(prefix === 'ib' ? 'ib-category' : 'eib-m-cat');
+  const sec   = document.getElementById(prefix === 'ib' ? 'ib-reclass-section' : 'eib-reclass-section');
+  if (!sec) return;
+  const show = catEl?.value === '재선별';
+  sec.style.display = show ? '' : 'none';
+  if (!show) {
+    ['src', 'reason', 'date'].forEach(f => {
+      const el = document.getElementById(`${prefix}-reclass-${f}`);
+      if (el) el.value = '';
+    });
+    syncReclassList(prefix);
+  }
+}
+
+function syncReclassList(prefix) {
+  const src = document.getElementById(`${prefix}-reclass-src`)?.value || '';
+  const dl  = document.getElementById(`${prefix}-reclass-reason-dl`);
+  if (!dl) return;
+  dl.innerHTML = (RECLASS_REASONS[src] || []).map(o => `<option value="${o}">`).join('');
+}
 
 function _ibProcessedMap() {
   const m = {};
@@ -3725,7 +3763,7 @@ function renderInboundList() {
       <td>${r.date}</td>
       <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
       <td>${esc(r.product)}</td>
-      <td>${categoryBadge(r.inbound_category)}</td>
+      <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${r.quantity}</td>
       <td style="text-align:right">${processed || ''}</td>
       <td style="${remStyle}">${remaining > 0 ? remaining : '완료'}</td>
@@ -3791,6 +3829,18 @@ function editInboundRow(id) {
   document.getElementById('eib-m-priority').checked = !!r.is_priority;
   document.getElementById('eib-m-reason').value = '';
 
+  // 재선별 필드 복원
+  const reclassSec = document.getElementById('eib-reclass-section');
+  const isReclass = (r.inbound_category === '재선별');
+  if (reclassSec) reclassSec.style.display = isReclass ? '' : 'none';
+  const srcEl = document.getElementById('eib-reclass-src');
+  if (srcEl) srcEl.value = r.reclassification_source || '';
+  const reasonEl = document.getElementById('eib-reclass-reason');
+  if (reasonEl) reasonEl.value = r.reclassification_reason || '';
+  const dateEl = document.getElementById('eib-reclass-date');
+  if (dateEl) dateEl.value = r.original_work_date || '';
+  syncReclassList('eib');
+
   document.getElementById('modal-edit-inbound').style.display = 'flex';
 }
 
@@ -3807,7 +3857,10 @@ function closeEditInboundModal() {
       document.getElementById('eib-m-brix-range').value !== (r.brix_range || '') ||
       document.getElementById('eib-m-acid-range').value !== (r.acidity_range || '') ||
       document.getElementById('eib-m-size').value !== (r.size_distribution || '') ||
-      document.getElementById('eib-m-priority').checked !== !!r.is_priority;
+      document.getElementById('eib-m-priority').checked !== !!r.is_priority ||
+      (document.getElementById('eib-reclass-src')?.value || '') !== (r.reclassification_source || '') ||
+      (document.getElementById('eib-reclass-reason')?.value || '') !== (r.reclassification_reason || '') ||
+      (document.getElementById('eib-reclass-date')?.value || '') !== (r.original_work_date || '');
     if (changed && !confirm('변경사항이 있습니다. 취소할까요?')) return;
   }
   document.getElementById('modal-edit-inbound').style.display = 'none';
@@ -3827,6 +3880,10 @@ async function saveInboundModal() {
   const size_distribution = document.getElementById('eib-m-size').value.trim() || null;
   const is_priority = document.getElementById('eib-m-priority').checked;
   const reason = document.getElementById('eib-m-reason').value.trim();
+  const isReclass = inbound_category === '재선별';
+  const reclassification_source = isReclass ? (document.getElementById('eib-reclass-src')?.value || null) : null;
+  const reclassification_reason = isReclass ? (document.getElementById('eib-reclass-reason')?.value.trim() || null) : null;
+  const original_work_date = isReclass ? (document.getElementById('eib-reclass-date')?.value || null) : null;
 
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
 
@@ -3840,7 +3897,10 @@ async function saveInboundModal() {
     brix_range !== (prev.brix_range || null) ||
     acidity_range !== (prev.acidity_range || null) ||
     size_distribution !== (prev.size_distribution || null) ||
-    is_priority !== !!prev.is_priority;
+    is_priority !== !!prev.is_priority ||
+    reclassification_source !== (prev.reclassification_source || null) ||
+    reclassification_reason !== (prev.reclassification_reason || null) ||
+    original_work_date !== (prev.original_work_date || null);
 
   if (changed && !reason) return alert('변경사항이 있습니다. 수정 사유를 입력해주세요.');
 
@@ -3850,6 +3910,7 @@ async function saveInboundModal() {
   const updatePayload = {
     date, quantity: qty, location, note, inbound_category, is_priority,
     brix_range, acidity_range, size_distribution,
+    reclassification_source, reclassification_reason, original_work_date,
   };
   try {
     await dbUpdateInbound(id, updatePayload);
@@ -3858,14 +3919,17 @@ async function saveInboundModal() {
         target_table: 'inbound_records', target_id: id,
         before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note,
           inbound_category: prev.inbound_category, is_priority: prev.is_priority,
-          brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution },
-        after_val: { date, quantity: qty, location, note, inbound_category, is_priority, brix_range, acidity_range, size_distribution },
+          brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
+          reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date },
+        after_val: { date, quantity: qty, location, note, inbound_category, is_priority, brix_range, acidity_range, size_distribution,
+          reclassification_source, reclassification_reason, original_work_date },
         reason, staff: 'admin'
       });
     }
     const idx = inboundRecords.findIndex(r => r.id === id);
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx],
-      date, quantity: qty, location, note, inbound_category, is_priority, brix_range, acidity_range, size_distribution };
+      date, quantity: qty, location, note, inbound_category, is_priority, brix_range, acidity_range, size_distribution,
+      reclassification_source, reclassification_reason, original_work_date };
     document.getElementById('modal-edit-inbound').style.display = 'none';
     _editInboundId = null;
     renderInvSummary(); renderInboundList();
@@ -3976,6 +4040,10 @@ async function addInbound() {
   const acidity_range = (document.getElementById('ib-acidity-range')?.value || '').trim() || null;
   const size_distribution = (document.getElementById('ib-size-dist')?.value || '').trim() || null;
   const is_priority = document.getElementById('ib-priority')?.checked || false;
+  const isReclass = inbound_category === '재선별';
+  const reclassification_source = isReclass ? (document.getElementById('ib-reclass-src')?.value || null) : null;
+  const reclassification_reason = isReclass ? (document.getElementById('ib-reclass-reason')?.value.trim() || null) : null;
+  const original_work_date = isReclass ? (document.getElementById('ib-reclass-date')?.value || null) : null;
   const data = {
     date, product, farm_name, quantity: qty,
     location: gv('ib-loc') || null,
@@ -3986,16 +4054,21 @@ async function addInbound() {
     ...(brix_range && { brix_range }),
     ...(acidity_range && { acidity_range }),
     ...(size_distribution && { size_distribution }),
+    ...(reclassification_source && { reclassification_source }),
+    ...(reclassification_reason && { reclassification_reason }),
+    ...(original_work_date && { original_work_date }),
   };
   try {
     const row = await dbInsertInbound(data);
     inboundRecords.unshift(row);
     renderInvSummary(); renderInboundList();
     sv('ib-qty', ''); sv('ib-loc', ''); sv('ib-note', '');
-    const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist'];
+    const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
+                      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date'];
     clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const priEl = document.getElementById('ib-priority');
     if (priEl) priEl.checked = false;
+    syncReclassList('ib');
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
