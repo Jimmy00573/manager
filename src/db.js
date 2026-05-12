@@ -188,3 +188,7 @@ async function dbDeleteProcessing(id) { return sbDelete('processing_records', id
 
 // ── 수정 이력
 async function dbInsertAuditLog(data) { return sbInsert('audit_logs', data); }
+async function dbGetAuditLogs(limit = 100, offset = 0) {
+  try { return await sbGet('audit_logs', `order=created_at.desc&limit=${limit}&offset=${offset}`); }
+  catch(e) { return []; }
+}

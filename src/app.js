@@ -17,6 +17,9 @@ let inboundRecords = [], processingRecords = [];
 let showVoidData = false;
 let _voidTargetId = null;
 let ibViewMode = 'list';
+let auditLogs = [];
+let auditLogOffset = 0;
+const AUDIT_PAGE_SIZE = 100;
 let sortedView = 'list';
 let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
@@ -2367,15 +2370,16 @@ function exportExcel(type) {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function invTab(t) {
-  ['sum', 'uns', 'srt', 'wj', 'cfg'].forEach(s => {
+  ['sum', 'uns', 'srt', 'wj', 'cfg', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
   const bar = document.getElementById('inv-date-bar');
-  if (bar) bar.style.display = (t !== 'sum' && t !== 'cfg') ? 'flex' : 'none';
+  if (bar) bar.style.display = (t !== 'sum' && t !== 'cfg' && t !== 'log') ? 'flex' : 'none';
   if (t === 'cfg') renderSizeCfg();
+  if (t === 'log') loadAuditLogs();
 }
 
 function ibTab(t) {
@@ -3202,6 +3206,145 @@ function qualityDisplay(r) {
   if (r.acidity && !r.acidity_range) parts.push(`산 ${r.acidity}`);
   if (!parts.length) return '';
   return `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${parts.join(' / ')}</div>`;
+}
+
+// ── 변경 이력 ──────────────────────────────────────────────────
+
+function getAuditActionType(log) {
+  if (!log.after_val) return '삭제';
+  const bv = log.before_val || {};
+  const av = log.after_val || {};
+  if (bv.is_void === false && av.is_void === true) return '무효처리';
+  if (bv.is_void === true  && av.is_void === false) return '복구';
+  if (!log.before_val) return '등록';
+  return '수정';
+}
+
+function getAuditContext(log) {
+  const bv = log.before_val || {};
+  if (bv.record) {
+    const r = bv.record;
+    return { farm: r.farm_name || '', product: r.product || '', date: r.date || '', qty: r.quantity || '' };
+  }
+  if (log.target_table === 'inbound_records') {
+    const r = inboundRecords.find(x => x.id === log.target_id);
+    if (r) return { farm: r.farm_name, product: r.product, date: r.date, qty: r.quantity };
+  }
+  const merged = { ...(log.before_val || {}), ...(log.after_val || {}) };
+  return { farm: merged.farm_name || '', product: merged.product || '', date: merged.date || '', qty: merged.quantity || '' };
+}
+
+const AUDIT_FIELD_LABELS = {
+  date: '날짜', quantity: '수량(CT)', location: '위치', note: '메모',
+  inbound_category: '카테고리', is_priority: '우선사용',
+  brix_range: '당도범위', acidity_range: '산도범위', size_distribution: '크기분포',
+  is_void: '무효여부'
+};
+
+function getAuditDiff(log) {
+  if (!log.before_val || !log.after_val) return [];
+  const bv = log.before_val.record ? log.before_val.record : log.before_val;
+  const av = log.after_val.record ? log.after_val.record : log.after_val;
+  const changes = [];
+  new Set([...Object.keys(bv), ...Object.keys(av)]).forEach(k => {
+    if (!AUDIT_FIELD_LABELS[k]) return;
+    const b = bv[k], a = av[k];
+    if (JSON.stringify(b) === JSON.stringify(a)) return;
+    const fmt = v => v === null || v === undefined ? '-' : typeof v === 'boolean' ? (v ? '예' : '아니오') : String(v);
+    changes.push(`${AUDIT_FIELD_LABELS[k]}: ${fmt(b)} → ${fmt(a)}`);
+  });
+  return changes;
+}
+
+function getAuditTableLabel(t) {
+  return ({ inbound_records: '미선과 입고', processing_records: '선과 처리',
+    inventory_sorted: '선과 재고', inventory_waste: '파치', inventory_juice: '주스',
+    inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업' })[t] || t;
+}
+
+const AUDIT_ACTION_STYLE = {
+  '수정':    { bg: '#FFF8E1', color: '#F57F17', border: '#FFE082',  icon: '✏️' },
+  '무효처리': { bg: '#FFF3E0', color: '#E65100', border: '#FFCC80',  icon: '🚫' },
+  '복구':    { bg: '#E3F2FD', color: '#1565C0', border: '#90CAF9',  icon: '↩️' },
+  '삭제':    { bg: '#FFEBEE', color: '#C62828', border: '#EF9A9A',  icon: '🗑️' },
+  '등록':    { bg: '#E8F5E9', color: '#2E7D32', border: '#A5D6A7',  icon: '✅' },
+};
+
+async function loadAuditLogs(reset = true) {
+  if (reset) { auditLogs = []; auditLogOffset = 0; }
+  showLoading('이력 불러오는 중...');
+  try {
+    const rows = await dbGetAuditLogs(AUDIT_PAGE_SIZE, auditLogOffset);
+    auditLogs = auditLogs.concat(rows);
+    auditLogOffset += rows.length;
+    const moreBtn = document.getElementById('audit-load-more');
+    if (moreBtn) moreBtn.style.display = rows.length === AUDIT_PAGE_SIZE ? '' : 'none';
+    renderAuditLogs();
+  } catch(e) {
+    const el = document.getElementById('audit-log-list');
+    if (el) el.innerHTML = `<div style="padding:20px;color:#C62828">이력 불러오기 실패: ${esc(e.message)}</div>`;
+  } finally { hideLoading(); }
+}
+
+async function loadMoreAuditLogs() { await loadAuditLogs(false); }
+
+function clearAuditFilters() {
+  ['al-date-from','al-date-to','al-search'].forEach(id => sv(id, ''));
+  const a = document.getElementById('al-action'); if (a) a.value = '';
+  const t = document.getElementById('al-table');  if (t) t.value = '';
+  renderAuditLogs();
+}
+
+function renderAuditLogs() {
+  const el = document.getElementById('audit-log-list');
+  if (!el) return;
+
+  const fromDate   = document.getElementById('al-date-from')?.value || '';
+  const toDate     = document.getElementById('al-date-to')?.value   || '';
+  const actionFilt = document.getElementById('al-action')?.value    || '';
+  const tableFilt  = document.getElementById('al-table')?.value     || '';
+  const search     = (document.getElementById('al-search')?.value   || '').toLowerCase().trim();
+
+  let list = auditLogs;
+  if (fromDate) list = list.filter(l => l.created_at >= fromDate);
+  if (toDate)   list = list.filter(l => l.created_at <= toDate + 'T23:59:59');
+  if (tableFilt) list = list.filter(l => l.target_table === tableFilt);
+  if (actionFilt) list = list.filter(l => getAuditActionType(l) === actionFilt);
+  if (search) list = list.filter(l => {
+    const ctx = getAuditContext(l);
+    return (l.reason || '').toLowerCase().includes(search) ||
+           ctx.farm.toLowerCase().includes(search) ||
+           ctx.product.toLowerCase().includes(search);
+  });
+
+  const countEl = document.getElementById('al-result-count');
+  if (countEl) countEl.textContent = list.length ? `${list.length}건` : '';
+
+  if (!list.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:#bbb">해당 조건의 이력 없음</div>';
+    return;
+  }
+
+  el.innerHTML = list.map(log => {
+    const action = getAuditActionType(log);
+    const st = AUDIT_ACTION_STYLE[action] || { bg: '#f5f5f5', color: '#555', border: '#ddd', icon: '📝' };
+    const ctx = getAuditContext(log);
+    const diff = getAuditDiff(log);
+    const dt = new Date(log.created_at);
+    const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+    const ctxParts = [ctx.farm && esc(ctx.farm), ctx.product && esc(ctx.product), ctx.qty && `${ctx.qty}CT`, ctx.date].filter(Boolean);
+
+    return `<div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${st.border};border-radius:8px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        <span style="background:${st.bg};color:${st.color};font-size:11px;padding:2px 9px;border-radius:10px;font-weight:700;white-space:nowrap">${st.icon} ${action}</span>
+        <span style="font-size:11px;font-weight:600;color:#666;background:#f5f5f5;padding:2px 7px;border-radius:8px">${getAuditTableLabel(log.target_table)}</span>
+        <span style="font-size:11px;color:#aaa;margin-left:auto;white-space:nowrap">${dtStr}</span>
+      </div>
+      ${ctxParts.length ? `<div style="font-size:13px;font-weight:600;color:#222;margin-bottom:${diff.length || log.reason ? '5' : '0'}px">${ctxParts.join(' · ')}</div>` : ''}
+      ${diff.length ? `<div style="font-size:12px;color:#555;margin-bottom:${log.reason ? '5' : '0'}px;display:flex;flex-wrap:wrap;gap:4px">${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px">${esc(d)}</span>`).join('')}</div>` : ''}
+      ${log.reason ? `<div style="font-size:12px;color:#888">사유: <em>"${esc(log.reason)}"</em></div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 const IB_CATS = [

@@ -556,6 +556,7 @@
     <button class="etab" id="it-uns" onclick="invTab('uns')">🍊 미선과</button>
     <button class="etab" id="it-srt" onclick="invTab('srt')">📦 선과</button>
     <button class="etab" id="it-wj" onclick="invTab('wj')">🧹 파치/주스</button>
+    <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
     <button class="etab" id="it-cfg" onclick="invTab('cfg')" style="margin-left:auto;border-left:1px solid var(--border)">⚙️ 선과 기준</button>
   </div>
 
@@ -839,6 +840,44 @@
   </div>
   <!-- 선과 기준 설정 -->
   <div id="inv-cfg-div" style="display:none"></div>
+
+  <!-- 변경 이력 -->
+  <div id="inv-log-div" style="display:none">
+    <div class="form-card" style="margin-bottom:12px">
+      <div class="form-title">변경 이력 필터</div>
+      <div class="form-grid">
+        <div class="fg"><label>시작일</label><input id="al-date-from" type="date"></div>
+        <div class="fg"><label>종료일</label><input id="al-date-to" type="date"></div>
+        <div class="fg"><label>작업 유형</label>
+          <select id="al-action">
+            <option value="">전체</option>
+            <option value="수정">✏️ 수정</option>
+            <option value="무효처리">🚫 무효처리</option>
+            <option value="복구">↩️ 복구</option>
+            <option value="삭제">🗑️ 삭제</option>
+            <option value="등록">✅ 등록</option>
+          </select>
+        </div>
+        <div class="fg"><label>대상</label>
+          <select id="al-table">
+            <option value="">전체</option>
+            <option value="inbound_records">미선과 입고</option>
+            <option value="processing_records">선과 처리</option>
+          </select>
+        </div>
+        <div class="fg" style="grid-column:1/-1"><label>검색 <small style="font-weight:400;color:var(--text-tertiary)">(사유·농가명·품목)</small></label><input id="al-search" placeholder="검색어 입력..."></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn pri sm" onclick="renderAuditLogs()">검색</button>
+        <button class="btn sm" onclick="clearAuditFilters()">초기화</button>
+        <span id="al-result-count" style="font-size:12px;color:var(--text-secondary);align-self:center;margin-left:4px"></span>
+      </div>
+    </div>
+    <div id="audit-log-list"><div style="text-align:center;padding:40px;color:#bbb">불러오는 중...</div></div>
+    <div id="audit-load-more" style="text-align:center;margin:12px 0;display:none">
+      <button class="btn" onclick="loadMoreAuditLogs()">이전 이력 더 보기 (100건)</button>
+    </div>
+  </div>
 
 </div><!-- /main -->
 
