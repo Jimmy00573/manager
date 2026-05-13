@@ -5348,22 +5348,30 @@ function renderInboundList() {
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(pageRows.map(r => {
     if (r.is_void) {
-      const voidDate = r.void_at ? r.void_at.slice(0, 10) : '';
-      const voidInfo = `사유: ${esc(r.void_reason || '-')}${voidDate ? ` (${voidDate})` : ''}`;
+      const voidTime = r.void_at ? r.void_at.replace('T', ' ').slice(0, 16) : '';
+      const voidTip = `사유: ${r.void_reason || '-'}${voidTime ? '\n처리일: ' + voidTime : ''}`;
+      const voidBadge = `<span title="${esc(voidTip)}" style="background:#ef5350;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;cursor:help;white-space:nowrap;display:inline-block;margin-left:4px;vertical-align:middle">🚫</span>`;
+      const voidMenuItems = isAdm && !r._legacy
+        ? `<button onclick="restoreInbound('${r.id}')">🔄 무효 해제 (복원)</button>
+           <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
+           <div class="menu-divider"></div>
+           <button onclick="permanentDeleteInbound('${r.id}')" class="menu-danger">🗑️ 영구 삭제</button>`
+        : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
+      const voidActionCell = `<div style="position:relative;text-align:center">
+        <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)">⋮</button>
+        <div id="row-menu-${r.id}" class="row-menu" style="display:none">${voidMenuItems}</div>
+      </div>`;
+      const td = 'text-decoration:line-through;color:#999';
       return `<tr id="ib-tr-${r.id}" style="opacity:0.55;background:#f5f5f5">
-        <td style="text-decoration:line-through;color:#999">${r.date}</td>
-        <td class="nm" title="${esc(r.farm_name)}" style="text-decoration:line-through;color:#999">${esc(r.farm_name)}</td>
-        <td style="text-decoration:line-through;color:#999">${esc(r.product)}</td>
+        <td style="${td}">${r.date}</td>
+        <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px"></span> ${esc(r.farm_name)}${voidBadge}</td>
+        <td style="${td}">${esc(r.product)}</td>
         <td style="color:#999">-</td>
-        <td style="text-align:right;text-decoration:line-through;color:#999">${r.quantity}</td>
-        <td style="color:#999">${esc(r.location || '-')}</td>
+        <td style="text-align:right;${td}">${r.quantity}</td>
+        <td style="${td}">${esc(r.location || '-')}</td>
         <td style="color:#999">—</td>
         <td></td>
-        <td>
-          <span style="background:#ef5350;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;vertical-align:middle">무효</span>
-          ${isAdm && !r._legacy ? `<button class="btn sm" onclick="restoreInbound('${r.id}')" style="margin-left:4px">되돌리기</button>` : ''}
-          <div style="font-size:10px;color:#aaa;margin-top:3px;white-space:normal">${esc(voidInfo)}</div>
-        </td>
+        <td>${voidActionCell}</td>
       </tr>`;
     }
     const processed = getProcessedForInbound(r.id);
@@ -5659,18 +5667,37 @@ async function voidInbound(id, reason) {
 }
 
 async function restoreInbound(id) {
-  if (!confirm('이 입고건을 무효 처리 이전 상태로 되돌리겠습니까?')) return;
   try {
     await dbUpdateInbound(id, { is_void: false, void_reason: null, void_at: null, void_by: null });
     await dbInsertAuditLog({
       target_table: 'inbound_records', target_id: id,
       before_val: { is_void: true }, after_val: { is_void: false },
-      reason: '무효 처리 취소 (되돌리기)', staff: 'admin'
+      reason: '무효 해제 (복원)', staff: 'admin'
     });
     const idx = inboundRecords.findIndex(r => r.id === id);
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], is_void: false, void_reason: null, void_at: null, void_by: null };
     renderInvSummary(); renderInboundList(); renderProcessingTab();
-  } catch(e) { alert('복구 오류: ' + e.message); }
+    showToast('무효가 해제되어 정상 데이터로 복원되었습니다.');
+  } catch(e) { alert('복원 오류: ' + e.message); }
+}
+
+async function permanentDeleteInbound(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const r = inboundRecords.find(rec => rec.id === id);
+  if (!r) return;
+  const label = `${r.farm_name}  ${r.product}  ${r.quantity}CT  (${r.date})`;
+  if (!confirm(`⚠️ 영구 삭제\n\n정말로 이 데이터를 영구 삭제하시겠습니까?\n\n${label}\n\n한 번 삭제하면 복구할 수 없습니다.`)) return;
+  try {
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { ...r }, after_val: null,
+      reason: '영구 삭제 (관리자)', staff: 'admin'
+    });
+    await dbDeleteInbound(id);
+    inboundRecords = inboundRecords.filter(rec => rec.id !== id);
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+    showToast('영구 삭제되었습니다.');
+  } catch(e) { alert('영구 삭제 오류: ' + e.message); }
 }
 
 async function forceDeleteInbound(id, reason) {
