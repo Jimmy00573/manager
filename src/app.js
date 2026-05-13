@@ -4356,6 +4356,7 @@ function renderIbFarmView() {
   const el = document.getElementById('ib-view-farm');
   if (!el) return;
 
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const pm = _ibProcessedMap();
   const active = inboundRecords.filter(r => !r.is_void);
 
