@@ -15,6 +15,14 @@ let invSizeConfig = {};
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [];
 let _editLocId = null;
+
+function generateUUID() {
+  return (crypto.randomUUID ? crypto.randomUUID() :
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    }));
+}
 let showVoidData = false;
 let _voidTargetId = null;
 let ibViewMode = 'list';
@@ -2384,6 +2392,13 @@ function parseLocationStr(locStr) {
   });
 }
 
+function getDistGroupTooltip(groupId) {
+  const members = inboundRecords.filter(r => !r.is_void && r.distribution_group_id === groupId);
+  if (!members.length) return '';
+  const total = members.reduce((s, r) => s + r.quantity, 0);
+  return '분산: ' + members.map(m => `${m.location || '?'} ${m.quantity}CT`).join(', ') + ` (총 ${total}CT)`;
+}
+
 function computeLocStock() {
   const pm = _ibProcessedMap();
   const map = {};
@@ -2447,6 +2462,36 @@ function toggleLocMulti(pfx) {
   if (isMulti && document.getElementById(`${pfx}-loc-list`).children.length === 0) {
     addLocRow(pfx);
   }
+  if (pfx === 'ib') {
+    const qtyEl = document.getElementById('ib-qty');
+    if (qtyEl) {
+      qtyEl.readOnly = isMulti;
+      qtyEl.style.background = isMulti ? '#f5f5f5' : '';
+      qtyEl.title = isMulti ? '분산 저장 수량 합계 (자동계산)' : '';
+    }
+    // ensure total display element exists inside loc-rows
+    const rowsEl = document.getElementById('ib-loc-rows');
+    if (rowsEl && !document.getElementById('ib-loc-total')) {
+      const t = document.createElement('div');
+      t.id = 'ib-loc-total';
+      t.style.cssText = 'margin-top:4px;font-size:12px;color:#616161;font-weight:600';
+      rowsEl.appendChild(t);
+    }
+    if (isMulti) updateLocTotal('ib');
+  }
+}
+
+function updateLocTotal(pfx) {
+  let total = 0;
+  document.querySelectorAll(`#${pfx}-loc-list .loc-dist-row`).forEach(row => {
+    total += parseInt(row.querySelector('.loc-dist-qty')?.value) || 0;
+  });
+  const el = document.getElementById(`${pfx}-loc-total`);
+  if (el) el.textContent = total > 0 ? `합계: ${total} CT` : '';
+  if (pfx === 'ib') {
+    const qtyEl = document.getElementById('ib-qty');
+    if (qtyEl && qtyEl.readOnly) qtyEl.value = total || '';
+  }
 }
 
 function addLocRow(pfx, locName = '', qty = '') {
@@ -2455,8 +2500,8 @@ function addLocRow(pfx, locName = '', qty = '') {
   row.className = 'loc-dist-row';
   row.innerHTML = `
     <select class="loc-dist-sel">${buildLocOptHtml()}</select>
-    <input class="loc-dist-qty" type="number" placeholder="CT" min="1" style="width:80px" value="${qty}">
-    <button type="button" class="btn del" style="padding:4px 8px;font-size:12px" onclick="this.closest('.loc-dist-row').remove()">✕</button>
+    <input class="loc-dist-qty" type="number" placeholder="CT" min="1" style="width:80px" value="${qty}" oninput="updateLocTotal('${pfx}')">
+    <button type="button" class="btn del" style="padding:4px 8px;font-size:12px" onclick="this.closest('.loc-dist-row').remove();updateLocTotal('${pfx}')">✕</button>
   `;
   list.appendChild(row);
   if (locName) {
@@ -2515,6 +2560,12 @@ function resetLocForm(pfx) {
   const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
   const sel = document.getElementById(selId);
   if (sel) sel.value = '';
+  if (pfx === 'ib') {
+    const qtyEl = document.getElementById('ib-qty');
+    if (qtyEl) { qtyEl.readOnly = false; qtyEl.style.background = ''; qtyEl.title = ''; }
+    const totalEl = document.getElementById('ib-loc-total');
+    if (totalEl) totalEl.textContent = '';
+  }
 }
 
 // ── 위치 이동 모달 ─────────────────────────────────────────────
@@ -4292,6 +4343,42 @@ async function migrateInboundGrades() {
   showToast(`${count}건 변환 완료${err ? ` (오류 ${err}건)` : ''}`);
 }
 
+async function migrateDistributedStorage() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 실행할 수 있습니다.');
+  const toMigrate = inboundRecords.filter(r =>
+    !r.is_void && r.location && r.location.includes('/') && !r.distribution_group_id && !r._legacy
+  );
+  if (!toMigrate.length) return alert('마이그레이션할 분산 저장 데이터가 없습니다.');
+  const preview = toMigrate.slice(0, 5).map(r => `  ${r.date} ${r.product}(${r.farm_name}): ${r.location}`).join('\n');
+  if (!confirm(`${toMigrate.length}건의 분산 저장 기록을 개별 row로 분리합니다.\n\n미리보기 (최대 5건):\n${preview}\n\n원본 row는 무효 처리됩니다. 계속할까요?`)) return;
+  let ok = 0, fail = 0;
+  for (const r of toMigrate) {
+    try {
+      const parts = parseLocationStr(r.location);
+      if (parts.length < 2) continue;
+      const distribution_group_id = generateUUID();
+      const totalQty = r.quantity;
+      const noQtyParts = parts.filter(p => p.qty === null);
+      const sumWithQty = parts.filter(p => p.qty !== null).reduce((s, p) => s + p.qty, 0);
+      const evenShare = noQtyParts.length > 0 ? Math.floor((totalQty - sumWithQty) / noQtyParts.length) : 0;
+      let noQtyIdx = 0;
+      const { id, location, quantity, created_at, updated_at, is_void, void_reason, void_at, void_by, _legacy, distribution_group_id: _dgid, ...baseData } = r;
+      for (const p of parts) {
+        let qty = p.qty !== null ? p.qty : evenShare;
+        if (!qty || qty <= 0) qty = 1;
+        await dbInsertInbound({ ...baseData, location: p.name, quantity: qty, distribution_group_id });
+      }
+      await dbUpdateInbound(r.id, { is_void: true, void_reason: '분산저장 분리 마이그레이션', void_at: new Date().toISOString(), void_by: 'admin' });
+      ok++;
+    } catch(e) {
+      fail++;
+      console.error('분산저장 마이그레이션 오류:', r.id, e);
+    }
+  }
+  showToast(`분산저장 마이그레이션 완료: ${ok}건 성공${fail ? `, ${fail}건 실패` : ''}`);
+  await loadAndRenderInv();
+}
+
 function setGrade(btn) {
   const group = btn.closest('.grade-group');
   const wasActive = btn.classList.contains('active');
@@ -4979,6 +5066,13 @@ function renderInboundList() {
   const voidCountEl = document.getElementById('ib-void-count');
   if (voidCountEl) voidCountEl.textContent = voidCount > 0 ? `(무효 ${voidCount}건)` : '';
 
+  // 분산저장 마이그레이션 버튼: 레거시 분산 기록이 있을 때만 표시
+  const migrateBtn = document.getElementById('btn-dist-migrate');
+  if (migrateBtn) {
+    const hasMigratable = inboundRecords.some(r => !r.is_void && r.location && r.location.includes('/') && !r.distribution_group_id && !r._legacy);
+    migrateBtn.style.display = hasMigratable ? '' : 'none';
+  }
+
   // 농가별/카테고리별/선과완료 뷰 모드면 해당 함수에 위임
   if (ibViewMode === 'farm') { renderIbFarmView(); return; }
   if (ibViewMode === 'cat')  { renderIbCatView();  return; }
@@ -5062,13 +5156,16 @@ function renderInboundList() {
       <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)">⋮</button>
       <div id="row-menu-${r.id}" class="row-menu" style="display:none">${menuItems}</div>
     </div>`;
+    const locCell = r.distribution_group_id
+      ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
+      : esc(r.location || '-');
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
       <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
       <td>${productChip(r.product)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
-      <td>${esc(r.location || '-')}</td>
+      <td>${locCell}</td>
       <td style="min-width:80px">${gradeCell}</td>
       <td style="width:40px;text-align:center">${memoCell}</td>
       <td style="width:40px">${actionCell}</td>
@@ -5357,8 +5454,7 @@ async function forceDeleteInbound(id, reason) {
 async function addInbound() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
-  const qty = parseInt(document.getElementById('ib-qty').value) || 0;
-  if (!date || !product || !farm_name || !qty) return alert('날짜, 품목, 농가명, 수량은 필수입니다.');
+  if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
   const inbound_category = gv('ib-category') || '상품';
   const brix_grade = getGradeVal('ib-brix-grade');
   const acidity_grade = getGradeVal('ib-acid-grade');
@@ -5372,13 +5468,13 @@ async function addInbound() {
   const reclassification_source = isReclass ? (document.getElementById('ib-reclass-src')?.value || null) : null;
   const reclassification_reason = isReclass ? (document.getElementById('ib-reclass-reason')?.value.trim() || null) : null;
   const original_work_date = isReclass ? (document.getElementById('ib-reclass-date')?.value || null) : null;
-  const data = {
-    date, product, farm_name, quantity: qty,
-    location: getLocValue('ib') || null,
-    note: gv('ib-note') || null,
-    staff: 'admin',
-    inbound_category,
-    is_priority,
+  const note = gv('ib-note') || null;
+  const isDistributed = document.getElementById('ib-loc-multi')?.checked;
+
+  const commonData = {
+    date, product, farm_name,
+    note, staff: 'admin',
+    inbound_category, is_priority,
     ...(brix_grade && { brix_grade }),
     ...(acidity_grade && { acidity_grade }),
     ...(appearance_grade && { appearance_grade }),
@@ -5390,18 +5486,45 @@ async function addInbound() {
     ...(reclassification_reason && { reclassification_reason }),
     ...(original_work_date && { original_work_date }),
   };
-  try {
-    const row = await dbInsertInbound(data);
-    inboundRecords.unshift(row);
-    renderInvSummary(); renderInboundList();
-    sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib');
-    clearGrades('ib');
-    const clearIds = ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
-                      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date'];
-    clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+  const clearForm = () => {
+    sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib'); clearGrades('ib');
+    ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
+     'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const priEl = document.getElementById('ib-priority');
     if (priEl) priEl.checked = false;
     syncReclassList('ib');
+  };
+
+  try {
+    if (isDistributed) {
+      const locRows = document.querySelectorAll('#ib-loc-list .loc-dist-row');
+      const locs = [];
+      locRows.forEach(row => {
+        const name = row.querySelector('.loc-dist-sel')?.value;
+        const qty = parseInt(row.querySelector('.loc-dist-qty')?.value) || 0;
+        if (name) locs.push({ name, qty });
+      });
+      if (locs.length < 2) return alert('분산 저장은 위치를 2개 이상 지정해야 합니다.');
+      if (locs.some(l => !l.qty || l.qty <= 0)) return alert('각 위치의 수량을 입력해 주세요.');
+      const locNames = locs.map(l => l.name);
+      if (new Set(locNames).size !== locNames.length) return alert('중복된 위치가 있습니다.');
+      const distribution_group_id = generateUUID();
+      const inserted = [];
+      for (const loc of locs) {
+        const row = await dbInsertInbound({ ...commonData, location: loc.name, quantity: loc.qty, distribution_group_id });
+        inserted.push(row);
+      }
+      inserted.forEach(row => inboundRecords.unshift(row));
+    } else {
+      const qty = parseInt(document.getElementById('ib-qty').value) || 0;
+      if (!qty) return alert('수량은 필수입니다.');
+      const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
+      inboundRecords.unshift(row);
+    }
+    renderInvSummary(); renderInboundList();
+    clearForm();
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
