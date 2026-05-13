@@ -545,6 +545,7 @@ function sv(id, val) { const el = document.getElementById(id); if (el) el.value 
 function n(id) { return parseInt(document.getElementById(id)?.value) || 0; }
 function clr(...ids) { ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); }
 function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function fmtN(n) { if (n == null) return '-'; return Number(n).toLocaleString('ko-KR'); }
 function emr(c, m) { return `<tr><td colspan="${c}" class="empty">${m}</td></tr>`; }
 function ftm(iso) {
   if (!iso) return '-';
@@ -2407,7 +2408,7 @@ function getDistGroupTooltip(groupId) {
   const members = inboundRecords.filter(r => !r.is_void && r.distribution_group_id === groupId);
   if (!members.length) return '';
   const total = members.reduce((s, r) => s + r.quantity, 0);
-  return '분산: ' + members.map(m => `${m.location || '?'} ${m.quantity}CT`).join(', ') + ` (총 ${total}CT)`;
+  return '분산: ' + members.map(m => `${m.location || '?'} ${fmtN(m.quantity)}CT`).join(', ') + ` (총 ${fmtN(total)}CT)`;
 }
 
 function computeLocStock() {
@@ -2498,7 +2499,7 @@ function updateLocTotal(pfx) {
     total += parseInt(row.querySelector('.loc-dist-qty')?.value) || 0;
   });
   const el = document.getElementById(`${pfx}-loc-total`);
-  if (el) el.textContent = total > 0 ? `합계: ${total} CT` : '';
+  if (el) el.textContent = total > 0 ? `합계: ${fmtN(total)} CT` : '';
   if (pfx === 'ib') {
     const qtyEl = document.getElementById('ib-qty');
     if (qtyEl && qtyEl.readOnly) qtyEl.value = total || '';
@@ -2590,7 +2591,7 @@ function openMoveModal(id) {
   const processed = getProcessedForInbound(id);
   const remaining = r.quantity - processed;
   document.getElementById('mv-info').innerHTML =
-    `<b>${esc(r.product)}</b> | ${esc(r.farm_name)} | ${r.date} | 잔여 <b>${remaining}CT</b>`;
+    `<b>${esc(r.product)}</b> | ${esc(r.farm_name)} | ${r.date} | 잔여 <b>${fmtN(remaining)}CT</b>`;
   document.getElementById('mv-cur-loc').textContent = r.location || '미지정';
   resetLocForm('mv');
   popLocSelects();
@@ -4011,7 +4012,7 @@ function openQualityModal(id) {
         ${r.reclassification_reason ? `<div style="font-size:12px;padding:3px 0;color:#7C3AED">${esc(r.reclassification_reason)}</div>` : ''}
        </div>` : '';
 
-  document.getElementById('qm-header').textContent = `${r.product} · ${r.farm_name} · ${r.date} · ${r.quantity}CT`;
+  document.getElementById('qm-header').textContent = `${r.product} · ${r.farm_name} · ${r.date} · ${fmtN(r.quantity)}CT`;
   document.getElementById('qm-grades').innerHTML = gradeBlock || '<span style="color:#bbb;font-size:12px">등급 없음</span>';
   document.getElementById('qm-defects').innerHTML = defectBlock;
   document.getElementById('qm-memo').textContent = r.note || '';
@@ -4195,7 +4196,7 @@ function renderAuditLogs(resetPage = false) {
     const diff = getAuditDiff(log);
     const dt = new Date(log.created_at);
     const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-    const ctxParts = [ctx.farm && esc(ctx.farm), ctx.product && esc(ctx.product), ctx.qty && `${ctx.qty}CT`, ctx.date].filter(Boolean);
+    const ctxParts = [ctx.farm && esc(ctx.farm), ctx.product && esc(ctx.product), ctx.qty && `${fmtN(ctx.qty)}CT`, ctx.date].filter(Boolean);
 
     return `<div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${st.border};border-radius:8px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
@@ -4794,7 +4795,7 @@ function renderIbFarmView() {
         <span style="font-size:16px">👨‍🌾</span>
         <span style="display:inline-block;width:14px;text-align:center;font-size:12px">${hasPriority ? '⭐' : ''}</span>
         <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
-        <span style="font-size:13px;color:#555">남은 재고 <strong style="color:#1565C0">${remaining} CT</strong></span>
+        <span style="font-size:13px;color:#555">남은 재고 <strong style="color:#1565C0">${fmtN(remaining)} CT</strong></span>
         <span style="font-size:11px;color:#aaa">${rows.length}건</span>
         ${statusChip(remaining)}
         ${hdrChips.length ? `<span style="margin-left:auto;display:flex;gap:5px">${hdrChips.join('')}</span>` : ''}
@@ -4866,7 +4867,7 @@ function renderIbCatView() {
       return `<div style="display:flex;align-items:center;gap:6px;padding:6px 14px 6px 24px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5;'}flex-wrap:wrap">
         <span style="color:#ccc;font-size:11px">${isLast ? '└─' : '├─'}</span>
         <span style="font-weight:700;font-size:13px;color:#222">${esc(farm)}</span>
-        <span style="font-weight:700;color:${c.color};font-size:13px">${qty} CT</span>
+        <span style="font-weight:700;color:${c.color};font-size:13px">${fmtN(qty)} CT</span>
         ${prodChips}
         <span style="font-size:11px;color:#bbb">(${datesStr})</span>
       </div>`;
@@ -4993,7 +4994,7 @@ function renderIbDoneView() {
         return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 14px 5px 24px;border-bottom:1px solid #f5f5f5;font-size:12px">
           <span style="color:#aaa;font-size:10px">${r.date}</span>
           ${productChip(r.product)}
-          <span style="font-weight:700;color:#2E7D32">${r.quantity} CT</span>
+          <span style="font-weight:700;color:#2E7D32">${fmtN(r.quantity)} CT</span>
           ${categoryBadge(r.inbound_category,r.reclassification_source,r.reclassification_reason,r.original_work_date)}
           ${loc}${qInline}
         </div>`;
@@ -5020,7 +5021,7 @@ function renderIbDoneView() {
         <td style="${TD}">${esc(r.farm_name)}</td>
         <td style="${TD}">${productChip(r.product)}</td>
         <td style="${TD}">${categoryBadge(r.inbound_category,r.reclassification_source,r.reclassification_reason,r.original_work_date)}</td>
-        <td style="${TD};text-align:right;font-weight:700;color:#2E7D32">${r.quantity}</td>
+        <td style="${TD};text-align:right;font-weight:700;color:#2E7D32">${fmtN(r.quantity)}</td>
         <td style="${TD}">${loc}</td>
         <td style="${TD}">${qInline}</td>
       </tr>`;
@@ -5076,7 +5077,7 @@ function renderIbCatSummary() {
     const isCount = !itemCat || itemCat.classification_type === 'count';
     const icon  = isCount ? '🍊' : '🍋';
     const color = isCount ? '#C05800' : '#2E7D32';
-    return `<span style="font-size:11px;color:${color};white-space:nowrap">${icon} ${esc(product)} <strong>${qty}</strong></span>`;
+    return `<span style="font-size:11px;color:${color};white-space:nowrap">${icon} ${esc(product)} <strong>${fmtN(qty)}</strong></span>`;
   };
 
   const SRC_LABELS = { '신규입고': '신규', '선과결과': '선과', '포장라인': '포장', '반품': '반품', '기타': '기타', '미지정': '-' };
@@ -5209,7 +5210,7 @@ function renderIbCatSummary() {
         return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 4px 8px;border-bottom:1px solid #f5f5f5;font-size:12px">
           <span style="color:#aaa;font-size:10px">${r.date.slice(5)}</span>
           ${productChip(r.product)}
-          <span style="font-weight:700;color:#333">${r.remaining}CT</span>
+          <span style="font-weight:700;color:#333">${fmtN(r.remaining)}CT</span>
           <span style="color:${daysCol};font-size:10px">(${r.days}일)</span>
           ${locBit}${qInline}
         </div>`;
@@ -5367,7 +5368,7 @@ function renderInboundList() {
         <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px"></span> ${esc(r.farm_name)}${voidBadge}</td>
         <td style="${td}">${esc(r.product)}</td>
         <td style="color:#999">-</td>
-        <td style="text-align:right;${td}">${r.quantity}</td>
+        <td style="text-align:right;${td}">${fmtN(r.quantity)}</td>
         <td style="${td}">${esc(r.location || '-')}</td>
         <td style="color:#999">—</td>
         <td></td>
@@ -5376,13 +5377,13 @@ function renderInboundList() {
     }
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
-    const qtyTitle = processed > 0 ? `입고 ${r.quantity}CT · 처리 ${processed}CT · 잔여 ${remaining}CT` : `입고 ${r.quantity}CT`;
+    const qtyTitle = processed > 0 ? `입고 ${fmtN(r.quantity)}CT · 처리 ${fmtN(processed)}CT · 잔여 ${fmtN(remaining)}CT` : `입고 ${fmtN(r.quantity)}CT`;
     const remBadge = remaining <= 0
       ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
-      : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${remaining}</span>`;
+      : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${fmtN(remaining)}</span>`;
     const qtyDisplay = processed > 0
-      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${r.quantity}<br>${remBadge}</span>`
-      : `<span title="${qtyTitle}" style="cursor:default">${r.quantity}</span>`;
+      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}</span>`
+      : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
@@ -5427,7 +5428,7 @@ function renderProcessingTab() {
     const active = inboundRecords.filter(r => !r.is_void && r.quantity - getProcessedForInbound(r.id) > 0);
     sel.innerHTML = '<option value="">선택</option>' + active.map(r => {
       const rem = r.quantity - getProcessedForInbound(r.id);
-      return `<option value="${r.id}">${esc(r.product)} | ${esc(r.farm_name)} | ${r.date} (${rem}CT 남음)</option>`;
+      return `<option value="${r.id}">${esc(r.product)} | ${esc(r.farm_name)} | ${r.date} (${fmtN(rem)}CT 남음)</option>`;
     }).join('');
   }
   const tbody = document.getElementById('proc-tb');
@@ -5466,7 +5467,7 @@ function editInboundRow(id) {
   document.getElementById('eib-m-qty').value = r.quantity || '';
   document.getElementById('eib-m-qty').min = processed || 1;
   const hint = document.getElementById('eib-m-qty-hint');
-  if (processed > 0) { hint.textContent = `이미 ${processed}CT 처리됨 — ${processed}CT 미만으로 줄일 수 없습니다`; hint.style.display = ''; }
+  if (processed > 0) { hint.textContent = `이미 ${fmtN(processed)}CT 처리됨 — ${fmtN(processed)}CT 미만으로 줄일 수 없습니다`; hint.style.display = ''; }
   else hint.style.display = 'none';
   document.getElementById('eib-m-cat').value = r.inbound_category || '상품';
   setGradeVal('eib-m-brix-grade', r.brix_grade || null);
@@ -5568,7 +5569,7 @@ async function saveInboundModal() {
   if (changed && !reason) return alert('변경사항이 있습니다. 수정 사유를 입력해주세요.');
 
   const processed = getProcessedForInbound(id);
-  if (qty < processed) return alert(`이미 ${processed}CT가 처리되었습니다. ${processed}CT 미만으로 줄일 수 없습니다.`);
+  if (qty < processed) return alert(`이미 ${fmtN(processed)}CT가 처리되었습니다. ${fmtN(processed)}CT 미만으로 줄일 수 없습니다.`);
 
   const updatePayload = {
     date, quantity: qty, location, note, inbound_category, is_priority,
@@ -5631,7 +5632,7 @@ function showVoidModal(id) {
   const remaining = r.quantity - processed;
   document.getElementById('void-modal-info').innerHTML =
     `<strong>${esc(r.farm_name)}</strong> · ${esc(r.product)} · ${r.date}<br>` +
-    `입고 <strong>${r.quantity}CT</strong> / 처리됨 <strong style="color:#E65100">${processed}CT</strong> / 남은재고 ${remaining}CT`;
+    `입고 <strong>${fmtN(r.quantity)}CT</strong> / 처리됨 <strong style="color:#E65100">${fmtN(processed)}CT</strong> / 남은재고 ${fmtN(remaining)}CT`;
   document.getElementById('void-reason').value = '';
   document.getElementById('void-opt-void').checked = true;
   document.getElementById('modal-void-inbound').style.display = 'flex';
@@ -5685,7 +5686,7 @@ async function permanentDeleteInbound(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const r = inboundRecords.find(rec => rec.id === id);
   if (!r) return;
-  const label = `${r.farm_name}  ${r.product}  ${r.quantity}CT  (${r.date})`;
+  const label = `${r.farm_name}  ${r.product}  ${fmtN(r.quantity)}CT  (${r.date})`;
   if (!confirm(`⚠️ 영구 삭제\n\n정말로 이 데이터를 영구 삭제하시겠습니까?\n\n${label}\n\n한 번 삭제하면 복구할 수 없습니다.`)) return;
   try {
     await dbInsertAuditLog({
@@ -5805,7 +5806,7 @@ async function addProcessing() {
   const ib = inboundRecords.find(r => r.id === inboundId);
   if (!ib) return alert('선택한 입고 건을 찾을 수 없습니다.');
   const remaining = ib.quantity - getProcessedForInbound(inboundId);
-  if (qty > remaining) return alert(`처리 수량(${qty}CT)이 남은 재고(${remaining}CT)를 초과합니다.`);
+  if (qty > remaining) return alert(`처리 수량(${fmtN(qty)}CT)이 남은 재고(${fmtN(remaining)}CT)를 초과합니다.`);
   const data = {
     inbound_id: inboundId, date, process_type: processType, quantity: qty,
     note: gv('proc-note') || null, staff: 'admin'
@@ -5976,7 +5977,7 @@ function renderSortedAgg() {
       html += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:8px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;flex-wrap:wrap">
           <span style="font-weight:700;font-size:15px;color:#222;min-width:48px">${esc(key)}</span>
-          <span style="font-size:13px;color:#555">(총 <strong style="color:#1565C0">${total}</strong> CT)</span>
+          <span style="font-size:13px;color:#555">(총 <strong style="color:#1565C0">${fmtN(total)}</strong> CT)</span>
           ${tag}
           ${isTop ? '<span style="font-size:12px;color:#F57F17;font-weight:600">⭐ 최다</span>' : ''}
         </div>
@@ -5985,7 +5986,7 @@ function renderSortedAgg() {
     });
 
     html += `<div style="text-align:right;padding:10px 4px 4px;font-size:13px;color:#555;border-top:2px solid #ddd;margin-top:4px">
-      합계: <strong style="color:#1565C0;font-size:15px">${catTotal} CT</strong>
+      합계: <strong style="color:#1565C0;font-size:15px">${fmtN(catTotal)} CT</strong>
     </div>`;
     return html;
   };
@@ -6084,7 +6085,7 @@ function renderSortedAggFarm() {
           return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:6px 14px 6px 40px;${isLast ? '' : 'border-bottom:1px solid #f8f8f8'}">
             <span style="color:#ddd;font-size:11px;margin-right:6px;flex-shrink:0">${isLast ? '└─' : '├─'}</span>
             <span style="font-weight:600;color:#444;font-size:13px;min-width:52px">${esc(ck)}</span>
-            <span style="font-weight:700;color:${eColor};font-size:13px;min-width:48px;text-align:right">${qty} CT</span>
+            <span style="font-weight:700;color:${eColor};font-size:13px;min-width:48px;text-align:right">${fmtN(qty)} CT</span>
             ${_dateChip(dates)}
           </div>`;
         }).join('');
@@ -6093,7 +6094,7 @@ function renderSortedAggFarm() {
           <div style="display:flex;align-items:center;padding:7px 14px 7px 20px;background:#f5f7fa;${isLastProd ? '' : 'border-bottom:1px solid #ebebeb'}">
             <span style="color:#bbb;font-size:11px;margin-right:8px;flex-shrink:0">${isLastProd ? '└─' : '├─'}</span>
             <span style="font-size:13px;font-weight:600;color:#1565C0">🍊 ${esc(prod.product)}${ptLabel}</span>
-            <span style="font-size:12px;color:#888;margin-left:8px">(${prod.total} CT)</span>
+            <span style="font-size:12px;color:#888;margin-left:8px">(${fmtN(prod.total)} CT)</span>
           </div>
           ${countRows}
         </div>`;
@@ -6103,14 +6104,14 @@ function renderSortedAggFarm() {
         <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa">
           <span style="font-size:16px">👨‍🌾</span>
           <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
-          <span style="font-size:13px;color:#555">(총 <strong style="color:#1565C0">${total}</strong> CT)</span>
+          <span style="font-size:13px;color:#555">(총 <strong style="color:#1565C0">${fmtN(total)}</strong> CT)</span>
         </div>
         <div style="border-top:1px solid #f0f0f0">${prodRows}</div>
       </div>`;
     });
 
     html += `<div style="text-align:right;padding:10px 4px 4px;font-size:13px;color:#555;border-top:2px solid #ddd;margin-top:4px">
-      합계: <strong style="color:#1565C0;font-size:15px">${catTotal} CT</strong>
+      합계: <strong style="color:#1565C0;font-size:15px">${fmtN(catTotal)} CT</strong>
     </div>`;
     return html;
   };
@@ -6154,7 +6155,7 @@ function renderSortedList() {
     <td>${esc(r.product)}</td>
     <td>${esc(r.product_type)}</td>
     <td>${esc(r.count_num)}</td>
-    <td>${r.quantity} CT</td>
+    <td>${fmtN(r.quantity)} CT</td>
     <td>${esc(r.location || '-')}</td>
     <td>${isAdm ? `<button class="btn del" onclick="deleteSorted('${r.id}')">삭제</button>` : ''}</td>
   </tr>`).join('');
@@ -6171,7 +6172,7 @@ function renderWasteList() {
   tbody.innerHTML = data.map(r => `<tr>
     <td>${r.date}</td>
     <td>${esc(r.product)}</td>
-    <td>${r.quantity} CT</td>
+    <td>${fmtN(r.quantity)} CT</td>
     <td>${esc(r.location)}</td>
     <td>${esc(r.purpose)}</td>
     <td>${isAdm ? `<button class="btn del" onclick="deleteWaste('${r.id}')">삭제</button>` : ''}</td>
@@ -6314,7 +6315,7 @@ async function openRecordHistory(id) {
   if (r) {
     title.textContent = '변경 이력';
     info.innerHTML = `<strong>${esc(r.farm_name)}</strong> · ${esc(r.product)} · ${r.date}
-      <span style="margin-left:8px;color:#aaa">${r.quantity}CT 입고</span>
+      <span style="margin-left:8px;color:#aaa">${fmtN(r.quantity)}CT 입고</span>
       ${r.is_void ? '<span style="margin-left:6px;background:#ef5350;color:#fff;font-size:10px;padding:1px 6px;border-radius:4px">무효</span>' : ''}`;
   } else {
     title.textContent = '변경 이력 (삭제된 기록)';
