@@ -2955,6 +2955,10 @@ function ibTab(t) {
 
 function ibListTab(t) {
   ibViewMode = t;
+  // 뷰 전환 시 메모 전체 열기 상태 리셋
+  _allMemosExpanded = false;
+  const memoBtn = document.getElementById('btn-toggle-all-memos');
+  if (memoBtn) memoBtn.textContent = '📝 메모 모두 열기';
   ['list', 'farm', 'cat'].forEach(s => {
     const el = document.getElementById('ib-view-' + s);
     const btn = document.getElementById('ib-vt-' + s);
@@ -3807,6 +3811,7 @@ function hasQualityDetail(r) {
 }
 
 let _expandedMemoId = null;
+let _allMemosExpanded = false;
 let _openMenuId = null;
 
 function toggleRowMenu(id, e) {
@@ -3861,6 +3866,44 @@ function toggleFarmMemo(id) {
   const isOpen = el.style.display !== 'none';
   document.querySelectorAll('[id^="farm-memo-"]').forEach(e => { e.style.display = 'none'; });
   if (!isOpen) el.style.display = '';
+}
+
+function toggleAllMemos() {
+  _allMemosExpanded = !_allMemosExpanded;
+  const btn = document.getElementById('btn-toggle-all-memos');
+
+  if (ibViewMode === 'farm') {
+    document.querySelectorAll('[id^="farm-memo-"]').forEach(el => {
+      el.style.display = _allMemosExpanded ? '' : 'none';
+    });
+  } else {
+    // 목록(list) / 카테고리별 보기
+    if (_allMemosExpanded) {
+      // 기존 단일 메모 닫기
+      if (_expandedMemoId) {
+        const old = document.getElementById(`ib-memo-row-${_expandedMemoId}`);
+        if (old) old.remove();
+        _expandedMemoId = null;
+      }
+      // 메모 있는 모든 행 펼침
+      inboundRecords.filter(r => !r.is_void && r.note).forEach(r => {
+        if (document.getElementById(`ib-memo-row-${r.id}`)) return;
+        const mainRow = document.getElementById(`ib-tr-${r.id}`);
+        if (!mainRow) return;
+        const tr = document.createElement('tr');
+        tr.id = `ib-memo-row-${r.id}`;
+        tr.innerHTML = `<td colspan="${mainRow.cells.length}" style="padding:0 10px 10px">
+          <div class="memo-expanded">${esc(r.note).replace(/\n/g, '<br>')}</div>
+        </td>`;
+        mainRow.after(tr);
+      });
+    } else {
+      document.querySelectorAll('[id^="ib-memo-row-"]').forEach(el => el.remove());
+      _expandedMemoId = null;
+    }
+  }
+
+  if (btn) btn.textContent = _allMemosExpanded ? '📝 메모 모두 닫기' : '📝 메모 모두 열기';
 }
 
 let _qModalId = null;
@@ -4752,12 +4795,25 @@ function renderIbCatSummary() {
   }).join('');
 
   priEl.innerHTML = `<div style="margin-bottom:12px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <div onclick="togglePriSection()" id="pri-section-hdr"
+      style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF5F5;border:1px solid #FECACA;border-radius:8px;cursor:pointer;user-select:none;margin-bottom:0">
+      <span id="pri-section-arrow" style="font-size:11px;color:#C62828;transition:transform .2s">▶</span>
       <span style="font-size:13px;font-weight:700;color:#C62828">⚠️ 우선 처리 필요</span>
       <span style="font-size:12px;color:#888">${_farmEntries.length}개 농가 · ${priList.length}건 · 총 ${totalPriCT.toLocaleString()} CT</span>
     </div>
-    ${_cards}
+    <div id="pri-section-body" style="display:none;margin-top:8px">
+      ${_cards}
+    </div>
   </div>`;
+}
+
+function togglePriSection() {
+  const body  = document.getElementById('pri-section-body');
+  const arrow = document.getElementById('pri-section-arrow');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  if (arrow) arrow.textContent = open ? '▼' : '▶';
 }
 
 function togglePriDetail(id) {
