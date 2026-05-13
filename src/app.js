@@ -2959,7 +2959,7 @@ function ibListTab(t) {
   _allMemosExpanded = false;
   const memoBtn = document.getElementById('btn-toggle-all-memos');
   if (memoBtn) memoBtn.textContent = '📝 메모 모두 열기';
-  ['list', 'farm', 'cat'].forEach(s => {
+  ['list', 'farm', 'cat', 'done'].forEach(s => {
     const el = document.getElementById('ib-view-' + s);
     const btn = document.getElementById('ib-vt-' + s);
     if (el) el.style.display = t === s ? '' : 'none';
@@ -2967,6 +2967,7 @@ function ibListTab(t) {
   });
   if (t === 'farm') renderIbFarmView();
   if (t === 'cat') renderIbCatView();
+  if (t === 'done') renderIbDoneView();
 }
 
 async function loadAndRenderInv() {
@@ -4587,6 +4588,150 @@ function renderIbCatView() {
   el.innerHTML = html;
 }
 
+// ── 선과 완료 필터 상태
+let _doneFilter = { farm:'', product:'', cat:'', dateFrom:'', dateTo:'', sort:'date-desc', view:'list' };
+
+function setDoneFilter(key, val) { _doneFilter[key] = val; renderIbDoneView(); }
+
+function renderIbDoneView() {
+  const el = document.getElementById('ib-view-done');
+  if (!el) return;
+
+  const pm = _ibProcessedMap();
+  const done = inboundRecords.filter(r => {
+    if (r.is_void) return false;
+    const processed = pm[r.id] || 0;
+    return processed > 0 && r.quantity - processed <= 0;
+  });
+
+  // 필터 적용
+  let filtered = done;
+  if (_doneFilter.farm)     filtered = filtered.filter(r => r.farm_name === _doneFilter.farm);
+  if (_doneFilter.product)  filtered = filtered.filter(r => r.product   === _doneFilter.product);
+  if (_doneFilter.cat)      filtered = filtered.filter(r => (r.inbound_category||'상품') === _doneFilter.cat);
+  if (_doneFilter.dateFrom) filtered = filtered.filter(r => r.date >= _doneFilter.dateFrom);
+  if (_doneFilter.dateTo)   filtered = filtered.filter(r => r.date <= _doneFilter.dateTo);
+
+  // 정렬
+  filtered = [...filtered].sort((a,b) => {
+    if (_doneFilter.sort === 'date-asc')  return a.date.localeCompare(b.date);
+    if (_doneFilter.sort === 'farm')      return a.farm_name.localeCompare(b.farm_name);
+    if (_doneFilter.sort === 'qty-desc')  return b.quantity - a.quantity;
+    return b.date.localeCompare(a.date); // date-desc
+  });
+
+  // 드롭다운 옵션
+  const farmOpts  = [...new Set(done.map(r=>r.farm_name))].sort().map(f=>`<option value="${esc(f)}" ${_doneFilter.farm===f?'selected':''}>${esc(f)}</option>`).join('');
+  const prodOpts  = [...new Set(done.map(r=>r.product).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}" ${_doneFilter.product===p?'selected':''}>${esc(p)}</option>`).join('');
+  const catOpts   = [...new Set(done.map(r=>r.inbound_category||'상품'))].sort().map(c=>`<option value="${esc(c)}" ${_doneFilter.cat===c?'selected':''}>${esc(c)}</option>`).join('');
+
+  // 요약 통계
+  const totalCT   = filtered.reduce((s,r)=>s+r.quantity,0);
+  const farmCount = new Set(filtered.map(r=>r.farm_name)).size;
+
+  const SEL = 'padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px;background:#fff';
+
+  // 필터 바
+  const filterBar = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:10px 12px;background:#f8f8f8;border-radius:8px;font-size:12px">
+      <select style="${SEL}" onchange="setDoneFilter('farm',this.value)"><option value="">농가 전체</option>${farmOpts}</select>
+      <select style="${SEL}" onchange="setDoneFilter('product',this.value)"><option value="">품목 전체</option>${prodOpts}</select>
+      <select style="${SEL}" onchange="setDoneFilter('cat',this.value)"><option value="">카테고리 전체</option>${catOpts}</select>
+      <input type="date" value="${_doneFilter.dateFrom}" style="${SEL}" placeholder="시작일" onchange="setDoneFilter('dateFrom',this.value)">
+      <span style="color:#aaa">~</span>
+      <input type="date" value="${_doneFilter.dateTo}" style="${SEL}" placeholder="종료일" onchange="setDoneFilter('dateTo',this.value)">
+      <select style="${SEL}" onchange="setDoneFilter('sort',this.value)">
+        <option value="date-desc" ${_doneFilter.sort==='date-desc'?'selected':''}>입고일 최신순</option>
+        <option value="date-asc"  ${_doneFilter.sort==='date-asc' ?'selected':''}>입고일 오래된순</option>
+        <option value="farm"      ${_doneFilter.sort==='farm'     ?'selected':''}>농가명순</option>
+        <option value="qty-desc"  ${_doneFilter.sort==='qty-desc' ?'selected':''}>수량 많은순</option>
+      </select>
+      ${(_doneFilter.farm||_doneFilter.product||_doneFilter.cat||_doneFilter.dateFrom||_doneFilter.dateTo)
+        ? `<button class="btn" onclick="_doneFilter={..._doneFilter,farm:'',product:'',cat:'',dateFrom:'',dateTo:''};renderIbDoneView()" style="font-size:11px;padding:3px 8px">✕ 초기화</button>` : ''}
+      <div style="margin-left:auto;display:flex;gap:4px">
+        <button class="btn${_doneFilter.view==='list'?' pri':''}" onclick="setDoneFilter('view','list')" style="font-size:11px;padding:3px 10px">📋 목록</button>
+        <button class="btn${_doneFilter.view==='farm'?' pri':''}" onclick="setDoneFilter('view','farm')" style="font-size:11px;padding:3px 10px">👨‍🌾 농가별</button>
+      </div>
+    </div>`;
+
+  // 요약 카드
+  const summaryCard = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      ${[['✅ 완료 건수', filtered.length+'건', '#E8F5E9','#2E7D32'],
+         ['📦 총 입고량', totalCT.toLocaleString()+' CT','#E3F2FD','#1565C0'],
+         ['👨‍🌾 농가 수', farmCount+'개','#FFF3E0','#E65100']].map(([lbl,val,bg,col])=>`
+        <div style="background:${bg};border-radius:8px;padding:10px 16px;flex:1;min-width:100px;text-align:center">
+          <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
+          <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
+        </div>`).join('')}
+    </div>`;
+
+  // 콘텐츠: 목록 또는 농가별
+  let content = '';
+  if (!filtered.length) {
+    content = '<div style="padding:30px;text-align:center;color:#bbb">선과 완료 데이터 없음</div>';
+  } else if (_doneFilter.view === 'farm') {
+    // 농가별 카드
+    const farmMap = {};
+    filtered.forEach(r => {
+      if (!farmMap[r.farm_name]) farmMap[r.farm_name] = { rows:[], totalCT:0, products:[] };
+      const f = farmMap[r.farm_name];
+      f.rows.push(r);
+      f.totalCT += r.quantity;
+      if (r.product && !f.products.includes(r.product)) f.products.push(r.product);
+    });
+    content = Object.entries(farmMap).sort((a,b)=>b[1].totalCT-a[1].totalCT).map(([farm,{rows,totalCT,products}])=>{
+      const rowsHtml = [...rows].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
+        const qInline = qualityInline(r)||'';
+        const loc = r.location?`<span style="font-size:11px;color:#888">📍${esc(r.location)}</span>`:'';
+        return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 14px 5px 24px;border-bottom:1px solid #f5f5f5;font-size:12px">
+          <span style="color:#aaa;font-size:10px">${r.date}</span>
+          ${productChip(r.product)}
+          <span style="font-weight:700;color:#2E7D32">${r.quantity} CT</span>
+          ${categoryBadge(r.inbound_category,r.reclassification_source,r.reclassification_reason,r.original_work_date)}
+          ${loc}${qInline}
+        </div>`;
+      }).join('');
+      return `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid #4CAF50;border-radius:8px;margin-bottom:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;background:#F1F8E9;flex-wrap:wrap">
+          <span style="font-size:14px">✅</span>
+          <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
+          ${products.map(p=>productChip(p)).join('')}
+          <span style="font-weight:700;color:#2E7D32;margin-left:auto">${totalCT.toLocaleString()} CT · ${rows.length}건</span>
+        </div>
+        <div>${rowsHtml}</div>
+      </div>`;
+    }).join('');
+  } else {
+    // 목록 테이블
+    const TH = 'background:#f5f5f5;padding:7px 10px;font-size:11px;font-weight:700;color:var(--text-secondary);white-space:nowrap;text-align:left';
+    const TD = 'padding:7px 10px;font-size:13px;border-bottom:1px solid #f5f5f5;vertical-align:middle';
+    const rows = filtered.map(r=>{
+      const qInline = qualityInline(r)||'<span style="color:#e0e0e0;font-size:12px">—</span>';
+      const loc = r.location ? esc(r.location) : '<span style="color:#ccc">-</span>';
+      return `<tr>
+        <td style="${TD}">${r.date}</td>
+        <td style="${TD}">${esc(r.farm_name)}</td>
+        <td style="${TD}">${productChip(r.product)}</td>
+        <td style="${TD}">${categoryBadge(r.inbound_category,r.reclassification_source,r.reclassification_reason,r.original_work_date)}</td>
+        <td style="${TD};text-align:right;font-weight:700;color:#2E7D32">${r.quantity}</td>
+        <td style="${TD}">${loc}</td>
+        <td style="${TD}">${qInline}</td>
+      </tr>`;
+    }).join('');
+    content = `<div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="${TH}">날짜</th><th style="${TH}">농가명</th><th style="${TH}">품목</th>
+        <th style="${TH}">카테고리</th><th style="${TH};text-align:right">입고량(CT)</th>
+        <th style="${TH}">위치</th><th style="${TH}">품질</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  el.innerHTML = filterBar + summaryCard + content;
+}
+
 function renderIbCatSummary() {
   const catEl = document.getElementById('ib-cat-summary');
   const priEl = document.getElementById('ib-priority-alert');
@@ -4834,9 +4979,10 @@ function renderInboundList() {
   const voidCountEl = document.getElementById('ib-void-count');
   if (voidCountEl) voidCountEl.textContent = voidCount > 0 ? `(무효 ${voidCount}건)` : '';
 
-  // 농가별/카테고리별 뷰 모드면 해당 함수에 위임
+  // 농가별/카테고리별/선과완료 뷰 모드면 해당 함수에 위임
   if (ibViewMode === 'farm') { renderIbFarmView(); return; }
   if (ibViewMode === 'cat')  { renderIbCatView();  return; }
+  if (ibViewMode === 'done') { renderIbDoneView(); return; }
 
   const tbody = document.getElementById('ib-tb');
   if (!tbody) return;
@@ -4890,8 +5036,11 @@ function renderInboundList() {
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
     const qtyTitle = processed > 0 ? `입고 ${r.quantity}CT · 처리 ${processed}CT · 잔여 ${remaining}CT` : `입고 ${r.quantity}CT`;
+    const remBadge = remaining <= 0
+      ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
+      : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${remaining}</span>`;
     const qtyDisplay = processed > 0
-      ? `<span title="${qtyTitle}" style="cursor:default">${r.quantity}<br><span style="${remaining <= 0 ? 'color:#999' : remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${remaining > 0 ? remaining : '완료'}</span></span>`
+      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${r.quantity}<br>${remBadge}</span>`
       : `<span title="${qtyTitle}" style="cursor:default">${r.quantity}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const qInline = qualityInline(r);
