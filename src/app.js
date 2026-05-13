@@ -5449,18 +5449,108 @@ function renderInboundList() {
   _renderIbPagination(totalFiltered);
 }
 
-function scSetSearch(v) { _scSearch = v; renderProcessingTab(); }
-function scSetProduct(v) { _scProduct = v; renderProcessingTab(); }
-function scTogglePriOnly(el) { _scPriOnly = el.checked; renderProcessingTab(); }
+// 헤더 클릭 정렬 (테이블만 갱신)
 function scSetSort(col) {
   const [sc, sd] = _scSort.split('-');
   _scSort = (sc === col && sd === 'asc') ? col + '-desc' : col + '-asc';
-  renderProcessingTab();
+  _renderScTable();
 }
 
+// 초기 렌더: 스켈레톤 1회 생성 + 이벤트 등록, 이후 테이블만 갱신
 function renderProcessingTab() {
   const el = document.getElementById('sorting-center-body');
   if (!el) return;
+
+  if (!document.getElementById('sc-table-wrap')) {
+    el.innerHTML = `
+      <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
+      <div id="sc-stats" style="margin-bottom:14px"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <input id="sc-search-farm" type="text" placeholder="농가 검색..."
+          style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
+        <select id="sc-product-sel"
+          style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
+          <option value="">전체 품목</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
+          <input type="checkbox" id="sc-pri-only"> ⭐ 우선/긴급만
+        </label>
+        <span id="sc-row-count" style="margin-left:auto;font-size:12px;color:#9CA3AF"></span>
+      </div>
+      <div id="sc-table-wrap" style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px"></div>`;
+
+    document.getElementById('sc-search-farm').addEventListener('input', e => {
+      _scSearch = e.target.value;
+      _renderScTable();
+    });
+    document.getElementById('sc-product-sel').addEventListener('change', e => {
+      _scProduct = e.target.value;
+      _renderScTable();
+    });
+    document.getElementById('sc-pri-only').addEventListener('change', e => {
+      _scPriOnly = e.target.checked;
+      _renderScTable();
+    });
+  }
+
+  _renderScStats();
+  _renderScProductOptions();
+  _renderScTable();
+}
+
+function _renderScStats() {
+  const statsEl = document.getElementById('sc-stats');
+  if (!statsEl) return;
+  const pm = _ibProcessedMap();
+  const today = td();
+  const todayMs = new Date(today).getTime();
+  const urgLvl = date => {
+    const d = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
+    return d >= 21 ? 3 : d >= 14 ? 2 : 1;
+  };
+  const allW = inboundRecords
+    .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0)
+    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
+  const totalRem = allW.reduce((s, r) => s + r.remaining, 0);
+  const todayDone = processingRecords
+    .filter(p => p.process_type === '선과' && p.date === today)
+    .reduce((s, p) => s + p.quantity, 0);
+  const urgCnt = allW.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
+  statsEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
+      ${[
+        ['📦 미선과 잔여', fmtN(totalRem) + ' CT', '#EFF6FF', '#1565C0'],
+        ['⏳ 선과 대기',   allW.length + '건',       '#FFF7ED', '#C2410C'],
+        ['⚠️ 긴급/우선',  urgCnt + '건',             '#FEF2F2', '#DC2626'],
+        ['✅ 오늘 완료',  fmtN(todayDone) + ' CT',   '#F0FDF4', '#15803D'],
+      ].map(([lbl, val, bg, col]) => `
+        <div style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center">
+          <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
+          <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function _renderScProductOptions() {
+  const sel = document.getElementById('sc-product-sel');
+  if (!sel) return;
+  const pm = _ibProcessedMap();
+  const prods = [...new Set(
+    inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0)
+      .map(r => r.product).filter(Boolean)
+  )].sort();
+  const cur = [...sel.options].slice(1).map(o => o.value);
+  if (JSON.stringify(cur) !== JSON.stringify(prods)) {
+    sel.innerHTML = '<option value="">전체 품목</option>' +
+      prods.map(p => `<option value="${esc(p)}"${_scProduct === p ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  } else {
+    sel.value = _scProduct;
+  }
+}
+
+function _renderScTable() {
+  const wrap = document.getElementById('sc-table-wrap');
+  if (!wrap) return;
 
   const pm = _ibProcessedMap();
   const today = td();
@@ -5478,19 +5568,10 @@ function renderProcessingTab() {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
 
-  const allWaiting = inboundRecords
+  let rows = inboundRecords
     .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
 
-  const totalRemCT = allWaiting.reduce((s, r) => s + r.remaining, 0);
-  const todaySortedCT = processingRecords
-    .filter(p => p.process_type === '선과' && p.date === today)
-    .reduce((s, p) => s + p.quantity, 0);
-  const urgentCount = allWaiting.filter(r => r.is_priority || urgency(r.date).level >= 2).length;
-
-  const allProducts = [...new Set(allWaiting.map(r => r.product).filter(Boolean))].sort();
-
-  let rows = [...allWaiting];
   if (_scSearch) {
     const q = _scSearch.toLowerCase();
     rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q));
@@ -5501,60 +5582,28 @@ function renderProcessingTab() {
   const [sortCol, sortDir] = _scSort.split('-');
   rows.sort((a, b) => {
     let cmp;
-    if (sortCol === 'farm')      cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
-    else if (sortCol === 'date') cmp = a.date.localeCompare(b.date);
+    if (sortCol === 'farm')         cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
+    else if (sortCol === 'date')    cmp = a.date.localeCompare(b.date);
     else if (sortCol === 'elapsed') cmp = b.date.localeCompare(a.date);
     else if (sortCol === 'remaining') cmp = a.remaining - b.remaining;
     else cmp = a.date.localeCompare(b.date);
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
+  const countEl = document.getElementById('sc-row-count');
+  if (countEl) countEl.textContent = rows.length + '건';
+
   const sortInd = col => {
     const [sc, sd] = _scSort.split('-');
     if (sc !== col) return '<span style="color:#D1D5DB;font-size:9px">↕</span>';
     return `<span style="font-size:9px">${sd === 'asc' ? '▲' : '▼'}</span>`;
   };
-
-  const statsHtml = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">
-      ${[
-        ['📦 미선과 잔여', fmtN(totalRemCT) + ' CT', '#EFF6FF', '#1565C0'],
-        ['⏳ 선과 대기',   allWaiting.length + '건',   '#FFF7ED', '#C2410C'],
-        ['⚠️ 긴급/우선',  urgentCount + '건',          '#FEF2F2', '#DC2626'],
-        ['✅ 오늘 완료',  fmtN(todaySortedCT) + ' CT', '#F0FDF4', '#15803D'],
-      ].map(([lbl, val, bg, col]) => `
-        <div style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center">
-          <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
-          <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
-        </div>`).join('')}
-    </div>`;
-
-  const filterHtml = `
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-      <input type="text" value="${esc(_scSearch)}" oninput="scSetSearch(this.value)"
-        placeholder="농가 검색..."
-        style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
-      <select onchange="scSetProduct(this.value)"
-        style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
-        <option value="">전체 품목</option>
-        ${allProducts.map(p => `<option value="${esc(p)}"${_scProduct === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}
-      </select>
-      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
-        <input type="checkbox"${_scPriOnly ? ' checked' : ''} onchange="scTogglePriOnly(this)">
-        ⭐ 우선/긴급만
-      </label>
-      <span style="margin-left:auto;font-size:12px;color:#9CA3AF">${rows.length}건</span>
-    </div>`;
-
   const thS = (col, label) =>
-    `<th onclick="scSetSort('${col}')" style="cursor:pointer;white-space:nowrap;user-select:none;padding:6px 6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">
-      ${label} ${sortInd(col)}
-    </th>`;
+    `<th onclick="scSetSort('${col}')" style="cursor:pointer;white-space:nowrap;user-select:none;padding:6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label} ${sortInd(col)}</th>`;
   const thN = label =>
-    `<th style="padding:6px 6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label}</th>`;
+    `<th style="padding:6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label}</th>`;
 
-  const tableHtml = `
-    <div style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px">
+  wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
         <col style="width:90px"><col style="width:80px"><col style="width:70px">
@@ -5597,14 +5646,7 @@ function renderProcessingTab() {
               </tr>`;
             }).join('')}
       </tbody>
-    </table>
-    </div>`;
-
-  el.innerHTML = `
-    <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
-    ${statsHtml}
-    ${filterHtml}
-    ${tableHtml}`;
+    </table>`;
 }
 
 let _editInboundId = null;
