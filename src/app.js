@@ -4631,18 +4631,142 @@ function renderIbCatSummary() {
 
   if (!priList.length) { priEl.innerHTML = ''; return; }
 
-  const totalPriCT = priList.reduce((s, r) => s + r.remaining, 0);
-  priEl.innerHTML = `
-    <div style="background:#FFF8E1;border:1px solid #FFCA28;border-radius:8px;padding:10px 14px;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:700;color:#E65100;margin-bottom:6px">
-        ⚠️ 우선 처리 필요: ${priList.length}건 (총 ${totalPriCT.toLocaleString()} CT)
+  const _today = new Date(); _today.setHours(0,0,0,0);
+  const _daysSince = ds => Math.floor((_today - new Date(ds)) / 86400000);
+  const _urgLevel  = d  => d >= 21 ? 'high' : d >= 14 ? 'mid' : 'low';
+  const _URG = {
+    high: { label: '🔴 매우 시급 (3주+)', col: '#991B1B' },
+    mid:  { label: '🟡 시급 (2~3주)',     col: '#92400E' },
+    low:  { label: '🟢 일반 (2주 미만)',   col: '#14532D' },
+  };
+  const _GSCORE = { '상':3, '중':2, '하':1 };
+  const _GBACK  = [null,'하','중','상'];
+  const _avgGrade = (rows, field) => {
+    const valid = rows.filter(r => r[field]);
+    if (!valid.length) return null;
+    return _GBACK[Math.round(valid.reduce((s,r) => s+(_GSCORE[r[field]]||0), 0) / valid.length)] || null;
+  };
+  const _GCOL = { '상':'#059669', '중':'#D97706', '하':'#DC2626' };
+  const _gChip = (label, g) => g
+    ? `<span style="font-size:10px;color:#888">${label}</span><span style="color:${_GCOL[g]};font-weight:700;font-size:11px">${g}</span>`
+    : '';
+
+  // 농가별 그룹화
+  const _farmMap = {};
+  priList.forEach(r => {
+    if (!_farmMap[r.farm_name]) _farmMap[r.farm_name] = { rows:[], totalCT:0, oldestDate:r.date, products:[] };
+    const f = _farmMap[r.farm_name];
+    f.rows.push(r);
+    f.totalCT += r.remaining;
+    if (r.date < f.oldestDate) f.oldestDate = r.date;
+    if (r.product && !f.products.includes(r.product)) f.products.push(r.product);
+  });
+
+  // 정렬: 가장 오래된 입고일 → 총 CT 내림차순
+  const _farmEntries = Object.entries(_farmMap).sort(([,a],[,b]) =>
+    a.oldestDate !== b.oldestDate ? a.oldestDate.localeCompare(b.oldestDate) : b.totalCT - a.totalCT
+  );
+
+  const totalPriCT = priList.reduce((s,r) => s+r.remaining, 0);
+
+  const _cards = _farmEntries.map(([farm, { rows, totalCT, oldestDate, products }], fi) => {
+    const cardId = `pri-card-${fi}`;
+
+    // 시급도 분류
+    const buckets = { high:[], mid:[], low:[] };
+    rows.forEach(r => { const d = _daysSince(r.date); buckets[_urgLevel(d)].push({...r, days:d}); });
+
+    const urgRows = ['high','mid','low'].filter(k => buckets[k].length).map(k => {
+      const b = buckets[k]; const u = _URG[k];
+      const ct = b.reduce((s,r) => s+r.remaining, 0);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px">
+        <span style="color:${u.col};font-weight:600;min-width:140px">${u.label}</span>
+        <span style="color:#555">${ct.toLocaleString()} CT · ${b.length}건</span>
+      </div>`;
+    }).join('');
+
+    // 위치 요약
+    const locMap = {};
+    rows.forEach(r => { if (r.location) locMap[r.location] = (locMap[r.location]||0)+1; });
+    const locStr = Object.entries(locMap).length
+      ? Object.entries(locMap).sort((a,b)=>b[1]-a[1]).map(([l,n]) => n>1?`${esc(l)} (${n}건)`:esc(l)).join(', ')
+      : '-';
+
+    // 평균 품질
+    const bg  = _avgGrade(rows,'brix_grade');
+    const ag  = _avgGrade(rows,'acidity_grade');
+    const apg = _avgGrade(rows,'appearance_grade');
+    const qualStr = [_gChip('당',bg),_gChip('산',ag),_gChip('외',apg)].filter(Boolean).join('&ensp;');
+
+    // 경과일
+    const oldDays = _daysSince(oldestDate);
+    const oldCol  = oldDays >= 21 ? '#991B1B' : oldDays >= 14 ? '#92400E' : '#14532D';
+
+    // 왼쪽 보더 색
+    const bdrCol = buckets.high.length ? '#F87171' : buckets.mid.length ? '#FBBF24' : '#86EFAC';
+
+    // 펼침 상세 rows
+    const detailHtml = ['high','mid','low'].filter(k=>buckets[k].length).map(k => {
+      const u = _URG[k];
+      const rowsHtml = buckets[k].sort((a,b)=>a.date.localeCompare(b.date)).map(r => {
+        const qInline = qualityInline(r) || '';
+        const locBit  = r.location ? `<span style="color:#888;font-size:10px">📍${esc(r.location)}</span>` : '';
+        const daysCol = r.days >= 21 ? '#991B1B' : r.days >= 14 ? '#92400E' : '#14532D';
+        return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 4px 8px;border-bottom:1px solid #f5f5f5;font-size:12px">
+          <span style="color:#aaa;font-size:10px">${r.date.slice(5)}</span>
+          ${productChip(r.product)}
+          <span style="font-weight:700;color:#333">${r.remaining}CT</span>
+          <span style="color:${daysCol};font-size:10px">(${r.days}일)</span>
+          ${locBit}${qInline}
+        </div>`;
+      }).join('');
+      return `<div style="margin-bottom:6px">
+        <div style="font-size:11px;font-weight:700;color:${u.col};margin:6px 0 2px">${u.label}</div>
+        ${rowsHtml}
+      </div>`;
+    }).join('');
+
+    return `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${bdrCol};border-radius:8px;margin-bottom:8px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;background:#fafafa;flex-wrap:wrap">
+        <span style="font-size:14px">⚠️</span>
+        <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
+        ${products.map(p=>productChip(p)).join('')}
+        <span style="font-weight:700;color:#1565C0;margin-left:auto;font-size:13px">${totalCT.toLocaleString()} CT</span>
       </div>
-      ${priList.map(r => `
-        <div style="font-size:12px;color:#B71C1C;padding:2px 0">
-          • ${esc(r.farm_name)} ${esc(r.product)} ${r.remaining}CT
-          <span style="color:#aaa">(${r.date})</span>
-        </div>`).join('')}
+      <div style="padding:8px 14px 4px">
+        ${urgRows}
+        <div style="margin-top:6px;font-size:12px;color:#555;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <span>📍 ${locStr}</span>
+          ${qualStr ? `<span style="display:flex;gap:3px;align-items:center">📊&ensp;${qualStr}</span>` : ''}
+          <span style="color:${oldCol}">⏰ ${oldestDate} <strong>(${oldDays}일 경과)</strong></span>
+        </div>
+      </div>
+      <div style="padding:4px 14px 8px">
+        <button onclick="togglePriDetail('${cardId}')" id="${cardId}-btn"
+          style="font-size:12px;color:#1565C0;background:none;border:none;cursor:pointer;padding:4px 0">
+          ▼ ${rows.length}건 모두 보기
+        </button>
+        <div id="${cardId}" style="display:none;margin-top:4px">${detailHtml}</div>
+      </div>
     </div>`;
+  }).join('');
+
+  priEl.innerHTML = `<div style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-size:13px;font-weight:700;color:#C62828">⚠️ 우선 처리 필요</span>
+      <span style="font-size:12px;color:#888">${_farmEntries.length}개 농가 · ${priList.length}건 · 총 ${totalPriCT.toLocaleString()} CT</span>
+    </div>
+    ${_cards}
+  </div>`;
+}
+
+function togglePriDetail(id) {
+  const el  = document.getElementById(id);
+  const btn = document.getElementById(id + '-btn');
+  if (!el) return;
+  const open = el.style.display === 'none';
+  el.style.display  = open ? 'block' : 'none';
+  if (btn) btn.textContent = open ? '▲ 접기' : `▼ ${el.querySelectorAll('[style*="border-bottom"]').length}건 모두 보기`;
 }
 
 function renderInboundList() {
