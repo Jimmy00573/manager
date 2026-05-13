@@ -3886,8 +3886,23 @@ function toggleRowMenu(id, e) {
   const menu = document.getElementById(`row-menu-${id}`);
   if (!menu) return;
   const isOpen = menu.style.display !== 'none';
-  menu.style.display = isOpen ? 'none' : '';
-  _openMenuId = isOpen ? null : id;
+  if (isOpen) {
+    menu.style.display = 'none';
+    _openMenuId = null;
+  } else {
+    const btn = e.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    menu.style.display = '';
+    const menuH = menu.offsetHeight;
+    const top = (window.innerHeight - rect.bottom >= menuH + 4 || rect.top < menuH + 4)
+      ? rect.bottom + 4
+      : rect.top - menuH - 4;
+    const right = window.innerWidth - rect.right;
+    menu.style.top = Math.max(4, top) + 'px';
+    menu.style.right = Math.max(4, right) + 'px';
+    menu.style.left = 'auto';
+    _openMenuId = id;
+  }
 }
 
 function qualityInline(r) {

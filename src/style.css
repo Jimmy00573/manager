@@ -234,7 +234,7 @@ textarea {
 /* ── ⋮ 행 메뉴 ── */
 .menu-trigger { background: none; border: none; cursor: pointer; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: #888; font-weight: 900; letter-spacing: -2px; }
 .menu-trigger:hover { background: #f0f0f0; color: #333; }
-.row-menu { position: absolute; right: 0; top: 100%; z-index: 200; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 150px; padding: 4px; overflow: hidden; }
+.row-menu { position: fixed; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 150px; padding: 4px; overflow: hidden; }
 .row-menu button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 7px 12px; font-size: 13px; font-family: inherit; cursor: pointer; border-radius: 5px; white-space: nowrap; color: var(--text-primary); }
 .row-menu button:hover { background: #f5f5f5; }
 .menu-danger { color: #DC2626 !important; }
