@@ -4266,6 +4266,11 @@ const SIZES_감귤류 = ['000', '00', '3S', '2S1', '2S2', 'S1', 'S2', 'M1', 'M2'
 let _sortingInboundId = null;
 let _sortingSeq = 1;
 
+let _scSort = 'date-asc';
+let _scSearch = '';
+let _scPriOnly = false;
+let _scProduct = '';
+
 const IB_CATS = [
   { key: '상품',  color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
   { key: '대과',  color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
@@ -5444,120 +5449,162 @@ function renderInboundList() {
   _renderIbPagination(totalFiltered);
 }
 
+function scSetSearch(v) { _scSearch = v; renderProcessingTab(); }
+function scSetProduct(v) { _scProduct = v; renderProcessingTab(); }
+function scTogglePriOnly(el) { _scPriOnly = el.checked; renderProcessingTab(); }
+function scSetSort(col) {
+  const [sc, sd] = _scSort.split('-');
+  _scSort = (sc === col && sd === 'asc') ? col + '-desc' : col + '-asc';
+  renderProcessingTab();
+}
+
 function renderProcessingTab() {
   const el = document.getElementById('sorting-center-body');
   if (!el) return;
 
-  const pm   = _ibProcessedMap();
+  const pm = _ibProcessedMap();
   const today = td();
   const todayMs = new Date(today).getTime();
 
-  // 시급도 계산
   const urgency = date => {
     const days = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
-    if (days >= 21) return { icon: '🔴', label: `${days}일 경과`, color: '#DC2626', border: '#FECACA', accent: '#DC2626', level: 3 };
-    if (days >= 14) return { icon: '🟡', label: `${days}일 경과`, color: '#D97706', border: '#FDE68A', accent: '#F59E0B', level: 2 };
-    return { icon: '🟢', label: `${days}일 경과`, color: '#16A34A', border: '#D1FAE5', accent: '#4ADE80', level: 1 };
+    if (days >= 21) return { icon: '🔴', label: `${days}일`, color: '#DC2626', level: 3 };
+    if (days >= 14) return { icon: '🟡', label: `${days}일`, color: '#D97706', level: 2 };
+    return { icon: '🟢', label: `${days}일`, color: '#16A34A', level: 1 };
   };
 
-  // 선과 처리 건수 맵 (inbound_id → 선과 횟수)
   const srtCntMap = {};
   processingRecords.filter(p => p.process_type === '선과').forEach(p => {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
 
-  // 선과 대기 목록 (잔여 > 0, 오래된 순)
-  const waiting = inboundRecords
+  const allWaiting = inboundRecords
     .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0)
-    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
 
-  // 통계
-  const totalRemCT     = waiting.reduce((s, r) => s + r.remaining, 0);
-  const todaySortedCT  = processingRecords
+  const totalRemCT = allWaiting.reduce((s, r) => s + r.remaining, 0);
+  const todaySortedCT = processingRecords
     .filter(p => p.process_type === '선과' && p.date === today)
     .reduce((s, p) => s + p.quantity, 0);
-  const urgentCount = waiting.filter(r => urgency(r.date).level === 3 || r.is_priority).length;
+  const urgentCount = allWaiting.filter(r => r.is_priority || urgency(r.date).level >= 2).length;
 
-  // 우선 처리 vs 일반 대기
-  const priority = waiting.filter(r => r.is_priority || urgency(r.date).level === 3);
-  const normal   = waiting.filter(r => !r.is_priority && urgency(r.date).level < 3);
+  const allProducts = [...new Set(allWaiting.map(r => r.product).filter(Boolean))].sort();
 
-  const renderCard = r => {
-    const u = urgency(r.date);
-    const srtCnt = srtCntMap[r.id] || 0;
-    const qiHtml = qualityInline(r);
-    return `<div style="background:#fff;border:1px solid ${u.border};border-left:4px solid ${u.accent};border-radius:8px;padding:12px 14px;margin-bottom:8px">
-      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
-        <div style="flex:1;min-width:180px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">
-            ${r.is_priority ? '<span title="우선처리">⭐</span>' : ''}
-            <strong style="font-size:14px">${esc(r.farm_name)}</strong>
-            ${productChip(r.product)}
-            ${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}
-          </div>
-          <div style="font-size:12px;color:#6B7280;display:flex;flex-wrap:wrap;gap:8px">
-            <span>입고 ${r.date} · <span style="color:${u.color};font-weight:600">${u.icon} ${u.label}</span></span>
-            <span>위치: ${esc(r.location || '미지정')}</span>
-            ${srtCnt > 0 ? `<span style="color:#7C3AED;font-weight:600">✂️ ${srtCnt}차 처리 이력</span>` : '<span style="color:#9CA3AF">선과 이력 없음</span>'}
-          </div>
-          ${qiHtml ? `<div style="margin-top:5px">${qiHtml}</div>` : ''}
-        </div>
-        <div style="text-align:center;flex-shrink:0;min-width:80px">
-          <div style="font-size:22px;font-weight:800;color:#1565C0;line-height:1">${fmtN(r.remaining)}</div>
-          <div style="font-size:10px;color:#9CA3AF;margin-bottom:8px">CT 잔여</div>
-          <button onclick="openSortingModal('${r.id}')"
-            style="background:#1565C0;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
-            ✂️ 선과 시작
-          </button>
-        </div>
-      </div>
-    </div>`;
+  let rows = [...allWaiting];
+  if (_scSearch) {
+    const q = _scSearch.toLowerCase();
+    rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q));
+  }
+  if (_scProduct) rows = rows.filter(r => r.product === _scProduct);
+  if (_scPriOnly) rows = rows.filter(r => r.is_priority || urgency(r.date).level >= 2);
+
+  const [sortCol, sortDir] = _scSort.split('-');
+  rows.sort((a, b) => {
+    let cmp;
+    if (sortCol === 'farm')      cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
+    else if (sortCol === 'date') cmp = a.date.localeCompare(b.date);
+    else if (sortCol === 'elapsed') cmp = b.date.localeCompare(a.date);
+    else if (sortCol === 'remaining') cmp = a.remaining - b.remaining;
+    else cmp = a.date.localeCompare(b.date);
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const sortInd = col => {
+    const [sc, sd] = _scSort.split('-');
+    if (sc !== col) return '<span style="color:#D1D5DB;font-size:9px">↕</span>';
+    return `<span style="font-size:9px">${sd === 'asc' ? '▲' : '▼'}</span>`;
   };
 
   const statsHtml = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">
       ${[
         ['📦 미선과 잔여', fmtN(totalRemCT) + ' CT', '#EFF6FF', '#1565C0'],
-        ['⏳ 선과 대기',   waiting.length + '건',     '#FFF7ED', '#C2410C'],
-        ['⚠️ 긴급',        urgentCount + '건',        '#FEF2F2', '#DC2626'],
-        ['✅ 오늘 완료',   fmtN(todaySortedCT) + ' CT','#F0FDF4', '#15803D'],
+        ['⏳ 선과 대기',   allWaiting.length + '건',   '#FFF7ED', '#C2410C'],
+        ['⚠️ 긴급/우선',  urgentCount + '건',          '#FEF2F2', '#DC2626'],
+        ['✅ 오늘 완료',  fmtN(todaySortedCT) + ' CT', '#F0FDF4', '#15803D'],
       ].map(([lbl, val, bg, col]) => `
-        <div style="background:${bg};border-radius:10px;padding:12px 14px;text-align:center">
-          <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:4px">${lbl}</div>
-          <div style="font-size:18px;font-weight:800;color:${col}">${val}</div>
+        <div style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center">
+          <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
+          <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
         </div>`).join('')}
     </div>`;
 
-  const sectionHdr = (icon, title, count, color) =>
-    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span style="font-size:13px;font-weight:700;color:${color}">${icon} ${title}</span>
-      <span style="background:#F3F4F6;color:#6B7280;font-size:11px;padding:2px 8px;border-radius:9999px">${count}건</span>
+  const filterHtml = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <input type="text" value="${esc(_scSearch)}" oninput="scSetSearch(this.value)"
+        placeholder="농가 검색..."
+        style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
+      <select onchange="scSetProduct(this.value)"
+        style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
+        <option value="">전체 품목</option>
+        ${allProducts.map(p => `<option value="${esc(p)}"${_scProduct === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}
+      </select>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
+        <input type="checkbox"${_scPriOnly ? ' checked' : ''} onchange="scTogglePriOnly(this)">
+        ⭐ 우선/긴급만
+      </label>
+      <span style="margin-left:auto;font-size:12px;color:#9CA3AF">${rows.length}건</span>
     </div>`;
 
-  const priorityHtml = priority.length > 0
-    ? `<div style="margin-bottom:20px">
-        ${sectionHdr('⚠️', '우선 처리 필요', priority.length, '#DC2626')}
-        ${priority.map(renderCard).join('')}
-       </div>`
-    : '';
+  const thS = (col, label) =>
+    `<th onclick="scSetSort('${col}')" style="cursor:pointer;white-space:nowrap;user-select:none;padding:6px 6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">
+      ${label} ${sortInd(col)}
+    </th>`;
+  const thN = label =>
+    `<th style="padding:6px 6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label}</th>`;
 
-  const normalHtml = normal.length > 0
-    ? `<div>
-        ${sectionHdr('📋', '선과 대기', normal.length, '#374151')}
-        ${normal.map(renderCard).join('')}
-       </div>`
-    : '';
+  const tableHtml = `
+    <div style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px">
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
+      <colgroup>
+        <col style="width:90px"><col style="width:80px"><col style="width:70px">
+        <col style="width:70px"><col style="width:60px"><col style="width:45px">
+        <col style="width:80px"><col style="width:100px"><col style="width:70px">
+      </colgroup>
+      <thead><tr>
+        ${thS('farm','농가')}${thN('품목')}${thS('remaining','잔여CT')}
+        ${thS('date','입고일')}${thS('elapsed','경과')}${thN('이력')}
+        ${thN('위치')}${thN('품질')}${thN('액션')}
+      </tr></thead>
+      <tbody>
+        ${rows.length === 0
+          ? `<tr><td colspan="9" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 항목이 없습니다</td></tr>`
+          : rows.map(r => {
+              const u = urgency(r.date);
+              const srtCnt = srtCntMap[r.id] || 0;
+              const isPri = r.is_priority || u.level === 3;
+              const rowBg = isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : '#fff');
+              const qiHtml = qualityInline(r);
+              return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
+                <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
+                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}
+                </td>
+                <td style="padding:6px 4px">${productChip(r.product)}</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:700;color:#1565C0">${fmtN(r.remaining)}</td>
+                <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
+                <td style="padding:6px 4px;font-size:12px;font-weight:600;color:${u.color};white-space:nowrap">${u.icon} ${u.label}</td>
+                <td style="padding:6px 4px;text-align:center;font-size:12px;color:${srtCnt > 0 ? '#7C3AED' : '#D1D5DB'}">${srtCnt > 0 ? srtCnt + '차' : '-'}</td>
+                <td style="padding:6px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#374151" title="${esc(r.location || '')}">
+                  ${esc(r.location || '미지정')}
+                </td>
+                <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
+                <td style="padding:4px;text-align:center">
+                  <button onclick="openSortingModal('${r.id}')"
+                    style="background:#1565C0;color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
+                    ✂️ 입력
+                  </button>
+                </td>
+              </tr>`;
+            }).join('')}
+      </tbody>
+    </table>
+    </div>`;
 
   el.innerHTML = `
-    <div style="font-size:16px;font-weight:700;color:#1565C0;margin-bottom:16px;display:flex;align-items:center;gap:8px">
-      ✂️ 선과 처리 센터
-      <span style="font-size:11px;font-weight:400;color:#9CA3AF">입고일 오래된 순</span>
-    </div>
+    <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
     ${statsHtml}
-    ${priorityHtml}
-    ${normalHtml}
-    ${waiting.length === 0 ? '<div style="text-align:center;padding:60px;color:#bbb;font-size:15px">✅ 선과 대기 중인 미선과가 없습니다</div>' : ''}`;
+    ${filterHtml}
+    ${tableHtml}`;
 }
 
 let _editInboundId = null;
