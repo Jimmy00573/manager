@@ -37,6 +37,8 @@ let _farmViewSearch = '';
 let _farmViewSort = 'remaining-desc';
 let _farmExpanded = new Set();
 let _catExpanded = new Set();
+let _currentFarmList = [];
+let _currentCatList = [];
 let auditLogs = [];
 let auditLogOffset = 0;
 const AUDIT_PAGE_SIZE = 100;
@@ -4594,14 +4596,21 @@ function ibToggleFarm(name) {
 }
 function ibFarmSetSearch(val) { _farmViewSearch = val.trim(); renderIbFarmView(); }
 function ibFarmSetSort(val)   { _farmViewSort = val; renderIbFarmView(); }
-function ibFarmToggleAll(farmNames, allExpanded) {
-  if (allExpanded) farmNames.forEach(n => _farmExpanded.delete(n));
-  else             farmNames.forEach(n => _farmExpanded.add(n));
+function ibFarmToggleAllBtn(btn) {
+  const allExpanded = btn.dataset.allExpanded === 'true';
+  if (allExpanded) _currentFarmList.forEach(n => _farmExpanded.delete(n));
+  else             _currentFarmList.forEach(n => _farmExpanded.add(n));
   renderIbFarmView();
 }
 function ibToggleCat(key) {
   if (_catExpanded.has(key)) _catExpanded.delete(key);
   else _catExpanded.add(key);
+  renderIbCatView();
+}
+function ibCatToggleAllBtn(btn) {
+  const allExpanded = btn.dataset.allExpanded === 'true';
+  if (allExpanded) _currentCatList.forEach(k => _catExpanded.delete(k));
+  else             _currentCatList.forEach(k => _catExpanded.add(k));
   renderIbCatView();
 }
 
@@ -4652,6 +4661,7 @@ function renderIbFarmView() {
     }
   });
 
+  _currentFarmList = farms;
   const allExpanded = farms.length > 0 && farms.every(f => _farmExpanded.has(f));
   const toolbar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input type="text" placeholder="🔍 농가명 검색..." value="${esc(_farmViewSearch)}"
@@ -4664,7 +4674,7 @@ function renderIbFarmView() {
       <option value="name-asc"${_farmViewSort==='name-asc'?' selected':''}>농가명 가나다순</option>
       <option value="date-desc"${_farmViewSort==='date-desc'?' selected':''}>입고일 최신순</option>
     </select>
-    <button class="btn" onclick="ibFarmToggleAll(${JSON.stringify(farms)},${allExpanded})"
+    <button class="btn" data-all-expanded="${allExpanded}" onclick="ibFarmToggleAllBtn(this)"
       style="font-size:12px;padding:4px 10px">${allExpanded ? '📁 모두 접기' : '📂 모두 펼치기'}</button>
     <span style="font-size:12px;color:var(--text-secondary);margin-left:auto">${farms.length}개 농가</span>
   </div>`;
@@ -4763,8 +4773,8 @@ function renderIbFarmView() {
     const hdrChips = [gradeHeaderChip('당', brixG), gradeHeaderChip('산', acidG), gradeHeaderChip('외', appearG)].filter(Boolean);
 
     cardsHtml += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;cursor:pointer;user-select:none;flex-wrap:wrap"
-           onclick="ibToggleFarm(${JSON.stringify(farm)})">
+      <div data-farm="${esc(farm)}" onclick="ibToggleFarm(this.dataset.farm)"
+           style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;cursor:pointer;user-select:none;flex-wrap:wrap">
         <span style="font-size:11px;color:#888;display:inline-block;width:10px">${isExpanded ? '▼' : '▶'}</span>
         <span style="font-size:16px">👨‍🌾</span>
         <span style="display:inline-block;width:14px;text-align:center;font-size:12px">${hasPriority ? '⭐' : ''}</span>
@@ -4814,9 +4824,10 @@ function renderIbCatView() {
   });
 
   const activeCats = IB_CATS.filter(c => catMap[c.key].total > 0);
+  _currentCatList = activeCats.map(c => c.key);
   const allCatExpanded = activeCats.length > 0 && activeCats.every(c => _catExpanded.has(c.key));
   const catToolbar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-    <button class="btn" onclick="ibCatToggleAll(${JSON.stringify(activeCats.map(c=>c.key))},${allCatExpanded})"
+    <button class="btn" data-all-expanded="${allCatExpanded}" onclick="ibCatToggleAllBtn(this)"
       style="font-size:12px;padding:4px 10px">${allCatExpanded ? '📁 모두 접기' : '📂 모두 펼치기'}</button>
     <span style="font-size:12px;color:var(--text-secondary)">${activeCats.length}개 카테고리</span>
   </div>`;
@@ -4848,7 +4859,7 @@ function renderIbCatView() {
 
     html += `<div style="background:#fff;border:1px solid ${c.border};border-left:4px solid ${c.color};border-radius:8px;margin-bottom:12px;overflow:hidden">
       <div style="background:${c.bg};padding:10px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none"
-           onclick="ibToggleCat(${JSON.stringify(c.key)})">
+           data-cat="${esc(c.key)}" onclick="ibToggleCat(this.dataset.cat)">
         <span style="font-size:11px;color:${c.color};opacity:0.7;display:inline-block;width:10px">${isExpanded ? '▼' : '▶'}</span>
         <span style="font-weight:700;font-size:14px;color:${c.color}">${c.key}</span>
         <span style="font-size:13px;color:#555">총 <strong style="color:${c.color}">${total.toLocaleString()} CT</strong></span>
