@@ -4254,6 +4254,18 @@ function _auditFilteredCount() {
   return list.length;
 }
 
+// ── 선과 처리 상수
+const PRODUCT_TYPE_MAP = {
+  '천혜향': '만감류', '한라봉': '만감류', '카라향': '만감류',
+  '레드향': '만감류', '수라향': '만감류', '황금향': '만감류',
+  '노지감귤': '감귤류', '하우스감귤': '감귤류', '타이벡': '감귤류', '비가림': '감귤류'
+};
+const SIZES_만감류 = Array.from({ length: 22 }, (_, i) => `${i + 5}수`);
+const SIZES_감귤류 = ['000', '00', '3S', '2S1', '2S2', 'S1', 'S2', 'M1', 'M2', 'L', '2L', '왕1', '왕2'];
+
+let _sortingInboundId = null;
+let _sortingSeq = 1;
+
 const IB_CATS = [
   { key: '상품',  color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
   { key: '대과',  color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
@@ -5302,6 +5314,12 @@ function renderInboundList() {
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
+  // 선과 이력 카운트 맵 (processingRecords 기반, '선과' 타입만)
+  const _sortingCountMap = {};
+  processingRecords.filter(p => p.process_type === '선과').forEach(p => {
+    _sortingCountMap[p.inbound_id] = (_sortingCountMap[p.inbound_id] || 0) + 1;
+  });
+
   let visible = showVoidData ? inboundRecords : inboundRecords.filter(r => !r.is_void);
 
   // 카테고리·출처 필터 적용
@@ -5378,12 +5396,16 @@ function renderInboundList() {
     const processed = getProcessedForInbound(r.id);
     const remaining = r.quantity - processed;
     const qtyTitle = processed > 0 ? `입고 ${fmtN(r.quantity)}CT · 처리 ${fmtN(processed)}CT · 잔여 ${fmtN(remaining)}CT` : `입고 ${fmtN(r.quantity)}CT`;
+    const srtCount = _sortingCountMap[r.id] || 0;
+    const srtBadge = srtCount > 0
+      ? `<button onclick="showSortingHistory('${r.id}',this)" style="background:none;border:none;padding:0;cursor:pointer;font-size:10px;color:#7C3AED;font-weight:700;white-space:nowrap;display:inline-block;margin-left:3px" title="선과 이력 보기">✂️${srtCount}차</button>`
+      : '';
     const remBadge = remaining <= 0
       ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
       : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${fmtN(remaining)}</span>`;
     const qtyDisplay = processed > 0
-      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}</span>`
-      : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}</span>`;
+      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtBadge}</span>`
+      : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}${srtBadge}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
@@ -5392,6 +5414,7 @@ function renderInboundList() {
       : `<span style="color:#D1D5DB">-</span>`;
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
+         ${remaining > 0 ? `<button onclick="openSortingModal('${r.id}')">✂️ 선과 처리</button>` : '<button disabled style="opacity:0.4;cursor:not-allowed;pointer-events:none">✂️ 선과 완료됨</button>'}
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
          <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
          <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
@@ -5665,6 +5688,255 @@ async function voidInbound(id, reason) {
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], is_void: true, void_reason: reason, void_at: now, void_by: 'admin' };
     renderInvSummary(); renderInboundList(); renderProcessingTab();
   } catch(e) { alert('무효 처리 오류: ' + e.message); }
+}
+
+// ── 선과 처리 모달 ─────────────────────────────────────────────────
+
+async function openSortingModal(id) {
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+
+  const processed = getProcessedForInbound(id);
+  const remaining = r.quantity - processed;
+  if (remaining <= 0) { alert('잔여 재고가 없습니다.'); return; }
+
+  _sortingInboundId = id;
+
+  // 차수 계산
+  let seq = 1;
+  try {
+    const rows = await sbGet('sorting_results', `inbound_record_id=eq.${id}&order=sequence_number.desc&limit=1`);
+    seq = (rows && rows.length > 0) ? rows[0].sequence_number + 1 : 1;
+  } catch (e) {}
+  _sortingSeq = seq;
+
+  // 입고 정보
+  document.getElementById('srt-ib-info').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 16px">
+      <div><span style="color:#6B7280">농가</span> <strong>${esc(r.farm_name)}</strong></div>
+      <div><span style="color:#6B7280">품목</span> <strong>${esc(r.product)}</strong>
+        <span style="font-size:11px;color:#6B7280;margin-left:4px">(${PRODUCT_TYPE_MAP[r.product] || '만감류'})</span></div>
+      <div><span style="color:#6B7280">입고일</span> ${r.date}</div>
+      <div><span style="color:#6B7280">입고량</span> <strong>${fmtN(r.quantity)} CT</strong></div>
+      <div><span style="color:#6B7280">잔여</span> <strong style="color:#1565C0">${fmtN(remaining)} CT</strong>${processed > 0 ? ` <span style="font-size:11px;color:#9CA3AF">(${fmtN(processed)}CT 처리됨)</span>` : ''}</div>
+      <div><span style="color:#6B7280">위치</span> ${esc(r.location || '미지정')}</div>
+    </div>`;
+
+  document.getElementById('srt-seq').textContent = `${seq}차`;
+  document.getElementById('srt-date').value = td();
+  document.getElementById('srt-operator').value = '';
+  document.getElementById('srt-note').value = '';
+  document.getElementById('srt-input-ct').value = remaining;
+  document.getElementById('srt-waste').value = 0;
+  document.getElementById('srt-highacid').value = 0;
+  document.getElementById('srt-tiny').value = 0;
+  document.getElementById('srt-loss').value = 0;
+
+  // 사이즈 그리드
+  const productType = PRODUCT_TYPE_MAP[r.product] || '만감류';
+  const sizes = productType === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
+  document.getElementById('srt-size-grid').innerHTML = sizes.map(sz => `
+    <div>
+      <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
+      <input type="number" data-size="${sz}" class="srt-size-input" min="0" value="0"
+        style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
+        oninput="srtUpdateTotals()">
+    </div>`).join('');
+
+  srtUpdateTotals();
+  document.getElementById('modal-sorting').style.display = 'flex';
+  document.getElementById('srt-input-ct').focus();
+  document.getElementById('srt-input-ct').select();
+}
+
+function closeSortingModal() {
+  document.getElementById('modal-sorting').style.display = 'none';
+  _sortingInboundId = null;
+}
+
+function srtUpdateTotals() {
+  let normalTotal = 0;
+  document.querySelectorAll('.srt-size-input').forEach(inp => {
+    const v = parseFloat(inp.value) || 0;
+    normalTotal += v;
+    inp.style.background = v > 0 ? '#EFF6FF' : '#F9F9F9';
+    inp.style.borderColor = v > 0 ? '#93C5FD' : '#E5E7EB';
+  });
+
+  const waste    = parseFloat(document.getElementById('srt-waste').value)    || 0;
+  const highacid = parseFloat(document.getElementById('srt-highacid').value) || 0;
+  const tiny     = parseFloat(document.getElementById('srt-tiny').value)     || 0;
+  const loss     = parseFloat(document.getElementById('srt-loss').value)     || 0;
+  const abnormalTotal = waste + highacid + tiny + loss;
+  const outputTotal   = normalTotal + abnormalTotal;
+  const inputCt       = parseFloat(document.getElementById('srt-input-ct').value) || 0;
+  const diff    = outputTotal - inputCt;
+  const diffPct = inputCt > 0 ? Math.abs(diff / inputCt) * 100 : 0;
+
+  document.getElementById('srt-normal-total').textContent   = fmtN(normalTotal);
+  document.getElementById('srt-abnormal-total').textContent = fmtN(abnormalTotal);
+
+  let diffColor = '#15803D', diffIcon = '🟢', diffMsg = '정확';
+  if (diffPct > 5)       { diffColor = '#DC2626'; diffIcon = '🔴'; diffMsg = '확인 필요'; }
+  else if (diffPct > 0)  { diffColor = '#D97706'; diffIcon = '🟡'; diffMsg = '오차 범위'; }
+
+  const sign = diff > 0 ? '+' : '';
+  document.getElementById('srt-check').innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12px;color:#374151">
+      <span>투입 <strong>${fmtN(inputCt)} CT</strong></span>
+      <span>정상품 <strong style="color:#1565C0">${fmtN(normalTotal)} CT</strong></span>
+      <span>비정상품 <strong style="color:#E65100">${fmtN(abnormalTotal)} CT</strong></span>
+      <span>결과 합계 <strong>${fmtN(outputTotal)} CT</strong></span>
+      <span>차이 <strong style="color:${diffColor}">${sign}${fmtN(diff)} CT ${diffIcon} ${diffMsg}</strong></span>
+    </div>`;
+}
+
+async function saveSortingResult() {
+  if (!_sortingInboundId) return;
+  const r = inboundRecords.find(x => x.id === _sortingInboundId);
+  if (!r) return;
+
+  const sortingDate = document.getElementById('srt-date').value;
+  const operator    = document.getElementById('srt-operator').value.trim();
+  const inputCt     = parseFloat(document.getElementById('srt-input-ct').value) || 0;
+  const note        = document.getElementById('srt-note').value.trim();
+  const waste       = parseFloat(document.getElementById('srt-waste').value)    || 0;
+  const highacid    = parseFloat(document.getElementById('srt-highacid').value) || 0;
+  const tiny        = parseFloat(document.getElementById('srt-tiny').value)     || 0;
+  const loss        = parseFloat(document.getElementById('srt-loss').value)     || 0;
+
+  const processed  = getProcessedForInbound(_sortingInboundId);
+  const remaining  = r.quantity - processed;
+
+  if (!sortingDate)         { alert('선과일을 입력하세요.'); return; }
+  if (inputCt <= 0)         { alert('투입량을 입력하세요.'); return; }
+  if (inputCt > remaining)  { alert(`투입량(${fmtN(inputCt)}CT)이 잔여재고(${fmtN(remaining)}CT)를 초과합니다.`); return; }
+
+  let normalTotal = 0;
+  const sizeDetails = [];
+  document.querySelectorAll('.srt-size-input').forEach(inp => {
+    const v = parseFloat(inp.value) || 0;
+    if (v > 0) { normalTotal += v; sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상' }); }
+  });
+
+  const abnormalTotal = waste + highacid + tiny + loss;
+  const outputTotal   = normalTotal + abnormalTotal;
+  if (outputTotal === 0) { alert('선과 결과를 입력하세요.'); return; }
+
+  const diffPct = inputCt > 0 ? Math.abs((outputTotal - inputCt) / inputCt) * 100 : 0;
+  if (diffPct > 5) {
+    if (!confirm(`투입량과 결과 합계 차이가 ${diffPct.toFixed(1)}%입니다.\n투입 ${fmtN(inputCt)} CT / 결과 ${fmtN(outputTotal)} CT\n그래도 저장하시겠습니까?`)) return;
+  }
+
+  try {
+    // 1. 헤더
+    const headerRows = await sbInsert('sorting_results', {
+      inbound_record_id: _sortingInboundId,
+      sequence_number: _sortingSeq,
+      sorting_date: sortingDate,
+      operator_name: operator || null,
+      input_ct: inputCt,
+      total_output_ct: outputTotal,
+      loss_ct: loss || null,
+      status: '완료',
+      note: note || null,
+      created_by: 'admin'
+    });
+    const headerId = headerRows[0].id;
+
+    // 2. 상세 (사이즈별 + 비정상품)
+    const allDetails = [
+      ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', note: null })),
+      ...(waste    > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null }] : []),
+      ...(highacid > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null }] : []),
+      ...(tiny     > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null }] : []),
+      ...(loss     > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null }] : []),
+    ];
+    for (const d of allDetails) await sbInsert('sorting_details', d);
+
+    // 3. processing_records로 잔여재고 차감
+    const procRow = await dbInsertProcessing({
+      inbound_id: _sortingInboundId,
+      date: sortingDate,
+      process_type: '선과',
+      quantity: inputCt,
+      note: `${_sortingSeq}차 선과 (결과#${headerId})`,
+      staff: operator || 'admin'
+    });
+    processingRecords.push(procRow);
+
+    // 4. 비정상품 → inbound_records 자동 생성
+    const base = {
+      date: sortingDate, farm_name: r.farm_name, product: r.product,
+      location: '선과결과', reclassification_source: '선과결과', original_work_date: r.date
+    };
+    const autoRows = [];
+    if (waste > 0) autoRows.push(sbInsert('inbound_records', { ...base, quantity: waste, inbound_category: '파치', note: `원본#${_sortingInboundId} ${_sortingSeq}차 선과` }));
+    if (highacid > 0) autoRows.push(sbInsert('inbound_records', { ...base, quantity: highacid, inbound_category: '재선별', reclassification_reason: '고산도', note: `원본#${_sortingInboundId} ${_sortingSeq}차 선과` }));
+    if (tiny > 0) autoRows.push(sbInsert('inbound_records', { ...base, quantity: tiny, inbound_category: '재선별', reclassification_reason: '극소과', note: `원본#${_sortingInboundId} ${_sortingSeq}차 선과` }));
+    const newRows = await Promise.all(autoRows);
+    newRows.forEach(rows => { if (rows && rows[0]) inboundRecords.unshift(rows[0]); });
+
+    // 5. audit_log
+    const parts = [`정상 ${fmtN(normalTotal)}CT`];
+    if (waste    > 0) parts.push(`파치 ${fmtN(waste)}CT`);
+    if (highacid > 0) parts.push(`고산도 ${fmtN(highacid)}CT`);
+    if (tiny     > 0) parts.push(`극소과 ${fmtN(tiny)}CT`);
+    if (loss     > 0) parts.push(`손실 ${fmtN(loss)}CT`);
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: _sortingInboundId,
+      before_val: { remaining: fmtN(remaining) }, after_val: { processed: fmtN(inputCt), seq: _sortingSeq },
+      reason: `선과 처리 ${_sortingSeq}차: ${r.farm_name} ${r.product} ${fmtN(inputCt)}CT → ${parts.join(' + ')}`,
+      staff: operator || 'admin'
+    });
+
+    closeSortingModal();
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+    showToast(`${_sortingSeq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
+  } catch (e) {
+    alert('선과 처리 저장 오류: ' + e.message);
+  }
+}
+
+// ── 선과 이력 표시 ─────────────────────────────────────────────────
+
+async function showSortingHistory(id, btnEl) {
+  const popId = `srt-hist-${id}`;
+  const existing = document.getElementById(popId);
+  if (existing) { existing.remove(); return; }
+
+  let rows = [];
+  try { rows = await sbGet('sorting_results', `inbound_record_id=eq.${id}&order=sequence_number`); } catch(e) {}
+  if (!rows.length) { showToast('선과 이력이 없습니다.'); return; }
+
+  const totalInput = rows.reduce((s, r) => s + Number(r.input_ct || 0), 0);
+  const items = rows.map(row => {
+    const seqLabel = `${row.sequence_number}차`;
+    const dateLabel = row.sorting_date ? row.sorting_date.slice(5) : '';
+    return `<div style="padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px">
+      <span style="font-weight:700;color:#1565C0;min-width:28px;display:inline-block">${seqLabel}</span>
+      <span style="color:#6B7280;margin-right:6px">${dateLabel}</span>
+      <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
+      ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
+    </div>`;
+  }).join('');
+
+  const pop = document.createElement('div');
+  pop.id = popId;
+  pop.style.cssText = 'position:fixed;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:12px 14px;min-width:220px;max-width:300px;z-index:2000;font-size:13px';
+  pop.innerHTML = `
+    <div style="font-weight:700;margin-bottom:8px;color:#1565C0">📊 선과 이력 (${rows.length}차, 총 ${fmtN(totalInput)} CT)</div>
+    ${items}`;
+
+  document.body.appendChild(pop);
+  const rect = btnEl.getBoundingClientRect();
+  const top  = rect.bottom + 6;
+  const left = Math.min(rect.left, window.innerWidth - 310);
+  pop.style.top  = Math.max(4, top)  + 'px';
+  pop.style.left = Math.max(4, left) + 'px';
+
+  const close = e => { if (!pop.contains(e.target) && e.target !== btnEl) { pop.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
 }
 
 async function restoreInbound(id) {
