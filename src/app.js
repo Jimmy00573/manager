@@ -28,6 +28,11 @@ let _voidTargetId = null;
 let ibViewMode = 'list';
 let ibFilterCat = '';
 let ibFilterSrc = '';
+let ibSortCol = null;   // 'date' | 'farm' | 'qty' | null
+let ibSortDir = null;   // 'desc' | 'asc' | null
+let ibPage = 1;
+let ibPageSize = 25;
+let ibSearch = '';
 let auditLogs = [];
 let auditLogOffset = 0;
 const AUDIT_PAGE_SIZE = 100;
@@ -4275,6 +4280,7 @@ const IB_FILTER_STYLES = {
 function setIbFilter(cat) {
   ibFilterCat = cat;
   ibFilterSrc = '';
+  ibPage = 1;
   const srcWrap = document.getElementById('ib-filter-src-wrap');
   if (srcWrap) srcWrap.style.display = cat === '재선별' ? '' : 'none';
   const srcEl = document.getElementById('ib-filter-src');
@@ -4285,6 +4291,7 @@ function setIbFilter(cat) {
 
 function onIbSrcFilterChange() {
   ibFilterSrc = document.getElementById('ib-filter-src')?.value || '';
+  ibPage = 1;
   renderInboundList();
 }
 
@@ -4298,6 +4305,99 @@ function _updateIbFilterBtns() {
       btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid #555;background:#333;color:#fff;font-weight:700;cursor:pointer;font-family:inherit';
     } else {
       btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit';
+    }
+  });
+}
+
+function ibToggleSort(col) {
+  if (ibSortCol === col) {
+    if (ibSortDir === 'desc') ibSortDir = 'asc';
+    else { ibSortCol = null; ibSortDir = null; }
+  } else {
+    ibSortCol = col;
+    ibSortDir = 'desc';
+  }
+  ibPage = 1;
+  renderInboundList();
+}
+
+function _applyIbSort(arr) {
+  if (!ibSortCol) return arr;
+  return [...arr].sort((a, b) => {
+    let va, vb;
+    if (ibSortCol === 'date')  { va = a.date || '';       vb = b.date || ''; }
+    else if (ibSortCol === 'farm') { va = a.farm_name || ''; vb = b.farm_name || ''; }
+    else if (ibSortCol === 'qty')  { va = a.quantity || 0;   vb = b.quantity || 0; }
+    if (va < vb) return ibSortDir === 'asc' ? -1 : 1;
+    if (va > vb) return ibSortDir === 'asc' ?  1 : -1;
+    return 0;
+  });
+}
+
+function ibSetSearch(val) {
+  ibSearch = val.trim();
+  ibPage = 1;
+  renderInboundList();
+}
+
+function ibSetPageSize(n) {
+  ibPageSize = n === 'all' ? Infinity : parseInt(n);
+  ibPage = 1;
+  renderInboundList();
+}
+
+function ibGoPage(p) {
+  ibPage = p;
+  renderInboundList();
+  document.getElementById('ib-view-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function _renderIbPagination(total) {
+  const el = document.getElementById('ib-pagination');
+  if (!el) return;
+  const pageSize = ibPageSize === Infinity ? total : ibPageSize;
+  const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 1;
+  if (total === 0 || totalPages <= 1) { el.innerHTML = ''; return; }
+  const start = (ibPage - 1) * pageSize + 1;
+  const end = Math.min(ibPage * pageSize, total);
+  let pages = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages = [1];
+    if (ibPage > 3) pages.push('...');
+    for (let i = Math.max(2, ibPage - 1); i <= Math.min(totalPages - 1, ibPage + 1); i++) pages.push(i);
+    if (ibPage < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+  }
+  const pageBtns = pages.map(p =>
+    p === '...'
+      ? `<span style="padding:0 4px;color:#bbb;font-size:12px">…</span>`
+      : `<button class="pg-btn${p === ibPage ? ' active' : ''}" onclick="ibGoPage(${p})">${p}</button>`
+  ).join('');
+  const sizeOpts = [10, 25, 50, 100].map(n =>
+    `<option value="${n}"${ibPageSize === n ? ' selected' : ''}>${n}</option>`
+  ).join('') + `<option value="all"${ibPageSize === Infinity ? ' selected' : ''}>전체</option>`;
+  el.innerHTML = `
+    <span style="font-size:12px;color:var(--text-secondary);white-space:nowrap">${start}–${end} / 총 ${total}건</span>
+    <button class="pg-btn" onclick="ibGoPage(${ibPage - 1})" ${ibPage === 1 ? 'disabled' : ''}>이전</button>
+    ${pageBtns}
+    <button class="pg-btn" onclick="ibGoPage(${ibPage + 1})" ${ibPage === totalPages ? 'disabled' : ''}>다음</button>
+    <label style="font-size:12px;color:var(--text-secondary);margin-left:8px;display:flex;align-items:center;gap:4px;white-space:nowrap">페이지당
+      <select onchange="ibSetPageSize(this.value)" style="font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit">${sizeOpts}</select>
+    </label>`;
+}
+
+function _updateIbSortIcons() {
+  ['date', 'farm', 'qty'].forEach(col => {
+    const el = document.getElementById(`ib-si-${col}`);
+    if (!el) return;
+    if (ibSortCol === col) {
+      el.textContent = ibSortDir === 'asc' ? '↑' : '↓';
+      el.className = 'sort-icon active';
+    } else {
+      el.textContent = '↕';
+      el.className = 'sort-icon';
     }
   });
 }
@@ -5088,26 +5188,46 @@ function renderInboundList() {
   if (ibFilterCat) visible = visible.filter(r => (r.inbound_category || '상품') === ibFilterCat);
   if (ibFilterCat === '재선별' && ibFilterSrc) visible = visible.filter(r => (r.reclassification_source || '') === ibFilterSrc);
 
+  // 농가명 검색 필터
+  if (ibSearch) {
+    const q = ibSearch.toLowerCase();
+    visible = visible.filter(r => (r.farm_name || '').toLowerCase().includes(q));
+  }
+
   // 필터 카운트 업데이트
   const fcountEl = document.getElementById('ib-filter-count');
-  if (fcountEl) fcountEl.textContent = ibFilterCat ? `${visible.length}건 표시 중` : '';
+  if (fcountEl) fcountEl.textContent = (ibFilterCat || ibSearch) ? `${visible.length}건 표시 중` : '';
 
   // 버튼 활성 상태 동기화 (뷰 전환 후에도 유지)
   _updateIbFilterBtns();
+  _updateIbSortIcons();
 
   if (!visible.length) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty">${
       ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
+      ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
       !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'
     }</td></tr>`;
+    document.getElementById('ib-pagination') && (document.getElementById('ib-pagination').innerHTML = '');
     return;
   }
 
+  // 정렬 적용
+  visible = _applyIbSort(visible);
+
+  // 페이지네이션 계산
+  const totalFiltered = visible.length;
+  const pageSize = ibPageSize === Infinity ? totalFiltered : ibPageSize;
+  const totalPages = Math.ceil(totalFiltered / pageSize);
+  if (ibPage > totalPages) ibPage = totalPages;
+  const startIdx = (ibPage - 1) * pageSize;
+  const pageRows = ibPageSize === Infinity ? visible : visible.slice(startIdx, startIdx + pageSize);
+
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
-  const hasLegacy = visible.some(r => r._legacy);
+  const hasLegacy = pageRows.some(r => r._legacy);
   tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="9" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
-  </td></tr>`] : []).concat(visible.map(r => {
+  </td></tr>`] : []).concat(pageRows.map(r => {
     if (r.is_void) {
       const voidDate = r.void_at ? r.void_at.slice(0, 10) : '';
       const voidInfo = `사유: ${esc(r.void_reason || '-')}${voidDate ? ` (${voidDate})` : ''}`;
@@ -5171,6 +5291,7 @@ function renderInboundList() {
       <td style="width:40px">${actionCell}</td>
     </tr>`;
   })).join('');
+  _renderIbPagination(totalFiltered);
 }
 
 function renderProcessingTab() {

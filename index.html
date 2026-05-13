@@ -758,18 +758,24 @@
             무효 데이터 포함 보기
           </label>
           <span id="ib-void-count" style="font-size:12px;color:#ef5350;font-weight:600"></span>
+          <input id="ib-search" type="text" placeholder="농가명 검색..." oninput="ibSetSearch(this.value)"
+            style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:8px;width:160px;font-family:inherit;margin-left:4px">
           <button id="btn-toggle-all-memos" class="btn" onclick="toggleAllMemos()" style="margin-left:auto;font-size:11px;padding:3px 10px;color:var(--text-tertiary);border-color:#ddd">📝 메모 모두 열기</button>
           <button id="btn-dist-migrate" class="btn" onclick="migrateDistributedStorage()" style="display:none;font-size:11px;padding:3px 10px;color:#C05800;border-color:#FFA726;background:#FFF3E0">📦 분산저장 분리</button>
         </div>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
-              <th>날짜</th><th>농가명</th><th>품목</th><th>카테고리</th>
-              <th>수량(CT)</th><th>위치</th><th>품질</th><th>메모</th><th></th>
+              <th class="sort-header" onclick="ibToggleSort('date')">날짜<span id="ib-si-date" class="sort-icon">↕</span></th>
+              <th class="sort-header" onclick="ibToggleSort('farm')">농가명<span id="ib-si-farm" class="sort-icon">↕</span></th>
+              <th>품목</th><th>카테고리</th>
+              <th class="sort-header" onclick="ibToggleSort('qty')" style="text-align:right">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
+              <th>위치</th><th>품질</th><th>메모</th><th></th>
             </tr></thead>
             <tbody id="ib-tb"><tr><td colspan="9" class="empty">입고 기록 없음</td></tr></tbody>
           </table>
         </div>
+        <div id="ib-pagination" class="ib-pagination"></div>
       </div>
 
       <!-- 농가별 보기 -->
