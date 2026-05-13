@@ -33,6 +33,10 @@ let ibSortDir = null;   // 'desc' | 'asc' | null
 let ibPage = 1;
 let ibPageSize = 25;
 let ibSearch = '';
+let _farmViewSearch = '';
+let _farmViewSort = 'remaining-desc';
+let _farmExpanded = new Set();
+let _catExpanded = new Set();
 let auditLogs = [];
 let auditLogOffset = 0;
 const AUDIT_PAGE_SIZE = 100;
@@ -4583,6 +4587,24 @@ function _ibProcessedMap() {
   return m;
 }
 
+function ibToggleFarm(name) {
+  if (_farmExpanded.has(name)) _farmExpanded.delete(name);
+  else _farmExpanded.add(name);
+  renderIbFarmView();
+}
+function ibFarmSetSearch(val) { _farmViewSearch = val.trim(); renderIbFarmView(); }
+function ibFarmSetSort(val)   { _farmViewSort = val; renderIbFarmView(); }
+function ibFarmToggleAll(farmNames, allExpanded) {
+  if (allExpanded) farmNames.forEach(n => _farmExpanded.delete(n));
+  else             farmNames.forEach(n => _farmExpanded.add(n));
+  renderIbFarmView();
+}
+function ibToggleCat(key) {
+  if (_catExpanded.has(key)) _catExpanded.delete(key);
+  else _catExpanded.add(key);
+  renderIbCatView();
+}
+
 function renderIbFarmView() {
   const el = document.getElementById('ib-view-farm');
   if (!el) return;
@@ -4590,15 +4612,14 @@ function renderIbFarmView() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const pm = _ibProcessedMap();
   const active = inboundRecords.filter(r => !r.is_void);
-
   const emptyGrades = () => ({ 상: 0, 중: 0, 하: 0, total: 0 });
 
-  // farm → { remaining, cats{}, rows[], hasPriority, brixG{}, acidG{}, appearG{} }
+  // farm → { remaining, cats{}, rows[], hasPriority, brixG{}, acidG{}, appearG{}, latestDate }
   const farmMap = {};
   active.forEach(r => {
     const rem = r.quantity - (pm[r.id] || 0);
     if (!farmMap[r.farm_name]) farmMap[r.farm_name] = {
-      remaining: 0, cats: {}, rows: [], hasPriority: false,
+      remaining: 0, cats: {}, rows: [], hasPriority: false, latestDate: '',
       brixG: emptyGrades(), acidG: emptyGrades(), appearG: emptyGrades()
     };
     const f = farmMap[r.farm_name];
@@ -4606,14 +4627,56 @@ function renderIbFarmView() {
     f.cats[cat] = (f.cats[cat] || 0) + rem;
     f.remaining += rem;
     if (r.is_priority) f.hasPriority = true;
+    if (r.date > f.latestDate) f.latestDate = r.date;
     if (r.brix_grade      && f.brixG[r.brix_grade]   !== undefined) { f.brixG[r.brix_grade]++;   f.brixG.total++; }
     if (r.acidity_grade   && f.acidG[r.acidity_grade]  !== undefined) { f.acidG[r.acidity_grade]++;  f.acidG.total++; }
     if (r.appearance_grade && f.appearG[r.appearance_grade] !== undefined) { f.appearG[r.appearance_grade]++; f.appearG.total++; }
     f.rows.push({ ...r, rem });
   });
 
-  const farms = Object.keys(farmMap).sort((a, b) => farmMap[b].remaining - farmMap[a].remaining);
-  if (!farms.length) { el.innerHTML = '<div style="padding:30px;text-align:center;color:#bbb">입고 기록 없음</div>'; return; }
+  // 검색 필터
+  let farms = Object.keys(farmMap);
+  if (_farmViewSearch) {
+    const q = _farmViewSearch.toLowerCase();
+    farms = farms.filter(f => f.toLowerCase().includes(q));
+  }
+
+  // 정렬
+  farms.sort((a, b) => {
+    const fa = farmMap[a], fb = farmMap[b];
+    switch (_farmViewSort) {
+      case 'remaining-asc':  return fa.remaining - fb.remaining;
+      case 'name-asc':       return a.localeCompare(b, 'ko');
+      case 'date-desc':      return fb.latestDate.localeCompare(fa.latestDate);
+      default:               return fb.remaining - fa.remaining;
+    }
+  });
+
+  const allExpanded = farms.length > 0 && farms.every(f => _farmExpanded.has(f));
+  const toolbar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <input type="text" placeholder="🔍 농가명 검색..." value="${esc(_farmViewSearch)}"
+      oninput="ibFarmSetSearch(this.value)"
+      style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;width:160px;font-family:inherit">
+    <select onchange="ibFarmSetSort(this.value)"
+      style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;font-family:inherit">
+      <option value="remaining-desc"${_farmViewSort==='remaining-desc'?' selected':''}>재고 많은순</option>
+      <option value="remaining-asc"${_farmViewSort==='remaining-asc'?' selected':''}>재고 적은순</option>
+      <option value="name-asc"${_farmViewSort==='name-asc'?' selected':''}>농가명 가나다순</option>
+      <option value="date-desc"${_farmViewSort==='date-desc'?' selected':''}>입고일 최신순</option>
+    </select>
+    <button class="btn" onclick="ibFarmToggleAll(${JSON.stringify(farms)},${allExpanded})"
+      style="font-size:12px;padding:4px 10px">${allExpanded ? '📁 모두 접기' : '📂 모두 펼치기'}</button>
+    <span style="font-size:12px;color:var(--text-secondary);margin-left:auto">${farms.length}개 농가</span>
+  </div>`;
+
+  if (!Object.keys(farmMap).length) {
+    el.innerHTML = toolbar + '<div style="padding:30px;text-align:center;color:#bbb">입고 기록 없음</div>';
+    return;
+  }
+  if (!farms.length) {
+    el.innerHTML = toolbar + '<div style="padding:24px;text-align:center;color:#bbb">검색 결과 없음</div>';
+    return;
+  }
 
   const statusChip = rem => rem >= 200
     ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:700">🟢 충분</span>`
@@ -4630,13 +4693,18 @@ function renderIbFarmView() {
       .map(g => `<span style="color:${GCOL[g]};font-weight:700">${g}&thinsp;${counts[g]}</span>`).join(' ');
     return `<span style="color:#888;margin-right:2px">${label}</span>${parts}`;
   };
+  const gradeHeaderChip = (label, counts) => {
+    if (!counts.total) return '';
+    const dom = ['상', '중', '하'].find(g => counts[g] > 0);
+    return dom ? `<span style="font-size:10px;color:${GCOL[dom]};opacity:0.85">${label}${dom}</span>` : '';
+  };
 
-  let html = '';
-  farms.forEach(farm => {
+  let cardsHtml = '';
+  farms.forEach((farm, idx) => {
     const { remaining, cats, rows, hasPriority, brixG, acidG, appearG } = farmMap[farm];
+    const isExpanded = _farmExpanded.has(farm);
     const borderColor = remaining >= 200 ? '#2E7D32' : remaining >= 50 ? '#F57F17' : remaining > 0 ? '#C62828' : '#BDBDBD';
 
-    // 카테고리 소계 (데이터 있는 것만, IB_CATS 순서)
     const catRows = IB_CATS
       .filter(c => (cats[c.key] || 0) > 0)
       .map((c, i, arr) => {
@@ -4648,7 +4716,6 @@ function renderIbFarmView() {
         </div>`;
       }).join('');
 
-    // 상세 입고 내역 (최신순)
     const detailRows = [...rows]
       .sort((a, b) => b.date.localeCompare(a.date))
       .map((r, i, arr) => {
@@ -4693,25 +4760,33 @@ function renderIbFarmView() {
          </div>`
       : '';
 
-    html += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;flex-wrap:wrap">
+    const hdrChips = [gradeHeaderChip('당', brixG), gradeHeaderChip('산', acidG), gradeHeaderChip('외', appearG)].filter(Boolean);
+
+    cardsHtml += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fafafa;cursor:pointer;user-select:none;flex-wrap:wrap"
+           onclick="ibToggleFarm(${JSON.stringify(farm)})">
+        <span style="font-size:11px;color:#888;display:inline-block;width:10px">${isExpanded ? '▼' : '▶'}</span>
         <span style="font-size:16px">👨‍🌾</span>
-        <span style="display:inline-block;width:16px;text-align:center;font-size:13px">${hasPriority ? '⭐' : ''}</span>
+        <span style="display:inline-block;width:14px;text-align:center;font-size:12px">${hasPriority ? '⭐' : ''}</span>
         <span style="font-weight:700;font-size:14px;color:#222">${esc(farm)}</span>
-        <span style="font-size:13px;color:#555">총 남은 재고: <strong style="color:#1565C0">${remaining} CT</strong></span>
+        <span style="font-size:13px;color:#555">남은 재고 <strong style="color:#1565C0">${remaining} CT</strong></span>
+        <span style="font-size:11px;color:#aaa">${rows.length}건</span>
         ${statusChip(remaining)}
+        ${hdrChips.length ? `<span style="margin-left:auto;display:flex;gap:5px">${hdrChips.join('')}</span>` : ''}
       </div>
-      ${gradeRow}
-      ${catRows ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${catRows}</div>` : ''}
-      <div style="border-top:1px solid #f0f0f0">${detailRows}</div>
+      <div id="farm-body-${idx}" style="display:${isExpanded ? '' : 'none'}">
+        ${gradeRow}
+        ${catRows ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${catRows}</div>` : ''}
+        <div style="border-top:1px solid #f0f0f0">${detailRows}</div>
+      </div>
     </div>`;
   });
 
   const grandTotal = farms.reduce((s, f) => s + farmMap[f].remaining, 0);
-  html += `<div style="text-align:right;padding:10px 4px 4px;font-size:13px;color:#555;border-top:2px solid #ddd;margin-top:4px">
-    전체 남은 재고: <strong style="color:#1565C0;font-size:15px">${grandTotal.toLocaleString()} CT</strong>
+  const footer = `<div style="text-align:right;padding:10px 4px 4px;font-size:13px;color:#555;border-top:2px solid #ddd;margin-top:4px">
+    ${_farmViewSearch ? '검색된 농가 재고 합계' : '전체 남은 재고'}: <strong style="color:#1565C0;font-size:15px">${grandTotal.toLocaleString()} CT</strong>
   </div>`;
-  el.innerHTML = html;
+  el.innerHTML = toolbar + cardsHtml + footer;
 }
 
 function renderIbCatView() {
@@ -4721,7 +4796,6 @@ function renderIbCatView() {
   const pm = _ibProcessedMap();
   const active = inboundRecords.filter(r => !r.is_void);
 
-  // cat → { total, farms{ farm → { qty, dates[], products[] } } }
   const catMap = {};
   IB_CATS.forEach(c => { catMap[c.key] = { total: 0, farms: {} }; });
 
@@ -4739,10 +4813,21 @@ function renderIbCatView() {
       catMap[cat].farms[r.farm_name].products.push(r.product);
   });
 
+  const activeCats = IB_CATS.filter(c => catMap[c.key].total > 0);
+  const allCatExpanded = activeCats.length > 0 && activeCats.every(c => _catExpanded.has(c.key));
+  const catToolbar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+    <button class="btn" onclick="ibCatToggleAll(${JSON.stringify(activeCats.map(c=>c.key))},${allCatExpanded})"
+      style="font-size:12px;padding:4px 10px">${allCatExpanded ? '📁 모두 접기' : '📂 모두 펼치기'}</button>
+    <span style="font-size:12px;color:var(--text-secondary)">${activeCats.length}개 카테고리</span>
+  </div>`;
+
   let html = '';
+  let catIdx = 0;
   IB_CATS.forEach(c => {
     const { total, farms } = catMap[c.key];
     if (total === 0) return;
+    const isExpanded = _catExpanded.has(c.key);
+    const idx = catIdx++;
 
     const farmEntries = Object.entries(farms)
       .filter(([, v]) => v.qty > 0)
@@ -4762,17 +4847,25 @@ function renderIbCatView() {
     }).join('');
 
     html += `<div style="background:#fff;border:1px solid ${c.border};border-left:4px solid ${c.color};border-radius:8px;margin-bottom:12px;overflow:hidden">
-      <div style="background:${c.bg};padding:10px 14px;display:flex;align-items:center;gap:8px">
+      <div style="background:${c.bg};padding:10px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none"
+           onclick="ibToggleCat(${JSON.stringify(c.key)})">
+        <span style="font-size:11px;color:${c.color};opacity:0.7;display:inline-block;width:10px">${isExpanded ? '▼' : '▶'}</span>
         <span style="font-weight:700;font-size:14px;color:${c.color}">${c.key}</span>
         <span style="font-size:13px;color:#555">총 <strong style="color:${c.color}">${total.toLocaleString()} CT</strong></span>
         <span style="font-size:11px;color:#aaa">${farmEntries.length}개 농가</span>
       </div>
-      <div>${farmRows}</div>
+      <div id="cat-body-${idx}" style="display:${isExpanded ? '' : 'none'}">${farmRows}</div>
     </div>`;
   });
 
   if (!html) html = '<div style="padding:30px;text-align:center;color:#bbb">미선과 재고 없음</div>';
-  el.innerHTML = html;
+  el.innerHTML = catToolbar + html;
+}
+
+function ibCatToggleAll(keys, allExpanded) {
+  if (allExpanded) keys.forEach(k => _catExpanded.delete(k));
+  else             keys.forEach(k => _catExpanded.add(k));
+  renderIbCatView();
 }
 
 // ── 선과 완료 필터 상태
