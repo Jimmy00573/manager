@@ -597,12 +597,11 @@
           </div>
           <div class="fg"><label>농가명 *</label><select id="ib-farm"><option value="">선택</option></select></div>
           <div class="fg" style="grid-column:1/-1">
-            <label style="display:flex;align-items:center;gap:10px">
-              위치
-              <label style="font-weight:400;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                <input type="checkbox" id="ib-loc-multi" onchange="toggleLocMulti('ib')"> 📦 분산 저장
-              </label>
-            </label>
+            <label>위치</label>
+            <div class="checkbox-row">
+              <input type="checkbox" id="ib-loc-multi" onchange="toggleLocMulti('ib')">
+              <label for="ib-loc-multi" class="dist-label">📦 분산 저장</label>
+            </div>
             <!-- 단일 위치 -->
             <div id="ib-loc-single">
               <select id="ib-loc"><option value="">선택 안 함</option></select>
@@ -1017,12 +1016,11 @@
       <div class="fg"><label>품목</label><input id="eib-m-product" disabled style="background:#f5f5f5;color:#888"></div>
       <div class="fg"><label>농가명</label><input id="eib-m-farm" disabled style="background:#f5f5f5;color:#888"></div>
       <div class="fg" style="grid-column:1/-1">
-        <label style="display:flex;align-items:center;gap:10px">
-          위치
-          <label style="font-weight:400;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="eib-loc-multi" onchange="toggleLocMulti('eib')"> 📦 분산 저장
-          </label>
-        </label>
+        <label>위치</label>
+        <div class="checkbox-row">
+          <input type="checkbox" id="eib-loc-multi" onchange="toggleLocMulti('eib')">
+          <label for="eib-loc-multi" class="dist-label">📦 분산 저장</label>
+        </div>
         <!-- 단일 위치 -->
         <div id="eib-loc-single">
           <select id="eib-m-loc"><option value="">선택 안 함</option></select>
@@ -1243,12 +1241,11 @@
       현재 위치: <b id="mv-cur-loc" style="color:var(--text-primary)"></b>
     </div>
     <div class="fg" style="margin-bottom:16px">
-      <label style="display:flex;align-items:center;gap:10px">
-        새 위치
-        <label style="font-weight:400;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
-          <input type="checkbox" id="mv-loc-multi" onchange="toggleLocMulti('mv')"> 📦 분산 저장
-        </label>
-      </label>
+      <label>새 위치</label>
+      <div class="checkbox-row">
+        <input type="checkbox" id="mv-loc-multi" onchange="toggleLocMulti('mv')">
+        <label for="mv-loc-multi" class="dist-label">📦 분산 저장</label>
+      </div>
       <div id="mv-loc-single">
         <select id="mv-loc"><option value="">선택 안 함</option></select>
       </div>

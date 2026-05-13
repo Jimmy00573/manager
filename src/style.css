@@ -191,6 +191,9 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
 .fg label { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
 .fg input, .fg select, .fg textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 13px; font-family: inherit; width: 100%; min-width: 0; }
 .fg input:focus, .fg select:focus, .fg textarea:focus { outline: none; border-color: var(--orange-light); box-shadow: 0 0 0 2px rgba(242,140,40,.12); }
+.fg input[type="checkbox"] { width: auto !important; min-width: auto !important; padding: 0; border: 1px solid var(--border); background: #fff; box-shadow: none; border-radius: 4px; flex-shrink: 0; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; }
+.fg .dist-label { white-space: nowrap; flex-shrink: 0; cursor: pointer; font-size: 13px; color: var(--text); font-weight: normal; }
 
 /* ── IME 한국어 입력 유지 힌트 ──
    ime-mode 는 2017년 deprecated — Chrome/Edge 최신에서는 무효.
