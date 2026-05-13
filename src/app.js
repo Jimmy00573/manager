@@ -4140,6 +4140,26 @@ const IB_CATS = [
   { key: '재선별', color: '#7C3AED', bg: '#F3E8FF', border: '#C4B5FD' },
 ];
 
+const PRODUCT_COLORS = {
+  '천혜향':   { bg: '#FFF3E0', color: '#E65100', border: '#FFCC80' },
+  '카라향':   { bg: '#FFF8E1', color: '#F57F17', border: '#FFE082' },
+  '한라봉':   { bg: '#FBE9E7', color: '#BF360C', border: '#FFAB91' },
+  '레드향':   { bg: '#FFEBEE', color: '#B71C1C', border: '#FFCDD2' },
+  '수라향':   { bg: '#FCE4EC', color: '#880E4F', border: '#F48FB1' },
+  '황금향':   { bg: '#FFFDE7', color: '#F9A825', border: '#FFF176' },
+  '노지감귤': { bg: '#E8F5E9', color: '#1B5E20', border: '#A5D6A7' },
+  '하우스감귤':{ bg: '#F1F8E9', color: '#33691E', border: '#C5E1A5' },
+  '비가림':   { bg: '#E8F5E9', color: '#2E7D32', border: '#81C784' },
+  '타이벡':   { bg: '#E0F2F1', color: '#004D40', border: '#80CBC4' },
+  '주스':     { bg: '#EDE7F6', color: '#4A148C', border: '#CE93D8' },
+  '청':       { bg: '#EEE8FA', color: '#6A1B9A', border: '#CE93D8' },
+  '모나카':   { bg: '#FCE4EC', color: '#880E4F', border: '#F48FB1' },
+};
+function productChip(name) {
+  const c = PRODUCT_COLORS[name] || { bg: '#F5F5F5', color: '#616161', border: '#E0E0E0' };
+  return `<span class="product-chip" style="background:${c.bg};color:${c.color};border-color:${c.border}">${esc(name)}</span>`;
+}
+
 const RECLASS_REASONS = {
   '선과결과': ['고산도', '중품 (애매)', '80g이하', '고당파치', '기타'],
   '포장라인': ['상처', '변색', '크기 애매', '부패 의심', '기타'],
@@ -4422,7 +4442,7 @@ function renderIbFarmView() {
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="color:#ccc;font-size:11px">${isLast ? '└─' : '├─'}</span>
             <span style="font-size:12px;color:#555">${r.date}</span>
-            <span style="font-size:12px;font-weight:600;color:#222">${esc(r.product)}</span>
+            ${productChip(r.product)}
             <span style="font-weight:700;color:${remColor};font-size:13px">${r.rem > 0 ? r.rem + ' CT' : '완료'}</span>
             ${r.location ? `<span style="font-size:11px;color:#888">(${esc(r.location)})</span>` : ''}
             ${r.is_priority ? '<span style="font-size:11px">⭐</span>' : ''}
@@ -4499,12 +4519,12 @@ function renderIbCatView() {
     const farmRows = farmEntries.map(([farm, { qty, dates, products }], i, arr) => {
       const isLast = i === arr.length - 1;
       const datesStr = [...dates].sort().map(d => d.slice(5)).join(', ');
-      const prodStr = products.join(', ');
+      const prodChips = products.map(p => productChip(p)).join('');
       return `<div style="display:flex;align-items:center;gap:6px;padding:6px 14px 6px 24px;${isLast ? '' : 'border-bottom:1px solid #f5f5f5;'}flex-wrap:wrap">
         <span style="color:#ccc;font-size:11px">${isLast ? '└─' : '├─'}</span>
         <span style="font-weight:700;font-size:13px;color:#222">${esc(farm)}</span>
         <span style="font-weight:700;color:${c.color};font-size:13px">${qty} CT</span>
-        <span style="font-size:11px;color:#aaa">${esc(prodStr)}</span>
+        ${prodChips}
         <span style="font-size:11px;color:#bbb">(${datesStr})</span>
       </div>`;
     }).join('');
@@ -4715,7 +4735,7 @@ function renderInboundList() {
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
       <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
-      <td>${esc(r.product)}</td>
+      <td>${productChip(r.product)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
       <td>${esc(r.location || '-')}</td>
