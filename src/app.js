@@ -5414,7 +5414,6 @@ function renderInboundList() {
       : `<span style="color:#D1D5DB">-</span>`;
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
-         ${remaining > 0 ? `<button onclick="openSortingModal('${r.id}')">✂️ 선과 처리</button>` : '<button disabled style="opacity:0.4;cursor:not-allowed;pointer-events:none">✂️ 선과 완료됨</button>'}
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
          <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
          <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
@@ -5446,33 +5445,119 @@ function renderInboundList() {
 }
 
 function renderProcessingTab() {
-  const sel = document.getElementById('proc-inbound');
-  if (sel) {
-    const active = inboundRecords.filter(r => !r.is_void && r.quantity - getProcessedForInbound(r.id) > 0);
-    sel.innerHTML = '<option value="">선택</option>' + active.map(r => {
-      const rem = r.quantity - getProcessedForInbound(r.id);
-      return `<option value="${r.id}">${esc(r.product)} | ${esc(r.farm_name)} | ${r.date} (${fmtN(rem)}CT 남음)</option>`;
-    }).join('');
-  }
-  const tbody = document.getElementById('proc-tb');
-  if (!tbody) return;
-  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  if (!processingRecords.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">처리 기록 없음</td></tr>';
-    return;
-  }
-  tbody.innerHTML = processingRecords.map(pr => {
-    const ib = inboundRecords.find(r => r.id === pr.inbound_id);
-    const ibLabel = ib ? `${esc(ib.product)} / ${esc(ib.farm_name)} <small style="color:var(--text-secondary)">${ib.date}</small>` : '(삭제된 입고)';
-    return `<tr id="proc-tr-${pr.id}">
-      <td>${pr.date}</td>
-      <td style="white-space:normal">${ibLabel}</td>
-      <td>${esc(pr.process_type)}</td>
-      <td style="text-align:right;font-weight:700">${pr.quantity}</td>
-      <td style="white-space:normal;min-width:80px">${esc(pr.note || '-')}</td>
-      <td>${isAdm ? `<button class="btn sm del" onclick="deleteProcessing('${pr.id}')">삭제</button>` : ''}</td>
-    </tr>`;
-  }).join('');
+  const el = document.getElementById('sorting-center-body');
+  if (!el) return;
+
+  const pm   = _ibProcessedMap();
+  const today = td();
+  const todayMs = new Date(today).getTime();
+
+  // 시급도 계산
+  const urgency = date => {
+    const days = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
+    if (days >= 21) return { icon: '🔴', label: `${days}일 경과`, color: '#DC2626', border: '#FECACA', accent: '#DC2626', level: 3 };
+    if (days >= 14) return { icon: '🟡', label: `${days}일 경과`, color: '#D97706', border: '#FDE68A', accent: '#F59E0B', level: 2 };
+    return { icon: '🟢', label: `${days}일 경과`, color: '#16A34A', border: '#D1FAE5', accent: '#4ADE80', level: 1 };
+  };
+
+  // 선과 처리 건수 맵 (inbound_id → 선과 횟수)
+  const srtCntMap = {};
+  processingRecords.filter(p => p.process_type === '선과').forEach(p => {
+    srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
+  });
+
+  // 선과 대기 목록 (잔여 > 0, 오래된 순)
+  const waiting = inboundRecords
+    .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0)
+    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // 통계
+  const totalRemCT     = waiting.reduce((s, r) => s + r.remaining, 0);
+  const todaySortedCT  = processingRecords
+    .filter(p => p.process_type === '선과' && p.date === today)
+    .reduce((s, p) => s + p.quantity, 0);
+  const urgentCount = waiting.filter(r => urgency(r.date).level === 3 || r.is_priority).length;
+
+  // 우선 처리 vs 일반 대기
+  const priority = waiting.filter(r => r.is_priority || urgency(r.date).level === 3);
+  const normal   = waiting.filter(r => !r.is_priority && urgency(r.date).level < 3);
+
+  const renderCard = r => {
+    const u = urgency(r.date);
+    const srtCnt = srtCntMap[r.id] || 0;
+    const qiHtml = qualityInline(r);
+    return `<div style="background:#fff;border:1px solid ${u.border};border-left:4px solid ${u.accent};border-radius:8px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:180px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">
+            ${r.is_priority ? '<span title="우선처리">⭐</span>' : ''}
+            <strong style="font-size:14px">${esc(r.farm_name)}</strong>
+            ${productChip(r.product)}
+            ${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}
+          </div>
+          <div style="font-size:12px;color:#6B7280;display:flex;flex-wrap:wrap;gap:8px">
+            <span>입고 ${r.date} · <span style="color:${u.color};font-weight:600">${u.icon} ${u.label}</span></span>
+            <span>위치: ${esc(r.location || '미지정')}</span>
+            ${srtCnt > 0 ? `<span style="color:#7C3AED;font-weight:600">✂️ ${srtCnt}차 처리 이력</span>` : '<span style="color:#9CA3AF">선과 이력 없음</span>'}
+          </div>
+          ${qiHtml ? `<div style="margin-top:5px">${qiHtml}</div>` : ''}
+        </div>
+        <div style="text-align:center;flex-shrink:0;min-width:80px">
+          <div style="font-size:22px;font-weight:800;color:#1565C0;line-height:1">${fmtN(r.remaining)}</div>
+          <div style="font-size:10px;color:#9CA3AF;margin-bottom:8px">CT 잔여</div>
+          <button onclick="openSortingModal('${r.id}')"
+            style="background:#1565C0;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
+            ✂️ 선과 시작
+          </button>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const statsHtml = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px">
+      ${[
+        ['📦 미선과 잔여', fmtN(totalRemCT) + ' CT', '#EFF6FF', '#1565C0'],
+        ['⏳ 선과 대기',   waiting.length + '건',     '#FFF7ED', '#C2410C'],
+        ['⚠️ 긴급',        urgentCount + '건',        '#FEF2F2', '#DC2626'],
+        ['✅ 오늘 완료',   fmtN(todaySortedCT) + ' CT','#F0FDF4', '#15803D'],
+      ].map(([lbl, val, bg, col]) => `
+        <div style="background:${bg};border-radius:10px;padding:12px 14px;text-align:center">
+          <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:4px">${lbl}</div>
+          <div style="font-size:18px;font-weight:800;color:${col}">${val}</div>
+        </div>`).join('')}
+    </div>`;
+
+  const sectionHdr = (icon, title, count, color) =>
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:13px;font-weight:700;color:${color}">${icon} ${title}</span>
+      <span style="background:#F3F4F6;color:#6B7280;font-size:11px;padding:2px 8px;border-radius:9999px">${count}건</span>
+    </div>`;
+
+  const priorityHtml = priority.length > 0
+    ? `<div style="margin-bottom:20px">
+        ${sectionHdr('⚠️', '우선 처리 필요', priority.length, '#DC2626')}
+        ${priority.map(renderCard).join('')}
+       </div>`
+    : '';
+
+  const normalHtml = normal.length > 0
+    ? `<div>
+        ${sectionHdr('📋', '선과 대기', normal.length, '#374151')}
+        ${normal.map(renderCard).join('')}
+       </div>`
+    : '';
+
+  el.innerHTML = `
+    <div style="font-size:16px;font-weight:700;color:#1565C0;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+      ✂️ 선과 처리 센터
+      <span style="font-size:11px;font-weight:400;color:#9CA3AF">입고일 오래된 순</span>
+    </div>
+    ${statsHtml}
+    ${priorityHtml}
+    ${normalHtml}
+    ${waiting.length === 0 ? '<div style="text-align:center;padding:60px;color:#bbb;font-size:15px">✅ 선과 대기 중인 미선과가 없습니다</div>' : ''}`;
 }
 
 let _editInboundId = null;

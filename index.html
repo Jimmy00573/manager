@@ -573,7 +573,7 @@
     <!-- 서브 탭 -->
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px">
       <button class="etab af" id="ib-t-list" onclick="ibTab('list')" style="font-size:13px;padding:8px 18px">📋 입고 내역</button>
-      <button class="etab" id="ib-t-proc" onclick="ibTab('proc')" style="font-size:13px;padding:8px 18px">⚙️ 선과 처리</button>
+      <button class="etab" id="ib-t-proc" onclick="ibTab('proc')" style="font-size:13px;padding:8px 18px">✂️ 선과 처리</button>
     </div>
 
     <!-- 입고 내역 -->
@@ -799,37 +799,9 @@
       <div id="ib-view-done" style="display:none"></div>
     </div>
 
-    <!-- 선과 처리 -->
+    <!-- 선과 처리 센터 -->
     <div id="ib-proc-div" style="display:none">
-      <div class="form-card">
-        <div class="form-title">선과 처리 등록</div>
-        <div class="form-grid">
-          <div class="fg" style="grid-column:1/-1">
-            <label>입고 건 선택 * <small style="color:var(--text-secondary)">(남은 재고 있는 건만 표시)</small></label>
-            <select id="proc-inbound"><option value="">선택</option></select>
-          </div>
-          <div class="fg"><label>처리 유형 *</label>
-            <select id="proc-type">
-              <option value="선과">선과</option>
-              <option value="원물수거">원물수거</option>
-              <option value="잉여회수">잉여회수</option>
-            </select>
-          </div>
-          <div class="fg"><label>처리일 *</label><input id="proc-date" type="date"></div>
-          <div class="fg"><label>처리 수량(CT) *</label><input id="proc-qty" type="number" placeholder="0" min="1"></div>
-          <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="proc-note" placeholder="선택사항"></div>
-        </div>
-        <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addProcessing()">처리 등록</button></div>
-      </div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr>
-            <th>처리일</th><th>품목 / 농가</th><th>처리유형</th>
-            <th>처리수량(CT)</th><th>메모</th><th></th>
-          </tr></thead>
-          <tbody id="proc-tb"><tr><td colspan="6" class="empty">처리 기록 없음</td></tr></tbody>
-        </table>
-      </div>
+      <div id="sorting-center-body"></div>
     </div>
   </div>
 
