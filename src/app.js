@@ -4577,7 +4577,7 @@ function renderIbCatSummary() {
     grandTotal += remaining;
   });
 
-  const productChip = (product, qty) => {
+  const _catProductChip = (product, qty) => {
     const itemCat = _getCatForProduct(product);
     const isCount = !itemCat || itemCat.classification_type === 'count';
     const icon  = isCount ? '🍊' : '🍋';
@@ -4595,7 +4595,7 @@ function renderIbCatSummary() {
           .sort(([, a], [, b]) => b - a);
         const prodLine = prods.length
           ? `<div style="border-top:1px solid ${c.border};margin-top:7px;padding-top:6px;display:flex;flex-direction:column;gap:3px;text-align:left">
-              ${prods.map(([p, q]) => productChip(p, q)).join('')}
+              ${prods.map(([p, q]) => _catProductChip(p, q)).join('')}
              </div>`
           : '';
         const srcLine = (c.key === '재선별' && Object.keys(catSources[c.key]).length)
