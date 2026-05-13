@@ -5233,7 +5233,7 @@ function renderInboundList() {
       const voidInfo = `사유: ${esc(r.void_reason || '-')}${voidDate ? ` (${voidDate})` : ''}`;
       return `<tr id="ib-tr-${r.id}" style="opacity:0.55;background:#f5f5f5">
         <td style="text-decoration:line-through;color:#999">${r.date}</td>
-        <td class="nm" style="text-decoration:line-through;color:#999">${esc(r.farm_name)}</td>
+        <td class="nm" title="${esc(r.farm_name)}" style="text-decoration:line-through;color:#999">${esc(r.farm_name)}</td>
         <td style="text-decoration:line-through;color:#999">${esc(r.product)}</td>
         <td style="color:#999">-</td>
         <td style="text-align:right;text-decoration:line-through;color:#999">${r.quantity}</td>
@@ -5281,14 +5281,14 @@ function renderInboundList() {
       : esc(r.location || '-');
     return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
       <td>${r.date}</td>
-      <td class="nm"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
       <td>${productChip(r.product)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
-      <td>${locCell}</td>
-      <td style="min-width:80px">${gradeCell}</td>
-      <td style="width:40px;text-align:center">${memoCell}</td>
-      <td style="width:40px">${actionCell}</td>
+      <td title="${esc(r.location || '')}">${locCell}</td>
+      <td>${gradeCell}</td>
+      <td>${memoCell}</td>
+      <td>${actionCell}</td>
     </tr>`;
   })).join('');
   _renderIbPagination(totalFiltered);

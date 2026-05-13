@@ -764,12 +764,23 @@
           <button id="btn-dist-migrate" class="btn" onclick="migrateDistributedStorage()" style="display:none;font-size:11px;padding:3px 10px;color:#C05800;border-color:#FFA726;background:#FFF3E0">📦 분산저장 분리</button>
         </div>
         <div class="tbl-wrap">
-          <table>
+          <table class="ib-list-tbl">
+            <colgroup>
+              <col style="width:90px">
+              <col style="width:90px">
+              <col style="width:80px">
+              <col style="width:70px">
+              <col style="width:80px">
+              <col style="width:100px">
+              <col style="width:180px">
+              <col style="width:40px">
+              <col style="width:40px">
+            </colgroup>
             <thead><tr>
               <th class="sort-header" onclick="ibToggleSort('date')">날짜<span id="ib-si-date" class="sort-icon">↕</span></th>
               <th class="sort-header" onclick="ibToggleSort('farm')">농가명<span id="ib-si-farm" class="sort-icon">↕</span></th>
               <th>품목</th><th>카테고리</th>
-              <th class="sort-header" onclick="ibToggleSort('qty')" style="text-align:right">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
+              <th class="sort-header" onclick="ibToggleSort('qty')">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
               <th>위치</th><th>품질</th><th>메모</th><th></th>
             </tr></thead>
             <tbody id="ib-tb"><tr><td colspan="9" class="empty">입고 기록 없음</td></tr></tbody>
