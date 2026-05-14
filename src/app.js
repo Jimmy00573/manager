@@ -37,6 +37,7 @@ let _farmViewSearch = '';
 let _farmViewSort = 'remaining-desc';
 let _farmExpanded = new Set();
 let _catExpanded = new Set();
+let _farmSubTab = {};  // farm → 'inbound' | 'sorting'
 let _currentFarmList = [];
 let _currentCatList = [];
 let auditLogs = [];
@@ -4635,6 +4636,12 @@ function ibFarmToggleAllBtn(btn) {
   else             _currentFarmList.forEach(n => _farmExpanded.add(n));
   renderIbFarmView();
 }
+function ibFarmSetSubTab(idx, tab) {
+  const farm = _currentFarmList[idx];
+  if (!farm) return;
+  _farmSubTab[farm] = tab;
+  renderIbFarmView();
+}
 function ibToggleCat(key) {
   if (_catExpanded.has(key)) _catExpanded.delete(key);
   else _catExpanded.add(key);
@@ -4818,9 +4825,15 @@ function renderIbFarmView() {
         ${hdrChips.length ? `<span style="margin-left:auto;display:flex;gap:5px">${hdrChips.join('')}</span>` : ''}
       </div>
       <div id="farm-body-${idx}" style="display:${isExpanded ? '' : 'none'}">
-        ${gradeRow}
-        ${catRows ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${catRows}</div>` : ''}
-        <div style="border-top:1px solid #f0f0f0">${detailRows}</div>
+        ${isExpanded ? `<div style="display:flex;gap:0;border-bottom:1px solid #f0f0f0;background:#fafafa">
+          <button onclick="ibFarmSetSubTab(${idx},'inbound')" style="padding:5px 14px;font-size:12px;border:none;border-bottom:2px solid ${(_farmSubTab[farm]||'inbound')==='inbound'?'#1565C0':'transparent'};background:none;cursor:pointer;font-family:inherit;color:${(_farmSubTab[farm]||'inbound')==='inbound'?'#1565C0':'#6B7280'};font-weight:${(_farmSubTab[farm]||'inbound')==='inbound'?'700':'400'};white-space:nowrap;margin-bottom:-1px">📥 입고 내역</button>
+          <button onclick="ibFarmSetSubTab(${idx},'sorting')" style="padding:5px 14px;font-size:12px;border:none;border-bottom:2px solid ${_farmSubTab[farm]==='sorting'?'#7C3AED':'transparent'};background:none;cursor:pointer;font-family:inherit;color:${_farmSubTab[farm]==='sorting'?'#7C3AED':'#6B7280'};font-weight:${_farmSubTab[farm]==='sorting'?'700':'400'};white-space:nowrap;margin-bottom:-1px">✂️ 선과 결과</button>
+        </div>` : ''}
+        ${!isExpanded || (_farmSubTab[farm]||'inbound') === 'inbound' ? `
+          ${gradeRow}
+          ${catRows ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${catRows}</div>` : ''}
+          <div style="border-top:1px solid #f0f0f0">${detailRows}</div>
+        ` : `<div id="farm-sort-${idx}" style="min-height:60px"><div style="padding:20px;text-align:center;color:#9CA3AF;font-size:13px">⏳ 불러오는 중...</div></div>`}
       </div>
     </div>`;
   });
@@ -4830,6 +4843,14 @@ function renderIbFarmView() {
     ${_farmViewSearch ? '검색된 농가 재고 합계' : '전체 남은 재고'}: <strong style="color:#1565C0;font-size:15px">${grandTotal.toLocaleString()} CT</strong>
   </div>`;
   el.innerHTML = toolbar + cardsHtml + footer;
+
+  // 선과 결과 탭이 활성화된 농가 → 비동기로 데이터 로딩
+  farms.forEach((farm, idx) => {
+    if (_farmExpanded.has(farm) && _farmSubTab[farm] === 'sorting') {
+      const sortEl = document.getElementById(`farm-sort-${idx}`);
+      if (sortEl) loadAndRenderFarmSortingResults(farm, sortEl);
+    }
+  });
 }
 
 function renderIbCatView() {
@@ -6840,6 +6861,123 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('modal-edit-inbound')?.style.display !== 'none') { closeEditInboundModal(); return; }
   if (document.getElementById('modal-void-inbound')?.style.display !== 'none') { CM('void-inbound'); return; }
 });
+
+// ── 농가별 보기: 선과 결과 탭 렌더링
+async function loadAndRenderFarmSortingResults(farmName, containerEl) {
+  if (!containerEl) return;
+
+  const farmInbounds = inboundRecords.filter(r => !r.is_void && r.farm_name === farmName);
+  if (!farmInbounds.length) {
+    containerEl.innerHTML = '<div style="padding:24px;text-align:center;color:#bbb;font-size:13px">입고 기록 없음</div>';
+    return;
+  }
+
+  const inboundIds = farmInbounds.map(r => r.id);
+  const results = await dbGetSortingResults(inboundIds);
+
+  if (!results.length) {
+    containerEl.innerHTML = '<div style="padding:24px;text-align:center;color:#bbb;font-size:13px">✂️ 선과 처리 이력 없음</div>';
+    return;
+  }
+
+  const resultIds = results.map(r => r.id);
+  const details = await dbGetSortingDetails(resultIds);
+
+  // 결과별 상세 집계
+  const detailsByResult = {};
+  details.forEach(d => {
+    if (!detailsByResult[d.sorting_result_id])
+      detailsByResult[d.sorting_result_id] = { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const rd = detailsByResult[d.sorting_result_id];
+    if (d.category === '정상') rd.normal.push({ size_code: d.size_code, ct: Number(d.ct) });
+    else if (d.category === '파치')   rd.waste    += Number(d.ct);
+    else if (d.category === '고산도') rd.highacid += Number(d.ct);
+    else if (d.category === '극소과') rd.tiny     += Number(d.ct);
+    else if (d.category === '손실')   rd.loss     += Number(d.ct);
+  });
+
+  const inboundMap = {};
+  farmInbounds.forEach(r => { inboundMap[r.id] = r; });
+
+  const totalInput  = results.reduce((s, r) => s + Number(r.input_ct  || 0), 0);
+  const totalNormal = details.filter(d => d.category === '정상').reduce((s, d) => s + Number(d.ct), 0);
+  const totalLoss   = results.reduce((s, r) => s + Number(r.loss_ct   || 0), 0);
+  const lossRate    = totalInput > 0 ? Math.round(totalLoss / totalInput * 100) : 0;
+
+  // 사이즈별 누적 (감귤류 순서 우선, 나머지 가나다순)
+  const cumSizeMap = {};
+  details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
+    cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
+  });
+  const sizeOrder = [...SIZES_감귤류, ...SIZES_만감류];
+  const sortedSizes = Object.entries(cumSizeMap).sort(([a], [b]) => {
+    const ia = sizeOrder.indexOf(a), ib = sizeOrder.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  // 차수별 HTML
+  const sessionHtml = results.map(r => {
+    const rd = detailsByResult[r.id] || { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const ib = inboundMap[r.inbound_record_id];
+    const normalSizes = [...rd.normal].sort((a, b) => {
+      const ia = sizeOrder.indexOf(a.size_code), ib2 = sizeOrder.indexOf(b.size_code);
+      if (ia !== -1 && ib2 !== -1) return ia - ib2;
+      return a.size_code.localeCompare(b.size_code);
+    });
+    const normalTotal = normalSizes.reduce((s, d) => s + d.ct, 0);
+    const abnTotal = rd.waste + rd.highacid + rd.tiny + rd.loss;
+
+    const sizeChips = normalSizes.map(d =>
+      `<span style="background:#E8F5E9;color:#2E7D32;font-size:11px;padding:1px 7px;border-radius:5px;white-space:nowrap">${esc(d.size_code)}<strong style="margin-left:2px">${fmtN(d.ct)}</strong></span>`
+    ).join(' ');
+
+    const abnParts = [
+      rd.waste    > 0 ? `파치 ${fmtN(rd.waste)}`      : '',
+      rd.highacid > 0 ? `고산도 ${fmtN(rd.highacid)}` : '',
+      rd.tiny     > 0 ? `극소과 ${fmtN(rd.tiny)}`     : '',
+      rd.loss     > 0 ? `손실 ${fmtN(rd.loss)}`       : '',
+    ].filter(Boolean).join(' · ');
+
+    return `<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${normalSizes.length || abnTotal > 0 ? 6 : 0}px">
+        <span style="background:#EDE9FE;color:#6D28D9;font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${r.sequence_number}차</span>
+        <span style="font-size:12px;color:#6B7280">${r.sorting_date || ''}</span>
+        ${ib ? `<span style="font-size:11px;color:#9CA3AF">${esc(ib.product)}</span>` : ''}
+        ${r.operator_name ? `<span style="font-size:11px;color:#9CA3AF">· ${esc(r.operator_name)}</span>` : ''}
+        <span style="font-size:12px;font-weight:700;color:#1565C0;margin-left:auto">투입 ${fmtN(r.input_ct)} CT</span>
+      </div>
+      ${normalSizes.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:${abnTotal > 0 ? 4 : 0}px">
+        <span style="font-size:11px;color:#059669;font-weight:600;white-space:nowrap">🟢 정상 ${fmtN(normalTotal)} CT</span>
+        ${sizeChips}
+      </div>` : ''}
+      ${abnTotal > 0 ? `<div style="font-size:11px;color:#DC2626">🔴 비정상 ${fmtN(abnTotal)} CT${abnParts ? ` · ${abnParts}` : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // 사이즈별 누적 섹션
+  const cumSizeHtml = sortedSizes.length ? `
+    <div style="padding:10px 14px;background:#F5F3FF">
+      <div style="font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:6px">─── 사이즈별 누적 ───</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">
+        ${sortedSizes.map(([sz, ct]) =>
+          `<span style="background:#EDE9FE;color:#5B21B6;font-size:11px;padding:2px 8px;border-radius:6px">${esc(sz)}: <strong>${fmtN(ct)}</strong> CT</span>`
+        ).join('')}
+      </div>
+    </div>` : '';
+
+  containerEl.innerHTML = `
+    <div style="padding:8px 14px;background:#F0F9FF;border-bottom:1px solid #DBEAFE;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">
+      <span>📦 총 투입 <strong>${fmtN(totalInput)} CT</strong> (${results.length}차)</span>
+      <span>🟢 정상품 <strong>${fmtN(totalNormal)} CT</strong></span>
+      ${totalLoss > 0 ? `<span style="color:#DC2626">📉 손실률 <strong>${lossRate}%</strong></span>` : `<span style="color:#059669">✅ 손실 없음</span>`}
+    </div>
+    ${sessionHtml}
+    ${cumSizeHtml}
+  `;
+}
 
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);

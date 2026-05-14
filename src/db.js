@@ -208,3 +208,15 @@ async function dbGetAuditLogsForRecord(targetTable, targetId) {
   try { return await sbGet('audit_logs', `target_table=eq.${targetTable}&target_id=eq.${targetId}&order=created_at.asc`); }
   catch(e) { return []; }
 }
+
+// ── 선과 결과 조회
+async function dbGetSortingResults(inboundIds) {
+  if (!inboundIds.length) return [];
+  const q = `inbound_record_id=in.(${inboundIds.join(',')})&order=sorting_date.desc,sequence_number.desc`;
+  try { return await sbGet('sorting_results', q); } catch(e) { return []; }
+}
+async function dbGetSortingDetails(resultIds) {
+  if (!resultIds.length) return [];
+  const q = `sorting_result_id=in.(${resultIds.join(',')})`;
+  try { return await sbGet('sorting_details', q); } catch(e) { return []; }
+}
