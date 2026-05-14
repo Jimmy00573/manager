@@ -3799,8 +3799,8 @@ function _renderInvMatrix(product, recs) {
     const cells = allSizes.map(sz => {
       const val   = farmMap[farm][sz] || 0;
       const inner = val === 0
-        ? `<span style="color:#E5E7EB;user-select:none">-</span>`
-        : `<strong>${fmtN(val)}</strong>`;
+        ? `<span style="color:#9CA3AF">-</span>`
+        : `<strong style="color:#111827">${fmtN(val)}</strong>`;
       return `<td class="inv-mc"
         data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}"
         style="padding:4px 8px;text-align:center;border:1px solid #E5E7EB;background:${bg};cursor:pointer;font-size:13px"
@@ -3818,21 +3818,8 @@ function _renderInvMatrix(product, recs) {
     return `<td style="padding:5px 8px;text-align:center;border:1px solid #D1D5DB;background:#EFF6FF;font-size:12px;font-weight:700;color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</td>`;
   }).join('');
 
-  const diagHtml = `<details style="margin-bottom:8px;font-size:11px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:6px 10px">
-    <summary style="cursor:pointer;font-weight:700;color:#92400E">🔍 진단 정보 (문제 해결 후 숨겨짐)</summary>
-    <div style="margin-top:6px;font-family:monospace;line-height:1.8">
-      <div>레코드: <b>${recs.length}건</b> / 농가: <b>${farms.length}곳</b> / grandTotal: <b>${grandTotal}</b></div>
-      <div>JS allSizes (${allSizes.length}개): <span style="color:#065F46">${allSizes.join(', ')}</span></div>
-      <div>DB size_code (${dbSizes.length}개): <span style="color:#1D4ED8">${dbSizes.join(', ') || '없음(null만 있음)'}</span></div>
-      <div>매칭: <span style="color:#059669">${matched.join(', ') || '없음'}</span></div>
-      <div style="color:#DC2626">미매칭(DB엔 있는데 JS에 없음): ${unmatched.join(', ') || '없음'}</div>
-      ${farms.length > 0 ? `<div>farmMap[${farms[0]}] 키: ${Object.keys(farmMap[farms[0]]).join(', ')}</div>` : ''}
-    </div>
-  </details>`;
-
   return `
     <div style="margin-bottom:28px">
-      ${diagHtml}
       <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:0">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
@@ -3925,8 +3912,8 @@ async function invSaveCellEdit(cell, farm, product, size, newVal, currentTotal) 
   } catch(e) {
     alert('저장 오류: ' + e.message);
     cell.innerHTML = currentTotal === 0
-      ? `<span style="color:#E5E7EB;user-select:none">-</span>`
-      : `<strong>${fmtN(currentTotal)}</strong>`;
+      ? `<span style="color:#9CA3AF">-</span>`
+      : `<strong style="color:#111827">${fmtN(currentTotal)}</strong>`;
     cell.style.pointerEvents = '';
   }
 }
