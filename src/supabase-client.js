@@ -19,7 +19,8 @@ const SB_HEADERS = {
 
 async function sbGet(table, params = '') {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, {
-    headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+    headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+    cache: 'no-store'
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
