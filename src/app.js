@@ -4271,6 +4271,9 @@ let _scSort = 'date-asc';
 let _scSearch = '';
 let _scPriOnly = false;
 let _scProduct = '';
+let _scTab = 'pending'; // 'pending' | 'done'
+let _scDoneSearch = '';
+let _scDoneProduct = '';
 
 const IB_CATS = [
   { key: '상품',  color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
@@ -5477,46 +5480,94 @@ function scSetSort(col) {
   _renderScTable();
 }
 
+function scSetTab(tab) {
+  _scTab = tab;
+  renderProcessingTab();
+}
+
 // 초기 렌더: 스켈레톤 1회 생성 + 이벤트 등록, 이후 테이블만 갱신
 function renderProcessingTab() {
   const el = document.getElementById('sorting-center-body');
   if (!el) return;
 
-  if (!document.getElementById('sc-table-wrap')) {
-    el.innerHTML = `
-      <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
-      <div id="sc-stats" style="margin-bottom:14px"></div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-        <input id="sc-search-farm" type="text" placeholder="농가 검색..."
-          style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
-        <select id="sc-product-sel"
-          style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
-          <option value="">전체 품목</option>
-        </select>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
-          <input type="checkbox" id="sc-pri-only"> ⭐ 우선/긴급만
-        </label>
-        <span id="sc-row-count" style="margin-left:auto;font-size:12px;color:#9CA3AF"></span>
-      </div>
-      <div id="sc-table-wrap" style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px"></div>`;
+  const _tabBar = () => `
+    <div id="sc-tab-bar" style="display:flex;gap:0;margin-bottom:14px;border-bottom:2px solid #E5E7EB">
+      <button onclick="scSetTab('pending')" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit;transition:background 0.15s;${_scTab==='pending'?'background:#1565C0;color:#fff':'background:transparent;color:#6B7280'}">📦 대기</button>
+      <button onclick="scSetTab('done')" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit;transition:background 0.15s;${_scTab==='done'?'background:#15803D;color:#fff':'background:transparent;color:#6B7280'}">✅ 완료</button>
+    </div>`;
 
-    document.getElementById('sc-search-farm').addEventListener('input', e => {
-      _scSearch = e.target.value;
-      _renderScTable();
-    });
-    document.getElementById('sc-product-sel').addEventListener('change', e => {
-      _scProduct = e.target.value;
-      _renderScTable();
-    });
-    document.getElementById('sc-pri-only').addEventListener('change', e => {
-      _scPriOnly = e.target.checked;
-      _renderScTable();
-    });
+  const curTab = el.dataset.scTab;
+  const needBuild = !document.getElementById('sc-tab-bar') || curTab !== _scTab;
+
+  if (needBuild) {
+    el.dataset.scTab = _scTab;
+
+    if (_scTab === 'pending') {
+      el.innerHTML = `
+        <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
+        ${_tabBar()}
+        <div id="sc-stats" style="margin-bottom:14px"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+          <input id="sc-search-farm" type="text" placeholder="농가 검색..."
+            style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
+          <select id="sc-product-sel"
+            style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
+            <option value="">전체 품목</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="sc-pri-only"> ⭐ 우선/긴급만
+          </label>
+          <span id="sc-row-count" style="margin-left:auto;font-size:12px;color:#9CA3AF"></span>
+        </div>
+        <div id="sc-table-wrap" style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px"></div>`;
+
+      document.getElementById('sc-search-farm').addEventListener('input', e => {
+        _scSearch = e.target.value;
+        _renderScTable();
+      });
+      document.getElementById('sc-product-sel').addEventListener('change', e => {
+        _scProduct = e.target.value;
+        _renderScTable();
+      });
+      document.getElementById('sc-pri-only').addEventListener('change', e => {
+        _scPriOnly = e.target.checked;
+        _renderScTable();
+      });
+    } else {
+      el.innerHTML = `
+        <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
+        ${_tabBar()}
+        <div id="sc-stats" style="margin-bottom:14px"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+          <input id="sc-done-search-farm" type="text" placeholder="농가 검색..."
+            style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
+          <select id="sc-done-product-sel"
+            style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
+            <option value="">전체 품목</option>
+          </select>
+          <span id="sc-done-row-count" style="margin-left:auto;font-size:12px;color:#9CA3AF"></span>
+        </div>
+        <div id="sc-done-wrap" style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px"></div>`;
+
+      document.getElementById('sc-done-search-farm').addEventListener('input', e => {
+        _scDoneSearch = e.target.value;
+        _renderScDoneTable();
+      });
+      document.getElementById('sc-done-product-sel').addEventListener('change', e => {
+        _scDoneProduct = e.target.value;
+        _renderScDoneTable();
+      });
+    }
   }
 
   _renderScStats();
-  _renderScProductOptions();
-  _renderScTable();
+  if (_scTab === 'pending') {
+    _renderScProductOptions();
+    _renderScTable();
+  } else {
+    _renderScDoneProductOptions();
+    _renderScDoneTable();
+  }
 }
 
 function _renderScStats() {
@@ -5524,6 +5575,31 @@ function _renderScStats() {
   if (!statsEl) return;
   const pm = _ibProcessedMap();
   const today = td();
+
+  if (_scTab === 'done') {
+    const doneRecs = inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) <= 0);
+    const doneIdSet = new Set(doneRecs.map(r => r.id));
+    const totalCt = doneRecs.reduce((s, r) => s + r.quantity, 0);
+    const doneSortings = processingRecords.filter(p => p.process_type === '선과' && doneIdSet.has(p.inbound_id));
+    const totalSortings = doneSortings.length;
+    const todayDone = processingRecords
+      .filter(p => p.process_type === '선과' && p.date === today && doneIdSet.has(p.inbound_id)).length;
+    statsEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
+        ${[
+          ['✅ 완료 건수', doneRecs.length + '건',   '#F0FDF4', '#15803D'],
+          ['📦 총 처리CT', fmtN(totalCt) + ' CT',    '#F0FDF4', '#15803D'],
+          ['✂️ 누적 회수', totalSortings + '회',      '#F5F3FF', '#7C3AED'],
+          ['📅 오늘 완료', todayDone + '건',          '#F0FDF4', '#15803D'],
+        ].map(([lbl, val, bg, col]) => `
+          <div style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center">
+            <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
+            <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
+          </div>`).join('')}
+      </div>`;
+    return;
+  }
+
   const todayMs = new Date(today).getTime();
   const urgLvl = date => {
     const d = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
@@ -5567,6 +5643,94 @@ function _renderScProductOptions() {
   } else {
     sel.value = _scProduct;
   }
+}
+
+function _renderScDoneProductOptions() {
+  const sel = document.getElementById('sc-done-product-sel');
+  if (!sel) return;
+  const pm = _ibProcessedMap();
+  const prods = [...new Set(
+    inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) <= 0)
+      .map(r => r.product).filter(Boolean)
+  )].sort();
+  const cur = [...sel.options].slice(1).map(o => o.value);
+  if (JSON.stringify(cur) !== JSON.stringify(prods)) {
+    sel.innerHTML = '<option value="">전체 품목</option>' +
+      prods.map(p => `<option value="${esc(p)}"${_scDoneProduct === p ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  } else {
+    sel.value = _scDoneProduct;
+  }
+}
+
+function _renderScDoneTable() {
+  const wrap = document.getElementById('sc-done-wrap');
+  if (!wrap) return;
+
+  const pm = _ibProcessedMap();
+
+  const procDateMap = {};
+  const procCountMap = {};
+  processingRecords.filter(p => p.process_type === '선과').forEach(p => {
+    if (!procDateMap[p.inbound_id] || p.date > procDateMap[p.inbound_id])
+      procDateMap[p.inbound_id] = p.date;
+    procCountMap[p.inbound_id] = (procCountMap[p.inbound_id] || 0) + 1;
+  });
+
+  let rows = inboundRecords
+    .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) <= 0)
+    .sort((a, b) => {
+      const da = procDateMap[a.id] || a.date;
+      const db = procDateMap[b.id] || b.date;
+      return db.localeCompare(da);
+    });
+
+  if (_scDoneSearch) {
+    const q = _scDoneSearch.toLowerCase();
+    rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q));
+  }
+  if (_scDoneProduct) rows = rows.filter(r => r.product === _scDoneProduct);
+
+  const countEl = document.getElementById('sc-done-row-count');
+  if (countEl) countEl.textContent = rows.length + '건';
+
+  if (!rows.length) {
+    wrap.innerHTML = `<div style="padding:40px;text-align:center;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 완료 항목 없음</div>`;
+    return;
+  }
+
+  const thS = `padding:8px 10px;text-align:left;font-weight:600;color:#374151;font-size:12px;background:#F9FAFB;border-bottom:2px solid #E5E7EB`;
+  const thR = `padding:8px 8px;text-align:right;font-weight:600;color:#374151;font-size:12px;background:#F9FAFB;border-bottom:2px solid #E5E7EB`;
+  const thC = `padding:8px 8px;text-align:center;font-weight:600;color:#374151;font-size:12px;background:#F9FAFB;border-bottom:2px solid #E5E7EB`;
+
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>
+        <th style="${thS}">농가</th>
+        <th style="${thS}">품목</th>
+        <th style="${thR}">입고CT</th>
+        <th style="${thC}">입고일</th>
+        <th style="${thC}">완료일</th>
+        <th style="${thC}">선과회수</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map((r, i) => {
+          const completedDate = procDateMap[r.id] || '-';
+          const sortCount = procCountMap[r.id] || 0;
+          return `<tr style="border-bottom:1px solid #F3F4F6;background:${i % 2 === 1 ? '#FAFAFA' : '#fff'}">
+            <td style="padding:7px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px" title="${esc(r.farm_name)}">${esc(r.farm_name)}</td>
+            <td style="padding:7px 8px">${productChip(r.product)}</td>
+            <td style="padding:7px 8px;text-align:right;font-weight:700;color:#15803D">${fmtN(r.quantity)}</td>
+            <td style="padding:7px 8px;text-align:center;color:#6B7280;font-size:12px">${r.date}</td>
+            <td style="padding:7px 8px;text-align:center;font-size:12px;font-weight:600;color:#15803D">${completedDate}</td>
+            <td style="padding:7px 8px;text-align:center">
+              ${sortCount > 0
+                ? `<span style="background:#EDE9FE;color:#6D28D9;font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${sortCount}차</span>`
+                : `<span style="color:#D1D5DB;font-size:12px">-</span>`}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
 }
 
 function _renderScTable() {
