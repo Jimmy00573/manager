@@ -3773,14 +3773,6 @@ function _renderInvMatrix(product, recs) {
     if (!farmMap[farm]) farmMap[farm] = {};
     farmMap[farm][sz] = (farmMap[farm][sz] || 0) + (Number(r.quantity) || 0);
   });
-  // 진단: 데이터 구조 확인
-  const _diagFarms = Object.keys(farmMap).slice(0, 3);
-  console.log(`[inv-matrix] ${product} | recs=${recs.length} | farms=${Object.keys(farmMap).length}`);
-  _diagFarms.forEach(f => {
-    const keys = Object.keys(farmMap[f]);
-    console.log(`  farm="${f}" | size_keys(${keys.length}):`, keys.join(', '));
-  });
-  console.log(`  allSizes(${allSizes.length}):`, allSizes.join(', '));
 
   const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
   const colTotals = {};
