@@ -3878,8 +3878,8 @@ let _expandedMemoId = null;
 let _allMemosExpanded = false;
 let _openMenuId = null;
 
-function toggleRowMenu(id, e) {
-  e.stopPropagation();
+function toggleRowMenu(id, e, btnEl) {
+  if (e && e.stopPropagation) e.stopPropagation();
   if (_openMenuId && _openMenuId !== id) {
     const prev = document.getElementById(`row-menu-${_openMenuId}`);
     if (prev) prev.style.display = 'none';
@@ -3891,7 +3891,7 @@ function toggleRowMenu(id, e) {
     menu.style.display = 'none';
     _openMenuId = null;
   } else {
-    const btn = e.currentTarget;
+    const btn = btnEl || (e && e.currentTarget);
     const rect = btn.getBoundingClientRect();
     menu.style.display = '';
     const menuH = menu.offsetHeight;
@@ -4775,7 +4775,7 @@ function renderIbFarmView() {
              <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
           : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
         const farmMenu = `<div style="position:relative;display:inline-block">
-          <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)" style="font-size:13px;width:24px;height:24px">⋮</button>
+          <button class="menu-trigger" data-menu-id="${r.id}" style="font-size:13px;width:24px;height:24px">⋮</button>
           <div id="row-menu-${r.id}" class="row-menu" style="display:none">${farmMenuItems}</div>
         </div>`;
         const memoDiv = r.note
@@ -6845,6 +6845,14 @@ document.addEventListener('keydown', e => {
 document.addEventListener('DOMContentLoaded', initApp);
 document.addEventListener('click', e => {
   if (!e.target.classList.contains('grade-hint')) hideGradeHint();
+
+  // 이벤트 위임: data-menu-id 속성을 가진 ⋮ 버튼 (농가별 보기 등)
+  const delegatedTrigger = e.target.closest('.menu-trigger[data-menu-id]');
+  if (delegatedTrigger) {
+    toggleRowMenu(delegatedTrigger.dataset.menuId, e, delegatedTrigger);
+    return;
+  }
+
   if (_openMenuId && !e.target.closest('.row-menu') && !e.target.classList.contains('menu-trigger')) {
     const menu = document.getElementById(`row-menu-${_openMenuId}`);
     if (menu) menu.style.display = 'none';
