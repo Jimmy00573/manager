@@ -3782,17 +3782,6 @@ function _renderInvMatrix(product, recs) {
   farms.forEach(farm => { rowTotals[farm] = allSizes.reduce((s, sz) => s + (farmMap[farm][sz] || 0), 0); });
   const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
-  // ── 진단: DB 사이즈코드 vs JS 상수 비교
-  const dbSizes = [...new Set(recs.map(r => r.size_code).filter(Boolean))].sort();
-  const matched = dbSizes.filter(s => allSizes.includes(s));
-  const unmatched = dbSizes.filter(s => !allSizes.includes(s));
-  console.group(`[재고매트릭스] ${product} (${ptype})`);
-  console.log('DB size_code:', dbSizes);
-  console.log('JS allSizes:', allSizes);
-  console.log('매칭:', matched, '/ 미매칭:', unmatched);
-  console.log('grandTotal:', grandTotal, '/ farms:', farms.length);
-  console.groupEnd();
-
   const THBASE = 'border:1px solid #16304F;font-size:12px;font-weight:700;white-space:nowrap;padding:6px 8px';
   const THDARK = `${THBASE};background:#1E3A5F;color:#fff`;
 
