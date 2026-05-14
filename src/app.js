@@ -3810,6 +3810,190 @@ function _renderInvMatrix(product, recs) {
     </div>`;
 }
 
+// ── 재고 직접 입력 모달 ──────────────────────────────────────────
+
+function openInvEntryModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 입력할 수 있습니다.');
+
+  let modal = document.getElementById('modal-inv-entry');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-inv-entry';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:14px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
+          <div style="font-size:15px;font-weight:700;color:#111827">📦 재고 직접 입력</div>
+          <button onclick="document.getElementById('modal-inv-entry').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+        </div>
+        <div style="padding:16px 18px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            <div>
+              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">날짜 *</label>
+              <input id="iem-date" type="date" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">농가 *</label>
+              <select id="iem-farm" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
+                <option value="">선택</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">품목 *</label>
+              <select id="iem-product" onchange="iemOnProductChange()" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
+                <option value="">선택</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">위치</label>
+              <input id="iem-location" type="text" placeholder="선택사항" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+            </div>
+          </div>
+          <div id="iem-size-area">
+            <div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">품목을 먼저 선택하세요</div>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid #E5E7EB">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:13px;font-weight:600;color:#374151">총 합계</span>
+              <span id="iem-grand-total" style="font-size:20px;font-weight:700;color:#1565C0">0 CT</span>
+            </div>
+            <div>
+              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">메모</label>
+              <input id="iem-note" type="text" placeholder="선택사항" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <button onclick="document.getElementById('modal-inv-entry').style.display='none'" style="flex:1;padding:11px;background:#fff;color:#374151;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+            <button id="iem-save-btn" onclick="saveInvEntry()" style="flex:2;padding:11px;background:#1565C0;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">💾 저장</button>
+          </div>
+        </div>
+      </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+    document.body.appendChild(modal);
+  }
+
+  // 날짜 기본값
+  const dateEl = document.getElementById('iem-date');
+  if (dateEl && !dateEl.value) dateEl.value = td();
+
+  // 농가 드롭다운 갱신
+  const farmEl = document.getElementById('iem-farm');
+  if (farmEl) {
+    const cur = farmEl.value;
+    farmEl.innerHTML = '<option value="">선택</option>';
+    farms.forEach(f => { farmEl.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`; });
+    if (cur) farmEl.value = cur;
+  }
+
+  // 품목 드롭다운 갱신
+  const prodEl = document.getElementById('iem-product');
+  if (prodEl) {
+    const cur = prodEl.value;
+    prodEl.innerHTML = '<option value="">선택</option>' + buildProductOptgroupHTML();
+    if (cur) prodEl.value = cur;
+  }
+
+  // 사이즈 영역 초기화
+  iemOnProductChange();
+
+  modal.style.display = 'flex';
+}
+
+function iemOnProductChange() {
+  const product = document.getElementById('iem-product')?.value;
+  const area    = document.getElementById('iem-size-area');
+  if (!area) return;
+
+  if (!product) {
+    area.innerHTML = '<div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">품목을 먼저 선택하세요</div>';
+    const tot = document.getElementById('iem-grand-total');
+    if (tot) tot.textContent = '0 CT';
+    return;
+  }
+
+  const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
+  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+
+  area.innerHTML = `
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">사이즈별 수량 (CT) — ${ptype}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px">
+      ${groups.map(g => `
+        <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px">
+          <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.04em;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #E5E7EB;text-align:center">${g.group}</div>
+          ${g.sizes.map(sz => `
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+              <label style="font-size:12px;color:#374151;min-width:34px;flex-shrink:0">${esc(sz)}</label>
+              <input type="number" class="iem-size-inp" data-size="${esc(sz)}" min="0" step="0.5" placeholder="0"
+                oninput="iemUpdateTotal()"
+                style="flex:1;min-width:0;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:13px;font-family:inherit;text-align:right">
+            </div>`).join('')}
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5px;margin-top:3px">
+            <span>소계</span>
+            <span id="iem-sub-${g.group.replace(/\//g,'-')}" style="font-weight:700;color:#1565C0">0 CT</span>
+          </div>
+        </div>`).join('')}
+    </div>`;
+
+  iemUpdateTotal();
+}
+
+function iemUpdateTotal() {
+  const product = document.getElementById('iem-product')?.value;
+  if (!product) return;
+  const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
+  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+
+  let grand = 0;
+  groups.forEach(g => {
+    const sub = g.sizes.reduce((s, sz) => {
+      const inp = document.querySelector(`.iem-size-inp[data-size="${sz}"]`);
+      return s + (parseFloat(inp?.value) || 0);
+    }, 0);
+    const subEl = document.getElementById(`iem-sub-${g.group.replace(/\//g, '-')}`);
+    if (subEl) subEl.textContent = fmtN(sub) + ' CT';
+    grand += sub;
+  });
+
+  const totEl = document.getElementById('iem-grand-total');
+  if (totEl) totEl.textContent = fmtN(grand) + ' CT';
+}
+
+async function saveInvEntry() {
+  const date     = document.getElementById('iem-date')?.value;
+  const farm     = document.getElementById('iem-farm')?.value;
+  const product  = document.getElementById('iem-product')?.value;
+  const location = document.getElementById('iem-location')?.value?.trim() || null;
+  const note     = document.getElementById('iem-note')?.value?.trim() || null;
+
+  if (!date)    return alert('날짜를 선택해주세요.');
+  if (!product) return alert('품목을 선택해주세요.');
+  if (!farm)    return alert('농가를 선택해주세요.');
+
+  const toSave = [];
+  document.querySelectorAll('.iem-size-inp').forEach(inp => {
+    const qty = parseFloat(inp.value) || 0;
+    if (qty > 0) toSave.push({ size_code: inp.dataset.size, quantity: qty });
+  });
+  if (!toSave.length) return alert('수량을 1개 이상 입력해주세요.');
+
+  const btn = document.getElementById('iem-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+
+  try {
+    const base = { date, farm_name: farm, product, location, source_type: 'manual', note };
+    await Promise.all(toSave.map(r => dbInsertInventoryRecord({ ...base, size_code: r.size_code, quantity: r.quantity })));
+
+    inventoryRecords = await dbGetInventoryRecords();
+    document.getElementById('modal-inv-entry').style.display = 'none';
+    renderInventoryStatus();
+    showToast(`${toSave.length}개 사이즈 재고 등록 완료 (${product} · ${farm})`);
+  } catch(e) {
+    alert('저장 오류: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
+  }
+}
+
 function renderInvAll() {
   renderInvSummary();
   renderInboundList();
