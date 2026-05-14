@@ -6175,7 +6175,8 @@ async function saveSortingResult() {
   const sizeDetails = [];
   document.querySelectorAll('.srt-size-input').forEach(inp => {
     const v = parseFloat(inp.value) || 0;
-    if (v > 0) { normalTotal += v; sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상' }); }
+    normalTotal += v;
+    sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상' });
   });
 
   const abnormalTotal = waste + highacid + tiny + loss;
@@ -6206,10 +6207,10 @@ async function saveSortingResult() {
     // 2. 상세 (사이즈별 + 비정상품)
     const allDetails = [
       ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', note: null })),
-      ...(waste    > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null }] : []),
-      ...(highacid > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null }] : []),
-      ...(tiny     > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null }] : []),
-      ...(loss     > 0 ? [{ sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null }] : []),
+      { sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null },
+      { sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null },
+      { sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null },
+      { sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null },
     ];
     for (const d of allDetails) await sbInsert('sorting_details', d);
 
@@ -7047,13 +7048,13 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
   const resultIds = results.map(r => r.id);
   const details = await dbGetSortingDetails(resultIds);
 
-  // 결과별 상세 집계
+  // 결과별 상세 집계 (normalMap으로 변경: 전체 사이즈 보존)
   const detailsByResult = {};
   details.forEach(d => {
     if (!detailsByResult[d.sorting_result_id])
-      detailsByResult[d.sorting_result_id] = { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+      detailsByResult[d.sorting_result_id] = { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
     const rd = detailsByResult[d.sorting_result_id];
-    if (d.category === '정상') rd.normal.push({ size_code: d.size_code, ct: Number(d.ct) });
+    if (d.category === '정상' && d.size_code) rd.normalMap[d.size_code] = Number(d.ct);
     else if (d.category === '파치')   rd.waste    += Number(d.ct);
     else if (d.category === '고산도') rd.highacid += Number(d.ct);
     else if (d.category === '극소과') rd.tiny     += Number(d.ct);
@@ -7068,79 +7069,79 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
   const totalLoss   = results.reduce((s, r) => s + Number(r.loss_ct   || 0), 0);
   const lossRate    = totalInput > 0 ? Math.round(totalLoss / totalInput * 100) : 0;
 
-  // 사이즈별 누적 (감귤류 순서 우선, 나머지 가나다순)
+  // 사이즈별 누적 (전체 사이즈 포함, 없으면 0)
   const cumSizeMap = {};
   details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
     cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
   });
-  const sizeOrder = [...SIZES_감귤류, ...SIZES_만감류];
-  const sortedSizes = Object.entries(cumSizeMap).sort(([a], [b]) => {
-    const ia = sizeOrder.indexOf(a), ib = sizeOrder.indexOf(b);
-    if (ia !== -1 && ib !== -1) return ia - ib;
-    if (ia !== -1) return -1;
-    if (ib !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  // 농가 품목 타입으로 전체 사이즈 리스트 결정
+  const farmPtypes = new Set(farmInbounds.map(r => PRODUCT_TYPE_MAP[r.product] || '만감류'));
+  const cumAllSizes = (farmPtypes.has('감귤류') && !farmPtypes.has('만감류'))
+    ? SIZES_감귤류 : farmPtypes.has('감귤류') ? [...SIZES_감귤류, ...SIZES_만감류] : SIZES_만감류;
+  const sortedSizes = cumAllSizes.map(sz => [sz, cumSizeMap[sz] ?? 0]);
 
   // 차수별 HTML
   const sessionHtml = results.map(r => {
-    const rd = detailsByResult[r.id] || { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
     const ib = inboundMap[r.inbound_record_id];
-    const normalSizes = [...rd.normal].sort((a, b) => {
-      const ia = sizeOrder.indexOf(a.size_code), ib2 = sizeOrder.indexOf(b.size_code);
-      if (ia !== -1 && ib2 !== -1) return ia - ib2;
-      return a.size_code.localeCompare(b.size_code);
-    });
+    const ptForResult = PRODUCT_TYPE_MAP[ib?.product] || '만감류';
+    const sizesForResult = ptForResult === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
+    const normalSizes = sizesForResult.map(sz => ({ size_code: sz, ct: rd.normalMap[sz] ?? 0 }));
     const normalTotal = normalSizes.reduce((s, d) => s + d.ct, 0);
-    const abnTotal = rd.waste + rd.highacid + rd.tiny + rd.loss;
-
     const abnList = [
-      rd.waste    > 0 ? { label: '파치',   ct: rd.waste }    : null,
-      rd.highacid > 0 ? { label: '고산도', ct: rd.highacid } : null,
-      rd.tiny     > 0 ? { label: '극소과', ct: rd.tiny }     : null,
-      rd.loss     > 0 ? { label: '손실',   ct: rd.loss }     : null,
-    ].filter(Boolean);
+      { label: '파치',   ct: rd.waste    },
+      { label: '고산도', ct: rd.highacid },
+      { label: '극소과', ct: rd.tiny     },
+      { label: '손실',   ct: rd.loss     },
+    ];
+    const abnTotal = abnList.reduce((s, d) => s + d.ct, 0);
+    const hasAbn = abnTotal > 0;
+
+    const zRow = (label, ct, activeColor) => {
+      const z = ct === 0;
+      return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0${z ? ';opacity:0.38' : ''}">
+        <span style="color:${z ? '#9CA3AF' : '#374151'}">${esc(label)}</span>
+        <span style="color:${z ? '#D1D5DB' : activeColor};font-weight:${z ? '400' : '600'}">${fmtN(ct)} CT</span>
+      </div>`;
+    };
 
     return `<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${normalSizes.length || abnTotal > 0 ? 6 : 0}px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <span style="background:#EDE9FE;color:#6D28D9;font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${r.sequence_number}차</span>
         <span style="font-size:12px;color:#6B7280">${r.sorting_date || ''}</span>
         ${ib ? `<span style="font-size:11px;color:#9CA3AF">${esc(ib.product)}</span>` : ''}
         ${r.operator_name ? `<span style="font-size:11px;color:#9CA3AF">· ${esc(r.operator_name)}</span>` : ''}
         <span style="font-size:12px;font-weight:700;color:#1565C0;margin-left:auto">투입 ${fmtN(r.input_ct)} CT</span>
       </div>
-      ${normalSizes.length ? `<div style="margin-bottom:${abnList.length ? 6 : 0}px">
+      <div style="margin-bottom:${hasAbn ? 6 : 0}px">
         <div style="font-size:11px;color:#059669;font-weight:600;margin-bottom:4px">🟢 정상 ${fmtN(normalTotal)} CT</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px 12px">
-          ${normalSizes.map(d => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0">
-            <span style="color:#374151">${esc(d.size_code)}</span>
-            <span style="color:#059669;font-weight:600">${fmtN(d.ct)} CT</span>
-          </div>`).join('')}
+          ${normalSizes.map(d => zRow(d.size_code, d.ct, '#059669')).join('')}
         </div>
-      </div>` : ''}
-      ${abnList.length ? `<div>
+      </div>
+      ${hasAbn ? `<div>
         <div style="font-size:11px;color:#DC2626;font-weight:600;margin-bottom:4px">🔴 비정상 ${fmtN(abnTotal)} CT</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px 12px">
-          ${abnList.map(d => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0">
-            <span style="color:#374151">${esc(d.label)}</span>
-            <span style="color:#DC2626;font-weight:600">${fmtN(d.ct)} CT</span>
-          </div>`).join('')}
+          ${abnList.map(d => zRow(d.label, d.ct, '#DC2626')).join('')}
         </div>
       </div>` : ''}
     </div>`;
   }).join('');
 
   // 사이즈별 누적 섹션
-  const cumSizeHtml = sortedSizes.length ? `
+  const cumSizeHtml = `
     <div style="padding:10px 14px;background:#F5F3FF">
       <div style="font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:6px">─── 사이즈별 누적 ───</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px 14px">
-        ${sortedSizes.map(([sz, ct]) => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0">
-          <span style="color:#6D28D9">${esc(sz)}</span>
-          <span style="color:#6D28D9;font-weight:700">${fmtN(ct)} CT</span>
-        </div>`).join('')}
+        ${sortedSizes.map(([sz, ct]) => {
+          const z = ct === 0;
+          return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0${z ? ';opacity:0.38' : ''}">
+            <span style="color:${z ? '#C4B5FD' : '#6D28D9'}">${esc(sz)}</span>
+            <span style="color:${z ? '#DDD6FE' : '#6D28D9'};font-weight:${z ? '400' : '700'}">${fmtN(ct)} CT</span>
+          </div>`;
+        }).join('')}
       </div>
-    </div>` : '';
+    </div>`;
 
   containerEl.innerHTML = `
     <div style="padding:8px 14px;background:#F0F9FF;border-bottom:1px solid #DBEAFE;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">
@@ -7192,32 +7193,31 @@ async function openSortingDetailModal(inboundId) {
   let details = [];
   try { details = await dbGetSortingDetails(resultIds); } catch(e) {}
 
-  const sizeOrder = [...SIZES_감귤류, ...SIZES_만감류];
+  // 품목 타입에 따른 전체 사이즈 리스트 (기존 데이터도 LEFT JOIN 효과)
+  const productType = PRODUCT_TYPE_MAP[ib?.product] || '만감류';
+  const allSizes = productType === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
 
   const detailsByResult = {};
   details.forEach(d => {
     if (!detailsByResult[d.sorting_result_id])
-      detailsByResult[d.sorting_result_id] = { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+      detailsByResult[d.sorting_result_id] = { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
     const rd = detailsByResult[d.sorting_result_id];
-    if (d.category === '정상')      rd.normal.push({ size_code: d.size_code, ct: Number(d.ct) });
+    if (d.category === '정상' && d.size_code) rd.normalMap[d.size_code] = Number(d.ct);
     else if (d.category === '파치')   rd.waste    += Number(d.ct);
     else if (d.category === '고산도') rd.highacid += Number(d.ct);
     else if (d.category === '극소과') rd.tiny     += Number(d.ct);
     else if (d.category === '손실')   rd.loss     += Number(d.ct);
   });
 
-  const sortSizes = arr => [...arr].sort((a, b) => {
-    const ia = sizeOrder.indexOf(a.size_code || ''), ib2 = sizeOrder.indexOf(b.size_code || '');
-    if (ia !== -1 && ib2 !== -1) return ia - ib2;
-    if (ia !== -1) return -1; if (ib2 !== -1) return 1;
-    return (a.size_code || '').localeCompare(b.size_code || '');
-  });
-
-  const sizeGrid = items => `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px 14px;margin-top:4px">
-    ${items.map(d => `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;border-bottom:1px solid #F5F5F5">
-      <span style="color:#374151;font-weight:500">${esc(d.label || d.size_code)}</span>
-      <span style="font-weight:700;color:${d.color || '#059669'}">${fmtN(d.ct)} CT</span>
-    </div>`).join('')}
+  // 0 CT는 회색 처리, >0은 activeColor
+  const sizeGrid = (items, activeColor) => `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px 14px;margin-top:4px">
+    ${items.map(d => {
+      const isZero = Number(d.ct) === 0;
+      return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;border-bottom:1px solid #F5F5F5${isZero ? ';opacity:0.38' : ''}">
+        <span style="color:${isZero ? '#9CA3AF' : '#374151'};font-weight:${isZero ? '400' : '500'}">${esc(d.label || d.size_code)}</span>
+        <span style="font-weight:${isZero ? '400' : '700'};color:${isZero ? '#D1D5DB' : (activeColor || '#059669')}">${fmtN(d.ct)} CT</span>
+      </div>`;
+    }).join('')}
   </div>`;
 
   const totalInput  = results.reduce((s, r) => s + Number(r.input_ct || 0), 0);
@@ -7225,27 +7225,23 @@ async function openSortingDetailModal(inboundId) {
   const totalLoss   = details.filter(d => d.category === '손실').reduce((s, d) => s + Number(d.ct), 0);
   const lossRate    = totalInput > 0 ? Math.round(totalLoss / totalInput * 100) : 0;
 
+  // 누적: 전체 사이즈 포함 (없으면 0)
   const cumSizeMap = {};
   details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
     cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
   });
-  const cumSizes = Object.entries(cumSizeMap).sort(([a], [b]) => {
-    const ia = sizeOrder.indexOf(a), ib2 = sizeOrder.indexOf(b);
-    if (ia !== -1 && ib2 !== -1) return ia - ib2;
-    if (ia !== -1) return -1; if (ib2 !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  const cumSizes = allSizes.map(sz => ({ size_code: sz, ct: cumSizeMap[sz] ?? 0 }));
 
   const sessionHtml = results.map(r => {
-    const rd = detailsByResult[r.id] || { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
-    const normal = sortSizes(rd.normal);
+    const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const normal = allSizes.map(sz => ({ size_code: sz, ct: rd.normalMap[sz] ?? 0 }));
     const normalTotal = normal.reduce((s, d) => s + d.ct, 0);
     const abnList = [
-      rd.waste    > 0 ? { label: '파치',   ct: rd.waste,    color: '#DC2626' } : null,
-      rd.highacid > 0 ? { label: '고산도', ct: rd.highacid, color: '#DC2626' } : null,
-      rd.tiny     > 0 ? { label: '극소과', ct: rd.tiny,     color: '#DC2626' } : null,
-      rd.loss     > 0 ? { label: '손실',   ct: rd.loss,     color: '#DC2626' } : null,
-    ].filter(Boolean);
+      { label: '파치',   ct: rd.waste    },
+      { label: '고산도', ct: rd.highacid },
+      { label: '극소과', ct: rd.tiny     },
+      { label: '손실',   ct: rd.loss     },
+    ];
     const abnTotal = abnList.reduce((s, d) => s + d.ct, 0);
 
     return `<div style="border:1px solid #E5E7EB;border-radius:10px;margin-bottom:10px;overflow:hidden">
@@ -7255,24 +7251,24 @@ async function openSortingDetailModal(inboundId) {
         ${r.operator_name ? `<span style="font-size:12px;color:#9CA3AF">${esc(r.operator_name)}</span>` : ''}
         <span style="font-size:13px;font-weight:700;color:#1565C0;margin-left:auto">투입 ${fmtN(r.input_ct)} CT</span>
       </div>
-      ${normal.length ? `<div style="padding:8px 12px;border-top:1px solid #F0F0F0">
+      <div style="padding:8px 12px;border-top:1px solid #F0F0F0">
         <div style="font-size:12px;font-weight:700;color:#059669">🟢 정상품 ${fmtN(normalTotal)} CT</div>
-        ${sizeGrid(normal.map(d => ({ ...d, color: '#059669' })))}
-      </div>` : ''}
-      ${abnList.length ? `<div style="padding:8px 12px;border-top:1px solid #F0F0F0;background:#FEF9FA">
+        ${sizeGrid(normal, '#059669')}
+      </div>
+      <div style="padding:8px 12px;border-top:1px solid #F0F0F0;background:#FEF9FA">
         <div style="font-size:12px;font-weight:700;color:#DC2626">🔴 비정상품 ${fmtN(abnTotal)} CT</div>
-        ${sizeGrid(abnList)}
-      </div>` : ''}
+        ${sizeGrid(abnList, '#DC2626')}
+      </div>
     </div>`;
   }).join('');
 
-  const cumHtml = cumSizes.length ? `
+  const cumHtml = `
     <div style="border:1px solid #DDD6FE;border-radius:10px;overflow:hidden;margin-top:4px">
       <div style="padding:8px 12px;background:#F5F3FF">
         <div style="font-size:12px;font-weight:700;color:#7C3AED;margin-bottom:2px">사이즈별 누적 합계</div>
-        ${sizeGrid(cumSizes.map(([sz, ct]) => ({ size_code: sz, ct, color: '#7C3AED' })))}
+        ${sizeGrid(cumSizes, '#7C3AED')}
       </div>
-    </div>` : '';
+    </div>`;
 
   bodyEl.innerHTML = `
     <div style="padding:10px 14px;background:#F0F9FF;border-radius:10px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px">
