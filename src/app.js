@@ -3688,6 +3688,16 @@ function renderInventoryStatus() {
   const matrixEl = document.getElementById('inv-matrix-wrap');
   if (!statusEl || !matrixEl) return;
 
+  // 인라인 편집 dblclick — 한 번만 등록
+  if (!matrixEl._dblclickBound) {
+    matrixEl.addEventListener('dblclick', e => {
+      const cell = e.target.closest('.inv-mc');
+      if (!cell) return;
+      invCellEdit(cell, cell.dataset.farm, cell.dataset.product, cell.dataset.size, Number(cell.dataset.val));
+    });
+    matrixEl._dblclickBound = true;
+  }
+
   const activeRecs = inventoryRecords.filter(r => !r.is_void);
 
   // 품목별 합계 (필터 무관, 전체 기준)
@@ -3741,73 +3751,171 @@ function renderInventoryStatus() {
 }
 
 function _renderInvMatrix(product, recs) {
-  const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
-  const groupNames = groups.map(g => g.group);
+  const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
+  const groups   = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const allSizes = groups.flatMap(g => g.sizes);
 
-  // size_code → group lookup
-  const sizeToGroup = {};
-  groups.forEach(g => g.sizes.forEach(sz => { sizeToGroup[sz] = g.group; }));
+  // 그룹별 컬러 (헤더 진함, 사이즈행 연함)
+  const GC = [
+    { h: '#FDE68A', c: '#FFFBEB' },
+    { h: '#93C5FD', c: '#EFF6FF' },
+    { h: '#6EE7B7', c: '#F0FDF4' },
+  ];
+  const szGI = {};
+  groups.forEach((g, gi) => g.sizes.forEach(sz => { szGI[sz] = gi; }));
 
-  // farm → group → total
+  // farm → size → total
   const farmMap = {};
   recs.forEach(r => {
-    const farm  = r.farm_name || '(농가미상)';
-    const group = r.size_code ? (sizeToGroup[r.size_code] || '기타') : '기타';
+    const farm = r.farm_name || '(농가미상)';
+    const sz   = r.size_code;
+    if (!sz) return;
     if (!farmMap[farm]) farmMap[farm] = {};
-    farmMap[farm][group] = (farmMap[farm][group] || 0) + (Number(r.quantity) || 0);
+    farmMap[farm][sz] = (farmMap[farm][sz] || 0) + (Number(r.quantity) || 0);
   });
 
   const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
   const colTotals = {};
-  groupNames.forEach(g => { colTotals[g] = 0; });
-  farms.forEach(farm => groupNames.forEach(g => { colTotals[g] = (colTotals[g] || 0) + (farmMap[farm][g] || 0); }));
-  const grandTotal = groupNames.reduce((s, g) => s + (colTotals[g] || 0), 0);
+  allSizes.forEach(sz => { colTotals[sz] = 0; });
+  farms.forEach(farm => allSizes.forEach(sz => { colTotals[sz] += (farmMap[farm][sz] || 0); }));
+  const rowTotals = {};
+  farms.forEach(farm => { rowTotals[farm] = allSizes.reduce((s, sz) => s + (farmMap[farm][sz] || 0), 0); });
+  const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
-  const TH = 'padding:8px 10px;background:#1E3A5F;color:#fff;font-size:12px;font-weight:600;text-align:center;white-space:nowrap;border:1px solid #16304F';
-  const numCell = (v, footer) => {
-    const style = footer
-      ? 'padding:8px 10px;font-size:13px;font-weight:700;color:#1565C0;text-align:right;border-top:2px solid #BFDBFE'
-      : 'padding:7px 10px;font-size:13px;text-align:right;border-bottom:1px solid #F3F4F6';
-    return `<td style="${style}">${v === 0 ? `<span style="color:#D1D5DB">-</span>` : fmtN(v)}</td>`;
-  };
+  const THBASE = 'border:1px solid #16304F;font-size:12px;font-weight:700;white-space:nowrap;padding:6px 8px';
+  const THDARK = `${THBASE};background:#1E3A5F;color:#fff`;
+
+  const groupHeaderRow = groups.map((g, gi) =>
+    `<th colspan="${g.sizes.length}" style="${THBASE};background:${GC[gi].h};color:#374151;text-align:center;border-color:#D1D5DB">${g.group}</th>`
+  ).join('');
+
+  const sizeHeaderRow = allSizes.map(sz => {
+    const gi = szGI[sz];
+    return `<th style="${THBASE};background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;text-align:center;min-width:42px;border-color:#D1D5DB">${esc(sz)}</th>`;
+  }).join('');
+
+  const dataRows = farms.map((farm, i) => {
+    const bg = i % 2 === 1 ? '#FAFAFA' : '#fff';
+    const cells = allSizes.map(sz => {
+      const val   = farmMap[farm][sz] || 0;
+      const inner = val === 0
+        ? `<span style="color:#E5E7EB;user-select:none">-</span>`
+        : `<strong>${fmtN(val)}</strong>`;
+      return `<td class="inv-mc"
+        data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}"
+        style="padding:4px 8px;text-align:center;border:1px solid #E5E7EB;background:${bg};cursor:pointer;font-size:13px"
+        title="더블클릭: 수량 수정">${inner}</td>`;
+    }).join('');
+    return `<tr>
+      <td style="padding:5px 10px;font-size:13px;font-weight:500;border:1px solid #E5E7EB;background:${bg};position:sticky;left:0;z-index:1;white-space:nowrap">${esc(farm)}</td>
+      ${cells}
+      <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;color:#1565C0;border:1px solid #E5E7EB;background:#EFF6FF;position:sticky;right:0;z-index:1;white-space:nowrap">${fmtN(rowTotals[farm] || 0)}</td>
+    </tr>`;
+  }).join('');
+
+  const footerCells = allSizes.map(sz => {
+    const v = colTotals[sz] || 0;
+    return `<td style="padding:5px 8px;text-align:center;border:1px solid #D1D5DB;background:#EFF6FF;font-size:12px;font-weight:700;color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</td>`;
+  }).join('');
 
   return `
-    <div style="margin-bottom:24px">
-      <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;margin-bottom:0;display:flex;align-items:center;gap:8px">
+    <div style="margin-bottom:28px">
+      <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:0">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
       </div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:280px">
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="border-collapse:collapse;font-size:13px">
           <thead>
             <tr>
-              <th style="${TH};text-align:left">농가</th>
-              ${groupNames.map(g => `<th style="${TH}">${esc(g)}</th>`).join('')}
-              <th style="${TH}">합계</th>
+              <th rowspan="2" style="${THDARK};text-align:left;position:sticky;left:0;z-index:3;min-width:72px">농가</th>
+              ${groupHeaderRow}
+              <th rowspan="2" style="${THDARK};text-align:center;position:sticky;right:0;z-index:3;min-width:46px">합계</th>
             </tr>
+            <tr>${sizeHeaderRow}</tr>
           </thead>
-          <tbody>
-            ${farms.map((farm, i) => {
-              const rowTotal = groupNames.reduce((s, g) => s + (farmMap[farm][g] || 0), 0);
-              return `<tr style="background:${i % 2 === 1 ? '#FAFAFA' : '#fff'}">
-                <td style="padding:7px 10px;font-size:13px;border-bottom:1px solid #F3F4F6;font-weight:500">${esc(farm)}</td>
-                ${groupNames.map(g => numCell(farmMap[farm][g] || 0, false)).join('')}
-                ${numCell(rowTotal, false)}
-              </tr>`;
-            }).join('')}
-          </tbody>
+          <tbody>${dataRows}</tbody>
           <tfoot>
-            <tr style="background:#EFF6FF">
-              <td style="padding:8px 10px;font-size:13px;font-weight:700;color:#1565C0;border-top:2px solid #BFDBFE">합계</td>
-              ${groupNames.map(g => numCell(colTotals[g] || 0, true)).join('')}
-              ${numCell(grandTotal, true)}
+            <tr>
+              <td style="padding:5px 10px;font-size:12px;font-weight:700;color:#1565C0;border:1px solid #D1D5DB;background:#EFF6FF;position:sticky;left:0;z-index:1">합계</td>
+              ${footerCells}
+              <td style="padding:5px 10px;text-align:right;border:1px solid #D1D5DB;background:#EFF6FF;font-size:13px;font-weight:700;color:#1565C0;position:sticky;right:0;z-index:1">${fmtN(grandTotal)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
+      <div style="font-size:11px;color:#9CA3AF;margin-top:3px;text-align:right">셀 더블클릭 → 수량 수정 (조정값 저장)</div>
     </div>`;
+}
+
+// ── 매트릭스 셀 인라인 편집 ──────────────────────────────────────
+
+function invCellEdit(cell, farm, product, size, currentVal) {
+  if (cell.querySelector('input')) return;
+  const prevHtml = cell.innerHTML;
+
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.value = currentVal;
+  inp.min = '0';
+  inp.step = '0.5';
+  inp.style.cssText = 'width:58px;text-align:center;border:2px solid #F59E0B;border-radius:4px;padding:3px 4px;font-size:13px;font-family:inherit;background:#FFFBEB;outline:none';
+
+  cell.innerHTML = '';
+  cell.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  let done = false;
+
+  const commit = async () => {
+    if (done) return;
+    done = true;
+    const raw    = parseFloat(inp.value);
+    const newVal = isNaN(raw) || raw < 0 ? 0 : raw;
+    if (newVal === currentVal) { cell.innerHTML = prevHtml; return; }
+    await invSaveCellEdit(cell, farm, product, size, newVal, currentVal);
+  };
+
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    cell.innerHTML = prevHtml;
+  };
+
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') cancel();
+  });
+  inp.addEventListener('blur', () => setTimeout(() => { if (!done) commit(); }, 150));
+}
+
+async function invSaveCellEdit(cell, farm, product, size, newVal, currentTotal) {
+  const delta = newVal - currentTotal;
+  cell.textContent = '…';
+  cell.style.pointerEvents = 'none';
+
+  try {
+    await dbInsertInventoryRecord({
+      date: td(),
+      farm_name: farm,
+      product,
+      size_code: size,
+      quantity: delta,
+      source_type: 'adjustment',
+      note: `매트릭스 수정 (${fmtN(currentTotal)}→${fmtN(newVal)})`
+    });
+    inventoryRecords = await dbGetInventoryRecords();
+    renderInventoryStatus();
+    showToast(`${farm} · ${size}: ${fmtN(currentTotal)} → ${fmtN(newVal)} CT`);
+  } catch(e) {
+    alert('저장 오류: ' + e.message);
+    cell.innerHTML = currentTotal === 0
+      ? `<span style="color:#E5E7EB;user-select:none">-</span>`
+      : `<strong>${fmtN(currentTotal)}</strong>`;
+    cell.style.pointerEvents = '';
+  }
 }
 
 // ── 재고 직접 입력 모달 ──────────────────────────────────────────
