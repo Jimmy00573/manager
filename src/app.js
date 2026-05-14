@@ -12,6 +12,8 @@ let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
+let inventoryRecords = [];
+let _invFilter = { product: '', farm: '' };
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [];
 let _editLocId = null;
@@ -3001,6 +3003,7 @@ function invTab(t) {
     if (div) div.style.display = t === s ? '' : 'none';
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
+  if (t === 'srt') renderInventoryStatus();
   if (t === 'cfg') renderSizeCfg();
   if (t === 'log') loadAuditLogs();
   if (t === 'loc') renderStorageLocations();
@@ -3037,12 +3040,13 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
       dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
-      loadSizeConfig(), loadCategorySystem()
+      loadSizeConfig(), loadCategorySystem(),
+      dbGetInventoryRecords().catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3061,6 +3065,7 @@ async function loadAndRenderInv() {
     invUnsorted = legacyIn;
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
+    inventoryRecords = invRecs;
     popInvProductSelects();
     popLocSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
@@ -3159,14 +3164,20 @@ function buildProductOptgroupHTML() {
 function popInvProductSelects() {
   if (!itemDefs.length) return;
   const optHtml = buildProductOptgroupHTML();
-  ['ib-product', 'so-product', 'wa-product'].forEach(id => {
+  ['ib-product', 'wa-product'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     const cur = el.value;
     el.innerHTML = optHtml;
     if (cur) el.value = cur;
   });
-  onSortedProductChange();
+  // 재고 현황 품목 필터 드롭다운
+  const filterEl = document.getElementById('inv-filter-product');
+  if (filterEl) {
+    const cur = filterEl.value;
+    filterEl.innerHTML = '<option value="">전체 품목</option>' + optHtml;
+    if (cur) filterEl.value = cur;
+  }
 }
 
 // ── 크기 설정 UI (v2: 카테고리·등급·과수 기준 통합)
@@ -3665,10 +3676,144 @@ function _buildSortedTableWrap(dataMap, catType) {
   </table>`);
 }
 
+// ── 재고 현황 (inventory_records 기반 매트릭스) ──────────────────
+
+function invSetFilter(key, val) {
+  _invFilter[key] = val;
+  renderInventoryStatus();
+}
+
+function renderInventoryStatus() {
+  const statusEl = document.getElementById('inv-stat-cards');
+  const matrixEl = document.getElementById('inv-matrix-wrap');
+  if (!statusEl || !matrixEl) return;
+
+  const activeRecs = inventoryRecords.filter(r => !r.is_void);
+
+  // 품목별 합계 (필터 무관, 전체 기준)
+  const productTotals = {};
+  activeRecs.forEach(r => {
+    productTotals[r.product] = (productTotals[r.product] || 0) + (Number(r.quantity) || 0);
+  });
+  const allProducts = Object.keys(productTotals).sort((a, b) => a.localeCompare(b, 'ko'));
+
+  statusEl.innerHTML = allProducts.length ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:4px">
+      ${allProducts.map(p => {
+        const active = _invFilter.product === p;
+        return `<div onclick="invSetFilter('product','${esc(p)}')" style="padding:10px 12px;background:${active ? '#EFF6FF' : '#fff'};border:2px solid ${active ? '#1565C0' : '#E5E7EB'};border-radius:8px;cursor:pointer;text-align:center;transition:border-color .15s">
+          <div style="font-size:11px;color:#6B7280;margin-bottom:3px">${esc(p)}</div>
+          <div style="font-size:16px;font-weight:700;color:${active ? '#1565C0' : '#111827'}">${fmtN(productTotals[p])}</div>
+          <div style="font-size:10px;color:#9CA3AF">CT</div>
+        </div>`;
+      }).join('')}
+      ${_invFilter.product ? `<div onclick="invSetFilter('product','')" style="padding:10px 12px;background:#fff;border:2px dashed #D1D5DB;border-radius:8px;cursor:pointer;text-align:center;color:#9CA3AF;font-size:12px;display:flex;align-items:center;justify-content:center">전체 보기</div>` : ''}
+    </div>` : '<div style="padding:4px 0 12px;font-size:12px;color:#9CA3AF">재고 데이터 없음 — DB 마이그레이션 후 표시됩니다</div>';
+
+  // 필터 적용
+  let recs = activeRecs;
+  if (_invFilter.product) recs = recs.filter(r => r.product === _invFilter.product);
+  if (_invFilter.farm)    recs = recs.filter(r => r.farm_name && r.farm_name.includes(_invFilter.farm));
+
+  // 필터 상태 표시
+  const statusEl2 = document.getElementById('inv-filter-status');
+  if (statusEl2) statusEl2.textContent = recs.length ? `${recs.length}건` : '';
+
+  if (!recs.length) {
+    matrixEl.innerHTML = `<div style="padding:48px;text-align:center;color:#9CA3AF;font-size:14px">
+      📦 표시할 재고가 없습니다<br>
+      <small style="font-size:12px;margin-top:6px;display:block">Supabase SQL Editor에서 DB 생성 및 마이그레이션을 먼저 실행해주세요.</small>
+    </div>`;
+    return;
+  }
+
+  // 품목별로 분리 → 매트릭스 렌더
+  const byProduct = {};
+  recs.forEach(r => {
+    if (!byProduct[r.product]) byProduct[r.product] = [];
+    byProduct[r.product].push(r);
+  });
+
+  matrixEl.innerHTML = Object.entries(byProduct)
+    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    .map(([product, productRecs]) => _renderInvMatrix(product, productRecs))
+    .join('');
+}
+
+function _renderInvMatrix(product, recs) {
+  const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
+  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const groupNames = groups.map(g => g.group);
+
+  // size_code → group lookup
+  const sizeToGroup = {};
+  groups.forEach(g => g.sizes.forEach(sz => { sizeToGroup[sz] = g.group; }));
+
+  // farm → group → total
+  const farmMap = {};
+  recs.forEach(r => {
+    const farm  = r.farm_name || '(농가미상)';
+    const group = r.size_code ? (sizeToGroup[r.size_code] || '기타') : '기타';
+    if (!farmMap[farm]) farmMap[farm] = {};
+    farmMap[farm][group] = (farmMap[farm][group] || 0) + (Number(r.quantity) || 0);
+  });
+
+  const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
+  const colTotals = {};
+  groupNames.forEach(g => { colTotals[g] = 0; });
+  farms.forEach(farm => groupNames.forEach(g => { colTotals[g] = (colTotals[g] || 0) + (farmMap[farm][g] || 0); }));
+  const grandTotal = groupNames.reduce((s, g) => s + (colTotals[g] || 0), 0);
+
+  const TH = 'padding:8px 10px;background:#1E3A5F;color:#fff;font-size:12px;font-weight:600;text-align:center;white-space:nowrap;border:1px solid #16304F';
+  const numCell = (v, footer) => {
+    const style = footer
+      ? 'padding:8px 10px;font-size:13px;font-weight:700;color:#1565C0;text-align:right;border-top:2px solid #BFDBFE'
+      : 'padding:7px 10px;font-size:13px;text-align:right;border-bottom:1px solid #F3F4F6';
+    return `<td style="${style}">${v === 0 ? `<span style="color:#D1D5DB">-</span>` : fmtN(v)}</td>`;
+  };
+
+  return `
+    <div style="margin-bottom:24px">
+      <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;margin-bottom:0;display:flex;align-items:center;gap:8px">
+        ${esc(product)}
+        <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
+        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:280px">
+          <thead>
+            <tr>
+              <th style="${TH};text-align:left">농가</th>
+              ${groupNames.map(g => `<th style="${TH}">${esc(g)}</th>`).join('')}
+              <th style="${TH}">합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${farms.map((farm, i) => {
+              const rowTotal = groupNames.reduce((s, g) => s + (farmMap[farm][g] || 0), 0);
+              return `<tr style="background:${i % 2 === 1 ? '#FAFAFA' : '#fff'}">
+                <td style="padding:7px 10px;font-size:13px;border-bottom:1px solid #F3F4F6;font-weight:500">${esc(farm)}</td>
+                ${groupNames.map(g => numCell(farmMap[farm][g] || 0, false)).join('')}
+                ${numCell(rowTotal, false)}
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#EFF6FF">
+              <td style="padding:8px 10px;font-size:13px;font-weight:700;color:#1565C0;border-top:2px solid #BFDBFE">합계</td>
+              ${groupNames.map(g => numCell(colTotals[g] || 0, true)).join('')}
+              ${numCell(grandTotal, true)}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>`;
+}
+
 function renderInvAll() {
   renderInvSummary();
   renderInboundList();
-  renderSortedList();
+  renderInventoryStatus();
   renderWasteList();
   renderJuiceList();
 }

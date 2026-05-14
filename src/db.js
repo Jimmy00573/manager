@@ -209,6 +209,15 @@ async function dbGetAuditLogsForRecord(targetTable, targetId) {
   catch(e) { return []; }
 }
 
+// ── 재고 기록
+async function dbGetInventoryRecords() {
+  try { return await sbGet('inventory_records', 'is_void=eq.false&order=date.desc,created_at.desc'); }
+  catch(e) { return []; }
+}
+async function dbInsertInventoryRecord(data) { const r = await sbInsert('inventory_records', data); return r[0]; }
+async function dbUpdateInventoryRecord(id, data) { const r = await sbUpdate('inventory_records', id, data); return r[0]; }
+async function dbDeleteInventoryRecord(id) { return sbDelete('inventory_records', id); }
+
 // ── 선과 결과 조회
 async function dbGetSortingResults(inboundIds) {
   if (!inboundIds.length) return [];
