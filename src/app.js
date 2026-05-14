@@ -5716,7 +5716,7 @@ function _renderScDoneTable() {
         ${rows.map((r, i) => {
           const completedDate = procDateMap[r.id] || '-';
           const sortCount = procCountMap[r.id] || 0;
-          return `<tr style="border-bottom:1px solid #F3F4F6;background:${i % 2 === 1 ? '#FAFAFA' : '#fff'}">
+          return `<tr onclick="openSortingDetailModal('${r.id}')" style="border-bottom:1px solid #F3F4F6;background:${i % 2 === 1 ? '#FAFAFA' : '#fff'};cursor:pointer" title="클릭하여 선과 결과 상세 보기">
             <td style="padding:7px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px" title="${esc(r.farm_name)}">${esc(r.farm_name)}</td>
             <td style="padding:7px 8px">${productChip(r.product)}</td>
             <td style="padding:7px 8px;text-align:right;font-weight:700;color:#15803D">${fmtN(r.quantity)}</td>
@@ -7094,16 +7094,12 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
     const normalTotal = normalSizes.reduce((s, d) => s + d.ct, 0);
     const abnTotal = rd.waste + rd.highacid + rd.tiny + rd.loss;
 
-    const sizeChips = normalSizes.map(d =>
-      `<span style="background:#E8F5E9;color:#2E7D32;font-size:11px;padding:1px 7px;border-radius:5px;white-space:nowrap">${esc(d.size_code)}<strong style="margin-left:2px">${fmtN(d.ct)}</strong></span>`
-    ).join(' ');
-
-    const abnParts = [
-      rd.waste    > 0 ? `파치 ${fmtN(rd.waste)}`      : '',
-      rd.highacid > 0 ? `고산도 ${fmtN(rd.highacid)}` : '',
-      rd.tiny     > 0 ? `극소과 ${fmtN(rd.tiny)}`     : '',
-      rd.loss     > 0 ? `손실 ${fmtN(rd.loss)}`       : '',
-    ].filter(Boolean).join(' · ');
+    const abnList = [
+      rd.waste    > 0 ? { label: '파치',   ct: rd.waste }    : null,
+      rd.highacid > 0 ? { label: '고산도', ct: rd.highacid } : null,
+      rd.tiny     > 0 ? { label: '극소과', ct: rd.tiny }     : null,
+      rd.loss     > 0 ? { label: '손실',   ct: rd.loss }     : null,
+    ].filter(Boolean);
 
     return `<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${normalSizes.length || abnTotal > 0 ? 6 : 0}px">
@@ -7113,11 +7109,24 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
         ${r.operator_name ? `<span style="font-size:11px;color:#9CA3AF">· ${esc(r.operator_name)}</span>` : ''}
         <span style="font-size:12px;font-weight:700;color:#1565C0;margin-left:auto">투입 ${fmtN(r.input_ct)} CT</span>
       </div>
-      ${normalSizes.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:${abnTotal > 0 ? 4 : 0}px">
-        <span style="font-size:11px;color:#059669;font-weight:600;white-space:nowrap">🟢 정상 ${fmtN(normalTotal)} CT</span>
-        ${sizeChips}
+      ${normalSizes.length ? `<div style="margin-bottom:${abnList.length ? 6 : 0}px">
+        <div style="font-size:11px;color:#059669;font-weight:600;margin-bottom:4px">🟢 정상 ${fmtN(normalTotal)} CT</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px 12px">
+          ${normalSizes.map(d => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0">
+            <span style="color:#374151">${esc(d.size_code)}</span>
+            <span style="color:#059669;font-weight:600">${fmtN(d.ct)} CT</span>
+          </div>`).join('')}
+        </div>
       </div>` : ''}
-      ${abnTotal > 0 ? `<div style="font-size:11px;color:#DC2626">🔴 비정상 ${fmtN(abnTotal)} CT${abnParts ? ` · ${abnParts}` : ''}</div>` : ''}
+      ${abnList.length ? `<div>
+        <div style="font-size:11px;color:#DC2626;font-weight:600;margin-bottom:4px">🔴 비정상 ${fmtN(abnTotal)} CT</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px 12px">
+          ${abnList.map(d => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0">
+            <span style="color:#374151">${esc(d.label)}</span>
+            <span style="color:#DC2626;font-weight:600">${fmtN(d.ct)} CT</span>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
     </div>`;
   }).join('');
 
@@ -7125,10 +7134,11 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
   const cumSizeHtml = sortedSizes.length ? `
     <div style="padding:10px 14px;background:#F5F3FF">
       <div style="font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:6px">─── 사이즈별 누적 ───</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px">
-        ${sortedSizes.map(([sz, ct]) =>
-          `<span style="background:#EDE9FE;color:#5B21B6;font-size:11px;padding:2px 8px;border-radius:6px">${esc(sz)}: <strong>${fmtN(ct)}</strong> CT</span>`
-        ).join('')}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px 14px">
+        ${sortedSizes.map(([sz, ct]) => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0">
+          <span style="color:#6D28D9">${esc(sz)}</span>
+          <span style="color:#6D28D9;font-weight:700">${fmtN(ct)} CT</span>
+        </div>`).join('')}
       </div>
     </div>` : '';
 
@@ -7141,6 +7151,137 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
     ${sessionHtml}
     ${cumSizeHtml}
   `;
+}
+
+// ── 선과 결과 상세 모달 ────────────────────────────────────────────
+async function openSortingDetailModal(inboundId) {
+  let modal = document.getElementById('modal-sort-detail');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-sort-detail';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
+          <div id="msd-title" style="font-size:14px;font-weight:700;color:#1565C0">✂️ 선과 결과 상세</div>
+          <button onclick="document.getElementById('modal-sort-detail').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+        </div>
+        <div id="msd-body" style="padding:16px 18px"></div>
+      </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+    document.body.appendChild(modal);
+  }
+
+  modal.style.display = 'flex';
+  const bodyEl  = document.getElementById('msd-body');
+  const titleEl = document.getElementById('msd-title');
+
+  const ib = inboundRecords.find(r => r.id == inboundId);
+  if (ib) titleEl.textContent = `✂️ ${ib.farm_name} · ${ib.product} 선과 결과`;
+
+  bodyEl.innerHTML = '<div style="padding:30px;text-align:center;color:#9CA3AF;font-size:13px">⏳ 불러오는 중...</div>';
+
+  let results = [];
+  try { results = await dbGetSortingResults([inboundId]); } catch(e) {}
+  if (!results.length) {
+    bodyEl.innerHTML = '<div style="padding:30px;text-align:center;color:#9CA3AF;font-size:13px">✂️ 선과 처리 이력 없음</div>';
+    return;
+  }
+
+  const resultIds = results.map(r => r.id);
+  let details = [];
+  try { details = await dbGetSortingDetails(resultIds); } catch(e) {}
+
+  const sizeOrder = [...SIZES_감귤류, ...SIZES_만감류];
+
+  const detailsByResult = {};
+  details.forEach(d => {
+    if (!detailsByResult[d.sorting_result_id])
+      detailsByResult[d.sorting_result_id] = { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const rd = detailsByResult[d.sorting_result_id];
+    if (d.category === '정상')      rd.normal.push({ size_code: d.size_code, ct: Number(d.ct) });
+    else if (d.category === '파치')   rd.waste    += Number(d.ct);
+    else if (d.category === '고산도') rd.highacid += Number(d.ct);
+    else if (d.category === '극소과') rd.tiny     += Number(d.ct);
+    else if (d.category === '손실')   rd.loss     += Number(d.ct);
+  });
+
+  const sortSizes = arr => [...arr].sort((a, b) => {
+    const ia = sizeOrder.indexOf(a.size_code || ''), ib2 = sizeOrder.indexOf(b.size_code || '');
+    if (ia !== -1 && ib2 !== -1) return ia - ib2;
+    if (ia !== -1) return -1; if (ib2 !== -1) return 1;
+    return (a.size_code || '').localeCompare(b.size_code || '');
+  });
+
+  const sizeGrid = items => `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px 14px;margin-top:4px">
+    ${items.map(d => `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;border-bottom:1px solid #F5F5F5">
+      <span style="color:#374151;font-weight:500">${esc(d.label || d.size_code)}</span>
+      <span style="font-weight:700;color:${d.color || '#059669'}">${fmtN(d.ct)} CT</span>
+    </div>`).join('')}
+  </div>`;
+
+  const totalInput  = results.reduce((s, r) => s + Number(r.input_ct || 0), 0);
+  const totalNormal = details.filter(d => d.category === '정상').reduce((s, d) => s + Number(d.ct), 0);
+  const totalLoss   = details.filter(d => d.category === '손실').reduce((s, d) => s + Number(d.ct), 0);
+  const lossRate    = totalInput > 0 ? Math.round(totalLoss / totalInput * 100) : 0;
+
+  const cumSizeMap = {};
+  details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
+    cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
+  });
+  const cumSizes = Object.entries(cumSizeMap).sort(([a], [b]) => {
+    const ia = sizeOrder.indexOf(a), ib2 = sizeOrder.indexOf(b);
+    if (ia !== -1 && ib2 !== -1) return ia - ib2;
+    if (ia !== -1) return -1; if (ib2 !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  const sessionHtml = results.map(r => {
+    const rd = detailsByResult[r.id] || { normal: [], waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const normal = sortSizes(rd.normal);
+    const normalTotal = normal.reduce((s, d) => s + d.ct, 0);
+    const abnList = [
+      rd.waste    > 0 ? { label: '파치',   ct: rd.waste,    color: '#DC2626' } : null,
+      rd.highacid > 0 ? { label: '고산도', ct: rd.highacid, color: '#DC2626' } : null,
+      rd.tiny     > 0 ? { label: '극소과', ct: rd.tiny,     color: '#DC2626' } : null,
+      rd.loss     > 0 ? { label: '손실',   ct: rd.loss,     color: '#DC2626' } : null,
+    ].filter(Boolean);
+    const abnTotal = abnList.reduce((s, d) => s + d.ct, 0);
+
+    return `<div style="border:1px solid #E5E7EB;border-radius:10px;margin-bottom:10px;overflow:hidden">
+      <div style="padding:8px 12px;background:#F9FAFB;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="background:#EDE9FE;color:#6D28D9;font-size:12px;padding:2px 10px;border-radius:8px;font-weight:700">${r.sequence_number}차</span>
+        <span style="font-size:12px;color:#6B7280">${r.sorting_date || ''}</span>
+        ${r.operator_name ? `<span style="font-size:12px;color:#9CA3AF">${esc(r.operator_name)}</span>` : ''}
+        <span style="font-size:13px;font-weight:700;color:#1565C0;margin-left:auto">투입 ${fmtN(r.input_ct)} CT</span>
+      </div>
+      ${normal.length ? `<div style="padding:8px 12px;border-top:1px solid #F0F0F0">
+        <div style="font-size:12px;font-weight:700;color:#059669">🟢 정상품 ${fmtN(normalTotal)} CT</div>
+        ${sizeGrid(normal.map(d => ({ ...d, color: '#059669' })))}
+      </div>` : ''}
+      ${abnList.length ? `<div style="padding:8px 12px;border-top:1px solid #F0F0F0;background:#FEF9FA">
+        <div style="font-size:12px;font-weight:700;color:#DC2626">🔴 비정상품 ${fmtN(abnTotal)} CT</div>
+        ${sizeGrid(abnList)}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  const cumHtml = cumSizes.length ? `
+    <div style="border:1px solid #DDD6FE;border-radius:10px;overflow:hidden;margin-top:4px">
+      <div style="padding:8px 12px;background:#F5F3FF">
+        <div style="font-size:12px;font-weight:700;color:#7C3AED;margin-bottom:2px">사이즈별 누적 합계</div>
+        ${sizeGrid(cumSizes.map(([sz, ct]) => ({ size_code: sz, ct, color: '#7C3AED' })))}
+      </div>
+    </div>` : '';
+
+  bodyEl.innerHTML = `
+    <div style="padding:10px 14px;background:#F0F9FF;border-radius:10px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px">
+      <span>📦 총 투입 <strong>${fmtN(totalInput)} CT</strong> (${results.length}차)</span>
+      <span>🟢 정상품 <strong>${fmtN(totalNormal)} CT</strong></span>
+      ${totalLoss > 0 ? `<span style="color:#DC2626">📉 손실률 <strong>${lossRate}%</strong></span>` : `<span style="color:#059669">✅ 손실 없음</span>`}
+    </div>
+    ${sessionHtml}
+    ${cumHtml}`;
 }
 
 // ── 시작
