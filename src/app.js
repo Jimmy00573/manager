@@ -6661,7 +6661,7 @@ async function saveSortingResult() {
     // 2-1. inventory_records 자동 등록 (정상품만)
     // void 처리는 실패해도 INSERT는 계속 진행
     try {
-      const existing = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&is_void=eq.false&select=id`);
+      const existing = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&or=(is_void.eq.false,is_void.is.null)&select=id`);
       for (const row of existing) await sbUpdate('inventory_records', row.id, { is_void: true });
     } catch (voidErr) {
       console.warn('[6단계] 기존 inventory_records void 처리 실패 (무시):', voidErr);

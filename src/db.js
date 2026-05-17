@@ -211,7 +211,7 @@ async function dbGetAuditLogsForRecord(targetTable, targetId) {
 
 // ── 재고 기록
 async function dbGetInventoryRecords() {
-  try { return await sbGet('inventory_records', 'is_void=eq.false&order=date.desc,created_at.desc'); }
+  try { return await sbGet('inventory_records', 'or=(is_void.eq.false,is_void.is.null)&order=date.desc,created_at.desc'); }
   catch(e) { return []; }
 }
 async function dbInsertInventoryRecord(data) { const r = await sbInsert('inventory_records', data); return r[0]; }
