@@ -580,8 +580,14 @@
     <div id="ib-list-div">
       <div id="ib-cat-summary"></div>
       <div id="ib-priority-alert"></div>
-      <div class="form-card">
-        <div class="form-title">미선과 입고 등록</div>
+      <div class="form-card" style="padding:0;overflow:hidden">
+        <button id="ib-form-toggle" onclick="toggleIbForm()"
+          style="width:100%;background:#fff;border:none;border-bottom:1px solid transparent;cursor:pointer;font-family:inherit;padding:14px 18px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;color:#111827;text-align:left;transition:border-color .2s">
+          <span id="ib-form-arrow" style="font-size:12px;display:inline-block;transition:transform .2s;color:#6B7280">▶</span>
+          <span>+ 입고 등록</span>
+        </button>
+        <div id="ib-form-body" style="max-height:0;overflow:hidden;transition:max-height .25s ease-in-out">
+        <div style="padding:4px 18px 18px">
 
         <!-- 기본 정보 -->
         <div class="ib-section-label">기본 정보</div>
@@ -715,7 +721,12 @@
           </div>
         </div>
 
-        <div class="form-actions"><button class="btn pri" style="padding:10px 28px;font-size:14px" onclick="addInbound()">등록</button></div>
+        <div class="form-actions" style="display:flex;gap:8px">
+          <button class="btn pri" style="padding:10px 28px;font-size:14px;flex:2" onclick="addInbound()">등록</button>
+          <button class="btn" style="padding:10px 20px;font-size:14px" onclick="cancelIbForm()">취소</button>
+        </div>
+        </div><!-- /ib-form-body-inner -->
+        </div><!-- /ib-form-body -->
       </div>
 
       <!-- 보기 모드 토글 -->
@@ -1361,6 +1372,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=10"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=10"></script>
+<script src="src/app.js?v=11"></script>
 </body>
 </html>

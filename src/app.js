@@ -6828,6 +6828,51 @@ async function forceDeleteInbound(id, reason) {
   } catch(e) { alert('강제 삭제 오류: ' + e.message); }
 }
 
+function toggleIbForm() {
+  const body  = document.getElementById('ib-form-body');
+  const arrow = document.getElementById('ib-form-arrow');
+  const btn   = document.getElementById('ib-form-toggle');
+  if (!body) return;
+  if (body._ibOpen) {
+    // 닫기: 현재 높이 고정 후 다음 프레임에서 0으로
+    body.style.maxHeight = body.scrollHeight + 'px';
+    body._ibOpen = false;
+    if (arrow) arrow.style.transform = 'rotate(0deg)';
+    if (btn) btn.style.borderBottomColor = 'transparent';
+    requestAnimationFrame(() => requestAnimationFrame(() => { body.style.maxHeight = '0'; }));
+  } else {
+    // 열기: scrollHeight로 전개, transition 끝나면 none(자유 확장)
+    body.style.maxHeight = body.scrollHeight + 'px';
+    body._ibOpen = true;
+    if (arrow) arrow.style.transform = 'rotate(90deg)';
+    if (btn) btn.style.borderBottomColor = '#E5E7EB';
+    body.addEventListener('transitionend', function onEnd() {
+      body.removeEventListener('transitionend', onEnd);
+      if (body._ibOpen) body.style.maxHeight = 'none';
+    });
+  }
+}
+
+function cancelIbForm() {
+  const body  = document.getElementById('ib-form-body');
+  const arrow = document.getElementById('ib-form-arrow');
+  const btn   = document.getElementById('ib-form-toggle');
+  if (body) {
+    body.style.maxHeight = body.scrollHeight + 'px';
+    body._ibOpen = false;
+    requestAnimationFrame(() => requestAnimationFrame(() => { body.style.maxHeight = '0'; }));
+  }
+  if (arrow) arrow.style.transform = 'rotate(0deg)';
+  if (btn) btn.style.borderBottomColor = 'transparent';
+  sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib'); clearGrades('ib');
+  ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
+   'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const priEl = document.getElementById('ib-priority');
+  if (priEl) priEl.checked = false;
+  syncReclassList('ib');
+}
+
 async function addInbound() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
