@@ -3834,9 +3834,9 @@ function _renderInvMatrix(product, recs) {
           </colgroup>
           <thead>
             <tr>
-              <th rowspan="2" style="${THDARK};text-align:left;position:sticky;left:0;z-index:3;min-width:72px">농가</th>
+              <th rowspan="2" style="${THDARK};text-align:left;min-width:72px">농가</th>
               ${groupHeaderRow}
-              <th rowspan="2" style="${THDARK};text-align:center;position:sticky;right:0;z-index:3;min-width:46px">합계</th>
+              <th rowspan="2" style="${THDARK};text-align:center;min-width:46px">합계</th>
             </tr>
             <tr>${sizeHeaderRow}</tr>
           </thead>
