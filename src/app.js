@@ -6658,6 +6658,24 @@ async function saveSortingResult() {
     ];
     for (const d of allDetails) await sbInsert('sorting_details', d);
 
+    // 2-1. inventory_records 자동 등록 (정상품만)
+    try {
+      const existing = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&is_void=eq.false&select=id`);
+      for (const row of existing) await sbUpdate('inventory_records', row.id, { is_void: true });
+      const invRows = sizeDetails.filter(d => d.ct > 0);
+      for (const d of invRows) {
+        await sbInsert('inventory_records', {
+          date: sortingDate, farm_name: r.farm_name, product: r.product,
+          size_code: d.size_code, quantity: d.ct, location: r.location || null,
+          source_type: 'sorting', sorting_result_id: headerId, is_void: false,
+          note: null, created_by: 'admin'
+        });
+      }
+    } catch (invErr) {
+      console.error('inventory_records 자동 등록 실패:', invErr);
+      showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 재고 현황에서 직접 입력 필요', 'warn');
+    }
+
     // 3. processing_records로 잔여재고 차감
     const procRow = await dbInsertProcessing({
       inbound_id: _sortingInboundId,
