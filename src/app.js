@@ -3935,13 +3935,13 @@ function _renderInvMatrix(product, recs) {
   h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(grandTotal)}</div>`;
 
   return `
-    <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
+    <div style="width:${minW}px;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
+      <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
+        ${esc(product)}
+        <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
+        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
+      </div>
       <div style="overflow-x:auto">
-        <div style="width:${minW}px;font-size:14px;font-weight:700;color:#1E3A5F;padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px">
-          ${esc(product)}
-          <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
-          <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
-        </div>
         <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;border-left:1px solid #D1D5DB">
           ${h}
         </div>
