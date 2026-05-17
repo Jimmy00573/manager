@@ -3807,7 +3807,7 @@ function _renderInvMatrix(product, recs) {
         title="더블클릭: 수량 수정">${inner}</td>`;
     }).join('');
     return `<tr>
-      <td style="padding:5px 10px;font-size:13px;font-weight:500;border:1px solid #E5E7EB;background:${bg};position:sticky;left:0;z-index:1;white-space:nowrap">${esc(farm)}</td>
+      <td style="padding:5px 10px;font-size:13px;font-weight:500;border:1px solid #E5E7EB;background:${bg};position:sticky;left:0;z-index:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(farm)}">${esc(farm)}</td>
       ${cells}
       <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;color:#1565C0;border:1px solid #E5E7EB;background:#EFF6FF;position:sticky;right:0;z-index:1;white-space:nowrap">${fmtN(rowTotals[farm] || 0)}</td>
     </tr>`;
@@ -3826,7 +3826,12 @@ function _renderInvMatrix(product, recs) {
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-        <table style="border-collapse:collapse;font-size:13px">
+        <table style="border-collapse:collapse;font-size:13px;table-layout:fixed">
+          <colgroup>
+            <col style="width:96px">
+            ${allSizes.map(() => '<col style="width:46px">').join('')}
+            <col style="width:58px">
+          </colgroup>
           <thead>
             <tr>
               <th rowspan="2" style="${THDARK};text-align:left;position:sticky;left:0;z-index:3;min-width:72px">농가</th>
