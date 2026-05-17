@@ -3782,68 +3782,63 @@ function _renderInvMatrix(product, recs) {
   farms.forEach(farm => { rowTotals[farm] = allSizes.reduce((s, sz) => s + (farmMap[farm][sz] || 0), 0); });
   const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
-  const THBASE = 'border:1px solid #16304F;font-size:12px;font-weight:700;white-space:nowrap;padding:6px 8px';
-  const THDARK = `${THBASE};background:#1E3A5F;color:#fff`;
+  // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
+  const N = allSizes.length;
+  const FARM_W = 100, SZ_W = 46, TOT_W = 70;
+  const minW   = FARM_W + N * SZ_W + TOT_W;
+  const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px`;
 
-  const groupHeaderRow = groups.map((g, gi) =>
-    `<th colspan="${g.sizes.length}" style="${THBASE};background:${GC[gi].h};color:#374151;text-align:center;border-color:#D1D5DB">${g.group}</th>`
-  ).join('');
+  const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
+  const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
+  const C  = 'display:flex;align-items:center;justify-content:center;font-size:13px;border-right:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding:5px 2px;';
+  const F  = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border-right:1px solid #D1D5DB;border-top:2px solid #CBD5E1;background:#EFF6FF;padding:5px 2px;';
 
-  const sizeHeaderRow = allSizes.map(sz => {
+  let h = '';
+
+  // 헤더 row1: 농가 | 그룹들 | 합계
+  h += `<div style="${HD}justify-content:flex-start;padding:6px 10px;border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4">농가</div>`;
+  groups.forEach((g, gi) => {
+    h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${g.sizes.length}">${esc(g.group)}</div>`;
+  });
+  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4">합계</div>`;
+
+  // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
+  allSizes.forEach(sz => {
     const gi = szGI[sz];
-    return `<th style="${THBASE};background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;text-align:center;min-width:42px;border-color:#D1D5DB">${esc(sz)}</th>`;
-  }).join('');
+    h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
+  });
+  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
-  const dataRows = farms.map((farm, i) => {
+  // 데이터 rows
+  farms.forEach((farm, i) => {
     const bg = i % 2 === 1 ? '#FAFAFA' : '#fff';
-    const cells = allSizes.map(sz => {
+    h += `<div style="${C}background:${bg};justify-content:flex-start;padding:5px 10px;font-weight:500;white-space:nowrap;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(farm)}">${esc(farm)}</div>`;
+    allSizes.forEach(sz => {
       const val   = farmMap[farm][sz] || 0;
-      const inner = val === 0
-        ? `<span style="color:#9CA3AF">-</span>`
-        : `<strong style="color:#111827">${fmtN(val)}</strong>`;
-      return `<td class="inv-mc"
-        data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}"
-        style="padding:4px 8px;text-align:center;border:1px solid #E5E7EB;background:${bg};cursor:pointer;font-size:13px"
-        title="더블클릭: 수량 수정">${inner}</td>`;
-    }).join('');
-    return `<tr>
-      <td style="padding:5px 10px;font-size:13px;font-weight:500;border:1px solid #E5E7EB;background:${bg};white-space:nowrap" title="${esc(farm)}">${esc(farm)}</td>
-      ${cells}
-      <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;color:#1565C0;border:1px solid #E5E7EB;background:#EFF6FF;white-space:nowrap">${fmtN(rowTotals[farm] || 0)}</td>
-    </tr>`;
-  }).join('');
+      const inner = val === 0 ? `<span style="color:#9CA3AF">-</span>` : `<strong style="color:#111827">${fmtN(val)}</strong>`;
+      h += `<div class="inv-mc" data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${bg};cursor:pointer" title="더블클릭: 수량 수정">${inner}</div>`;
+    });
+    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(rowTotals[farm] || 0)}</div>`;
+  });
 
-  const footerCells = allSizes.map(sz => {
+  // 합계 row
+  h += `<div style="${F}justify-content:flex-start;padding:5px 10px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">합계</div>`;
+  allSizes.forEach(sz => {
     const v = colTotals[sz] || 0;
-    return `<td style="padding:5px 8px;text-align:center;border:1px solid #D1D5DB;background:#EFF6FF;font-size:12px;font-weight:700;color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</td>`;
-  }).join('');
+    h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</div>`;
+  });
+  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(grandTotal)}</div>`;
 
   return `
     <div style="margin-bottom:28px">
-      <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:0">
+      <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:8px">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
       </div>
-      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-        <table style="border-collapse:separate;border-spacing:0;font-size:13px">
-          <thead>
-            <tr>
-              <th rowspan="2" style="${THDARK};text-align:left;min-width:72px">농가</th>
-              ${groupHeaderRow}
-              <th rowspan="2" style="${THDARK};text-align:center;min-width:46px">합계</th>
-            </tr>
-            <tr>${sizeHeaderRow}</tr>
-          </thead>
-          <tbody>${dataRows}</tbody>
-          <tfoot>
-            <tr>
-              <td style="padding:5px 10px;font-size:12px;font-weight:700;color:#1565C0;border:1px solid #D1D5DB;background:#EFF6FF">합계</td>
-              ${footerCells}
-              <td style="padding:5px 10px;text-align:right;border:1px solid #D1D5DB;background:#EFF6FF;font-size:13px;font-weight:700;color:#1565C0">${fmtN(grandTotal)}</td>
-            </tr>
-          </tfoot>
-        </table>
+      <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;overflow-x:auto;border-top:1px solid #1E3A5F;border-left:1px solid #D1D5DB">
+        ${h}
       </div>
       <div style="font-size:11px;color:#9CA3AF;margin-top:3px;text-align:right">셀 더블클릭 → 수량 수정 (조정값 저장)</div>
     </div>`;
