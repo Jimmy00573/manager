@@ -3827,7 +3827,7 @@ function _renderInvMatrix(product, recs) {
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-        <table style="border-collapse:collapse;font-size:13px">
+        <table style="border-collapse:separate;border-spacing:0;font-size:13px">
           <thead>
             <tr>
               <th rowspan="2" style="${THDARK};text-align:left;min-width:72px;position:sticky;left:0;z-index:3">농가</th>
