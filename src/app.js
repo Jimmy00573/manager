@@ -3842,33 +3842,39 @@ function _renderInvMatrix(product, recs) {
   const szGI = {};
   groups.forEach((g, gi) => g.sizes.forEach(sz => { szGI[sz] = gi; }));
 
-  // farm → size → { qty, olds(선과일), oldi(입고일) }
-  const farmMap = {};
+  // batch 단위 그룹핑: sorting_result_id별 또는 manual_날짜별
+  const batchMap = {};
   recs.forEach(r => {
     const farm = r.farm_name || '(농가미상)';
     const sz   = r.size_code;
     if (!sz) return;
-    if (!farmMap[farm]) farmMap[farm] = {};
-    if (!farmMap[farm][sz]) farmMap[farm][sz] = { qty: 0, olds: '', oldi: '' };
-    farmMap[farm][sz].qty += (Number(r.quantity) || 0);
+    const groupId = (r.source_type === 'sorting' && r.sorting_result_id)
+      ? r.sorting_result_id : `manual_${r.date || ''}`;
+    const key = `${farm}__${groupId}`;
     const { sortingDate, inboundDate } = _getInvRecordDates(r);
-    if (sortingDate && (!farmMap[farm][sz].olds || sortingDate < farmMap[farm][sz].olds))
-      farmMap[farm][sz].olds = sortingDate;
-    if (inboundDate && (!farmMap[farm][sz].oldi || inboundDate < farmMap[farm][sz].oldi))
-      farmMap[farm][sz].oldi = inboundDate;
+    if (!batchMap[key]) batchMap[key] = { farm, sortingDate, inboundDate, sizes: {} };
+    batchMap[key].sizes[sz] = (batchMap[key].sizes[sz] || 0) + (Number(r.quantity) || 0);
+    if (sortingDate && sortingDate < (batchMap[key].sortingDate || '9')) batchMap[key].sortingDate = sortingDate;
+    if (inboundDate && inboundDate < (batchMap[key].inboundDate || '9')) batchMap[key].inboundDate = inboundDate;
   });
 
-  const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
+  // 농가 오름차순 → 현재 토글 기준 날짜 오름차순 (오래된 batch 위)
+  const batches = Object.values(batchMap).sort((a, b) => {
+    const fc = a.farm.localeCompare(b.farm, 'ko');
+    if (fc !== 0) return fc;
+    const da = (_invDateMode === 'inbound' ? a.inboundDate : a.sortingDate) || '';
+    const db = (_invDateMode === 'inbound' ? b.inboundDate : b.sortingDate) || '';
+    return da.localeCompare(db);
+  });
+
   const colTotals = {};
   allSizes.forEach(sz => { colTotals[sz] = 0; });
-  farms.forEach(farm => allSizes.forEach(sz => { colTotals[sz] += (farmMap[farm][sz] ? farmMap[farm][sz].qty : 0); }));
-  const rowTotals = {};
-  farms.forEach(farm => { rowTotals[farm] = allSizes.reduce((s, sz) => s + (farmMap[farm][sz] ? farmMap[farm][sz].qty : 0), 0); });
+  batches.forEach(b => allSizes.forEach(sz => { colTotals[sz] += (b.sizes[sz] || 0); }));
   const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
   const N = allSizes.length;
-  const FARM_W = 100, SZ_W = 46, TOT_W = 70;
+  const FARM_W = 120, SZ_W = 46, TOT_W = 70;
   const minW   = FARM_W + N * SZ_W + TOT_W;
   const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px`;
 
@@ -3894,27 +3900,30 @@ function _renderInvMatrix(product, recs) {
   });
   h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
-  // 데이터 rows
-  farms.forEach((farm, i) => {
+  // 데이터 rows (batch별)
+  batches.forEach((batch, i) => {
     const rowBg = i % 2 === 1 ? '#FAFAFA' : '#fff';
-    h += `<div style="${C}background:${rowBg};justify-content:flex-start;padding:5px 10px;font-weight:500;white-space:nowrap;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(farm)}">${esc(farm)}</div>`;
+    const displayDate = _invDateMode === 'inbound' ? batch.inboundDate : batch.sortingDate;
+    const daysAgo = _invDaysAgo(displayDate);
+    let firstBg = rowBg;
+    if (daysAgo >= _invAgeDays * 2) firstBg = '#FEE2E2';
+    else if (daysAgo >= _invAgeDays) firstBg = '#FEF3C7';
+    const dateLabel = _fmtInvDate(displayDate) || '-';
+    const batchTotal = allSizes.reduce((s, sz) => s + (batch.sizes[sz] || 0), 0);
+    const dateColor = daysAgo >= _invAgeDays * 2 ? '#B91C1C' : '#6B7280';
+
+    h += `<div style="${C}background:${firstBg};flex-direction:column;align-items:flex-start;justify-content:center;padding:4px 8px;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(batch.farm)}">
+      <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
+      <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
+    </div>`;
     allSizes.forEach(sz => {
-      const entry = farmMap[farm][sz];
-      const val = entry ? entry.qty : 0;
-      const dateStr = entry ? (_invDateMode === 'inbound' ? entry.oldi : entry.olds) : '';
-      const daysAgo = _invDaysAgo(dateStr);
-      let cellBg = rowBg;
-      let dateCss = 'color:#9CA3AF';
-      if (daysAgo >= 0 && val > 0) {
-        if (daysAgo >= _invAgeDays * 2) { cellBg = '#FEE2E2'; dateCss = 'color:#DC2626;font-weight:700'; }
-        else if (daysAgo >= _invAgeDays)  { cellBg = '#FEF3C7'; }
-      }
+      const val = batch.sizes[sz] || 0;
       const inner = val === 0
         ? `<span style="color:#9CA3AF">-</span>`
-        : `<div style="display:flex;flex-direction:column;align-items:center;line-height:1.2"><strong style="color:#111827">${fmtN(val)}</strong>${dateStr ? `<span style="font-size:10px;${dateCss}">${_fmtInvDate(dateStr)}</span>` : ''}</div>`;
-      h += `<div class="inv-mc" data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${cellBg};cursor:pointer;padding:4px 2px" title="더블클릭: 수량 수정">${inner}</div>`;
+        : `<strong style="color:#111827">${fmtN(val)}</strong>`;
+      h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};cursor:pointer;padding:5px 2px" title="더블클릭: 수량 수정">${inner}</div>`;
     });
-    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(rowTotals[farm] || 0)}</div>`;
+    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(batchTotal)}</div>`;
   });
 
   // 합계 row
@@ -3930,7 +3939,7 @@ function _renderInvMatrix(product, recs) {
       <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:8px">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
-        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
+        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
       </div>
       <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;overflow-x:auto;border-top:1px solid #1E3A5F;border-left:1px solid #D1D5DB">
         ${h}
