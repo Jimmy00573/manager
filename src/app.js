@@ -3826,7 +3826,7 @@ function _renderInvMatrix(product, recs) {
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${farms.length}농가 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-        <table style="border-collapse:collapse;font-size:13px;table-layout:fixed">
+        <table style="border-collapse:collapse;font-size:13px;table-layout:fixed;width:${96 + allSizes.length * 46 + 58}px">
           <colgroup>
             <col style="width:96px">
             ${allSizes.map(() => '<col style="width:46px">').join('')}
