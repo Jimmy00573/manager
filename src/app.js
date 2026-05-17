@@ -6659,22 +6659,37 @@ async function saveSortingResult() {
     for (const d of allDetails) await sbInsert('sorting_details', d);
 
     // 2-1. inventory_records 자동 등록 (정상품만)
+    // void 처리는 실패해도 INSERT는 계속 진행
     try {
       const existing = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&is_void=eq.false&select=id`);
       for (const row of existing) await sbUpdate('inventory_records', row.id, { is_void: true });
-      const invRows = sizeDetails.filter(d => d.ct > 0);
-      for (const d of invRows) {
-        await sbInsert('inventory_records', {
-          date: sortingDate, farm_name: r.farm_name, product: r.product,
-          size_code: d.size_code, quantity: d.ct, location: r.location || null,
-          source_type: 'sorting', sorting_result_id: headerId, is_void: false,
-          note: null, created_by: 'admin'
-        });
-      }
-    } catch (invErr) {
-      console.error('inventory_records 자동 등록 실패:', invErr);
-      showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 재고 현황에서 직접 입력 필요', 'warn');
+    } catch (voidErr) {
+      console.warn('[6단계] 기존 inventory_records void 처리 실패 (무시):', voidErr);
     }
+    const invRows = sizeDetails.filter(d => d.ct > 0);
+    console.log('[6단계] sizeDetails:', JSON.stringify(sizeDetails));
+    console.log('[6단계] invRows (ct>0):', JSON.stringify(invRows));
+    console.log('[6단계] r.farm_name:', r.farm_name, '/ r.product:', r.product, '/ sortingDate:', sortingDate, '/ headerId:', headerId);
+    let invInsertOk = 0;
+    for (const d of invRows) {
+      const insertData = {
+        date: sortingDate, farm_name: r.farm_name, product: r.product,
+        size_code: d.size_code, quantity: d.ct, location: r.location || null,
+        source_type: 'sorting', sorting_result_id: headerId, is_void: false,
+        note: null, created_by: 'admin'
+      };
+      console.log('[6단계] INSERT 시도:', JSON.stringify(insertData));
+      try {
+        const result = await sbInsert('inventory_records', insertData);
+        console.log('[6단계] INSERT 성공:', JSON.stringify(result));
+        invInsertOk++;
+      } catch (rowErr) {
+        console.error('[6단계] INSERT 실패:', rowErr.message, '/ 데이터:', JSON.stringify(insertData));
+        showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 재고 현황에서 직접 입력 필요');
+        break;
+      }
+    }
+    console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
 
     // 3. processing_records로 잔여재고 차감
     const procRow = await dbInsertProcessing({
