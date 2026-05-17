@@ -3774,6 +3774,7 @@ function _renderInvMatrix(product, recs) {
     farmMap[farm][sz] = (farmMap[farm][sz] || 0) + (Number(r.quantity) || 0);
   });
 
+  console.log('[INV-DEBUG] product='+product+' farmMap=', JSON.stringify(farmMap).slice(0,500));
   const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
   const colTotals = {};
   allSizes.forEach(sz => { colTotals[sz] = 0; });
