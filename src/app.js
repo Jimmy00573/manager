@@ -3688,28 +3688,14 @@ function renderInventoryStatus() {
   const matrixEl = document.getElementById('inv-matrix-wrap');
   if (!statusEl || !matrixEl) return;
 
-  // 단일 클릭(상세 모달) / 더블클릭(인라인 편집) — 한 번만 등록
-  if (!matrixEl._clickBound) {
-    let _mcClickTimer = null;
-    matrixEl.addEventListener('click', e => {
-      const cell = e.target.closest('.inv-mc');
-      if (!cell) return;
-      if (_mcClickTimer) return; // 더블클릭의 두 번째 click — 무시
-      _mcClickTimer = setTimeout(() => {
-        _mcClickTimer = null;
-        const val = Number(cell.dataset.val);
-        if (val === 0) { showToast('등록된 재고가 없습니다'); return; }
-        openInvDetailModal(cell.dataset.farm, cell.dataset.product, cell.dataset.size, val, cell);
-      }, 250);
-    });
+  // 인라인 편집 dblclick — 한 번만 등록
+  if (!matrixEl._dblclickBound) {
     matrixEl.addEventListener('dblclick', e => {
       const cell = e.target.closest('.inv-mc');
       if (!cell) return;
-      clearTimeout(_mcClickTimer);
-      _mcClickTimer = null;
       invCellEdit(cell, cell.dataset.farm, cell.dataset.product, cell.dataset.size, Number(cell.dataset.val));
     });
-    matrixEl._clickBound = true;
+    matrixEl._dblclickBound = true;
   }
 
   const activeRecs = inventoryRecords.filter(r => !r.is_void);
@@ -3924,159 +3910,6 @@ async function invSaveCellEdit(cell, farm, product, size, newVal, currentTotal) 
       ? `<span style="color:#9CA3AF">-</span>`
       : `<strong style="color:#111827">${fmtN(currentTotal)}</strong>`;
     cell.style.pointerEvents = '';
-  }
-}
-
-// ── 재고 상세 모달 ────────────────────────────────────────────────
-
-let _invDetailCtx = { farm: '', product: '', size: '', val: 0 };
-
-async function openInvDetailModal(farm, product, size, val) {
-  _invDetailCtx = { farm, product, size, val };
-
-  let modal = document.getElementById('modal-inv-detail');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'modal-inv-detail';
-    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-    modal.innerHTML = `
-      <div style="background:#fff;border-radius:14px;max-width:660px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-        <div style="padding:14px 18px;background:#1E3A5F;display:flex;align-items:center;justify-content:space-between;border-radius:14px 14px 0 0;position:sticky;top:0;z-index:1">
-          <div style="font-size:15px;font-weight:700;color:#fff">🔍 재고 상세 정보</div>
-          <button onclick="document.getElementById('modal-inv-detail').style.display='none'" style="border:none;background:rgba(255,255,255,0.15);color:#fff;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;line-height:1">✕</button>
-        </div>
-        <div id="inv-detail-body" style="padding:16px 18px"></div>
-      </div>`;
-    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        const m = document.getElementById('modal-inv-detail');
-        if (m && m.style.display !== 'none') m.style.display = 'none';
-      }
-    });
-    document.body.appendChild(modal);
-  }
-
-  const bodyEl = document.getElementById('inv-detail-body');
-  bodyEl.innerHTML = '<div style="padding:40px;text-align:center;color:#9CA3AF;font-size:13px">불러오는 중...</div>';
-  modal.style.display = 'flex';
-  await _loadInvDetail(farm, product, size);
-}
-
-async function _loadInvDetail(farm, product, size) {
-  const bodyEl = document.getElementById('inv-detail-body');
-  let rows = [];
-  try {
-    rows = await sbGet('inventory_records',
-      `farm_name=eq.${encodeURIComponent(farm)}&product=eq.${encodeURIComponent(product)}&size_code=eq.${encodeURIComponent(size)}&order=created_at.desc&select=id,date,quantity,source_type,is_void,created_by,note,created_at`
-    );
-  } catch(e) {
-    bodyEl.innerHTML = `<div style="padding:24px;color:#EF4444;font-size:13px">데이터 조회 실패: ${esc(e.message)}</div>`;
-    return;
-  }
-
-  const activeTotal = rows.filter(r => !r.is_void).reduce((s, r) => s + (Number(r.quantity) || 0), 0);
-
-  const summaryHtml = `
-    <div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:10px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><div style="color:#6B7280;font-size:11px;font-weight:600;margin-bottom:2px">농가</div><div style="font-weight:700;font-size:15px;color:#111827">${esc(farm)}</div></div>
-      <div><div style="color:#6B7280;font-size:11px;font-weight:600;margin-bottom:2px">품목</div><div style="font-weight:700;font-size:15px;color:#111827">${esc(product)}</div></div>
-      <div><div style="color:#6B7280;font-size:11px;font-weight:600;margin-bottom:2px">사이즈</div><div style="font-weight:700;font-size:15px;color:#111827">${esc(size)}</div></div>
-      <div><div style="color:#6B7280;font-size:11px;font-weight:600;margin-bottom:2px">현재 수량</div><div style="font-weight:700;font-size:22px;color:#1565C0">${fmtN(activeTotal)} <span style="font-size:13px;font-weight:500">CT</span></div></div>
-    </div>`;
-
-  let tableHtml = '';
-  if (rows.length === 0) {
-    tableHtml = '<div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">등록된 내역이 없습니다</div>';
-  } else {
-    const rowsHtml = rows.map(r => {
-      const isVoid = !!r.is_void;
-      const rowBg   = isVoid ? 'background:#F9FAFB;' : 'background:#fff;';
-      const textCss = isVoid ? 'color:#9CA3AF;text-decoration:line-through;' : 'color:#111827;';
-      const datePart = (r.date || r.created_at || '').slice(0, 10);
-      const srcBadge  = _invSourceBadge(r.source_type);
-      const statBadge = isVoid
-        ? '<span style="background:#F3F4F6;color:#9CA3AF;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">무효화</span>'
-        : '<span style="background:#D1FAE5;color:#065F46;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">활성</span>';
-      const actionBtn = isVoid
-        ? '<span style="color:#D1D5DB;font-size:16px">🗑️</span>'
-        : `<button onclick="invDetailVoidRow('${r.id}')" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;opacity:.7" title="무효화" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.7">🗑️</button>`;
-      const noteRow = r.note
-        ? `<tr style="${rowBg}"><td colspan="6" style="padding:2px 10px 8px;font-size:11px;color:#9CA3AF">메모: ${esc(r.note)}</td></tr>`
-        : '';
-      return `
-        <tr style="${rowBg}border-bottom:1px solid #F3F4F6">
-          <td style="padding:9px 10px;${textCss}">${esc(datePart)}</td>
-          <td style="padding:9px 10px;text-align:right;font-weight:600;${textCss}">${fmtN(Number(r.quantity) || 0)}</td>
-          <td style="padding:9px 10px;text-align:center">${srcBadge}</td>
-          <td style="padding:9px 10px;text-align:center;${textCss}">${esc(r.created_by || '-')}</td>
-          <td style="padding:9px 10px;text-align:center">${statBadge}</td>
-          <td style="padding:9px 10px;text-align:center">${actionBtn}</td>
-        </tr>${noteRow}`;
-    }).join('');
-    tableHtml = `
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead>
-            <tr style="background:#F3F4F6;border-bottom:2px solid #E5E7EB">
-              <th style="padding:9px 10px;text-align:left;font-weight:600;color:#374151;white-space:nowrap">등록일</th>
-              <th style="padding:9px 10px;text-align:right;font-weight:600;color:#374151">수량</th>
-              <th style="padding:9px 10px;text-align:center;font-weight:600;color:#374151">출처</th>
-              <th style="padding:9px 10px;text-align:center;font-weight:600;color:#374151">등록자</th>
-              <th style="padding:9px 10px;text-align:center;font-weight:600;color:#374151">상태</th>
-              <th style="padding:9px 10px;text-align:center;font-weight:600;color:#374151">액션</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>`;
-  }
-
-  const btnHtml = `
-    <div style="display:flex;gap:10px;margin-top:16px">
-      <button onclick="invDetailOpenEdit()" style="flex:1;padding:10px;background:#F59E0B;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">✏️ 수량 수정</button>
-      <button onclick="document.getElementById('modal-inv-detail').style.display='none'" style="flex:1;padding:10px;background:#fff;color:#374151;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">닫기</button>
-    </div>`;
-
-  bodyEl.innerHTML = summaryHtml + tableHtml + btnHtml;
-}
-
-function _invSourceBadge(src) {
-  if (src === 'sorting')    return '<span style="background:#DBEAFE;color:#1D4ED8;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">선과 처리</span>';
-  if (src === 'adjustment') return '<span style="background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">보정</span>';
-  return '<span style="background:#F3F4F6;color:#6B7280;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">직접 입력</span>';
-}
-
-async function invDetailVoidRow(id) {
-  if (!confirm('이 등록 건을 무효화 하시겠습니까?')) return;
-  try {
-    await sbUpdate('inventory_records', id, { is_void: true });
-    inventoryRecords = await dbGetInventoryRecords();
-    renderInventoryStatus();
-    const { farm, product, size } = _invDetailCtx;
-    const newVal = inventoryRecords
-      .filter(r => !r.is_void && r.farm_name === farm && r.product === product && r.size_code === size)
-      .reduce((s, r) => s + (Number(r.quantity) || 0), 0);
-    _invDetailCtx.val = newVal;
-    await _loadInvDetail(farm, product, size);
-    showToast('무효화 완료');
-  } catch(e) {
-    alert('무효화 실패: ' + e.message);
-  }
-}
-
-function invDetailOpenEdit() {
-  const modal = document.getElementById('modal-inv-detail');
-  if (modal) modal.style.display = 'none';
-  const { farm, product, size } = _invDetailCtx;
-  let targetCell = null;
-  document.querySelectorAll('.inv-mc').forEach(c => {
-    if (c.dataset.farm === farm && c.dataset.product === product && c.dataset.size === size) targetCell = c;
-  });
-  if (targetCell) {
-    invCellEdit(targetCell, farm, product, size, Number(targetCell.dataset.val));
-  } else {
-    showToast('셀을 찾을 수 없습니다');
   }
 }
 
