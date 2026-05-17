@@ -3011,6 +3011,7 @@ function invTab(t) {
   if (t === 'log') loadAuditLogs();
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
+  if (t === 'wj') renderPachiSection();
 }
 
 function ibTab(t) {
@@ -6797,6 +6798,25 @@ async function saveSortingResult() {
     }
     console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
 
+    // 6-2단계. inventory_records 파치 등록
+    if (waste > 0) {
+      try {
+        try {
+          const exPachi = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&source_type=eq.pachi&or=(is_void.eq.false,is_void.is.null)&select=id`);
+          for (const row of exPachi) await sbUpdate('inventory_records', row.id, { is_void: true });
+        } catch(e) { console.warn('[8단계] 파치 void 처리 실패 (무시):', e); }
+        await sbInsert('inventory_records', {
+          date: sortingDate, farm_name: r.farm_name, product: r.product,
+          size_code: null, quantity: waste, location: r.location || null,
+          source_type: 'pachi', sorting_result_id: headerId,
+          is_void: false, note: null, created_by: 'admin'
+        });
+        console.log('[8단계] 파치 등록 완료:', waste, 'CT');
+      } catch(pachiErr) {
+        console.warn('[8단계] 파치 등록 실패 (무시):', pachiErr.message);
+      }
+    }
+
     // 3. processing_records로 잔여재고 차감
     const procRow = await dbInsertProcessing({
       inbound_id: _sortingInboundId,
@@ -7437,6 +7457,103 @@ function renderWasteList() {
     <td>${esc(r.purpose)}</td>
     <td>${isAdm ? `<button class="btn del" onclick="deleteWaste('${r.id}')">삭제</button>` : ''}</td>
   </tr>`).join('');
+}
+
+function renderPachiSection() {
+  const el = document.getElementById('inv-pachi-section');
+  if (!el) return;
+
+  const kgPerCt = p => (p && p.includes('한라봉')) ? 13 : 17;
+  const pRecs = inventoryRecords.filter(r => r.source_type === 'pachi');
+
+  // 품목별 통계
+  const statsMap = {};
+  pRecs.forEach(r => {
+    const p = r.product || '기타';
+    statsMap[p] = (statsMap[p] || 0) + (Number(r.quantity) || 0);
+  });
+  const statsHtml = Object.keys(statsMap).length
+    ? Object.entries(statsMap).map(([p, ct]) => `
+        <div style="background:#FFF8F0;border:1px solid #FFCC80;border-radius:8px;padding:12px 16px;min-width:120px">
+          <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
+          <div style="font-size:18px;font-weight:700;color:#E65100">${fmtN(ct)} CT</div>
+          <div style="font-size:12px;color:#666">${fmtN(Math.round(ct * kgPerCt(p)))} kg</div>
+        </div>`).join('')
+    : `<span style="font-size:13px;color:#aaa">선과 파치 기록 없음</span>`;
+
+  // 배치(선과 작업)별 그룹화
+  const bMap = {};
+  pRecs.forEach(r => {
+    const key = r.sorting_result_id ? String(r.sorting_result_id) : `m_${r.date}`;
+    if (!bMap[key]) bMap[key] = {
+      date: r.date, farm: r.farm_name, prod: r.product,
+      ct: 0, ids: [], notes: [], isSorting: !!r.sorting_result_id
+    };
+    bMap[key].ct += Number(r.quantity) || 0;
+    bMap[key].ids.push(r.id);
+    if (r.note) bMap[key].notes.push(r.note);
+  });
+  const batches = Object.values(bMap).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  const rows = batches.map(b => {
+    const kg = Math.round(b.ct * kgPerCt(b.prod));
+    const memoRaw = b.notes.filter(n => n && n !== '파치 자동 변환').join(', ');
+    const badge = b.isSorting
+      ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px">선과</span>`
+      : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px">수동</span>`;
+    return `<tr data-pachi-ids="${b.ids.join(',')}">
+      <td style="padding:7px 10px;white-space:nowrap">${b.date || '-'}</td>
+      <td style="padding:7px 10px">${esc(b.farm || '-')}</td>
+      <td style="padding:7px 10px">${esc(b.prod || '-')}${badge}</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(b.ct)}</td>
+      <td style="padding:7px 10px;text-align:right">${fmtN(kg)}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#666;cursor:pointer"
+          ondblclick="editPachiMemo(this.closest('tr'))"
+          title="더블클릭 → 메모 편집">${esc(memoRaw || '-')}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:8px">선과 파치 현황</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
+    </div>
+    <div class="sec-hdr"><div class="sec-title">파치 상세 내역</div></div>
+    <div class="tbl-wrap">
+      <table style="min-width:480px;width:100%;border-collapse:collapse">
+        <thead><tr style="background:#F9FAFB">
+          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">날짜</th>
+          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">농가</th>
+          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">품목</th>
+          <th style="text-align:right;padding:7px 10px;border-bottom:2px solid #E5E7EB">CT</th>
+          <th style="text-align:right;padding:7px 10px;border-bottom:2px solid #E5E7EB">kg</th>
+          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">메모 (더블클릭 편집)</th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="empty">파치 기록 없음</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+async function editPachiMemo(trEl) {
+  const idsStr = trEl && trEl.dataset && trEl.dataset.pachiIds;
+  if (!idsStr) return;
+  const rawIds = idsStr.split(',');
+  const ids = rawIds.map(id => isNaN(id) ? id.trim() : Number(id.trim()));
+  const recs = inventoryRecords.filter(r => ids.includes(r.id));
+  const current = recs.map(r => r.note).filter(n => n && n !== '파치 자동 변환').join(', ');
+  const memo = prompt('메모 입력 (이 배치의 파치):', current);
+  if (memo === null) return;
+  try {
+    for (const id of ids) {
+      await sbUpdate('inventory_records', id, { note: memo || null });
+      const rec = inventoryRecords.find(r => r.id === id);
+      if (rec) rec.note = memo || null;
+    }
+    renderPachiSection();
+    showToast('메모 저장 완료');
+  } catch(e) {
+    alert('저장 실패: ' + e.message);
+  }
 }
 
 function renderJuiceList() {
