@@ -3774,7 +3774,6 @@ function _renderInvMatrix(product, recs) {
     farmMap[farm][sz] = (farmMap[farm][sz] || 0) + (Number(r.quantity) || 0);
   });
 
-  console.log('[INV-DEBUG] product='+product+' farmMap=', JSON.stringify(farmMap).slice(0,500));
   const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
   const colTotals = {};
   allSizes.forEach(sz => { colTotals[sz] = 0; });
@@ -3808,9 +3807,9 @@ function _renderInvMatrix(product, recs) {
         title="더블클릭: 수량 수정">${inner}</td>`;
     }).join('');
     return `<tr>
-      <td style="padding:5px 10px;font-size:13px;font-weight:500;border:1px solid #E5E7EB;background:${bg};position:sticky;left:0;z-index:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(farm)}">${esc(farm)}</td>
+      <td style="padding:5px 10px;font-size:13px;font-weight:500;border:1px solid #E5E7EB;background:${bg};white-space:nowrap" title="${esc(farm)}">${esc(farm)}</td>
       ${cells}
-      <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;color:#1565C0;border:1px solid #E5E7EB;background:#EFF6FF;position:sticky;right:0;z-index:1;white-space:nowrap">${fmtN(rowTotals[farm] || 0)}</td>
+      <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;color:#1565C0;border:1px solid #E5E7EB;background:#EFF6FF;white-space:nowrap">${fmtN(rowTotals[farm] || 0)}</td>
     </tr>`;
   }).join('');
 
@@ -3830,18 +3829,18 @@ function _renderInvMatrix(product, recs) {
         <table style="border-collapse:separate;border-spacing:0;font-size:13px">
           <thead>
             <tr>
-              <th rowspan="2" style="${THDARK};text-align:left;min-width:72px;position:sticky;left:0;z-index:3">농가</th>
+              <th rowspan="2" style="${THDARK};text-align:left;min-width:72px">농가</th>
               ${groupHeaderRow}
-              <th rowspan="2" style="${THDARK};text-align:center;min-width:46px;position:sticky;right:0;z-index:3">합계</th>
+              <th rowspan="2" style="${THDARK};text-align:center;min-width:46px">합계</th>
             </tr>
             <tr>${sizeHeaderRow}</tr>
           </thead>
           <tbody>${dataRows}</tbody>
           <tfoot>
             <tr>
-              <td style="padding:5px 10px;font-size:12px;font-weight:700;color:#1565C0;border:1px solid #D1D5DB;background:#EFF6FF;position:sticky;left:0;z-index:1">합계</td>
+              <td style="padding:5px 10px;font-size:12px;font-weight:700;color:#1565C0;border:1px solid #D1D5DB;background:#EFF6FF">합계</td>
               ${footerCells}
-              <td style="padding:5px 10px;text-align:right;border:1px solid #D1D5DB;background:#EFF6FF;font-size:13px;font-weight:700;color:#1565C0;position:sticky;right:0;z-index:1">${fmtN(grandTotal)}</td>
+              <td style="padding:5px 10px;text-align:right;border:1px solid #D1D5DB;background:#EFF6FF;font-size:13px;font-weight:700;color:#1565C0">${fmtN(grandTotal)}</td>
             </tr>
           </tfoot>
         </table>
