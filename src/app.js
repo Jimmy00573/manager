@@ -13,7 +13,10 @@ let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
 let invSizeConfig = {};
 let inventoryRecords = [];
-let _invFilter = { product: '', farm: '' };
+let _invFilter   = { product: '', farm: '' };
+let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id }
+let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
+let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [];
 let _editLocId = null;
@@ -3066,6 +3069,14 @@ async function loadAndRenderInv() {
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     inventoryRecords = invRecs;
+    // sorting_results 날짜 데이터 enrichment
+    const srIds = [...new Set(invRecs.filter(r => r.sorting_result_id).map(r => r.sorting_result_id))];
+    if (srIds.length > 0) {
+      try {
+        const srRows = await sbGet('sorting_results', `id=in.(${srIds.join(',')})&select=id,sorting_date,inbound_record_id`);
+        _invSrMap = Object.fromEntries(srRows.map(sr => [sr.id, sr]));
+      } catch(e) { _invSrMap = {}; }
+    } else { _invSrMap = {}; }
     popInvProductSelects();
     popLocSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
@@ -3683,10 +3694,77 @@ function invSetFilter(key, val) {
   renderInventoryStatus();
 }
 
+// ── 재고 날짜 헬퍼 ───────────────────────────────────────────────
+
+function _getInvRecordDates(rec) {
+  const d = rec.date || '';
+  if (rec.source_type === 'sorting' && rec.sorting_result_id) {
+    const sr = _invSrMap[rec.sorting_result_id];
+    const sortingDate  = (sr && sr.sorting_date) ? sr.sorting_date : d;
+    const ibRec = sr ? inboundRecords.find(r => r.id === sr.inbound_record_id) : null;
+    const inboundDate  = ibRec ? (ibRec.date || sortingDate) : sortingDate;
+    return { sortingDate, inboundDate };
+  }
+  return { sortingDate: d, inboundDate: d };
+}
+
+function _fmtInvDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return '';
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function _invDaysAgo(dateStr) {
+  if (!dateStr) return -1;
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return -1;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.floor((today - d) / 86400000);
+}
+
+function invSetDateMode(mode) {
+  _invDateMode = mode;
+  localStorage.setItem('inv_date_mode', mode);
+  renderInventoryStatus();
+}
+
+function invSetAgeDays(val) {
+  const n = Math.max(1, Math.min(365, parseInt(val) || 7));
+  _invAgeDays = n;
+  localStorage.setItem('inv_age_days', n);
+  renderInventoryStatus();
+}
+
+function _renderInvDateCtrl() {
+  const el = document.getElementById('inv-date-ctrl');
+  if (!el) return;
+  const si = _invDateMode === 'inbound';
+  const ss = _invDateMode === 'sorting';
+  const AB = (active) => `padding:4px 12px;border-radius:14px;border:1.5px solid ${active ? '#0369A1' : '#D1D5DB'};background:${active ? '#0369A1' : '#fff'};color:${active ? '#fff' : '#374151'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s`;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:8px 14px;background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;font-size:13px">
+      <span style="font-weight:600;color:#0369A1;white-space:nowrap">📅 날짜</span>
+      <button onclick="invSetDateMode('inbound')" style="${AB(si)}">입고일</button>
+      <button onclick="invSetDateMode('sorting')" style="${AB(ss)}">선과일</button>
+      <span style="width:1px;height:16px;background:#BAE6FD;flex-shrink:0"></span>
+      <span style="font-weight:600;color:#0369A1;white-space:nowrap">⚠ 기준</span>
+      <input type="number" value="${_invAgeDays}" min="1" max="365"
+        oninput="invSetAgeDays(this.value)"
+        style="width:52px;padding:3px 6px;border:1.5px solid #D1D5DB;border-radius:6px;font-size:12px;font-family:inherit;text-align:center">
+      <span style="color:#6B7280">일</span>
+      <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6B7280;margin-left:2px">
+        <span style="background:#FEF3C7;border:1px solid #FDE68A;padding:1px 7px;border-radius:4px">노랑</span>기준 이상
+        <span style="background:#FEE2E2;border:1px solid #FECACA;padding:1px 7px;border-radius:4px;margin-left:4px">빨강</span>기준 2배↑
+      </span>
+    </div>`;
+}
+
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
   const matrixEl = document.getElementById('inv-matrix-wrap');
   if (!statusEl || !matrixEl) return;
+  _renderInvDateCtrl();
 
   // 인라인 편집 dblclick — 한 번만 등록
   if (!matrixEl._dblclickBound) {
@@ -3764,22 +3842,28 @@ function _renderInvMatrix(product, recs) {
   const szGI = {};
   groups.forEach((g, gi) => g.sizes.forEach(sz => { szGI[sz] = gi; }));
 
-  // farm → size → total
+  // farm → size → { qty, olds(선과일), oldi(입고일) }
   const farmMap = {};
   recs.forEach(r => {
     const farm = r.farm_name || '(농가미상)';
     const sz   = r.size_code;
     if (!sz) return;
     if (!farmMap[farm]) farmMap[farm] = {};
-    farmMap[farm][sz] = (farmMap[farm][sz] || 0) + (Number(r.quantity) || 0);
+    if (!farmMap[farm][sz]) farmMap[farm][sz] = { qty: 0, olds: '', oldi: '' };
+    farmMap[farm][sz].qty += (Number(r.quantity) || 0);
+    const { sortingDate, inboundDate } = _getInvRecordDates(r);
+    if (sortingDate && (!farmMap[farm][sz].olds || sortingDate < farmMap[farm][sz].olds))
+      farmMap[farm][sz].olds = sortingDate;
+    if (inboundDate && (!farmMap[farm][sz].oldi || inboundDate < farmMap[farm][sz].oldi))
+      farmMap[farm][sz].oldi = inboundDate;
   });
 
   const farms = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
   const colTotals = {};
   allSizes.forEach(sz => { colTotals[sz] = 0; });
-  farms.forEach(farm => allSizes.forEach(sz => { colTotals[sz] += (farmMap[farm][sz] || 0); }));
+  farms.forEach(farm => allSizes.forEach(sz => { colTotals[sz] += (farmMap[farm][sz] ? farmMap[farm][sz].qty : 0); }));
   const rowTotals = {};
-  farms.forEach(farm => { rowTotals[farm] = allSizes.reduce((s, sz) => s + (farmMap[farm][sz] || 0), 0); });
+  farms.forEach(farm => { rowTotals[farm] = allSizes.reduce((s, sz) => s + (farmMap[farm][sz] ? farmMap[farm][sz].qty : 0), 0); });
   const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
@@ -3812,12 +3896,23 @@ function _renderInvMatrix(product, recs) {
 
   // 데이터 rows
   farms.forEach((farm, i) => {
-    const bg = i % 2 === 1 ? '#FAFAFA' : '#fff';
-    h += `<div style="${C}background:${bg};justify-content:flex-start;padding:5px 10px;font-weight:500;white-space:nowrap;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(farm)}">${esc(farm)}</div>`;
+    const rowBg = i % 2 === 1 ? '#FAFAFA' : '#fff';
+    h += `<div style="${C}background:${rowBg};justify-content:flex-start;padding:5px 10px;font-weight:500;white-space:nowrap;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(farm)}">${esc(farm)}</div>`;
     allSizes.forEach(sz => {
-      const val   = farmMap[farm][sz] || 0;
-      const inner = val === 0 ? `<span style="color:#9CA3AF">-</span>` : `<strong style="color:#111827">${fmtN(val)}</strong>`;
-      h += `<div class="inv-mc" data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${bg};cursor:pointer" title="더블클릭: 수량 수정">${inner}</div>`;
+      const entry = farmMap[farm][sz];
+      const val = entry ? entry.qty : 0;
+      const dateStr = entry ? (_invDateMode === 'inbound' ? entry.oldi : entry.olds) : '';
+      const daysAgo = _invDaysAgo(dateStr);
+      let cellBg = rowBg;
+      let dateCss = 'color:#9CA3AF';
+      if (daysAgo >= 0 && val > 0) {
+        if (daysAgo >= _invAgeDays * 2) { cellBg = '#FEE2E2'; dateCss = 'color:#DC2626;font-weight:700'; }
+        else if (daysAgo >= _invAgeDays)  { cellBg = '#FEF3C7'; }
+      }
+      const inner = val === 0
+        ? `<span style="color:#9CA3AF">-</span>`
+        : `<div style="display:flex;flex-direction:column;align-items:center;line-height:1.2"><strong style="color:#111827">${fmtN(val)}</strong>${dateStr ? `<span style="font-size:10px;${dateCss}">${_fmtInvDate(dateStr)}</span>` : ''}</div>`;
+      h += `<div class="inv-mc" data-farm="${esc(farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${cellBg};cursor:pointer;padding:4px 2px" title="더블클릭: 수량 수정">${inner}</div>`;
     });
     h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(rowTotals[farm] || 0)}</div>`;
   });
