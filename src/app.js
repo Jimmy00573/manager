@@ -3936,13 +3936,15 @@ function _renderInvMatrix(product, recs) {
 
   return `
     <div style="margin-bottom:28px">
-      <div style="font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        ${esc(product)}
-        <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
-        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
-      </div>
-      <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;overflow-x:auto;border-top:1px solid #1E3A5F;border-left:1px solid #D1D5DB">
-        ${h}
+      <div style="overflow-x:auto">
+        <div style="min-width:${minW}px;font-size:14px;font-weight:700;color:#1E3A5F;padding:6px 0 5px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          ${esc(product)}
+          <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
+          <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtN(grandTotal)} CT</strong></span>
+        </div>
+        <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;border-top:1px solid #1E3A5F;border-left:1px solid #D1D5DB">
+          ${h}
+        </div>
       </div>
       <div style="font-size:11px;color:#9CA3AF;margin-top:3px;text-align:right">셀 더블클릭 → 수량 수정 (조정값 저장)</div>
     </div>`;
