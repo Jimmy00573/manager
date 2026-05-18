@@ -4728,20 +4728,22 @@ function renderInvSummary() {
   const [y, mo, d] = td().split('-');
   const dateLabel = `${parseInt(y)}년 ${parseInt(mo)}월 ${parseInt(d)}일`;
 
-  // ── 스타일 상수
-  const CARD = 'background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:16px';
-  const TH   = 'background:#DBEAFE;color:#1E40AF;padding:7px 10px;font-size:12px;font-weight:700;border:1px solid #BFDBFE';
-  const THL  = TH + ';text-align:left';
-  const THR  = TH + ';text-align:right';
-  const THC  = TH + ';text-align:center';
-  const TL   = 'padding:7px 10px;border:1px solid #E5E7EB;font-size:13px;text-align:left';
-  const TR   = 'padding:7px 10px;border:1px solid #E5E7EB;font-size:13px;text-align:right;font-weight:600';
-  const TC   = 'padding:7px 10px;border:1px solid #E5E7EB;font-size:13px;text-align:center';
-  const TRhl = TR + ';color:#1E40AF;background:#EFF6FF';
+  // ── 스타일 상수 (화면: 미니멀 / 인쇄: .sum-th .sum-td-hl 클래스로 복원)
+  const CARD  = 'background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:16px';
+  const TH_S  = 'padding:7px 10px;font-size:11px;font-weight:600;border:1px solid #F3F4F6;background:#F9FAFB;color:#6B7280';
+  const THL   = `class="sum-th" style="${TH_S};text-align:left"`;
+  const THR   = `class="sum-th" style="${TH_S};text-align:right"`;
+  const THC   = `class="sum-th" style="${TH_S};text-align:center"`;
+  const TL    = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:left';
+  const TR    = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600';
+  const TC    = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:center';
+  const TRhl  = `class="sum-td-hl" style="padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600;color:#111827"`;
+  const TRneg = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600;color:#DC2626';
+  const DASH  = '<span style="color:#D1D5DB">—</span>';
   const EMPTY = (n, msg) => `<tr><td colspan="${n}" style="padding:18px;text-align:center;color:#bbb;font-size:13px">${msg}</td></tr>`;
-  const secHdr = (n, title, sub) => `<div style="background:#3B82F6;padding:10px 16px">
-    <div style="font-size:14px;font-weight:700;color:#fff">${n}. ${title}</div>
-    ${sub ? `<div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:2px">${sub}</div>` : ''}
+  const secHdr = (n, title, sub) => `<div class="sum-sec-hdr" style="padding:12px 16px;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid #F3F4F6">
+    <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">${n}. ${title}</span>
+    ${sub ? `<span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF">${sub}</span>` : ''}
   </div>`;
 
   // ── 처리 집계
@@ -4883,21 +4885,21 @@ function renderInvSummary() {
       kpiSub(pachiJuiceItems ? `${pachiJuiceItems}개 품목` : '재고 없음', '#6B7280'))}
   </div>`;
 
-  // ── 오늘 입고 (리스트 형식, 클릭 시 미선과 탭)
+  // ── 오늘 입고 (미니멀 카드, 클릭 시 미선과 탭)
   const todayStr = td();
   const todayInbounds = inboundRecords.filter(r => !r.is_void && r.date === todayStr);
-  const todayHtml = todayInbounds.length ? `<div onclick="invTab('uns')" style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer" onmouseover="this.style.background='#DCFCE7'" onmouseout="this.style.background='#F0FDF4'">
-    <div style="font-size:13px;font-weight:700;color:#065F46;margin-bottom:8px">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)}) &nbsp;·&nbsp; ${todayInbounds.length}건 &nbsp;·&nbsp; 합계 ${fmtN(todayInbounds.reduce((s,r)=>s+r.quantity,0))} CT &nbsp;<span style="font-size:11px;color:#059669;font-weight:400">→ 미선과 탭 바로가기</span></div>
+  const todayHtml = todayInbounds.length ? `<div class="sum-today-card" onclick="invTab('uns')" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer" onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background='#F9FAFB'">
+    <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:8px">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)}) &nbsp;·&nbsp; ${todayInbounds.length}건 &nbsp;·&nbsp; 합계 ${fmtN(todayInbounds.reduce((s,r)=>s+r.quantity,0))} CT &nbsp;<span style="font-size:11px;color:#9CA3AF;font-weight:400">→ 미선과 탭 바로가기</span></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr>
-        <th style="text-align:left;padding:4px 8px;color:#065F46;border-bottom:1px solid #A7F3D0">농가</th>
-        <th style="text-align:left;padding:4px 8px;color:#065F46;border-bottom:1px solid #A7F3D0">품목</th>
-        <th style="text-align:right;padding:4px 8px;color:#065F46;border-bottom:1px solid #A7F3D0">수량 (CT)</th>
+        <th style="text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px">농가</th>
+        <th style="text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px">품목</th>
+        <th style="text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px">수량 (CT)</th>
       </tr></thead>
       <tbody>${todayInbounds.map(r => `<tr>
-        <td style="padding:4px 8px;color:#065F46">${esc(r.farm_name)}</td>
-        <td style="padding:4px 8px;color:#065F46">${esc(r.product)}</td>
-        <td style="padding:4px 8px;text-align:right;font-weight:600;color:#065F46">${fmtN(r.quantity)}</td>
+        <td style="padding:4px 8px;color:#374151">${esc(r.farm_name)}</td>
+        <td style="padding:4px 8px;color:#374151">${esc(r.product)}</td>
+        <td style="padding:4px 8px;text-align:right;font-weight:600;color:#111827">${fmtN(r.quantity)}</td>
       </tr>`).join('')}</tbody>
     </table>
   </div>` : '';
@@ -4928,11 +4930,11 @@ function renderInvSummary() {
   const unsHtml = `<div style="${CARD}">${secHdr(1, '미선과 재고', '단위: CT')}
     ${barHtml}
     <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:360px">
-      <thead><tr><th style="${THL}">품목</th><th style="${THR}">원물 (CT)</th><th style="${THR}">소과 (CT)</th><th style="${THR}">합계 (CT)</th></tr></thead>
+      <thead><tr><th ${THL}>품목</th><th ${THR}>원물 (CT)</th><th ${THR}>소과 (CT)</th><th ${THR}>합계 (CT)</th></tr></thead>
       <tbody>${unsEntries.length
         ? unsEntries.map(([p, v]) => {
             const total = v.raw + v.small;
-            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${v.raw ? fmtN(v.raw) : ''}</td><td style="${TR}">${v.small ? fmtN(v.small) : ''}</td><td style="${TRhl}">${fmtN(total)} CT</td></tr>`;
+            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${v.raw ? fmtN(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtN(v.small) : DASH}</td><td ${TRhl}>${fmtN(total)} CT</td></tr>`;
           }).join('')
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
@@ -4942,11 +4944,11 @@ function renderInvSummary() {
     const entries = Object.entries(dataMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
     return `<div style="${CARD}">${secHdr(n, title, sub)}
       <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:480px">
-        <thead><tr><th style="${THL}">품목</th>${groups.map(g => `<th style="${THR}">${g} (kg)</th>`).join('')}<th style="${THR}">합계 (kg)</th></tr></thead>
+        <thead><tr><th ${THL}>품목</th>${groups.map(g => `<th ${THR}>${g} (kg)</th>`).join('')}<th ${THR}>합계 (kg)</th></tr></thead>
         <tbody>${entries.length
           ? entries.map(([p, m]) => {
               const total = Object.values(m).reduce((s, v) => s + v, 0);
-              return `<tr><td style="${TL}">${esc(p)}</td>${groups.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : ''}</td>`).join('')}<td style="${TRhl}">${total ? fmtN(Math.round(total)) : ''}</td></tr>`;
+              return `<tr><td style="${TL}">${esc(p)}</td>${groups.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : DASH}</td>`).join('')}<td ${TRhl}>${total ? fmtN(Math.round(total)) : DASH}</td></tr>`;
             }).join('')
           : EMPTY(groups.length + 2, '선과 재고 없음')}</tbody>
       </table></div></div>`;
@@ -4958,11 +4960,11 @@ function renderInvSummary() {
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const pachiHtml = `<div style="${CARD}">${secHdr(4, '파치 재고')}
     <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:320px">
-      <thead><tr><th style="${THL}">품목</th><th style="${THR}">CT수</th><th style="${THC}">규격 (kg/CT)</th><th style="${THR}">총중량 (kg)</th></tr></thead>
+      <thead><tr><th ${THL}>품목</th><th ${THR}>CT수</th><th ${THC}>규격 (kg/CT)</th><th ${THR}>총중량 (kg)</th></tr></thead>
       <tbody>${pachiEntries.length
         ? pachiEntries.map(([p, ct]) => {
             const kpc = kgPerCt(p);
-            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${fmtN(ct)}</td><td style="${TC}">${kpc}</td><td style="${TRhl}">${fmtN(ct * kpc)} kg</td></tr>`;
+            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${fmtN(ct)}</td><td style="${TC}">${kpc}</td><td ${TRhl}>${fmtN(ct * kpc)} kg</td></tr>`;
           }).join('')
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div></div>`;
@@ -4971,23 +4973,23 @@ function renderInvSummary() {
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const juiceHtml = `<div style="${CARD}">${secHdr(5, '주스/청 재고')}
     <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:320px">
-      <thead><tr><th style="${THL}">품목</th><th style="${THR}">재고</th><th style="${THC}">단위</th><th style="${THL}">비고</th></tr></thead>
+      <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THC}>단위</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
         ? juiceEntries.map(([p, v]) => {
             const isNeg = v.net < 0;
-            const noteStr = v.perBox ? `1BOX/${v.perBox}개` : '';
-            return `<tr><td style="${TL}">${esc(p)}</td><td style="${isNeg ? TR + ';color:#DC2626' : TRhl}">${fmtN(v.net)}</td><td style="${TC}">${esc(v.unit)}</td><td style="${TL};color:#6B7280;font-size:12px">${noteStr}</td></tr>`;
+            const noteStr = v.perBox ? `1BOX/${v.perBox}개` : DASH;
+            return `<tr><td style="${TL}">${esc(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)}</td><td style="${TC}">${esc(v.unit)}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
           }).join('')
         : EMPTY(4, '주스/청 재고 없음')}</tbody>
     </table></div></div>`;
 
   el.innerHTML = `<div>
-    <div style="background:linear-gradient(135deg,#1E40AF,#2563EB);color:#fff;border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
       <div>
-        <div style="font-size:18px;font-weight:800;margin-bottom:4px">📊 현장 재고 전체 현황</div>
-        <div style="font-size:13px;opacity:.85">${dateLabel} 기준</div>
+        <div class="sum-main-hdr-title" style="font-size:22px;font-weight:500;color:#111827;margin-bottom:2px">현장 재고 전체 현황</div>
+        <div class="sum-main-hdr-date" style="font-size:13px;color:#9CA3AF">${dateLabel} 기준</div>
       </div>
-      <button onclick="window.print()" style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.4);padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">🖨️ PDF 출력</button>
+      <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
     ${kpiHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}${pachiHtml}${juiceHtml}
   </div>`;

@@ -380,6 +380,16 @@ textarea {
   .main { max-width: 100%; padding: 0; }
   .inv-excel-wrap { max-width: 100%; }
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* ── 전체현황 탭: 화면 미니멀 → 보고서 톤 복원 */
+  #inv-sum-div .sum-main-hdr { background: linear-gradient(135deg,#1E40AF,#2563EB) !important; color: #fff !important; border-radius: 10px !important; padding: 16px 20px !important; border-bottom: none !important; align-items: center !important; }
+  #inv-sum-div .sum-main-hdr-title { color: #fff !important; font-size: 18px !important; font-weight: 800 !important; }
+  #inv-sum-div .sum-main-hdr-date { color: rgba(255,255,255,.85) !important; }
+  #inv-sum-div .sum-sec-hdr { background: #3B82F6 !important; border-bottom: none !important; padding: 10px 16px !important; flex-direction: column !important; align-items: flex-start !important; gap: 2px !important; }
+  #inv-sum-div .sum-sec-hdr-title { color: #fff !important; font-size: 14px !important; font-weight: 700 !important; }
+  #inv-sum-div .sum-sec-hdr-sub { color: rgba(255,255,255,.75) !important; }
+  #inv-sum-div .sum-th { background: #DBEAFE !important; color: #1E40AF !important; border-color: #BFDBFE !important; font-size: 12px !important; font-weight: 700 !important; }
+  #inv-sum-div .sum-td-hl { color: #1E40AF !important; background: #EFF6FF !important; }
+  #inv-sum-div .sum-today-card { background: #F0FDF4 !important; border-color: #A7F3D0 !important; }
 }
 
 /* 설정 서브탭 */
