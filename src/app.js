@@ -445,10 +445,21 @@ function setRole(r) {
   if (logTab) logTab.style.display = r === 'staff' ? 'none' : '';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
   if (r === 'admin' || r === 'staff') {
-    document.getElementById('rbtn-adm').className = 'rbtn active';
+    const admBtn = document.getElementById('rbtn-adm');
+    if (admBtn) admBtn.style.display = r === 'staff' ? 'none' : '';
     document.getElementById('rbtn-logout').style.display = '';
+    _applyEditRestrictions(r === 'admin');
     T('dash');
   }
+}
+
+function _applyEditRestrictions(canEdit) {
+  const els = [
+    document.getElementById('ib-form-toggle'),
+    document.getElementById('btn-inv-entry'),
+    document.getElementById('inv-pachi-form'),
+  ];
+  els.forEach(el => { if (el) el.style.display = canEdit ? '' : 'none'; });
 }
 
 function T(id) {
@@ -1926,6 +1937,7 @@ function calGetAllItems() {
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
   const todayStr = td();
+  const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   document.getElementById('cal-month-title').textContent = `${calYear}년 ${months[calMonth]}`;
 
@@ -1947,18 +1959,18 @@ function renderCal() {
   const stBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
   function harvestRow(h, showDate) {
     const st = h.status || '수확전';
+    const actBtns = canEdit ? `
+      ${st !== '수확중'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
+      ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
+      <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
+      <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>` : '';
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${stBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
       ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
       <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
       ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
       <span class="badge ${stBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
-      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">
-        ${st !== '수확중'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
-        ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
-        <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
-        <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>
-      </div>
+      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${actBtns}</div>
     </div>`;
   }
 
@@ -1989,16 +2001,16 @@ function renderCal() {
         const item = e.item || '';
         const farmEsc = e.farm.replace(/'/g, "\\'");
         const itemEsc = item.replace(/'/g, "\\'");
+        const autoActBtns = canEdit ? `
+            <button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확중')">▶ 시작</button>
+            <button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확완료')">✅ 완료</button>
+            <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
+            <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>` : '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
           <span class="badge b-warn" style="font-size:10px">수확전</span>
-          <div style="margin-left:auto;display:flex;gap:4px">
-            <button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확중')">▶ 시작</button>
-            <button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확완료')">✅ 완료</button>
-            <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
-            <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>
-          </div>
+          <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>
         </div>`;
       }).join('');
       todayEl.innerHTML =
@@ -2055,10 +2067,13 @@ function renderCal() {
   // 수확 일정 등록 폼
   const formEl = document.getElementById('cal-add-form');
   if (formEl) {
-    const sf = document.getElementById('cal-add-farm');
-    if (sf) {
-      sf.innerHTML = '<option value="">농가 선택</option>';
-      farms.forEach(f => sf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+    formEl.style.display = canEdit ? '' : 'none';
+    if (canEdit) {
+      const sf = document.getElementById('cal-add-farm');
+      if (sf) {
+        sf.innerHTML = '<option value="">농가 선택</option>';
+        farms.forEach(f => sf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+      }
     }
   }
   renderCalUpcoming();
@@ -2069,20 +2084,22 @@ function calSelectDay(dStr) {
   const panel = document.getElementById('cal-detail-panel');
   const evs = calSortItems(calGetEvents(dStr));
   if (!calSelectedDate || evs.length === 0) { panel.style.display = 'none'; renderCal(); return; }
+  const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const d = new Date(dStr + 'T00:00:00');
   document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
   const ctIcon = {노랑:'🟡',초록:'🟢',헌콘:'⬜'};
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
     const bg = e.status === '배출완료' ? '#F1F8E9' : e.status === '배차없음' ? '#FFEBEE' : '#FFF3E0';
     const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
+    const detailBtns = canEdit && e.status === '배차없음'
+      ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button><button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>`
+      : `<span class="badge ${bdg}">${e.status}</span>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:${bg};margin-bottom:5px;gap:8px;flex-wrap:wrap">
       <div>
         <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
         <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?ctIcon[e.ctype]+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
       </div>
-      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-        ${e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button><button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>` : `<span class="badge ${bdg}">${e.status}</span>`}
-      </div>
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${detailBtns}</div>
     </div>`;
   }).join('');
   panel.style.display = 'block';
@@ -3082,7 +3099,11 @@ function invTab(t) {
   if (t === 'log') loadAuditLogs();
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
-  if (t === 'wj') { renderPachiSection(); renderJuiceSection(); }
+  if (t === 'wj') {
+    const pachiForm = document.getElementById('inv-pachi-form');
+    if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
+    renderPachiSection(); renderJuiceSection();
+  }
 }
 
 function ibTab(t) {
@@ -3842,13 +3863,9 @@ function renderInventoryStatus() {
   if (!statusEl || !matrixEl) return;
   _renderInvDateCtrl();
 
-  // 인라인 편집 dblclick — 한 번만 등록
+  // 더블클릭 비활성화 — [수정] 버튼 사용
   if (!matrixEl._dblclickBound) {
-    matrixEl.addEventListener('dblclick', e => {
-      const cell = e.target.closest('.inv-mc');
-      if (!cell) return;
-      invCellEdit(cell, cell.dataset.farm, cell.dataset.product, cell.dataset.size, Number(cell.dataset.val));
-    });
+    matrixEl.addEventListener('dblclick', () => {});
     matrixEl._dblclickBound = true;
   }
 
@@ -3951,10 +3968,10 @@ function _renderInvMatrix(product, recs) {
 
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
   const N = allSizes.length;
-  const FARM_W = 120, SZ_W = 46, TOT_W = 70, DEL_W = 48;
+  const FARM_W = 120, SZ_W = 46, TOT_W = 70, ACT_W = 100;
   const isAdm  = sessionStorage.getItem('citrus_role') === 'admin';
-  const minW   = FARM_W + N * SZ_W + TOT_W + DEL_W;
-  const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px ${DEL_W}px`;
+  const minW   = FARM_W + N * SZ_W + TOT_W + ACT_W;
+  const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px ${ACT_W}px`;
 
   const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
   const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
@@ -3968,7 +3985,7 @@ function _renderInvMatrix(product, recs) {
   groups.forEach((g, gi) => {
     h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${g.sizes.length}">${esc(g.group)}</div>`;
   });
-  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${DEL_W}px;z-index:4">합계</div>`;
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${ACT_W}px;z-index:4">합계</div>`;
   h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸
@@ -3977,7 +3994,7 @@ function _renderInvMatrix(product, recs) {
     const gi = szGI[sz];
     h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
   });
-  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${DEL_W}px;z-index:4"></div>`;
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${ACT_W}px;z-index:4"></div>`;
   h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 데이터 rows (batch별)
@@ -4004,10 +4021,10 @@ function _renderInvMatrix(product, recs) {
       h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};cursor:pointer;padding:5px 2px" title="더블클릭: 수량 수정">${inner}</div>`;
     });
     const regId = Object.keys(_matrixBatchRegistry).length;
-    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate };
-    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:1px solid #E5E7EB;position:sticky;right:${DEL_W}px;z-index:2">${fmtN(batchTotal)}</div>`;
-    const delBtnHtml = isAdm ? `<button class="btn del" style="font-size:11px;padding:2px 5px;white-space:nowrap" onclick="deleteMatrixBatch(${regId})">삭제</button>` : '';
-    h += `<div style="${C}background:${rowBg};justify-content:center;padding:2px 4px;border-right:none;position:sticky;right:0;z-index:2">${delBtnHtml}</div>`;
+    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes } };
+    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:1px solid #E5E7EB;position:sticky;right:${ACT_W}px;z-index:2">${fmtN(batchTotal)}</div>`;
+    const actBtns = isAdm ? `<button class="btn edt" style="font-size:11px;padding:2px 5px;white-space:nowrap" onclick="openInvEditModal(${regId})">수정</button><button class="btn del" style="font-size:11px;padding:2px 5px;white-space:nowrap;margin-left:3px" onclick="deleteMatrixBatch(${regId})">삭제</button>` : '';
+    h += `<div style="${C}background:${rowBg};justify-content:center;padding:2px 4px;border-right:none;position:sticky;right:0;z-index:2">${actBtns}</div>`;
   });
 
   // 합계 row
@@ -4016,7 +4033,7 @@ function _renderInvMatrix(product, recs) {
     const v = colTotals[sz] || 0;
     h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</div>`;
   });
-  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;right:${DEL_W}px;z-index:2">${fmtN(grandTotal)}</div>`;
+  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;right:${ACT_W}px;z-index:2">${fmtN(grandTotal)}</div>`;
   h += `<div style="${F}border-right:none;position:sticky;right:0;z-index:2"></div>`;
 
   return `
@@ -4031,7 +4048,7 @@ function _renderInvMatrix(product, recs) {
           ${h}
         </div>
       </div>
-      <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">셀 더블클릭 → 수량 수정 (조정값 저장)</div>
+      <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '[수정] 버튼 → 수량 수정 (조정값 저장)' : ''}</div>
     </div>`;
 }
 
@@ -4067,6 +4084,126 @@ async function deleteMatrixBatch(regId) {
     renderInventoryStatus();
     showToast(`${toDelete.length}건 삭제 완료`);
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+// ── 매트릭스 [수정] 버튼 모달 ────────────────────────────────────
+
+function openInvEditModal(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info) return;
+
+  const gid = String(info.groupId);
+  let batchRecs;
+  if (gid.startsWith('manual_')) {
+    const date = gid.replace('manual_', '');
+    batchRecs = inventoryRecords.filter(r =>
+      r.farm_name === info.farm && r.date === date && r.product === info.product &&
+      r.source_type !== 'pachi' && r.source_type !== 'pachi_manual' && !r.is_void
+    );
+  } else {
+    batchRecs = inventoryRecords.filter(r =>
+      String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void
+    );
+  }
+
+  const location = batchRecs.length ? (batchRecs[0].location || '-') : '-';
+  const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
+  const ptype = PRODUCT_TYPE_MAP[info.product] || '만감류';
+  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const allSizes = groups.flatMap(g => g.sizes);
+
+  const curQty = {};
+  allSizes.forEach(sz => curQty[sz] = 0);
+  batchRecs.forEach(r => { if (r.size_code) curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+
+  const sizeRows = groups.map(g => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px;background:#F3F4F6;padding:3px 8px;border-radius:4px">${esc(g.group)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px">
+        ${g.sizes.map((sz, si) => {
+          const idx = allSizes.indexOf(sz);
+          return `<div>
+            <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}</label>
+            <input type="number" min="0" id="inv-edit-${regId}-${idx}" value="${curQty[sz] || 0}" style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+
+  document.getElementById('inv-edit-title').textContent = `재고 수정 — ${info.farm} ${info.product} ${_fmtInvDate(dateLabel) || ''}`;
+  document.getElementById('inv-edit-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;background:#F9FAFB;border-radius:8px;padding:12px;font-size:13px">
+        <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">날짜</div><div style="font-weight:600;color:#374151">${esc(_fmtInvDate(dateLabel) || '-')}</div></div>
+        <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">농가</div><div style="font-weight:600;color:#374151">${esc(info.farm)}</div></div>
+        <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">품목</div><div style="font-weight:600;color:#374151">${esc(info.product)}</div></div>
+        <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">위치</div><div style="font-weight:600;color:#374151">${esc(location)}</div></div>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 수량 수정</div>
+      ${sizeRows}
+      <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid #E5E7EB">
+        <button class="btn pri" onclick="saveInvEdit()" style="flex:1;padding:10px;font-size:14px">💾 저장</button>
+        <button class="btn" onclick="document.getElementById('modal-inv-edit').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+
+  window._invEditCtx = { regId, batchRecs, allSizes, info, location };
+  document.getElementById('modal-inv-edit').style.display = 'flex';
+}
+
+async function saveInvEdit() {
+  const ctx = window._invEditCtx;
+  if (!ctx) return;
+  const { regId, batchRecs, allSizes, info, location } = ctx;
+
+  const oldQty = {};
+  allSizes.forEach(sz => oldQty[sz] = 0);
+  batchRecs.forEach(r => { if (r.size_code) oldQty[r.size_code] = (oldQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+
+  const newQty = {};
+  allSizes.forEach((sz, i) => {
+    const el = document.getElementById(`inv-edit-${regId}-${i}`);
+    newQty[sz] = el ? Math.max(0, parseInt(el.value) || 0) : oldQty[sz];
+  });
+
+  if (allSizes.every(sz => newQty[sz] === oldQty[sz])) {
+    document.getElementById('modal-inv-edit').style.display = 'none';
+    return;
+  }
+
+  try {
+    const ref = batchRecs[0];
+    for (const rec of batchRecs) {
+      await sbUpdate('inventory_records', rec.id, { is_void: true });
+      rec.is_void = true;
+    }
+    for (const sz of allSizes) {
+      if (newQty[sz] > 0) {
+        const data = {
+          date: ref.date, farm_name: ref.farm_name, product: ref.product,
+          size_code: sz, quantity: newQty[sz], location,
+          source_type: ref.source_type || 'adjustment',
+          sorting_result_id: ref.sorting_result_id || null,
+          note: `재고 수정 (${sz}: ${oldQty[sz]} → ${newQty[sz]})`,
+          is_void: false, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        };
+        const r = await dbInsertInventoryRecord(data);
+        inventoryRecords.unshift(r);
+      }
+    }
+    await dbInsertAuditLog({
+      target_table: 'inventory_records', target_id: ref?.id,
+      before_val: oldQty, after_val: newQty,
+      reason: '재고 현황 [수정] 버튼',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      action: '수정'
+    });
+    document.getElementById('modal-inv-edit').style.display = 'none';
+    renderInvSummary();
+    renderInventoryStatus();
+    showToast('재고 수정 완료');
+  } catch(e) { alert('저장 오류: ' + e.message); }
 }
 
 // ── 매트릭스 셀 인라인 편집 ──────────────────────────────────────
@@ -7084,6 +7221,7 @@ async function forceDeleteInbound(id, reason) {
 }
 
 function toggleIbForm() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const body  = document.getElementById('ib-form-body');
   const arrow = document.getElementById('ib-form-arrow');
   const btn   = document.getElementById('ib-form-toggle');

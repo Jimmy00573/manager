@@ -836,7 +836,7 @@
       <input id="inv-filter-farm" type="text" placeholder="농가 검색..." oninput="invSetFilter('farm',this.value)" style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;width:140px">
       <button onclick="renderInventoryStatus()" style="padding:6px 12px;background:#fff;color:#374151;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;cursor:pointer">🔄 새로고침</button>
       <span id="inv-filter-status" style="font-size:12px;color:#9CA3AF;margin-right:auto"></span>
-      <button onclick="openInvEntryModal()" style="padding:6px 14px;background:#1565C0;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">＋ 재고 입력</button>
+      <button id="btn-inv-entry" onclick="openInvEntryModal()" style="padding:6px 14px;background:#1565C0;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">＋ 재고 입력</button>
     </div>
 
     <!-- 날짜/오래된재고 제어 바 -->
@@ -853,7 +853,7 @@
     <div id="inv-pachi-section" style="margin-bottom:20px"></div>
 
     <!-- 파치 수동 등록 -->
-    <div class="form-card" style="margin-bottom:20px">
+    <div id="inv-pachi-form" class="form-card" style="margin-bottom:20px">
       <div class="form-title">🧹 파치 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="wa-date" type="date"></div>
@@ -930,6 +930,17 @@
 
 <datalist id="dl-v"><option value="노지감귤"><option value="하우스감귤"><option value="한라봉"><option value="천혜향"><option value="레드향"><option value="황금향"><option value="청견"><option value="세토카"></datalist>
 <datalist id="dl-cx"><option value="콘테이너"><option value="파렛트"><option value="사각"><option value="노랑"><option value="초록"><option value="헌콘"></datalist>
+
+<!-- 모달: 재고 수정 -->
+<div id="modal-inv-edit" class="modal-bg" style="display:none" onclick="if(event.target===this)document.getElementById('modal-inv-edit').style.display='none'">
+  <div class="modal" style="max-width:580px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title" id="inv-edit-title">재고 수정</div>
+      <button class="modal-close" onclick="document.getElementById('modal-inv-edit').style.display='none'">✕</button>
+    </div>
+    <div id="inv-edit-body"></div>
+  </div>
+</div>
 
 <!-- 모달: 개별 이력 -->
 <div id="modal-record-history" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('record-history')">
@@ -1352,6 +1363,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=10"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=19"></script>
+<script src="src/app.js?v=20"></script>
 </body>
 </html>
