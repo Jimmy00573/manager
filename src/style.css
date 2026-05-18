@@ -371,6 +371,7 @@ textarea {
 #inv-sum-div .sum-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
 #inv-sum-div .sum-pj-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 #inv-sum-div .sum-pj-grid > * { min-width: 0; }
+#inv-sum-div .sum-pj-tbl { min-width: 0; }
 #inv-sum-div .sum-pj-tbl th,
 #inv-sum-div .sum-pj-tbl td { padding: 6px 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 768px) {
