@@ -4277,12 +4277,8 @@ function openJuiceEditModal(id) {
             <option value="in" ${rec.type !== 'out' ? 'selected' : ''}>입고</option>
             <option value="out" ${rec.type === 'out' ? 'selected' : ''}>출고</option>
           </select></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">단위 *</label>
-          <select id="je-unit" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px">
-            <option value="병" ${rec.unit === '병' ? 'selected' : ''}>병</option>
-            <option value="박스" ${rec.unit === '박스' ? 'selected' : ''}>박스</option>
-            <option value="kg" ${rec.unit === 'kg' ? 'selected' : ''}>kg</option>
-          </select></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">단위</label>
+          <input id="je-unit" type="text" readonly value="${esc(rec.unit || '병')}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;background:#F3F4F6;cursor:default"></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">박스당 수량</label>
           <input id="je-perbox" type="number" min="0" value="${rec.per_box || ''}" placeholder="예) 35" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">박스 수량</label>
@@ -8341,7 +8337,7 @@ function renderJuiceSection() {
           </select>
         </div>
         <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
-        <div class="fg"><label>단위 *</label><select id="ju-unit"><option value="병">병</option><option value="박스">박스</option><option value="kg">kg</option></select></div>
+        <div class="fg"><label>단위</label><input id="ju-unit" type="text" value="병" readonly style="background:#F3F4F6;cursor:default"></div>
         <div class="fg" style="grid-column:1/-1"><label>품명 *</label>
           <select id="ju-product" onchange="juiceProductChanged()">
             <option value="">-- 품명 선택 --</option>
