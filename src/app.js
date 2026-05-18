@@ -4729,22 +4729,29 @@ function renderInvSummary() {
   const dateLabel = `${parseInt(y)}년 ${parseInt(mo)}월 ${parseInt(d)}일`;
 
   // ── 스타일 상수 (화면: 미니멀 / 인쇄: .sum-th .sum-td-hl 클래스로 복원)
-  const CARD  = 'background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:16px';
-  const TH_S  = 'padding:7px 10px;font-size:11px;font-weight:600;border:1px solid #F3F4F6;background:#F9FAFB;color:#6B7280';
-  const THL   = `class="sum-th" style="${TH_S};text-align:left"`;
-  const THR   = `class="sum-th" style="${TH_S};text-align:right"`;
-  const THC   = `class="sum-th" style="${TH_S};text-align:center"`;
-  const TL    = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:left';
-  const TR    = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600';
-  const TC    = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:center';
-  const TRhl  = `class="sum-td-hl" style="padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600;color:#111827"`;
-  const TRneg = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600;color:#DC2626';
-  const DASH  = '<span style="color:#D1D5DB">—</span>';
-  const EMPTY = (n, msg) => `<tr><td colspan="${n}" style="padding:18px;text-align:center;color:#bbb;font-size:13px">${msg}</td></tr>`;
-  const secHdr = (n, title, sub) => `<div class="sum-sec-hdr" style="padding:12px 16px;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid #F3F4F6">
-    <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">${n}. ${title}</span>
-    ${sub ? `<span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF">${sub}</span>` : ''}
-  </div>`;
+  const CARD   = 'background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:16px';
+  const CARD_I = 'background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden';
+  const TH_S   = 'padding:7px 10px;font-size:11px;font-weight:600;border:1px solid #F3F4F6;background:#F9FAFB;color:#6B7280';
+  const THL    = `class="sum-th" style="${TH_S};text-align:left"`;
+  const THR    = `class="sum-th" style="${TH_S};text-align:right"`;
+  const THC    = `class="sum-th" style="${TH_S};text-align:center"`;
+  const TL     = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:left';
+  const TR     = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:600';
+  const TC     = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:center';
+  const TRhl   = `class="sum-td-hl" style="padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:500;color:#111827"`;
+  const TRneg  = 'padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:500;color:#DC2626';
+  const DASH   = '<span style="color:#D1D5DB">—</span>';
+  const EMPTY  = (n, msg) => `<tr><td colspan="${n}" style="padding:18px;text-align:center;color:#bbb;font-size:13px">${msg}</td></tr>`;
+  // 부제목 20자+ → 패턴B(제목 아래), 그 미만 → 패턴A(좌우 양끝)
+  const secHdr = (n, title, sub) => sub && sub.length > 20
+    ? `<div class="sum-sec-hdr" style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
+        <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827;display:block">${n}. ${title}</span>
+        <span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF;display:block;margin-top:3px">${sub}</span>
+       </div>`
+    : `<div class="sum-sec-hdr" style="padding:12px 16px;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid #F3F4F6">
+        <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">${n}. ${title}</span>
+        ${sub ? `<span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF">${sub}</span>` : ''}
+       </div>`;
 
   // ── 처리 집계
   const processedByInbound = {};
@@ -4864,25 +4871,24 @@ function renderInvSummary() {
   const barColor = p => BAR_COLORS[p] || '#9CA3AF';
 
   // ── KPI 카드 HTML
-  const kpiSub = (txt, color) => `<div style="font-size:12px;color:${color};margin-top:4px;min-height:16px">${txt}</div>`;
-  const kpiCard = (label, val, unit, sub) => `
-    <div class="kpi" style="padding:14px 16px">
-      <div class="kpi-label" style="font-size:12px;color:#6B7280;margin-bottom:6px">${label}</div>
-      <div class="kpi-val" style="font-size:22px;font-weight:800;color:#111827;line-height:1.2">${val}<span style="font-size:14px;font-weight:500;color:#6B7280;margin-left:4px">${unit}</span></div>
-      ${sub}
+  const kpiCard = (label, val, unit, sub, small) => `
+    <div style="background:#F5F5F4;border-radius:8px;padding:14px 16px">
+      <div style="font-size:12px;color:#6B7280;margin-bottom:6px;font-weight:500">${label}</div>
+      <div style="font-size:${small ? '20px' : '22px'};font-weight:700;color:#111827;line-height:1.2">${val}<span style="font-size:13px;font-weight:400;color:#9CA3AF;margin-left:4px">${unit}</span></div>
+      ${sub || ''}
     </div>`;
-  const kpiHtml = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+  const kpiSub  = txt => `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${txt}</div>`;
+  const kpiChip = txt => `<div style="display:inline-block;background:#FCEBEB;color:#A32D2D;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px">${txt}</div>`;
+  const kpiHtml = `<div class="sum-kpi-grid">
     ${kpiCard('미선과 재고', fmtN(unsTotalCt), 'CT',
-      priorityCount > 0
-        ? kpiSub(`⚠ ${priorityCount}건 우선처리`, '#DC2626')
-        : kpiSub('정상', '#059669'))}
+      priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '')}
     ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
-      kpiSub(manGamItems ? `${manGamItems}개 품목` : '재고 없음', '#6B7280'))}
+      manGamItems ? kpiSub(`${manGamItems}개 품목`) : '')}
     ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
-      kpiSub(citrusItems ? `${citrusItems}개 품목` : '재고 없음', '#6B7280'))}
+      citrusItems ? kpiSub(`${citrusItems}개 품목`) : '')}
     ${kpiCard('파치 + 주스/청',
       pachiTotalKg || juiceTotalNet ? `${fmtN(Math.round(pachiTotalKg))} kg · ${fmtN(Math.round(juiceTotalNet))} 병` : '—', '',
-      kpiSub(pachiJuiceItems ? `${pachiJuiceItems}개 품목` : '재고 없음', '#6B7280'))}
+      pachiJuiceItems ? kpiSub(`${pachiJuiceItems}개 품목`) : '', true)}
   </div>`;
 
   // ── 오늘 입고 (미니멀 카드, 클릭 시 미선과 탭)
@@ -4916,13 +4922,18 @@ function renderInvSummary() {
         ${label ? `<span style="font-size:10px;font-weight:600;color:#fff;white-space:nowrap;padding:0 4px;text-shadow:0 1px 2px rgba(0,0,0,.35)">${label}</span>` : ''}
       </div>`;
     }).join('');
+    const legend = barEntriesSorted.map(([p, v]) => {
+      const pct = (v.raw + v.small) / unsTotalCt * 100;
+      return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#9CA3AF;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:${barColor(p)};flex-shrink:0;display:inline-block"></span>${esc(p)} ${pct.toFixed(1)}%</span>`;
+    }).join('');
     const chips = barEntriesSorted
       .filter(([p]) => priorityByProduct[p])
-      .map(([p]) => `<span style="background:#FEE2E2;color:#B91C1C;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">⚠ ${esc(p)}: ${priorityByProduct[p]}건</span>`)
+      .map(([p]) => `<span style="background:#FCEBEB;color:#A32D2D;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600">⚠ ${esc(p)} ${priorityByProduct[p]}건 경과</span>`)
       .join('');
     return `<div style="padding:10px 16px 14px">
       <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;width:100%">${segments}</div>
-      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${chips}</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px">${legend}</div>
+      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">${chips}</div>` : ''}
     </div>`;
   })() : '';
 
@@ -4958,9 +4969,9 @@ function renderInvSummary() {
 
   // 섹션 4: 파치
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  const pachiHtml = `<div style="${CARD}">${secHdr(4, '파치 재고')}
-    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:320px">
-      <thead><tr><th ${THL}>품목</th><th ${THR}>CT수</th><th ${THC}>규격 (kg/CT)</th><th ${THR}>총중량 (kg)</th></tr></thead>
+  const pachiHtml = `<div style="${CARD_I}">${secHdr(4, '파치 재고')}
+    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+      <thead><tr><th ${THL}>품목</th><th ${THR}>CT</th><th ${THC}>kg/CT</th><th ${THR}>총중량</th></tr></thead>
       <tbody>${pachiEntries.length
         ? pachiEntries.map(([p, ct]) => {
             const kpc = kgPerCt(p);
@@ -4969,18 +4980,18 @@ function renderInvSummary() {
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div></div>`;
 
-  // 섹션 5: 주스/청
+  // 섹션 5: 주스/청 (단위 컬럼 제거 → 재고 값에 병 포함)
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  const juiceHtml = `<div style="${CARD}">${secHdr(5, '주스/청 재고')}
-    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:320px">
-      <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THC}>단위</th><th ${THL}>비고</th></tr></thead>
+  const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
+    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+      <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
         ? juiceEntries.map(([p, v]) => {
             const isNeg = v.net < 0;
             const noteStr = v.perBox ? `1BOX/${v.perBox}개` : DASH;
-            return `<tr><td style="${TL}">${esc(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)}</td><td style="${TC}">${esc(v.unit)}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
+            return `<tr><td style="${TL}">${esc(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)} ${esc(v.unit || '병')}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
           }).join('')
-        : EMPTY(4, '주스/청 재고 없음')}</tbody>
+        : EMPTY(3, '주스/청 재고 없음')}</tbody>
     </table></div></div>`;
 
   el.innerHTML = `<div>
@@ -4991,7 +5002,8 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}${pachiHtml}${juiceHtml}
+    ${kpiHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
+    <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
 }
 
