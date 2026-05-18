@@ -3936,11 +3936,13 @@ function _renderInvMatrix(product, recs) {
   const groups   = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
   const allSizes = groups.flatMap(g => g.sizes);
 
-  // 그룹별 컬러 (헤더 진함, 사이즈행 연함)
+  // 그룹별 컬러 (헤더 진함, 사이즈행 연함) — 감귤류 5그룹까지 지원
   const GC = [
     { h: '#FDE68A', c: '#FFFBEB' },
     { h: '#93C5FD', c: '#EFF6FF' },
     { h: '#6EE7B7', c: '#F0FDF4' },
+    { h: '#FBCFE8', c: '#FDF2F8' },
+    { h: '#DDD6FE', c: '#F5F3FF' },
   ];
   const szGI = {};
   groups.forEach((g, gi) => g.sizes.forEach(sz => { szGI[sz] = gi; }));
@@ -4874,7 +4876,7 @@ function renderInvSummary() {
       </table></div></div>`;
   };
   const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap, ['대과', '중과', '소과']);
-  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000~2S2) / 로얄과(S1~M2) / 대과(L~왕2)', citrusMap, ['극소과', '로얄과', '대과']);
+  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과']);
 
   // 섹션 4: 파치
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
@@ -5370,9 +5372,11 @@ const SIZES_감귤류 = ['000', '00', '3S', '2S1', '2S2', 'S1', 'S2', 'M1', 'M2'
 
 // 사이즈 그룹 (좌→우: 소과→대과)
 const SIZE_GROUPS_감귤류 = [
-  { group: '극소과', sizes: ['000', '00', '3S', '2S1', '2S2'] },
+  { group: '극소과', sizes: ['000', '00'] },
+  { group: '소과',   sizes: ['3S', '2S1', '2S2'] },
   { group: '로얄과', sizes: ['S1', 'S2', 'M1', 'M2'] },
-  { group: '대과',   sizes: ['L', '2L', '왕1', '왕2'] },
+  { group: '중과',   sizes: ['L', '2L'] },
+  { group: '대과',   sizes: ['왕1', '왕2'] },
 ];
 const SIZE_GROUPS_만감류 = [
   { group: '대과', sizes: Array.from({ length: 10 }, (_, i) => `${i + 5}수`)  },
@@ -8756,7 +8760,7 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
 
 // ── 사이즈 그룹 컬럼 렌더러 (3열 그룹별 세로 정렬) ──────────────
 function _sizeGroupCols(groups, sizeMap, activeColor) {
-  return `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0 16px;margin-top:6px">
+  return `<div style="display:grid;grid-template-columns:repeat(${groups.length},1fr);gap:0 16px;margin-top:6px">
     ${groups.map(g => `<div>
       <div style="font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #E5E7EB;padding-bottom:3px;margin-bottom:5px;text-align:center">${g.group}</div>
       ${g.sizes.map(sz => {
