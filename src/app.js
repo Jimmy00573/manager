@@ -89,9 +89,6 @@ function hideLoading() {
 async function initApp() {
   showLoading('데이터 불러오는 중...');
 
-  const savedAdmPin = localStorage.getItem('citrus_adm_pin');
-  if (savedAdmPin) window.ADM_PIN = savedAdmPin;
-
   try {
     const [data, qcData, locData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations()]);
     farms = data.farms;
@@ -127,6 +124,12 @@ async function initApp() {
     document.getElementById('hdr-logged').style.display = 'none';
     document.getElementById('rbtn-logout').style.display = '';
     setRole('admin');
+  } else if (savedRole === 'staff') {
+    document.getElementById('pin-screen').style.display = 'none';
+    document.getElementById('hdr-btns').style.display = 'flex';
+    document.getElementById('hdr-logged').style.display = 'none';
+    document.getElementById('rbtn-logout').style.display = '';
+    setRole('staff');
   } else if (savedRole === 'driver' && savedDrvName) {
     const drv = drivers.find(d => d.name === savedDrvName);
     if (drv && drv.pin_active !== false) {
@@ -152,6 +155,7 @@ async function initApp() {
     drivers.filter(d => d.pin_active !== false).forEach(d => {
       sel.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${d.type})</option>`;
     });
+    setPinMode('staff');
     document.getElementById('pin-screen').style.display = 'flex';
   }
   hideLoading();
@@ -172,8 +176,10 @@ function showPin() {
 
 function setPinMode(m) {
   _pinMode = m; _pinBuf = ''; updDots();
+  document.getElementById('ptab-staff').className = 'pin-mode-tab' + (m === 'staff' ? ' active' : '');
   document.getElementById('ptab-drv').className = 'pin-mode-tab' + (m === 'drv' ? ' active' : '');
   document.getElementById('ptab-adm').className = 'pin-mode-tab' + (m === 'adm' ? ' active' : '');
+  document.getElementById('pin-staff-sec').style.display = m === 'staff' ? '' : 'none';
   document.getElementById('pin-drv-sec').style.display = m === 'drv' ? '' : 'none';
   document.getElementById('pin-adm-sec').style.display = m === 'adm' ? '' : 'none';
 }
@@ -181,7 +187,7 @@ function setPinMode(m) {
 function pinReset() { _pinBuf = ''; updDots(); document.getElementById('pin-error').style.display = 'none'; }
 
 function pinKey(k) {
-  if (_pinMode === 'adm') return;
+  if (_pinMode === 'adm' || _pinMode === 'staff') return;
   if (!document.getElementById('pin-sel').value) { alert('기사를 먼저 선택해 주세요'); return; }
   if (_pinBuf.length >= 4) return;
   _pinBuf += k; updDots();
@@ -235,20 +241,52 @@ function pinErr(msg) {
   setTimeout(() => el.style.display = 'none', 2500);
 }
 
-function chkAdmPin() {
-  const v = document.getElementById('adm-pin-in').value;
-  const currentPin = localStorage.getItem('citrus_adm_pin') || ADM_PIN;
-  if (v === currentPin) {
-    sessionStorage.setItem('citrus_role', 'admin');
-    document.getElementById('pin-screen').style.display = 'none';
-    setRole('admin');
-    document.getElementById('adm-pin-in').value = '';
-    document.getElementById('adm-err').style.display = 'none';
-  } else {
-    document.getElementById('adm-err').style.display = '';
-    document.getElementById('adm-pin-in').value = '';
-    setTimeout(() => document.getElementById('adm-err').style.display = 'none', 2000);
-  }
+async function chkAdmLogin() {
+  const username = (document.getElementById('adm-user-in').value || '').trim();
+  const password = document.getElementById('adm-pw-in').value;
+  if (!username || !password) return;
+  try {
+    const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
+    if (rows && rows.length > 0 && rows[0].password === password) {
+      sessionStorage.setItem('citrus_role', 'admin');
+      sessionStorage.setItem('citrus_adm_user', rows[0].username);
+      document.getElementById('pin-screen').style.display = 'none';
+      document.getElementById('hdr-btns').style.display = 'flex';
+      document.getElementById('hdr-logged').style.display = 'none';
+      document.getElementById('rbtn-logout').style.display = '';
+      document.getElementById('adm-user-in').value = '';
+      document.getElementById('adm-pw-in').value = '';
+      document.getElementById('adm-err').style.display = 'none';
+      setRole('admin');
+    } else {
+      document.getElementById('adm-err').style.display = '';
+      document.getElementById('adm-pw-in').value = '';
+      setTimeout(() => document.getElementById('adm-err').style.display = 'none', 2000);
+    }
+  } catch(e) { alert('로그인 오류: ' + e.message); }
+}
+
+async function chkStaffLogin() {
+  const pw = document.getElementById('staff-pw-in').value;
+  if (!pw) return;
+  try {
+    const rows = await sbGet('settings', 'key=eq.staff_password');
+    const correctPw = rows && rows.length > 0 ? String(rows[0].value) : '1234';
+    if (pw === correctPw) {
+      sessionStorage.setItem('citrus_role', 'staff');
+      document.getElementById('pin-screen').style.display = 'none';
+      document.getElementById('hdr-btns').style.display = 'flex';
+      document.getElementById('hdr-logged').style.display = 'none';
+      document.getElementById('rbtn-logout').style.display = '';
+      document.getElementById('staff-pw-in').value = '';
+      document.getElementById('staff-err').style.display = 'none';
+      setRole('staff');
+    } else {
+      document.getElementById('staff-err').style.display = '';
+      document.getElementById('staff-pw-in').value = '';
+      setTimeout(() => document.getElementById('staff-err').style.display = 'none', 2000);
+    }
+  } catch(e) { alert('로그인 오류: ' + e.message); }
 }
 
 function doLogout() {
@@ -261,7 +299,7 @@ function doLogout() {
   document.getElementById('dnav').style.display = 'none';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
   document.getElementById('pin-screen').style.display = 'flex';
-  setPinMode('drv');
+  setPinMode('staff');
 }
 
 function gotoAdmin() {
@@ -273,10 +311,11 @@ function gotoAdmin() {
 function adminLogout() {
   sessionStorage.removeItem('citrus_role');
   sessionStorage.removeItem('citrus_drv');
+  sessionStorage.removeItem('citrus_adm_user');
   document.getElementById('pin-screen').style.display = 'flex';
   document.getElementById('rbtn-logout').style.display = 'none';
   document.getElementById('rbtn-adm').className = 'rbtn active';
-  setPinMode('adm');
+  setPinMode('staff');
 }
 
 // ── PIN 관리
@@ -400,10 +439,12 @@ function chkStW() {
 
 // ── 네비
 function setRole(r) {
-  document.getElementById('anav').style.display = r === 'admin' ? 'flex' : 'none';
+  document.getElementById('anav').style.display = (r === 'admin' || r === 'staff') ? 'flex' : 'none';
   document.getElementById('dnav').style.display = r === 'driver' ? 'flex' : 'none';
+  const logTab = document.getElementById('it-log');
+  if (logTab) logTab.style.display = r === 'staff' ? 'none' : '';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
-  if (r === 'admin') {
+  if (r === 'admin' || r === 'staff') {
     document.getElementById('rbtn-adm').className = 'rbtn active';
     document.getElementById('rbtn-logout').style.display = '';
     T('dash');
@@ -419,7 +460,7 @@ function T(id) {
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
-  if (id === 'drv') renderAdmPinChange();
+  if (id === 'drv') renderAdmPwChange();
   if (id === 'vehicle') renderVehicles();
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
@@ -842,48 +883,78 @@ async function saveDispEdit() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
-function renderAdmPinChange() {
+function renderAdmPwChange() {
   const el = document.getElementById('adm-pin-change');
   if (!el) return;
   el.innerHTML = `
     <div class="form-card" style="border-left:3px solid #C05800">
-      <div class="form-title">🔐 관리자 PIN 변경</div>
+      <div class="form-title">🔐 내 비밀번호 변경</div>
       <div class="form-grid">
-        <div class="fg"><label>현재 PIN</label><input id="apc-cur" type="password" maxlength="4" placeholder="현재 PIN" oninput="this.value=this.value.replace(/\\D/g,'')"></div>
-        <div class="fg"><label>새 PIN</label><input id="apc-new" type="password" maxlength="4" placeholder="새 PIN (4자리)" oninput="this.value=this.value.replace(/\\D/g,'')"></div>
-        <div class="fg"><label>새 PIN 확인</label><input id="apc-confirm" type="password" maxlength="4" placeholder="새 PIN 재입력" oninput="this.value=this.value.replace(/\\D/g,'')"></div>
+        <div class="fg"><label>현재 비밀번호</label><input id="apc-cur" type="password" placeholder="현재 비밀번호"></div>
+        <div class="fg"><label>새 비밀번호</label><input id="apc-new" type="password" placeholder="새 비밀번호"></div>
+        <div class="fg"><label>새 비밀번호 확인</label><input id="apc-confirm" type="password" placeholder="새 비밀번호 재입력"></div>
       </div>
       <div id="apc-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
-      <div class="form-actions"><button class="btn pri" onclick="changeAdmPin()">PIN 변경</button></div>
+      <div class="form-actions"><button class="btn pri" onclick="changeAdmPw()">비밀번호 변경</button></div>
+    </div>
+    <div class="form-card" style="border-left:3px solid #1565C0;margin-top:12px">
+      <div class="form-title">👷 직원 비밀번호 변경</div>
+      <div class="form-grid">
+        <div class="fg"><label>새 직원 비밀번호</label><input id="spw-new" type="password" placeholder="새 비밀번호"></div>
+        <div class="fg"><label>새 직원 비밀번호 확인</label><input id="spw-confirm" type="password" placeholder="새 비밀번호 재입력"></div>
+      </div>
+      <div id="spw-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <div class="form-actions"><button class="btn pri" onclick="changeStaffPw()">직원 비밀번호 변경</button></div>
     </div>
   `;
 }
 
-function changeAdmPin() {
+async function changeAdmPw() {
   const curEl = document.getElementById('apc-cur');
   const nwEl = document.getElementById('apc-new');
   const cfEl = document.getElementById('apc-confirm');
   const msg = document.getElementById('apc-msg');
-  
-  if (!curEl || !nwEl || !cfEl || !msg) { alert('PIN 변경 폼을 찾을 수 없습니다'); return; }
-  
-  const cur = curEl.value;
-  const nw = nwEl.value;
-  const cf = cfEl.value;
-  const currentPin = localStorage.getItem('citrus_adm_pin') || ADM_PIN;
-  
+  if (!curEl || !nwEl || !cfEl || !msg) return;
+  const cur = curEl.value, nw = nwEl.value, cf = cfEl.value;
   msg.style.display = 'block';
-  
-  if (!cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN을 입력하세요'; return; }
-  if (cur !== currentPin) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN이 맞지 않습니다 (입력: ' + cur + ')'; return; }
-  if (!nw || nw.length < 4) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN은 4자리여야 합니다'; return; }
-  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 PIN이 일치하지 않습니다'; return; }
-  if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 PIN과 동일합니다'; return; }
-  
-  localStorage.setItem('citrus_adm_pin', nw);
-  msg.style.color = '#2E7D32';
-  msg.textContent = '✅ PIN 변경 완료! 새 PIN: ' + nw;
-  curEl.value = ''; nwEl.value = ''; cfEl.value = '';
+  if (!cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호를 입력하세요'; return; }
+  if (!nw) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
+  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호가 일치하지 않습니다'; return; }
+  if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호와 동일합니다'; return; }
+  try {
+    const username = sessionStorage.getItem('citrus_adm_user') || 'admin';
+    const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
+    if (!rows || !rows.length) { msg.style.color = '#C62828'; msg.textContent = '❌ 계정을 찾을 수 없습니다'; return; }
+    if (rows[0].password !== cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호가 맞지 않습니다'; return; }
+    await sbUpdate('admin_accounts', rows[0].id, { password: nw });
+    msg.style.color = '#2E7D32'; msg.textContent = '✅ 비밀번호 변경 완료!';
+    curEl.value = ''; nwEl.value = ''; cfEl.value = '';
+  } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
+}
+
+async function changeStaffPw() {
+  const nwEl = document.getElementById('spw-new');
+  const cfEl = document.getElementById('spw-confirm');
+  const msg = document.getElementById('spw-msg');
+  if (!nwEl || !cfEl || !msg) return;
+  const nw = nwEl.value, cf = cfEl.value;
+  msg.style.display = 'block';
+  if (!nw) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
+  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 비밀번호가 일치하지 않습니다'; return; }
+  try {
+    const rows = await sbGet('settings', 'key=eq.staff_password');
+    if (rows && rows.length > 0) {
+      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.staff_password`, {
+        method: 'PATCH',
+        headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ value: nw, updated_at: new Date().toISOString() })
+      });
+    } else {
+      await sbInsert('settings', { key: 'staff_password', value: nw });
+    }
+    msg.style.color = '#2E7D32'; msg.textContent = '✅ 직원 비밀번호 변경 완료!';
+    nwEl.value = ''; cfEl.value = '';
+  } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
 }
 
 function renderDrivers() {
@@ -1629,7 +1700,7 @@ function renderDash() {
   if (bkBadge) bkBadge.innerHTML = `<span class="badge b-neu">총 ${picks.filter(p => p.type === '빈콘회수').length}건</span><span class="badge b-ok">누적 ${bkTotal}개 회수</span>`;
 }
 
-function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderVehicles(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPinChange(); }
+function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderVehicles(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPwChange(); }
 
 let _dbView = 'sched';
 function switchDBView(v) {
