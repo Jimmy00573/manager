@@ -4919,7 +4919,7 @@ function renderInvSummary() {
       const pct = ct / unsTotalCt * 100;
       const label = pct >= 5 ? `${esc(p)} ${fmtN(ct)} CT (${pct.toFixed(1)}%)` : '';
       return `<div style="width:${pct.toFixed(3)}%;background:${barColor(p)};display:flex;align-items:center;justify-content:center;overflow:hidden;min-width:${pct >= 1 ? '2px' : '0'};transition:opacity .15s" title="${esc(p)}: ${fmtN(ct)} CT (${pct.toFixed(1)}%)" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
-        ${label ? `<span style="font-size:10px;font-weight:600;color:#fff;white-space:nowrap;padding:0 4px;text-shadow:0 1px 2px rgba(0,0,0,.35)">${label}</span>` : ''}
+        ${label ? `<span style="font-size:13px;font-weight:600;color:#fff;white-space:nowrap;padding:0 4px;text-shadow:0 1px 2px rgba(0,0,0,.35)">${label}</span>` : ''}
       </div>`;
     }).join('');
     const legend = barEntriesSorted.map(([p, v]) => {
