@@ -85,6 +85,12 @@ function hideLoading() {
   if (el) el.style.display = 'none';
 }
 
+// ── kebab 메뉴 외부 클릭/ESC 핸들러 (1회 등록)
+document.addEventListener('click', e => {
+  if (!e.target.closest('.inv-kebab') && !e.target.closest('#inv-row-menu')) _closeInvMenu();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') _closeInvMenu(); });
+
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
@@ -3968,7 +3974,7 @@ function _renderInvMatrix(product, recs) {
 
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
   const N = allSizes.length;
-  const FARM_W = 120, SZ_W = 46, TOT_W = 70, ACT_W = 100;
+  const FARM_W = 120, SZ_W = 46, TOT_W = 70, ACT_W = 40;
   const isAdm  = sessionStorage.getItem('citrus_role') === 'admin';
   const minW   = FARM_W + N * SZ_W + TOT_W + (isAdm ? ACT_W : 0);
   const gCols  = isAdm
@@ -3989,7 +3995,7 @@ function _renderInvMatrix(product, recs) {
     h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${g.sizes.length}">${esc(g.group)}</div>`;
   });
   h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4">합계</div>`;
-  if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4;font-size:11px">관리</div>`;
+  if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸 | [빈칸]
   h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
@@ -4027,7 +4033,7 @@ function _renderInvMatrix(product, recs) {
     _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes } };
     h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:${isAdm ? '1px solid #E5E7EB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(batchTotal)}</div>`;
     if (isAdm) {
-      h += `<div style="${C}background:${rowBg};justify-content:center;padding:2px 4px;border-right:none;position:sticky;right:0;z-index:2"><button class="btn edt" style="font-size:11px;padding:2px 5px;white-space:nowrap" onclick="openInvEditModal(${regId})">수정</button><button class="btn del" style="font-size:11px;padding:2px 5px;white-space:nowrap;margin-left:3px" onclick="deleteMatrixBatch(${regId})">삭제</button></div>`;
+      h += `<div style="${C}background:${rowBg};justify-content:center;padding:0;border-right:none;position:sticky;right:0;z-index:2"><button class="inv-kebab" data-regid="${regId}" onclick="toggleInvRowMenu(${regId},this)" style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit" title="메뉴">⋮</button></div>`;
     }
   });
 
@@ -4052,7 +4058,7 @@ function _renderInvMatrix(product, recs) {
           ${h}
         </div>
       </div>
-      <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '[수정] 버튼 → 수량 수정 (조정값 저장)' : ''}</div>
+      <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '⋮ 메뉴 → 수정 / 삭제' : ''}</div>
     </div>`;
 }
 
@@ -4089,6 +4095,32 @@ async function deleteMatrixBatch(regId) {
     showToast(`${toDelete.length}건 삭제 완료`);
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
+
+// ── 매트릭스 kebab 메뉴 ─────────────────────────────────────────
+
+let _invMenuRegId = null;
+
+function toggleInvRowMenu(regId, btn) {
+  const menu = document.getElementById('inv-row-menu');
+  if (!menu) return;
+  if (_invMenuRegId === regId && menu.style.display !== 'none') {
+    menu.style.display = 'none'; _invMenuRegId = null; return;
+  }
+  _invMenuRegId = regId;
+  const rect = btn.getBoundingClientRect();
+  menu.style.display = 'block';
+  const mw = 130, mh = 80;
+  let left = rect.right - mw;
+  if (left < 4) left = rect.left;
+  let top = rect.bottom + 4;
+  if (top + mh > window.innerHeight) top = rect.top - mh - 4;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = top + 'px';
+}
+
+function _invMenuEdit()   { const id = _invMenuRegId; _closeInvMenu(); openInvEditModal(id); }
+function _invMenuDelete() { const id = _invMenuRegId; _closeInvMenu(); deleteMatrixBatch(id); }
+function _closeInvMenu()  { const m = document.getElementById('inv-row-menu'); if (m) m.style.display = 'none'; _invMenuRegId = null; }
 
 // ── 매트릭스 [수정] 버튼 모달 ────────────────────────────────────
 
