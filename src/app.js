@@ -11,6 +11,7 @@ const td = () => new Date().toISOString().slice(0, 10);
 let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [];
+let _matrixBatchRegistry = {};
 let invSizeConfig = {};
 let inventoryRecords = [];
 let _invFilter   = { product: '', farm: '' };
@@ -3820,6 +3821,7 @@ function renderInventoryStatus() {
   }
 
   // 품목별로 분리 → 매트릭스 렌더
+  _matrixBatchRegistry = {};
   const byProduct = {};
   recs.forEach(r => {
     if (!byProduct[r.product]) byProduct[r.product] = [];
@@ -3856,7 +3858,7 @@ function _renderInvMatrix(product, recs) {
       ? r.sorting_result_id : `manual_${r.date || ''}`;
     const key = `${farm}__${groupId}`;
     const { sortingDate, inboundDate } = _getInvRecordDates(r);
-    if (!batchMap[key]) batchMap[key] = { farm, sortingDate, inboundDate, sizes: {} };
+    if (!batchMap[key]) batchMap[key] = { farm, groupId, sortingDate, inboundDate, sizes: {} };
     batchMap[key].sizes[sz] = (batchMap[key].sizes[sz] || 0) + (Number(r.quantity) || 0);
     if (sortingDate && sortingDate < (batchMap[key].sortingDate || '9')) batchMap[key].sortingDate = sortingDate;
     if (inboundDate && inboundDate < (batchMap[key].inboundDate || '9')) batchMap[key].inboundDate = inboundDate;
@@ -3878,9 +3880,10 @@ function _renderInvMatrix(product, recs) {
 
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
   const N = allSizes.length;
-  const FARM_W = 120, SZ_W = 46, TOT_W = 70;
-  const minW   = FARM_W + N * SZ_W + TOT_W;
-  const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px`;
+  const FARM_W = 120, SZ_W = 46, TOT_W = 70, DEL_W = 48;
+  const isAdm  = sessionStorage.getItem('citrus_role') === 'admin';
+  const minW   = FARM_W + N * SZ_W + TOT_W + DEL_W;
+  const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px ${DEL_W}px`;
 
   const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
   const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
@@ -3894,7 +3897,8 @@ function _renderInvMatrix(product, recs) {
   groups.forEach((g, gi) => {
     h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${g.sizes.length}">${esc(g.group)}</div>`;
   });
-  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4">합계</div>`;
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${DEL_W}px;z-index:4">합계</div>`;
+  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸
   h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
@@ -3902,6 +3906,7 @@ function _renderInvMatrix(product, recs) {
     const gi = szGI[sz];
     h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
   });
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${DEL_W}px;z-index:4"></div>`;
   h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 데이터 rows (batch별)
@@ -3927,7 +3932,11 @@ function _renderInvMatrix(product, recs) {
         : `<strong style="color:#111827">${fmtN(val)}</strong>`;
       h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};cursor:pointer;padding:5px 2px" title="더블클릭: 수량 수정">${inner}</div>`;
     });
-    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(batchTotal)}</div>`;
+    const regId = Object.keys(_matrixBatchRegistry).length;
+    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate };
+    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:1px solid #E5E7EB;position:sticky;right:${DEL_W}px;z-index:2">${fmtN(batchTotal)}</div>`;
+    const delBtnHtml = isAdm ? `<button class="btn del" style="font-size:11px;padding:2px 5px;white-space:nowrap" onclick="deleteMatrixBatch(${regId})">삭제</button>` : '';
+    h += `<div style="${C}background:${rowBg};justify-content:center;padding:2px 4px;border-right:none;position:sticky;right:0;z-index:2">${delBtnHtml}</div>`;
   });
 
   // 합계 row
@@ -3936,7 +3945,8 @@ function _renderInvMatrix(product, recs) {
     const v = colTotals[sz] || 0;
     h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</div>`;
   });
-  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtN(grandTotal)}</div>`;
+  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;right:${DEL_W}px;z-index:2">${fmtN(grandTotal)}</div>`;
+  h += `<div style="${F}border-right:none;position:sticky;right:0;z-index:2"></div>`;
 
   return `
     <div style="width:${minW}px;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
@@ -3952,6 +3962,40 @@ function _renderInvMatrix(product, recs) {
       </div>
       <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">셀 더블클릭 → 수량 수정 (조정값 저장)</div>
     </div>`;
+}
+
+// ── 매트릭스 배치 삭제 ──────────────────────────────────────────
+
+async function deleteMatrixBatch(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info) return;
+  const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
+  const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}\n총 ${fmtN(info.batchTotal)} CT`;
+  if (!confirm(`이 배치를 삭제하시겠습니까?\n${label}`)) return;
+  let toDelete;
+  const gid = String(info.groupId);
+  if (gid.startsWith('manual_')) {
+    const date = gid.replace('manual_', '');
+    toDelete = inventoryRecords.filter(r =>
+      r.farm_name === info.farm && r.date === date && r.product === info.product &&
+      r.source_type !== 'pachi' && r.source_type !== 'pachi_manual' && !r.is_void
+    );
+  } else {
+    toDelete = inventoryRecords.filter(r =>
+      String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void
+    );
+  }
+  if (!toDelete.length) return alert('삭제할 데이터가 없습니다.');
+  try {
+    for (const rec of toDelete) {
+      await sbUpdate('inventory_records', rec.id, { is_void: true });
+      rec.is_void = true;
+    }
+    renderInvSummary();
+    renderInventoryStatus();
+    showToast(`${toDelete.length}건 삭제 완료`);
+  } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
 // ── 매트릭스 셀 인라인 편집 ──────────────────────────────────────
@@ -7791,7 +7835,7 @@ function renderJuiceSection() {
     const gOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
     const unit = rows[0]?.unit || '병';
     const headerHtml = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-      <td colspan="9" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+      <td colspan="10" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
         [ ${esc(product)} ] &nbsp;&nbsp;
         <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
         <span style="color:#1D4ED8">입고 ${fmtN(gIn)}</span> / <span style="color:#DC2626">출고 ${fmtN(gOut)}</span>
