@@ -4860,22 +4860,21 @@ function renderInvSummary() {
     </table></div></div>`;
 
   // 섹션 2 & 3: 선과 빌더
-  const SORT_GROUPS = ['대과', '중과', '소과'];
-  const buildSortSection = (n, title, sub, dataMap) => {
+  const buildSortSection = (n, title, sub, dataMap, groups) => {
     const entries = Object.entries(dataMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
     return `<div style="${CARD}">${secHdr(n, title, sub)}
       <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:480px">
-        <thead><tr><th style="${THL}">품목</th>${SORT_GROUPS.map(g => `<th style="${THR}">${g} (kg)</th>`).join('')}<th style="${THR}">합계 (kg)</th></tr></thead>
+        <thead><tr><th style="${THL}">품목</th>${groups.map(g => `<th style="${THR}">${g} (kg)</th>`).join('')}<th style="${THR}">합계 (kg)</th></tr></thead>
         <tbody>${entries.length
           ? entries.map(([p, m]) => {
               const total = Object.values(m).reduce((s, v) => s + v, 0);
-              return `<tr><td style="${TL}">${esc(p)}</td>${SORT_GROUPS.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : ''}</td>`).join('')}<td style="${TRhl}">${total ? fmtN(Math.round(total)) : ''}</td></tr>`;
+              return `<tr><td style="${TL}">${esc(p)}</td>${groups.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : ''}</td>`).join('')}<td style="${TRhl}">${total ? fmtN(Math.round(total)) : ''}</td></tr>`;
             }).join('')
-          : EMPTY(SORT_GROUPS.length + 2, '선과 재고 없음')}</tbody>
+          : EMPTY(groups.length + 2, '선과 재고 없음')}</tbody>
       </table></div></div>`;
   };
-  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap);
-  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000~2S2) / 로얄과(S1~M2) / 대과(L~왕2)', citrusMap);
+  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap, ['대과', '중과', '소과']);
+  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000~2S2) / 로얄과(S1~M2) / 대과(L~왕2)', citrusMap, ['극소과', '로얄과', '대과']);
 
   // 섹션 4: 파치
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
