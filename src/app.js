@@ -4970,8 +4970,8 @@ function renderInvSummary() {
   // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const pachiHtml = `<div style="${CARD_I}">${secHdr(4, '파치 재고')}
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed">
-      <colgroup><col style="width:40%"><col style="width:15%"><col style="width:20%"><col style="width:25%"></colgroup>
+    <table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <colgroup><col style="width:40%"><col style="width:18%"><col style="width:20%"><col style="width:22%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>CT</th><th ${THC}>kg/CT</th><th ${THR}>총중량</th></tr></thead>
       <tbody>${pachiEntries.length
         ? pachiEntries.map(([p, ct]) => {
@@ -4984,8 +4984,8 @@ function renderInvSummary() {
   // 섹션 5: 주스/청 (단위 컬럼 제거, tbl-wrap 제거)
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed">
-      <colgroup><col style="width:50%"><col style="width:25%"><col style="width:25%"></colgroup>
+    <table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <colgroup><col style="width:40%"><col style="width:28%"><col style="width:32%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
         ? juiceEntries.map(([p, v]) => {
