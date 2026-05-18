@@ -88,8 +88,10 @@ function hideLoading() {
 // ── kebab 메뉴 외부 클릭/ESC 핸들러 (1회 등록)
 document.addEventListener('click', e => {
   if (!e.target.closest('.inv-kebab') && !e.target.closest('#inv-row-menu')) _closeInvMenu();
+  if (!e.target.closest('.pachi-kebab') && !e.target.closest('#pachi-row-menu')) _closePachiMenu();
+  if (!e.target.closest('.juice-kebab') && !e.target.closest('#juice-row-menu')) _closeJuiceMenu();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') _closeInvMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceMenu(); } });
 
 // ── 앱 초기화
 async function initApp() {
@@ -4122,6 +4124,220 @@ function _invMenuEdit()   { const id = _invMenuRegId; _closeInvMenu(); openInvEd
 function _invMenuDelete() { const id = _invMenuRegId; _closeInvMenu(); deleteMatrixBatch(id); }
 function _closeInvMenu()  { const m = document.getElementById('inv-row-menu'); if (m) m.style.display = 'none'; _invMenuRegId = null; }
 
+// ── 파치 kebab 메뉴
+let _pachiRowRegistry = {};
+let _pachiRowRegCounter = 0;
+let _pachiMenuRegId = null;
+
+function togglePachiRowMenu(regId, btn) {
+  const menu = document.getElementById('pachi-row-menu');
+  if (!menu) return;
+  if (_pachiMenuRegId === regId && menu.style.display !== 'none') {
+    menu.style.display = 'none'; _pachiMenuRegId = null; return;
+  }
+  _pachiMenuRegId = regId;
+  const rect = btn.getBoundingClientRect();
+  menu.style.display = 'block';
+  const mw = 130, mh = 80;
+  let left = rect.right - mw;
+  if (left < 4) left = rect.left;
+  let top = rect.bottom + 4;
+  if (top + mh > window.innerHeight) top = rect.top - mh - 4;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = top + 'px';
+}
+function _pachiMenuEdit()   { const id = _pachiMenuRegId; _closePachiMenu(); openPachiEditModal(id); }
+function _pachiMenuDelete() { const id = _pachiMenuRegId; _closePachiMenu(); _execPachiDelete(id); }
+function _closePachiMenu()  { const m = document.getElementById('pachi-row-menu'); if (m) m.style.display = 'none'; _pachiMenuRegId = null; }
+
+async function _execPachiDelete(regId) {
+  const row = _pachiRowRegistry[regId];
+  if (!row) return;
+  const label = `${row.product} ${row.date} ${fmtN(row.ct)} CT`;
+  if (row.isLegacy) deleteWaste(row.ids[0], label);
+  else deleteManualPachi(row.ids.join(','), label);
+}
+
+function openPachiEditModal(regId) {
+  const row = _pachiRowRegistry[regId];
+  if (!row) return;
+  const modal = document.getElementById('modal-pachi-edit');
+  const body = document.getElementById('pachi-edit-body');
+  if (!modal || !body) return;
+  const canEditQty = !row.isLegacy && row.ids.length === 1;
+  const canEditMemo = !row.isLegacy;
+  body.innerHTML = `
+    <div style="padding:16px 20px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">날짜</label>
+          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.date || '-')}</div></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">농가</label>
+          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.farm || '-')}</div></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품목</label>
+          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.product)}</div></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">출처</label>
+          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${row.isSorting ? '선과 자동' : (row.isLegacy ? '레거시' : '수동')}</div></div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">수량 (CT)</label>
+        ${canEditQty
+          ? `<input id="pachi-edit-ct" type="number" min="0" value="${row.ct}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">`
+          : `<div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${fmtN(row.ct)} CT${row.ids.length > 1 ? ' (복수 기록)' : ''}</div>`}
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">메모</label>
+        ${canEditMemo
+          ? `<input id="pachi-edit-memo" type="text" value="${esc(row.memo || '')}" placeholder="메모 없음" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">`
+          : `<div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px;color:#888">${esc(row.memo || '-')}</div>`}
+      </div>
+      <input type="hidden" id="pachi-edit-regid" value="${regId}">
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn" onclick="document.getElementById('modal-pachi-edit').style.display='none'">취소</button>
+        ${(canEditQty || canEditMemo) ? `<button class="btn pri" onclick="savePachiEdit()">저장</button>` : ''}
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+}
+
+async function savePachiEdit() {
+  const regId = parseInt(document.getElementById('pachi-edit-regid')?.value);
+  if (!regId) return;
+  const row = _pachiRowRegistry[regId];
+  if (!row) return;
+  const canEditQty = !row.isLegacy && row.ids.length === 1;
+  const canEditMemo = !row.isLegacy;
+  try {
+    if (canEditQty) {
+      const newQty = parseInt(document.getElementById('pachi-edit-ct')?.value);
+      if (isNaN(newQty) || newQty < 0) return alert('유효한 수량을 입력해주세요.');
+      await sbUpdate('inventory_records', row.ids[0], { quantity: newQty });
+      const rec = inventoryRecords.find(r => String(r.id) === String(row.ids[0]));
+      if (rec) rec.quantity = newQty;
+    }
+    if (canEditMemo) {
+      const newMemo = document.getElementById('pachi-edit-memo')?.value || null;
+      for (const id of row.ids) {
+        await sbUpdate('inventory_records', id, { note: newMemo || null });
+        const rec = inventoryRecords.find(r => String(r.id) === String(id));
+        if (rec) rec.note = newMemo || null;
+      }
+    }
+    document.getElementById('modal-pachi-edit').style.display = 'none';
+    renderInvSummary(); renderPachiSection();
+    showToast('파치 수정 완료');
+  } catch(e) { alert('수정 실패: ' + e.message); }
+}
+
+// ── 주스/청 kebab 메뉴
+let _juiceMenuId = null;
+
+function toggleJuiceRowMenu(id, btn) {
+  const menu = document.getElementById('juice-row-menu');
+  if (!menu) return;
+  if (_juiceMenuId === id && menu.style.display !== 'none') {
+    menu.style.display = 'none'; _juiceMenuId = null; return;
+  }
+  _juiceMenuId = id;
+  const rect = btn.getBoundingClientRect();
+  menu.style.display = 'block';
+  const mw = 130, mh = 80;
+  let left = rect.right - mw;
+  if (left < 4) left = rect.left;
+  let top = rect.bottom + 4;
+  if (top + mh > window.innerHeight) top = rect.top - mh - 4;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = top + 'px';
+}
+function _juiceMenuEdit()   { const id = _juiceMenuId; _closeJuiceMenu(); openJuiceEditModal(id); }
+function _juiceMenuDelete() {
+  const id = _juiceMenuId; _closeJuiceMenu();
+  const rec = invJuiceRecs.find(r => r.id === id);
+  const label = rec ? `[${rec.type === 'out' ? '출고' : '입고'}] ${rec.product_name} ${rec.date} ${fmtN(Number(rec.total_count)||0)}${rec.unit}` : '';
+  deleteJuiceRecord(id, label);
+}
+function _closeJuiceMenu()  { const m = document.getElementById('juice-row-menu'); if (m) m.style.display = 'none'; _juiceMenuId = null; }
+
+function openJuiceEditModal(id) {
+  const rec = invJuiceRecs.find(r => r.id === id);
+  if (!rec) return;
+  const modal = document.getElementById('modal-juice-edit');
+  const body = document.getElementById('juice-edit-body');
+  if (!modal || !body) return;
+  body.innerHTML = `
+    <div style="padding:16px 20px">
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품명</label>
+        <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(rec.product_name)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">날짜 *</label>
+          <input id="je-date" type="date" value="${esc(rec.date || '')}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">구분 *</label>
+          <select id="je-type" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px">
+            <option value="in" ${rec.type !== 'out' ? 'selected' : ''}>입고</option>
+            <option value="out" ${rec.type === 'out' ? 'selected' : ''}>출고</option>
+          </select></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">단위 *</label>
+          <select id="je-unit" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px">
+            <option value="병" ${rec.unit === '병' ? 'selected' : ''}>병</option>
+            <option value="박스" ${rec.unit === '박스' ? 'selected' : ''}>박스</option>
+            <option value="kg" ${rec.unit === 'kg' ? 'selected' : ''}>kg</option>
+          </select></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">박스당 수량</label>
+          <input id="je-perbox" type="number" min="0" value="${rec.per_box || ''}" placeholder="예) 35" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">박스 수량</label>
+          <input id="je-box" type="number" min="0" value="${rec.box_count || 0}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">낱개 수량</label>
+          <input id="je-single" type="number" min="0" value="${rec.loose_count || 0}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">총수량 (자동)</label>
+          <input id="je-total" type="number" readonly value="${rec.total_count || 0}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;background:#F3F4F6"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">소비기한</label>
+          <input id="je-expiry" type="date" value="${esc(rec.expiry_date || '')}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">비고</label>
+        <input id="je-note" type="text" value="${esc(rec.note || '')}" placeholder="비고 없음" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
+      </div>
+      <input type="hidden" id="juice-edit-id" value="${rec.id}">
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn" onclick="document.getElementById('modal-juice-edit').style.display='none'">취소</button>
+        <button class="btn pri" onclick="saveJuiceEdit()">저장</button>
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+}
+
+function calcJuiceEditTotal() {
+  const box = parseInt(document.getElementById('je-box')?.value) || 0;
+  const single = parseInt(document.getElementById('je-single')?.value) || 0;
+  const perBox = parseInt(document.getElementById('je-perbox')?.value) || 1;
+  const tot = document.getElementById('je-total');
+  if (tot) tot.value = box * perBox + single;
+}
+
+async function saveJuiceEdit() {
+  const id = document.getElementById('juice-edit-id')?.value;
+  if (!id) return;
+  const date = document.getElementById('je-date')?.value;
+  if (!date) return alert('날짜를 입력해주세요.');
+  const type = document.getElementById('je-type')?.value || 'in';
+  const unit = document.getElementById('je-unit')?.value || '병';
+  const box_count = parseInt(document.getElementById('je-box')?.value) || 0;
+  const loose_count = parseInt(document.getElementById('je-single')?.value) || 0;
+  const per_box = parseInt(document.getElementById('je-perbox')?.value) || null;
+  const total_count = parseInt(document.getElementById('je-total')?.value) || 0;
+  const expiry_date = document.getElementById('je-expiry')?.value || null;
+  const note = document.getElementById('je-note')?.value || null;
+  try {
+    const updatedArr = await sbUpdate('juice_records', id, { date, type, unit, box_count, loose_count, per_box, total_count, expiry_date, note });
+    const idx = invJuiceRecs.findIndex(r => String(r.id) === String(id));
+    if (idx >= 0 && updatedArr && updatedArr[0]) invJuiceRecs[idx] = updatedArr[0];
+    document.getElementById('modal-juice-edit').style.display = 'none';
+    renderInvSummary(); renderJuiceSection();
+    showToast('주스/청 수정 완료');
+  } catch(e) { alert('수정 실패: ' + e.message); }
+}
+
 // ── 매트릭스 [수정] 버튼 모달 ────────────────────────────────────
 
 function openInvEditModal(regId) {
@@ -7765,6 +7981,7 @@ function renderWasteList() {
 function renderPachiSection() {
   const el = document.getElementById('inv-pachi-section');
   if (!el) return;
+  _pachiRowRegistry = {};
 
   const kgPerCt = p => (p && p.includes('한라봉')) ? 13 : 17;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
@@ -7829,23 +8046,20 @@ function renderPachiSection() {
   });
 
   const makeDataRow = r => {
+    const regId = ++_pachiRowRegCounter;
+    _pachiRowRegistry[regId] = r;
     const badge = r.isSorting
       ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:2px 7px;font-size:11px">선과</span>`
       : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
     const idsAttr = !r.isLegacy ? `data-pachi-ids="${r.ids.join(',')}"` : '';
-    const canEditQty = !r.isLegacy && r.ids.length === 1;
-    const ctCell = canEditQty
-      ? `<td style="padding:7px 10px;text-align:right;font-weight:600;cursor:pointer" ondblclick="editPachiQty(this.closest('tr'))" title="더블클릭 → 수량 편집">${fmtN(r.ct)}</td>`
-      : `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
-    const memoCell = !r.isLegacy
-      ? `<td style="padding:7px 10px;font-size:12px;color:#666;cursor:pointer" ondblclick="editPachiMemo(this.closest('tr'))" title="더블클릭 → 메모 편집">${esc(r.memo || '-')}</td>`
-      : `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
-    const delLabel = `${r.product} ${r.date} ${fmtN(r.ct)} CT`;
-    const delCell = isAdm
-      ? (r.isLegacy
-        ? `<td style="padding:4px 8px"><button class="btn del" onclick="deleteWaste('${r.ids[0]}', '${delLabel}')">삭제</button></td>`
-        : `<td style="padding:4px 8px"><button class="btn del" onclick="deleteManualPachi('${r.ids.join(',')}', '${delLabel}')">삭제</button></td>`)
-      : '<td></td>';
+    const ctCell = `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
+    const memoCell = `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
+    const kebabCell = isAdm
+      ? `<td style="padding:4px 8px;text-align:center">
+          <button class="pachi-kebab" onclick="togglePachiRowMenu(${regId},this)"
+            style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit"
+            title="메뉴">⋮</button></td>`
+      : '';
     return `<tr ${idsAttr}>
       <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
@@ -7854,7 +8068,7 @@ function renderPachiSection() {
       <td style="padding:7px 10px;text-align:right;color:#666;font-size:13px">${fmtN(r.kg)}</td>
       <td style="padding:7px 10px;text-align:center">${badge}</td>
       ${memoCell}
-      ${delCell}
+      ${kebabCell}
     </tr>`;
   };
 
@@ -7863,7 +8077,7 @@ function renderPachiSection() {
     const gCt = rows.reduce((s, r) => s + r.ct, 0);
     const gKg = rows.reduce((s, r) => s + r.kg, 0);
     return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-        <td colspan="8" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+        <td colspan="${isAdm ? 8 : 7}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
           [ ${esc(product)} ] &nbsp;&nbsp;
           <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
           <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
@@ -7876,7 +8090,7 @@ function renderPachiSection() {
     <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
     <td style="padding:8px 12px;text-align:right;color:#E65100">${fmtN(totalCt)} CT</td>
     <td style="padding:8px 12px;text-align:right;color:#555">${fmtN(totalKg)} kg</td>
-    <td colspan="3"></td>
+    <td colspan="${isAdm ? 3 : 2}"></td>
   </tr>` : '';
 
   el.innerHTML = `
@@ -7894,13 +8108,13 @@ function renderPachiSection() {
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">농가</th>
             <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
-            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT ✎</th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">kg</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모 ✎</th>
-            <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
+            ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || '<tr><td colspan="8" class="empty">파치 기록 없음</td></tr>'}${totalRow}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 8 : 7}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
         </table>
       </div>
     </div>`;
@@ -8080,7 +8294,7 @@ function renderJuiceSection() {
     const gOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
     const unit = rows[0]?.unit || '병';
     const headerHtml = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-      <td colspan="10" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+      <td colspan="${isAdm ? 10 : 9}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
         [ ${esc(product)} ] &nbsp;&nbsp;
         <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
         <span style="color:#1D4ED8">입고 ${fmtN(gIn)}</span> / <span style="color:#DC2626">출고 ${fmtN(gOut)}</span>
@@ -8103,7 +8317,10 @@ function renderJuiceSection() {
         <td style="padding:7px 10px;font-size:13px">${esc(r.unit)}</td>
         <td style="padding:7px 10px;font-size:12px;color:#666">${r.expiry_date || '-'}</td>
         <td style="padding:7px 10px;font-size:12px;color:#888">${esc(r.note || '-')}</td>
-        <td style="padding:4px 8px">${isAdm ? `<button class="btn del" onclick="deleteJuiceRecord('${r.id}', '[${isOut ? '출고' : '입고'}] ${esc(r.product_name)} ${r.date} ${fmtN(Number(r.total_count)||0)}${esc(r.unit)}')">삭제</button>` : ''}</td>
+        ${isAdm ? `<td style="padding:4px 8px;text-align:center">
+          <button class="juice-kebab" onclick="toggleJuiceRowMenu('${r.id}',this)"
+            style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit"
+            title="메뉴">⋮</button></td>` : ''}
       </tr>`;
     }).join('');
     return headerHtml + dataRows;
@@ -8175,9 +8392,9 @@ function renderJuiceSection() {
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">단위</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">소비기한</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">비고</th>
-            <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
+            ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedRowsHtml || '<tr><td colspan="10" class="empty">주스/청 기록 없음</td></tr>'}</tbody>
+          <tbody>${groupedRowsHtml || `<tr><td colspan="${isAdm ? 10 : 9}" class="empty">주스/청 기록 없음</td></tr>`}</tbody>
         </table>
       </div>
       ${formHtml}
@@ -8368,6 +8585,8 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('modal-record-history')?.style.display !== 'none') { CM('record-history'); return; }
   if (document.getElementById('modal-edit-inbound')?.style.display !== 'none') { closeEditInboundModal(); return; }
   if (document.getElementById('modal-void-inbound')?.style.display !== 'none') { CM('void-inbound'); return; }
+  if (document.getElementById('modal-pachi-edit')?.style.display !== 'none') { document.getElementById('modal-pachi-edit').style.display = 'none'; return; }
+  if (document.getElementById('modal-juice-edit')?.style.display !== 'none') { document.getElementById('modal-juice-edit').style.display = 'none'; return; }
 });
 
 // ── 농가별 보기: 선과 결과 탭 렌더링
