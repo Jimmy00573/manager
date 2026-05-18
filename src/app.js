@@ -4872,7 +4872,7 @@ function renderInvSummary() {
 
   // ── KPI 카드 HTML
   const kpiCard = (label, val, unit, sub, small) => `
-    <div style="background:#F5F5F4;border-radius:8px;padding:14px 16px">
+    <div style="background:#E8E8E6;border-radius:8px;padding:14px 16px">
       <div style="font-size:12px;color:#6B7280;margin-bottom:6px;font-weight:500">${label}</div>
       <div style="font-size:${small ? '20px' : '22px'};font-weight:700;color:#111827;line-height:1.2">${val}<span style="font-size:13px;font-weight:400;color:#9CA3AF;margin-left:4px">${unit}</span></div>
       ${sub || ''}
@@ -4945,7 +4945,7 @@ function renderInvSummary() {
       <tbody>${unsEntries.length
         ? unsEntries.map(([p, v]) => {
             const total = v.raw + v.small;
-            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${v.raw ? fmtN(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtN(v.small) : DASH}</td><td ${TRhl}>${fmtN(total)} CT</td></tr>`;
+            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${v.raw ? fmtN(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtN(v.small) : DASH}</td><td ${TRhl}>${fmtN(total)}</td></tr>`;
           }).join('')
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
@@ -4967,10 +4967,11 @@ function renderInvSummary() {
   const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap, ['대과', '중과', '소과']);
   const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과']);
 
-  // 섹션 4: 파치
+  // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const pachiHtml = `<div style="${CARD_I}">${secHdr(4, '파치 재고')}
-    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <colgroup><col style="width:40%"><col style="width:15%"><col style="width:20%"><col style="width:25%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>CT</th><th ${THC}>kg/CT</th><th ${THR}>총중량</th></tr></thead>
       <tbody>${pachiEntries.length
         ? pachiEntries.map(([p, ct]) => {
@@ -4978,12 +4979,13 @@ function renderInvSummary() {
             return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${fmtN(ct)}</td><td style="${TC}">${kpc}</td><td ${TRhl}>${fmtN(ct * kpc)} kg</td></tr>`;
           }).join('')
         : EMPTY(4, '파치 재고 없음')}</tbody>
-    </table></div></div>`;
+    </table></div>`;
 
-  // 섹션 5: 주스/청 (단위 컬럼 제거 → 재고 값에 병 포함)
+  // 섹션 5: 주스/청 (단위 컬럼 제거, tbl-wrap 제거)
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
-    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <colgroup><col style="width:50%"><col style="width:25%"><col style="width:25%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
         ? juiceEntries.map(([p, v]) => {
@@ -4992,7 +4994,7 @@ function renderInvSummary() {
             return `<tr><td style="${TL}">${esc(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)} ${esc(v.unit || '병')}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
           }).join('')
         : EMPTY(3, '주스/청 재고 없음')}</tbody>
-    </table></div></div>`;
+    </table></div>`;
 
   el.innerHTML = `<div>
     <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
