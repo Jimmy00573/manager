@@ -10,7 +10,7 @@ const td = () => new Date().toISOString().slice(0, 10);
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [];
 let invSizeConfig = {};
 let inventoryRecords = [];
 let _invFilter   = { product: '', farm: '' };
@@ -3043,14 +3043,15 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
       dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
       loadSizeConfig(), loadCategorySystem(),
       dbGetInventoryRecords().catch(() => []),
-      dbGetJuiceRecords().catch(() => [])
+      dbGetJuiceRecords().catch(() => []),
+      dbGetJuiceMasters().catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3069,6 +3070,7 @@ async function loadAndRenderInv() {
     invUnsorted = legacyIn;
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
     invJuiceRecs = juiceRecs;
+    invJuiceMasters = juiceMasters;
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
@@ -7549,11 +7551,12 @@ function renderPachiSection() {
     const memoCell = !r.isLegacy
       ? `<td style="padding:7px 10px;font-size:12px;color:#666;cursor:pointer" ondblclick="editPachiMemo(this.closest('tr'))" title="더블클릭 → 메모 편집">${esc(r.memo || '-')}</td>`
       : `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
-    const delCell = isAdm && r.isLegacy
-      ? `<td style="padding:4px 8px"><button class="btn del" onclick="deleteWaste('${r.ids[0]}')">삭제</button></td>`
-      : (isAdm && !r.isSorting
-        ? `<td style="padding:4px 8px"><button class="btn del" onclick="deleteManualPachi('${r.ids.join(',')}')">삭제</button></td>`
-        : '<td></td>');
+    const delLabel = `${r.product} ${r.date} ${fmtN(r.ct)} CT`;
+    const delCell = isAdm
+      ? (r.isLegacy
+        ? `<td style="padding:4px 8px"><button class="btn del" onclick="deleteWaste('${r.ids[0]}', '${delLabel}')">삭제</button></td>`
+        : `<td style="padding:4px 8px"><button class="btn del" onclick="deleteManualPachi('${r.ids.join(',')}', '${delLabel}')">삭제</button></td>`)
+      : '<td></td>';
     return `<tr ${idsAttr}>
       <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
@@ -7719,9 +7722,10 @@ async function addWaste() {
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
-async function deleteWaste(id) {
+async function deleteWaste(id, label) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!confirm('삭제하시겠습니까?')) return;
+  const msg = label ? `이 파치 기록을 삭제하시겠습니까?\n${label}` : '삭제하시겠습니까?';
+  if (!confirm(msg)) return;
   try {
     await dbDeleteWaste(id);
     invWaste = invWaste.filter(r => r.id !== id);
@@ -7729,9 +7733,10 @@ async function deleteWaste(id) {
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
-async function deleteManualPachi(idsStr) {
+async function deleteManualPachi(idsStr, label) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!confirm('삭제하시겠습니까?')) return;
+  const msg = label ? `이 파치 기록을 삭제하시겠습니까?\n${label}` : '삭제하시겠습니까?';
+  if (!confirm(msg)) return;
   const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
   try {
     for (const id of ids) await sbUpdate('inventory_records', id, { is_void: true });
@@ -7809,11 +7814,15 @@ function renderJuiceSection() {
         <td style="padding:7px 10px;font-size:13px">${esc(r.unit)}</td>
         <td style="padding:7px 10px;font-size:12px;color:#666">${r.expiry_date || '-'}</td>
         <td style="padding:7px 10px;font-size:12px;color:#888">${esc(r.note || '-')}</td>
-        <td style="padding:4px 8px">${isAdm ? `<button class="btn del" onclick="deleteJuiceRecord('${r.id}')">삭제</button>` : ''}</td>
+        <td style="padding:4px 8px">${isAdm ? `<button class="btn del" onclick="deleteJuiceRecord('${r.id}', '[${isOut ? '출고' : '입고'}] ${esc(r.product_name)} ${r.date} ${fmtN(Number(r.total_count)||0)}${esc(r.unit)}')">삭제</button>` : ''}</td>
       </tr>`;
     }).join('');
     return headerHtml + dataRows;
   }).join('');
+
+  const masterOpts = invJuiceMasters.map(m =>
+    `<option value="${esc(m.product_name)}" data-unit="${esc(m.default_unit || '병')}" data-perbox="${m.default_per_box || ''}" data-months="${m.default_expiry_months || ''}">${esc(m.product_name)}</option>`
+  ).join('');
 
   const formHtml = isAdm ? `
     <div style="padding:14px 16px;border-top:1px solid #E5E7EB">
@@ -7827,7 +7836,26 @@ function renderJuiceSection() {
         </div>
         <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
         <div class="fg"><label>단위 *</label><select id="ju-unit"><option value="병">병</option><option value="박스">박스</option><option value="kg">kg</option></select></div>
-        <div class="fg" style="grid-column:1/-1"><label>품명 *</label><input id="ju-product" placeholder="예) 카라향 원액, 천혜향청"></div>
+        <div class="fg" style="grid-column:1/-1"><label>품명 *</label>
+          <select id="ju-product" onchange="juiceProductChanged()">
+            <option value="">-- 품명 선택 --</option>
+            ${masterOpts}
+            <option value="__new__">[+] 새 품명 추가</option>
+          </select>
+        </div>
+        <div id="ju-new-product-area" style="display:none;grid-column:1/-1;background:#F8FAFC;border:1px solid #E5E7EB;border-radius:6px;padding:12px">
+          <div style="font-size:12px;font-weight:600;color:#444;margin-bottom:8px">새 품명 등록</div>
+          <div class="form-grid" style="gap:8px">
+            <div class="fg"><label>품명 *</label><input id="ju-new-name" placeholder="예) 유자청"></div>
+            <div class="fg"><label>단위 *</label><select id="ju-new-unit"><option value="병">병</option><option value="박스">박스</option><option value="kg">kg</option></select></div>
+            <div class="fg"><label>박스당 수량</label><input id="ju-new-perbox" type="number" min="0" placeholder="예) 38"></div>
+            <div class="fg"><label>유통기한(개월)</label><input id="ju-new-months" type="number" min="0" placeholder="예) 18"></div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button class="btn pri" style="font-size:13px;padding:6px 16px" onclick="saveNewJuiceProduct()">저장</button>
+            <button class="btn" style="font-size:13px;padding:6px 16px" onclick="cancelNewJuiceProduct()">취소</button>
+          </div>
+        </div>
         <div class="fg"><label>박스당 수량</label><input id="ju-perbox" type="number" placeholder="예) 35" min="0" oninput="calcJuiceTotal()"></div>
         <div class="fg"><label>박스 수량</label><input id="ju-box" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
         <div class="fg"><label>낱개 수량</label><input id="ju-single" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
@@ -7877,13 +7905,60 @@ function calcJuiceTotal() {
   sv('ju-total', box * perBox + single);
 }
 
+function juiceProductChanged() {
+  const sel = document.getElementById('ju-product');
+  if (!sel) return;
+  const newArea = document.getElementById('ju-new-product-area');
+  if (sel.value === '__new__') {
+    if (newArea) newArea.style.display = 'block';
+    return;
+  }
+  if (newArea) newArea.style.display = 'none';
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  const unit = opt.dataset.unit, perBox = opt.dataset.perbox, months = opt.dataset.months;
+  if (unit) { const el = document.getElementById('ju-unit'); if (el) el.value = unit; }
+  if (perBox) { const el = document.getElementById('ju-perbox'); if (el) { el.value = perBox; calcJuiceTotal(); } }
+  if (months) {
+    const el = document.getElementById('ju-expiry');
+    if (el) {
+      const d = new Date(); d.setMonth(d.getMonth() + parseInt(months));
+      el.value = d.toISOString().slice(0, 10);
+    }
+  }
+}
+
+async function saveNewJuiceProduct() {
+  const name = (document.getElementById('ju-new-name')?.value || '').trim();
+  const unit = document.getElementById('ju-new-unit')?.value || '병';
+  const perbox = parseInt(document.getElementById('ju-new-perbox')?.value) || null;
+  const months = parseInt(document.getElementById('ju-new-months')?.value) || null;
+  if (!name) return alert('품명을 입력해주세요.');
+  try {
+    const master = await dbInsertJuiceMaster({ product_name: name, default_unit: unit, default_per_box: perbox, default_expiry_months: months, is_active: true, created_by: 'admin' });
+    invJuiceMasters.push(master);
+    invJuiceMasters.sort((a, b) => a.product_name.localeCompare(b.product_name, 'ko'));
+    showToast(`"${name}" 품명 추가 완료`);
+    renderJuiceSection();
+    const sel = document.getElementById('ju-product');
+    if (sel) { sel.value = name; juiceProductChanged(); }
+  } catch(e) { alert('저장 실패: ' + e.message); }
+}
+
+function cancelNewJuiceProduct() {
+  const area = document.getElementById('ju-new-product-area');
+  if (area) area.style.display = 'none';
+  const sel = document.getElementById('ju-product');
+  if (sel) sel.value = '';
+}
+
 async function addJuice() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ju-date'), product_name = gv('ju-product'), unit = gv('ju-unit');
   const box_count = parseInt(document.getElementById('ju-box').value) || 0;
   const loose_count = parseInt(document.getElementById('ju-single').value) || 0;
   const per_box = parseInt(document.getElementById('ju-perbox').value) || null;
-  if (!date || !product_name || !unit) return alert('날짜, 품명, 단위는 필수입니다.');
+  if (!date || !product_name || product_name === '__new__' || !unit) return alert('날짜, 품명, 단위는 필수입니다.');
   if (!box_count && !loose_count) return alert('박스 또는 낱개 수량을 입력해주세요.');
   const type = gv('ju-type') || 'in';
   const data = {
@@ -7901,9 +7976,10 @@ async function addJuice() {
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
-async function deleteJuiceRecord(id) {
+async function deleteJuiceRecord(id, label) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!confirm('삭제하시겠습니까?')) return;
+  const msg = label ? `이 주스/청 기록을 삭제하시겠습니까?\n${label}` : '삭제하시겠습니까?';
+  if (!confirm(msg)) return;
   try {
     await dbDeleteJuiceRecord(id);
     invJuiceRecs = invJuiceRecs.filter(r => r.id !== id);

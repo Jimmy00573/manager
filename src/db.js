@@ -162,6 +162,12 @@ async function dbGetJuiceRecords() {
 async function dbInsertJuiceRecord(data) { const r = await sbInsert('juice_records', data); return r[0]; }
 async function dbDeleteJuiceRecord(id) { return sbUpdate('juice_records', id, { is_void: true }); }
 
+// ── 재고: juice_product_master
+async function dbGetJuiceMasters() {
+  try { return await sbGet('juice_product_master', 'is_active=eq.true&order=product_name'); } catch(e) { return []; }
+}
+async function dbInsertJuiceMaster(data) { const r = await sbInsert('juice_product_master', data); return r[0]; }
+
 // ── 카테고리 시스템
 async function dbGetCategories() { try { return await sbGet('categories', 'order=id'); } catch(e) { return []; } }
 async function dbInsertCategory(data) { const r = await sbInsert('categories', data); return r[0]; }
