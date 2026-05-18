@@ -10,7 +10,7 @@ const td = () => new Date().toISOString().slice(0, 10);
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [];
 let invSizeConfig = {};
 let inventoryRecords = [];
 let _invFilter   = { product: '', farm: '' };
@@ -3011,7 +3011,7 @@ function invTab(t) {
   if (t === 'log') loadAuditLogs();
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
-  if (t === 'wj') renderPachiSection();
+  if (t === 'wj') { renderPachiSection(); renderJuiceSection(); }
 }
 
 function ibTab(t) {
@@ -3044,13 +3044,14 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
       dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
       loadSizeConfig(), loadCategorySystem(),
-      dbGetInventoryRecords().catch(() => [])
+      dbGetInventoryRecords().catch(() => []),
+      dbGetJuiceRecords().catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3068,6 +3069,7 @@ async function loadAndRenderInv() {
     processingRecords = newProc;
     invUnsorted = legacyIn;
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
+    invJuiceRecs = juiceRecs;
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
@@ -4259,12 +4261,23 @@ function renderInvSummary() {
     if (!wasteMap[r.product]) wasteMap[r.product] = { ct: 0, kgPerCt: kgPerCtOf(r.product) };
     wasteMap[r.product].ct += Number(r.quantity) || 0;
   });
+  inventoryRecords.filter(r => r.source_type === 'pachi' || r.source_type === 'pachi_manual').forEach(r => {
+    const p = r.product || '기타';
+    if (!wasteMap[p]) wasteMap[p] = { ct: 0, kgPerCt: kgPerCtOf(p) };
+    wasteMap[p].ct += Number(r.quantity) || 0;
+  });
 
   const juiceMap = {};
   invJuice.forEach(r => {
     if (!juiceMap[r.product]) juiceMap[r.product] = { qty: 0, unit: r.unit || '병', note: r.note || '' };
     juiceMap[r.product].qty += Number(r.total_qty) || 0;
     if (r.note && !juiceMap[r.product].note) juiceMap[r.product].note = r.note;
+  });
+  invJuiceRecs.forEach(r => {
+    const p = r.product_name || '기타';
+    if (!juiceMap[p]) juiceMap[p] = { qty: 0, unit: r.unit || '병', note: r.note || '' };
+    juiceMap[p].qty += Number(r.total_count) || 0;
+    if (r.note && !juiceMap[p].note) juiceMap[p].note = r.note;
   });
 
   // 스타일 상수
@@ -7464,73 +7477,116 @@ function renderPachiSection() {
   if (!el) return;
 
   const kgPerCt = p => (p && p.includes('한라봉')) ? 13 : 17;
-  const pRecs = inventoryRecords.filter(r => r.source_type === 'pachi');
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+
+  // Source 1: inventory_records (선과 자동 + 수동 등록)
+  const irRecs = inventoryRecords.filter(r => r.source_type === 'pachi' || r.source_type === 'pachi_manual');
+  const irGrouped = {};
+  irRecs.forEach(r => {
+    const key = (r.source_type === 'pachi' && r.sorting_result_id) ? `srt_${r.sorting_result_id}` : `ir_${r.id}`;
+    if (!irGrouped[key]) {
+      irGrouped[key] = {
+        date: r.date, farm: r.farm_name || null, product: r.product || '기타',
+        ct: 0, kg: 0, ids: [], memo: '', isSorting: r.source_type === 'pachi', isLegacy: false
+      };
+    }
+    irGrouped[key].ct += Number(r.quantity) || 0;
+    if (r.note && r.note !== '파치 자동 변환') {
+      irGrouped[key].memo = [irGrouped[key].memo, r.note].filter(Boolean).join(', ');
+    }
+    irGrouped[key].ids.push(r.id);
+  });
+  Object.values(irGrouped).forEach(b => { b.kg = Math.round(b.ct * kgPerCt(b.product)); });
+
+  // Source 2: invWaste (레거시 수동 데이터)
+  const wasteRows = invWaste.map(r => ({
+    date: r.date, farm: null, product: r.product || '기타',
+    ct: Number(r.quantity) || 0,
+    kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
+    ids: [r.id], memo: [r.purpose, r.note].filter(Boolean).join(' / '),
+    isSorting: false, isLegacy: true
+  }));
+
+  // 통합 정렬: 품목명 가나다 → 날짜 최신순
+  const allRows = [...Object.values(irGrouped), ...wasteRows].sort((a, b) => {
+    const pc = (a.product || '').localeCompare(b.product || '', 'ko');
+    return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
+  });
 
   // 품목별 통계
   const statsMap = {};
-  pRecs.forEach(r => {
-    const p = r.product || '기타';
-    statsMap[p] = (statsMap[p] || 0) + (Number(r.quantity) || 0);
+  allRows.forEach(r => {
+    if (!statsMap[r.product]) statsMap[r.product] = 0;
+    statsMap[r.product] += r.ct;
   });
+  const totalCt = allRows.reduce((s, r) => s + r.ct, 0);
+  const totalKg = allRows.reduce((s, r) => s + r.kg, 0);
+
   const statsHtml = Object.keys(statsMap).length
-    ? Object.entries(statsMap).map(([p, ct]) => `
-        <div style="background:#FFF8F0;border:1px solid #FFCC80;border-radius:8px;padding:12px 16px;min-width:120px">
+    ? Object.entries(statsMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, ct]) => `
+        <div style="background:#FFF8F0;border:1px solid #FFCC80;border-radius:8px;padding:12px 16px;min-width:110px">
           <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
           <div style="font-size:18px;font-weight:700;color:#E65100">${fmtN(ct)} CT</div>
           <div style="font-size:12px;color:#666">${fmtN(Math.round(ct * kgPerCt(p)))} kg</div>
         </div>`).join('')
-    : `<span style="font-size:13px;color:#aaa">선과 파치 기록 없음</span>`;
+    : `<span style="font-size:13px;color:#aaa">파치 기록 없음</span>`;
 
-  // 배치(선과 작업)별 그룹화
-  const bMap = {};
-  pRecs.forEach(r => {
-    const key = r.sorting_result_id ? String(r.sorting_result_id) : `m_${r.date}`;
-    if (!bMap[key]) bMap[key] = {
-      date: r.date, farm: r.farm_name, prod: r.product,
-      ct: 0, ids: [], notes: [], isSorting: !!r.sorting_result_id
-    };
-    bMap[key].ct += Number(r.quantity) || 0;
-    bMap[key].ids.push(r.id);
-    if (r.note) bMap[key].notes.push(r.note);
-  });
-  const batches = Object.values(bMap).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-
-  const rows = batches.map(b => {
-    const kg = Math.round(b.ct * kgPerCt(b.prod));
-    const memoRaw = b.notes.filter(n => n && n !== '파치 자동 변환').join(', ');
-    const badge = b.isSorting
-      ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px">선과</span>`
-      : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px">수동</span>`;
-    return `<tr data-pachi-ids="${b.ids.join(',')}">
-      <td style="padding:7px 10px;white-space:nowrap">${b.date || '-'}</td>
-      <td style="padding:7px 10px">${esc(b.farm || '-')}</td>
-      <td style="padding:7px 10px">${esc(b.prod || '-')}${badge}</td>
-      <td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(b.ct)}</td>
-      <td style="padding:7px 10px;text-align:right">${fmtN(kg)}</td>
-      <td style="padding:7px 10px;font-size:12px;color:#666;cursor:pointer"
-          ondblclick="editPachiMemo(this.closest('tr'))"
-          title="더블클릭 → 메모 편집">${esc(memoRaw || '-')}</td>
+  const rowsHtml = allRows.map(r => {
+    const badge = r.isSorting
+      ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:2px 7px;font-size:11px">선과</span>`
+      : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
+    const idsAttr = !r.isLegacy ? `data-pachi-ids="${r.ids.join(',')}"` : '';
+    const memoCell = !r.isLegacy
+      ? `<td style="padding:7px 10px;font-size:12px;color:#666;cursor:pointer" ondblclick="editPachiMemo(this.closest('tr'))" title="더블클릭 → 메모 편집">${esc(r.memo || '-')}</td>`
+      : `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
+    const delCell = isAdm && r.isLegacy
+      ? `<td style="padding:7px 10px"><button class="btn del" onclick="deleteWaste('${r.ids[0]}')">삭제</button></td>`
+      : (isAdm && !r.isSorting
+        ? `<td style="padding:7px 10px"><button class="btn del" onclick="deleteManualPachi('${r.ids.join(',')}')">삭제</button></td>`
+        : '<td></td>');
+    return `<tr ${idsAttr}>
+      <td style="padding:7px 10px;white-space:nowrap">${r.date || '-'}</td>
+      <td style="padding:7px 10px">${esc(r.farm || '-')}</td>
+      <td style="padding:7px 10px">${esc(r.product)}</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>
+      <td style="padding:7px 10px;text-align:right">${fmtN(r.kg)}</td>
+      <td style="padding:7px 10px;text-align:center">${badge}</td>
+      ${memoCell}
+      ${delCell}
     </tr>`;
   }).join('');
 
+  const totalRow = totalCt ? `<tr style="background:#F9FAFB;font-weight:700;border-top:2px solid #E5E7EB">
+    <td colspan="3" style="padding:7px 10px;text-align:right;color:#666;font-size:12px">합계</td>
+    <td style="padding:7px 10px;text-align:right;color:#E65100">${fmtN(totalCt)}</td>
+    <td style="padding:7px 10px;text-align:right;color:#555">${fmtN(totalKg)}</td>
+    <td colspan="3"></td>
+  </tr>` : '';
+
   el.innerHTML = `
-    <div style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:8px">선과 파치 현황</div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
-    </div>
-    <div class="sec-hdr"><div class="sec-title">파치 상세 내역</div></div>
-    <div class="tbl-wrap">
-      <table style="min-width:480px;width:100%;border-collapse:collapse">
-        <thead><tr style="background:#F9FAFB">
-          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">날짜</th>
-          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">농가</th>
-          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">품목</th>
-          <th style="text-align:right;padding:7px 10px;border-bottom:2px solid #E5E7EB">CT</th>
-          <th style="text-align:right;padding:7px 10px;border-bottom:2px solid #E5E7EB">kg</th>
-          <th style="text-align:left;padding:7px 10px;border-bottom:2px solid #E5E7EB">메모 (더블클릭 편집)</th>
-        </tr></thead>
-        <tbody>${rows || '<tr><td colspan="6" class="empty">파치 기록 없음</td></tr>'}</tbody>
-      </table>
+    <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <div style="font-size:14px;font-weight:700;color:#222">파치 내역</div>
+        <div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>
+      </div>
+      <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
+      </div>
+      <div class="tbl-wrap">
+        <table style="min-width:580px;width:100%;border-collapse:collapse">
+          <thead><tr style="background:#F9FAFB">
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">농가</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">품목</th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT</th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">kg</th>
+            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
+            <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
+          </tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="8" class="empty">파치 기록 없음</td></tr>'}${totalRow}</tbody>
+        </table>
+      </div>
     </div>`;
 }
 
@@ -7602,14 +7658,20 @@ async function addWaste() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('wa-date'), product = gv('wa-product');
   const qty = parseInt(document.getElementById('wa-qty').value) || 0;
-  const loc = gv('wa-loc'), purpose = gv('wa-purpose');
-  if (!date || !product || !qty || !loc || !purpose) return alert('모든 필수 항목을 입력해주세요.');
-  const data = { date, product, quantity: qty, location: loc, purpose, note: gv('wa-note') || null };
+  const loc = gv('wa-loc');
+  if (!date || !product || !qty || !loc) return alert('날짜, 품목, 수량, 위치는 필수입니다.');
+  const data = {
+    date, product, farm_name: gv('wa-farm') || null,
+    quantity: qty, location: loc, size_code: null,
+    source_type: 'pachi_manual', note: gv('wa-memo') || null,
+    is_void: false, created_by: 'admin'
+  };
   try {
-    const row = await dbInsertWaste(data);
-    invWaste.unshift(row);
-    renderInvSummary(); renderWasteList();
-    ['wa-qty', 'wa-purpose', 'wa-note'].forEach(id => sv(id, ''));
+    const rows = await sbInsert('inventory_records', data);
+    inventoryRecords.unshift(rows[0]);
+    renderInvSummary(); renderPachiSection();
+    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-memo', '');
+    showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
@@ -7619,46 +7681,144 @@ async function deleteWaste(id) {
   try {
     await dbDeleteWaste(id);
     invWaste = invWaste.filter(r => r.id !== id);
-    renderInvSummary(); renderWasteList();
+    renderInvSummary(); renderPachiSection();
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function deleteManualPachi(idsStr) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!confirm('삭제하시겠습니까?')) return;
+  const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    for (const id of ids) await sbUpdate('inventory_records', id, { is_void: true });
+    inventoryRecords = inventoryRecords.filter(r => !ids.includes(String(r.id)));
+    renderInvSummary(); renderPachiSection();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+function renderJuiceSection() {
+  const el = document.getElementById('inv-juice-section');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+
+  // 품목별 통계
+  const statsMap = {};
+  invJuiceRecs.forEach(r => {
+    const p = r.product_name || '기타';
+    if (!statsMap[p]) statsMap[p] = { total: 0, unit: r.unit || '병' };
+    statsMap[p].total += Number(r.total_count) || 0;
+  });
+
+  const statsHtml = Object.keys(statsMap).length
+    ? Object.entries(statsMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, v]) => `
+        <div style="background:#F0FFF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;min-width:110px">
+          <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
+          <div style="font-size:18px;font-weight:700;color:#065F46">${fmtN(v.total)} ${esc(v.unit)}</div>
+        </div>`).join('')
+    : `<span style="font-size:13px;color:#aaa">주스/청 기록 없음</span>`;
+
+  const sorted = [...invJuiceRecs].sort((a, b) => {
+    const pc = (a.product_name || '').localeCompare(b.product_name || '', 'ko');
+    return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
+  });
+
+  const rowsHtml = sorted.map(r => `<tr>
+    <td style="padding:7px 10px;white-space:nowrap">${r.date || '-'}</td>
+    <td style="padding:7px 10px">${esc(r.product_name)}</td>
+    <td style="padding:7px 10px;text-align:right">${r.box_count || 0}</td>
+    <td style="padding:7px 10px;text-align:right">${r.loose_count || 0}</td>
+    <td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(Number(r.total_count) || 0)}</td>
+    <td style="padding:7px 10px">${esc(r.unit)}</td>
+    <td style="padding:7px 10px">${r.expiry_date || '-'}</td>
+    <td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.note || '-')}</td>
+    <td style="padding:7px 10px">${isAdm ? `<button class="btn del" onclick="deleteJuiceRecord('${r.id}')">삭제</button>` : ''}</td>
+  </tr>`).join('');
+
+  const formHtml = isAdm ? `
+    <div style="padding:14px 16px;border-top:1px solid #E5E7EB">
+      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:10px">🧃 주스/청 등록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
+        <div class="fg"><label>단위 *</label><select id="ju-unit"><option value="병">병</option><option value="박스">박스</option><option value="kg">kg</option></select></div>
+        <div class="fg" style="grid-column:1/-1"><label>품명 *</label><input id="ju-product" placeholder="예) 카라향 원액, 천혜향청"></div>
+        <div class="fg"><label>박스당 수량</label><input id="ju-perbox" type="number" placeholder="예) 35" min="0" oninput="calcJuiceTotal()"></div>
+        <div class="fg"><label>박스 수량</label><input id="ju-box" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
+        <div class="fg"><label>낱개 수량</label><input id="ju-single" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
+        <div class="fg"><label>총수량 (자동)</label><input id="ju-total" type="number" readonly class="auto"></div>
+        <div class="fg"><label>소비기한</label><input id="ju-expiry" type="date"></div>
+        <div class="fg" style="grid-column:1/-1"><label>비고</label><input id="ju-note"></div>
+      </div>
+      <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addJuice()">등록</button></div>
+    </div>` : '';
+
+  el.innerHTML = `
+    <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB">
+        <div style="font-size:14px;font-weight:700;color:#222">주스/청 내역</div>
+      </div>
+      <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
+      </div>
+      <div class="tbl-wrap">
+        <table style="min-width:600px;width:100%;border-collapse:collapse">
+          <thead><tr style="background:#F9FAFB">
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">품명</th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">박스</th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">낱개</th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">총수량</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">단위</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">소비기한</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">비고</th>
+            <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
+          </tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="9" class="empty">주스/청 기록 없음</td></tr>'}</tbody>
+        </table>
+      </div>
+      ${formHtml}
+    </div>`;
+
+  const juDate = document.getElementById('ju-date');
+  if (juDate && !juDate.value) juDate.value = td();
 }
 
 function calcJuiceTotal() {
   const box = parseInt(document.getElementById('ju-box').value) || 0;
   const single = parseInt(document.getElementById('ju-single').value) || 0;
-  sv('ju-total', box + single);
+  const perBox = parseInt(document.getElementById('ju-perbox').value) || 1;
+  sv('ju-total', box * perBox + single);
 }
 
 async function addJuice() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
-  const date = gv('ju-date'), product = gv('ju-product'), unit = gv('ju-unit');
-  const total_qty = parseInt(document.getElementById('ju-total').value) || 0;
-  if (!date || !product || !unit || !total_qty) return alert('날짜, 품명, 단위, 수량은 필수입니다.');
-  const boxVal = document.getElementById('ju-box').value;
-  const singleVal = document.getElementById('ju-single').value;
+  const date = gv('ju-date'), product_name = gv('ju-product'), unit = gv('ju-unit');
+  const box_count = parseInt(document.getElementById('ju-box').value) || 0;
+  const loose_count = parseInt(document.getElementById('ju-single').value) || 0;
+  const per_box = parseInt(document.getElementById('ju-perbox').value) || null;
+  if (!date || !product_name || !unit) return alert('날짜, 품명, 단위는 필수입니다.');
+  if (!box_count && !loose_count) return alert('박스 또는 낱개 수량을 입력해주세요.');
   const data = {
-    date, product, unit, total_qty,
-    box_qty: boxVal ? parseInt(boxVal) : null,
-    single_qty: singleVal ? parseInt(singleVal) : null,
+    date, product_name, unit, box_count, loose_count,
+    per_box: per_box || null,
     expiry_date: gv('ju-expiry') || null,
-    note: gv('ju-note') || null
+    type: 'in', note: gv('ju-note') || null,
+    is_void: false, created_by: 'admin'
   };
   try {
-    const row = await dbInsertJuice(data);
-    invJuice.unshift(row);
-    renderInvSummary(); renderJuiceList();
-    ['ju-product', 'ju-note'].forEach(id => sv(id, ''));
-    ['ju-box', 'ju-single', 'ju-total', 'ju-expiry'].forEach(id => sv(id, ''));
+    const row = await dbInsertJuiceRecord(data);
+    invJuiceRecs.unshift(row);
+    renderInvSummary(); renderJuiceSection();
+    showToast('주스/청 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
-async function deleteJuice(id) {
+async function deleteJuiceRecord(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!confirm('삭제하시겠습니까?')) return;
   try {
-    await dbDeleteJuice(id);
-    invJuice = invJuice.filter(r => r.id !== id);
-    renderInvSummary(); renderJuiceList();
+    await dbDeleteJuiceRecord(id);
+    invJuiceRecs = invJuiceRecs.filter(r => r.id !== id);
+    renderInvSummary(); renderJuiceSection();
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 

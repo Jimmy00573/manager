@@ -843,67 +843,35 @@
 
   <!-- 파치/주스·청 -->
   <div id="inv-wj-div" style="display:none">
-    <!-- 선과 연동 파치 현황 -->
+    <!-- 파치 통합 (통계 카드 + 통합 표) — JS 렌더링 -->
     <div id="inv-pachi-section" style="margin-bottom:20px"></div>
-    <hr style="border:none;border-top:1px solid #E5E7EB;margin:0 0 18px">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px">
-      <div class="form-card" style="margin-bottom:0">
-        <div class="form-title">🧹 파치 등록</div>
-        <div class="form-grid">
-          <div class="fg"><label>날짜 *</label><input id="wa-date" type="date"></div>
-          <div class="fg"><label>품목 *</label>
-            <select id="wa-product">
-              <option value="">선택</option>
-              <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option>
-            </select>
-          </div>
-          <div class="fg"><label>수량(CT) *</label><input id="wa-qty" type="number" placeholder="0" min="0"></div>
-          <div class="fg"><label>위치 *</label>
-            <select id="wa-loc">
-              <option value="">선택</option>
-              <option>냉장고1</option><option>냉장고2</option><option>냉장고3</option><option>1층</option><option>지하</option>
-            </select>
-          </div>
-          <div class="fg" style="grid-column:1/-1"><label>사용처 *</label><input id="wa-purpose" placeholder="예) 오름, 주스용"></div>
-          <div class="fg" style="grid-column:1/-1"><label>특이사항</label><input id="wa-note"></div>
+
+    <!-- 파치 수동 등록 -->
+    <div class="form-card" style="margin-bottom:20px">
+      <div class="form-title">🧹 파치 등록</div>
+      <div class="form-grid">
+        <div class="fg"><label>날짜 *</label><input id="wa-date" type="date"></div>
+        <div class="fg"><label>품목 *</label>
+          <select id="wa-product">
+            <option value="">선택</option>
+            <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option>
+          </select>
         </div>
-        <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addWaste()">등록</button></div>
-      </div>
-      <div class="form-card" style="margin-bottom:0">
-        <div class="form-title">🧃 주스/청 등록</div>
-        <div class="form-grid">
-          <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
-          <div class="fg"><label>단위 *</label><select id="ju-unit"><option value="병">병</option><option value="박스">박스</option></select></div>
-          <div class="fg" style="grid-column:1/-1"><label>품명 *</label><input id="ju-product" placeholder="예) 카라향 원액, 천혜향청"></div>
-          <div class="fg"><label>박스수량</label><input id="ju-box" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
-          <div class="fg"><label>낱개수량</label><input id="ju-single" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
-          <div class="fg"><label>총수량(자동)</label><input id="ju-total" type="number" readonly class="auto"></div>
-          <div class="fg"><label>소비기한</label><input id="ju-expiry" type="date"></div>
-          <div class="fg" style="grid-column:1/-1"><label>비고</label><input id="ju-note"></div>
+        <div class="fg"><label>수량(CT) *</label><input id="wa-qty" type="number" placeholder="0" min="0"></div>
+        <div class="fg"><label>농가 (선택)</label><input id="wa-farm" placeholder="예) 홍길동"></div>
+        <div class="fg"><label>위치 *</label>
+          <select id="wa-loc">
+            <option value="">선택</option>
+            <option>냉장고1</option><option>냉장고2</option><option>냉장고3</option><option>1층</option><option>지하</option>
+          </select>
         </div>
-        <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addJuice()">등록</button></div>
+        <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="wa-memo" placeholder="예) 주스용, 출하예정, 오름 납품"></div>
       </div>
+      <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addWaste()">등록</button></div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
-      <div>
-        <div class="sec-hdr"><div class="sec-title">파치 내역</div></div>
-        <div class="tbl-wrap">
-          <table style="min-width:320px">
-            <thead><tr><th>날짜</th><th>품목</th><th>수량</th><th>위치</th><th>사용처</th><th></th></tr></thead>
-            <tbody id="wa-tb"><tr><td colspan="6" class="empty">파치 기록 없음</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-      <div>
-        <div class="sec-hdr"><div class="sec-title">주스/청 내역</div></div>
-        <div class="tbl-wrap">
-          <table style="min-width:320px">
-            <thead><tr><th>날짜</th><th>품명</th><th>총수량</th><th>소비기한</th><th></th></tr></thead>
-            <tbody id="ju-tb"><tr><td colspan="5" class="empty">주스/청 기록 없음</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+
+    <!-- 주스/청 섹션 (통계 카드 + 내역 표 + 등록 폼) — JS 렌더링 -->
+    <div id="inv-juice-section"></div>
   </div>
   <!-- 위치 관리 -->
   <div id="inv-loc-div" style="display:none"></div>
@@ -1378,6 +1346,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=10"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=14"></script>
+<script src="src/app.js?v=15"></script>
 </body>
 </html>
