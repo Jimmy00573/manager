@@ -372,6 +372,9 @@ textarea {
   .hdr, #anav, #dnav, #pin-screen, .btn, [onclick="window.print()"] { display: none !important; }
   .panel { display: none !important; }
   #p-inv { display: block !important; }
+  #p-inv .ext-tabs { display: none !important; }
+  #inv-sum-div { display: block !important; }
+  #inv-uns-div, #inv-srt-div, #inv-wj-div, #inv-log-div, #inv-loc-div, #inv-qc-div, #inv-cfg-div { display: none !important; }
   .main { max-width: 100%; padding: 0; }
   .inv-excel-wrap { max-width: 100%; }
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

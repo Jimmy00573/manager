@@ -4737,9 +4737,9 @@ function renderInvSummary() {
   const TC   = 'padding:7px 10px;border:1px solid #E5E7EB;font-size:13px;text-align:center';
   const TRhl = TR + ';color:#1E40AF;background:#EFF6FF';
   const EMPTY = (n, msg) => `<tr><td colspan="${n}" style="padding:18px;text-align:center;color:#bbb;font-size:13px">${msg}</td></tr>`;
-  const secHdr = (n, title, sub) => `<div style="background:#EFF6FF;border-bottom:1px solid #DBEAFE;padding:10px 16px">
-    <div style="font-size:14px;font-weight:700;color:#1E40AF">${n}. ${title}</div>
-    ${sub ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${sub}</div>` : ''}
+  const secHdr = (n, title, sub) => `<div style="background:#3B82F6;padding:10px 16px">
+    <div style="font-size:14px;font-weight:700;color:#fff">${n}. ${title}</div>
+    ${sub ? `<div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:2px">${sub}</div>` : ''}
   </div>`;
 
   // ── 처리 집계
@@ -4748,21 +4748,45 @@ function renderInvSummary() {
     processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
   });
 
-  // ── 섹션 1: 미선과 재고 (CT)
+  // ── 섹션 1: 미선과 재고 (원물 / 소과 분리)
   const unsMap = {};
   inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
-    if (rem > 0) unsMap[r.product] = (unsMap[r.product] || 0) + rem;
+    if (rem <= 0) return;
+    if (!unsMap[r.product]) unsMap[r.product] = { raw: 0, small: 0 };
+    if (r.inbound_category === '소과') unsMap[r.product].small += rem;
+    else unsMap[r.product].raw += rem;
   });
 
-  // ── 섹션 2 & 3: 선과 재고 (inventory_records 우선, invSorted 레거시 폴백)
+  // ── 만감류 품목별 사이즈 그룹 매핑 (한라봉 별도 기준)
+  const HALLA_SIZES = {
+    '대과': new Set(['7수','8수','9수','10수']),
+    '중과': new Set(['11수','12수','13수']),
+    '소과': new Set(['14수','15수','16수','17수','18수']),
+  };
+  const DEFAULT_MANGAM_SIZES = {
+    '대과': new Set(SIZE_GROUPS_만감류[0].sizes),
+    '중과': new Set(SIZE_GROUPS_만감류[1].sizes),
+    '소과': new Set(SIZE_GROUPS_만감류[2].sizes),
+  };
+  const getMangamGroup = (product, sizeCode) => {
+    const map = product && product.includes('한라봉') ? HALLA_SIZES : DEFAULT_MANGAM_SIZES;
+    for (const [grp, s] of Object.entries(map)) { if (s.has(sizeCode)) return grp; }
+    return '기타';
+  };
+
+  // ── 섹션 2 & 3: 선과 재고
   const manGamMap = {}, citrusMap = {};
   inventoryRecords.filter(r => !r.is_void && ['sorting','manual','adjustment'].includes(r.source_type)).forEach(r => {
     if (!r.size_code) return;
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
-    const grpList = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
-    const grpObj = grpList.find(g => g.sizes.includes(r.size_code));
-    const grp = grpObj ? grpObj.group : '기타';
+    let grp;
+    if (ptype === '감귤류') {
+      const go = SIZE_GROUPS_감귤류.find(g => g.sizes.includes(r.size_code));
+      grp = go ? go.group : '기타';
+    } else {
+      grp = getMangamGroup(r.product, r.size_code);
+    }
     const kg = (Number(r.quantity) || 0) * kgPerCt(r.product);
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
@@ -4788,7 +4812,7 @@ function renderInvSummary() {
     pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
   });
 
-  // ── 섹션 5: 주스/청 재고 (juice_records 기반 입출고 차)
+  // ── 섹션 5: 주스/청 재고
   const juiceMap = {};
   invJuiceRecs.forEach(r => {
     const p = r.product_name || '기타';
@@ -4803,61 +4827,55 @@ function renderInvSummary() {
     juiceMap[p].net += Number(r.total_qty) || 0;
   });
 
-  // ── 오늘 입고
+  // ── 오늘 입고 (리스트 형식, 클릭 시 미선과 탭)
   const todayStr = td();
   const todayInbounds = inboundRecords.filter(r => !r.is_void && r.date === todayStr);
-
-  // ── 우선 처리 알림 (21일+ 미처리)
-  const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
-  const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
-  const priorityItems = inboundRecords
-    .filter(r => !r.is_void && !r.exclude_from_unsorted)
-    .map(r => ({ ...r, remaining: r.quantity - (processedByInbound[r.id] || 0), days: daysSince(r.date) }))
-    .filter(r => r.remaining > 0 && r.days >= 21)
-    .sort((a, b) => b.days - a.days);
-
-  // ── HTML 조립
-  const todayHtml = todayInbounds.length ? `<div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;margin-bottom:16px">
-    <div style="font-size:13px;font-weight:700;color:#065F46;margin-bottom:8px">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)}) &nbsp;·&nbsp; ${todayInbounds.length}건 &nbsp;·&nbsp; 합계 ${fmtN(todayInbounds.reduce((s,r)=>s+r.quantity,0))} CT</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px">${todayInbounds.map(r => `<span style="background:#D1FAE5;color:#065F46;border-radius:6px;padding:4px 10px;font-size:12px">${esc(r.farm_name)} ${esc(r.product)} <strong>${fmtN(r.quantity)} CT</strong></span>`).join('')}</div>
+  const todayHtml = todayInbounds.length ? `<div onclick="invTab('uns')" style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer" onmouseover="this.style.background='#DCFCE7'" onmouseout="this.style.background='#F0FDF4'">
+    <div style="font-size:13px;font-weight:700;color:#065F46;margin-bottom:8px">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)}) &nbsp;·&nbsp; ${todayInbounds.length}건 &nbsp;·&nbsp; 합계 ${fmtN(todayInbounds.reduce((s,r)=>s+r.quantity,0))} CT &nbsp;<span style="font-size:11px;color:#059669;font-weight:400">→ 미선과 탭 바로가기</span></div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 8px;color:#065F46;border-bottom:1px solid #A7F3D0">농가</th>
+        <th style="text-align:left;padding:4px 8px;color:#065F46;border-bottom:1px solid #A7F3D0">품목</th>
+        <th style="text-align:right;padding:4px 8px;color:#065F46;border-bottom:1px solid #A7F3D0">수량 (CT)</th>
+      </tr></thead>
+      <tbody>${todayInbounds.map(r => `<tr>
+        <td style="padding:4px 8px;color:#065F46">${esc(r.farm_name)}</td>
+        <td style="padding:4px 8px;color:#065F46">${esc(r.product)}</td>
+        <td style="padding:4px 8px;text-align:right;font-weight:600;color:#065F46">${fmtN(r.quantity)}</td>
+      </tr>`).join('')}</tbody>
+    </table>
   </div>` : '';
 
-  const priHtml = priorityItems.length ? `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:16px">
-    <div style="font-size:13px;font-weight:700;color:#991B1B;margin-bottom:8px">⚠️ 우선 처리 필요 — ${priorityItems.length}건 (3주+ 미선과)</div>
-    <div style="display:flex;flex-direction:column;gap:4px">${priorityItems.map(r => `<div style="display:flex;align-items:center;gap:8px;font-size:12px">
-      <span>${r.days >= 30 ? '🔴' : '🟠'}</span>
-      <span>${esc(r.farm_name)} ${esc(r.product)} <strong>${fmtN(r.remaining)} CT</strong></span>
-      <span style="color:${r.days >= 30 ? '#7F1D1D' : '#991B1B'};font-size:11px">(${r.days}일 경과)</span>
-    </div>`).join('')}</div>
-  </div>` : '';
-
-  // 섹션 1: 미선과
-  const unsEntries = Object.entries(unsMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  // 섹션 1: 미선과 (원물 / 소과 / 합계)
+  const unsEntries = Object.entries(unsMap).filter(([, v]) => v.raw + v.small > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const unsHtml = `<div style="${CARD}">${secHdr(1, '미선과 재고', '단위: CT')}
-    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:280px">
-      <thead><tr><th style="${THL}">품목</th><th style="${THR}">합계 (CT)</th></tr></thead>
+    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:360px">
+      <thead><tr><th style="${THL}">품목</th><th style="${THR}">원물 (CT)</th><th style="${THR}">소과 (CT)</th><th style="${THR}">합계 (CT)</th></tr></thead>
       <tbody>${unsEntries.length
-        ? unsEntries.map(([p, ct]) => `<tr><td style="${TL}">${esc(p)}</td><td style="${TRhl}">${fmtN(ct)} CT</td></tr>`).join('')
-        : EMPTY(2, '미선과 재고 없음')}</tbody>
+        ? unsEntries.map(([p, v]) => {
+            const total = v.raw + v.small;
+            return `<tr><td style="${TL}">${esc(p)}</td><td style="${TR}">${v.raw ? fmtN(v.raw) : ''}</td><td style="${TR}">${v.small ? fmtN(v.small) : ''}</td><td style="${TRhl}">${fmtN(total)} CT</td></tr>`;
+          }).join('')
+        : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
 
   // 섹션 2 & 3: 선과 빌더
-  const buildSortSection = (n, title, sub, dataMap, groups) => {
+  const SORT_GROUPS = ['대과', '중과', '소과'];
+  const buildSortSection = (n, title, sub, dataMap) => {
     const entries = Object.entries(dataMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-    const gNames = groups.map(g => g.group);
     return `<div style="${CARD}">${secHdr(n, title, sub)}
-      <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:${180 + gNames.length * 100}px">
-        <thead><tr><th style="${THL}">품목</th>${gNames.map(g => `<th style="${THR}">${g} (kg)</th>`).join('')}<th style="${THR}">합계 (kg)</th></tr></thead>
+      <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:480px">
+        <thead><tr><th style="${THL}">품목</th>${SORT_GROUPS.map(g => `<th style="${THR}">${g} (kg)</th>`).join('')}<th style="${THR}">합계 (kg)</th></tr></thead>
         <tbody>${entries.length
           ? entries.map(([p, m]) => {
               const total = Object.values(m).reduce((s, v) => s + v, 0);
-              return `<tr><td style="${TL}">${esc(p)}</td>${gNames.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : ''}</td>`).join('')}<td style="${TRhl}">${total ? fmtN(Math.round(total)) : ''}</td></tr>`;
+              return `<tr><td style="${TL}">${esc(p)}</td>${SORT_GROUPS.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : ''}</td>`).join('')}<td style="${TRhl}">${total ? fmtN(Math.round(total)) : ''}</td></tr>`;
             }).join('')
-          : EMPTY(gNames.length + 2, '선과 재고 없음')}</tbody>
+          : EMPTY(SORT_GROUPS.length + 2, '선과 재고 없음')}</tbody>
       </table></div></div>`;
   };
-  const manGamHtml = buildSortSection(2, '만감류 선과 재고', '단위: kg · 대과(5~14수) / 중과(15~22수) / 소과(23~26수)', manGamMap, SIZE_GROUPS_만감류);
-  const citrusHtml = buildSortSection(3, '감귤류 선과 재고', '단위: kg · 극소과(000~2S2) / 로얄과(S1~M2) / 대과(L~왕2)', citrusMap, SIZE_GROUPS_감귤류);
+  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap);
+  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000~2S2) / 로얄과(S1~M2) / 대과(L~왕2)', citrusMap);
 
   // 섹션 4: 파치
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
@@ -4880,7 +4898,7 @@ function renderInvSummary() {
       <tbody>${juiceEntries.length
         ? juiceEntries.map(([p, v]) => {
             const isNeg = v.net < 0;
-            const noteStr = v.perBox ? `1박스/${v.perBox}개` : '';
+            const noteStr = v.perBox ? `1BOX/${v.perBox}개` : '';
             return `<tr><td style="${TL}">${esc(p)}</td><td style="${isNeg ? TR + ';color:#DC2626' : TRhl}">${fmtN(v.net)}</td><td style="${TC}">${esc(v.unit)}</td><td style="${TL};color:#6B7280;font-size:12px">${noteStr}</td></tr>`;
           }).join('')
         : EMPTY(4, '주스/청 재고 없음')}</tbody>
@@ -4894,7 +4912,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.4);padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">🖨️ PDF 출력</button>
     </div>
-    ${todayHtml}${priHtml}${unsHtml}${manGamHtml}${citrusHtml}${pachiHtml}${juiceHtml}
+    ${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}${pachiHtml}${juiceHtml}
   </div>`;
 }
 
