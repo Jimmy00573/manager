@@ -3970,8 +3970,11 @@ function _renderInvMatrix(product, recs) {
   const N = allSizes.length;
   const FARM_W = 120, SZ_W = 46, TOT_W = 70, ACT_W = 100;
   const isAdm  = sessionStorage.getItem('citrus_role') === 'admin';
-  const minW   = FARM_W + N * SZ_W + TOT_W + ACT_W;
-  const gCols  = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px ${ACT_W}px`;
+  const minW   = FARM_W + N * SZ_W + TOT_W + (isAdm ? ACT_W : 0);
+  const gCols  = isAdm
+    ? `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px ${ACT_W}px`
+    : `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px`;
+  const totRight = isAdm ? ACT_W : 0;
 
   const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
   const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
@@ -3980,22 +3983,22 @@ function _renderInvMatrix(product, recs) {
 
   let h = '';
 
-  // 헤더 row1: 농가 | 그룹들 | 합계
+  // 헤더 row1: 농가 | 그룹들 | 합계 | [관리]
   h += `<div style="${HD}justify-content:flex-start;padding:6px 10px;border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4">농가</div>`;
   groups.forEach((g, gi) => {
     h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${g.sizes.length}">${esc(g.group)}</div>`;
   });
-  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${ACT_W}px;z-index:4">합계</div>`;
-  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4">합계</div>`;
+  if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4;font-size:11px">관리</div>`;
 
-  // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸
+  // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸 | [빈칸]
   h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
   allSizes.forEach(sz => {
     const gi = szGI[sz];
     h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
   });
-  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${ACT_W}px;z-index:4"></div>`;
-  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
+  h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4"></div>`;
+  if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 데이터 rows (batch별)
   batches.forEach((batch, i) => {
@@ -4018,13 +4021,14 @@ function _renderInvMatrix(product, recs) {
       const inner = val === 0
         ? `<span style="color:#9CA3AF">-</span>`
         : `<strong style="color:#111827">${fmtN(val)}</strong>`;
-      h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};cursor:pointer;padding:5px 2px" title="더블클릭: 수량 수정">${inner}</div>`;
+      h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
     });
     const regId = Object.keys(_matrixBatchRegistry).length;
     _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes } };
-    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:1px solid #E5E7EB;position:sticky;right:${ACT_W}px;z-index:2">${fmtN(batchTotal)}</div>`;
-    const actBtns = isAdm ? `<button class="btn edt" style="font-size:11px;padding:2px 5px;white-space:nowrap" onclick="openInvEditModal(${regId})">수정</button><button class="btn del" style="font-size:11px;padding:2px 5px;white-space:nowrap;margin-left:3px" onclick="deleteMatrixBatch(${regId})">삭제</button>` : '';
-    h += `<div style="${C}background:${rowBg};justify-content:center;padding:2px 4px;border-right:none;position:sticky;right:0;z-index:2">${actBtns}</div>`;
+    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:${isAdm ? '1px solid #E5E7EB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(batchTotal)}</div>`;
+    if (isAdm) {
+      h += `<div style="${C}background:${rowBg};justify-content:center;padding:2px 4px;border-right:none;position:sticky;right:0;z-index:2"><button class="btn edt" style="font-size:11px;padding:2px 5px;white-space:nowrap" onclick="openInvEditModal(${regId})">수정</button><button class="btn del" style="font-size:11px;padding:2px 5px;white-space:nowrap;margin-left:3px" onclick="deleteMatrixBatch(${regId})">삭제</button></div>`;
+    }
   });
 
   // 합계 row
@@ -4033,11 +4037,11 @@ function _renderInvMatrix(product, recs) {
     const v = colTotals[sz] || 0;
     h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</div>`;
   });
-  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;right:${ACT_W}px;z-index:2">${fmtN(grandTotal)}</div>`;
-  h += `<div style="${F}border-right:none;position:sticky;right:0;z-index:2"></div>`;
+  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(grandTotal)}</div>`;
+  if (isAdm) h += `<div style="${F}border-right:none;position:sticky;right:0;z-index:2"></div>`;
 
   return `
-    <div style="width:${minW}px;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
+    <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
       <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
