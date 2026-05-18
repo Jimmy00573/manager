@@ -153,7 +153,6 @@ async function initApp() {
     });
     document.getElementById('pin-screen').style.display = 'flex';
   }
-  initImeNotice();
   hideLoading();
 }
 
@@ -7531,35 +7530,60 @@ function renderPachiSection() {
         </div>`).join('')
     : `<span style="font-size:13px;color:#aaa">파치 기록 없음</span>`;
 
-  const rowsHtml = allRows.map(r => {
+  // 품목별 그룹화 (정렬은 이미 allRows에 적용됨)
+  const groups = {}, groupOrder = [];
+  allRows.forEach(r => {
+    if (!groups[r.product]) { groups[r.product] = []; groupOrder.push(r.product); }
+    groups[r.product].push(r);
+  });
+
+  const makeDataRow = r => {
     const badge = r.isSorting
       ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:2px 7px;font-size:11px">선과</span>`
       : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
     const idsAttr = !r.isLegacy ? `data-pachi-ids="${r.ids.join(',')}"` : '';
+    const canEditQty = !r.isLegacy && r.ids.length === 1;
+    const ctCell = canEditQty
+      ? `<td style="padding:7px 10px;text-align:right;font-weight:600;cursor:pointer" ondblclick="editPachiQty(this.closest('tr'))" title="더블클릭 → 수량 편집">${fmtN(r.ct)}</td>`
+      : `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
     const memoCell = !r.isLegacy
       ? `<td style="padding:7px 10px;font-size:12px;color:#666;cursor:pointer" ondblclick="editPachiMemo(this.closest('tr'))" title="더블클릭 → 메모 편집">${esc(r.memo || '-')}</td>`
       : `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
     const delCell = isAdm && r.isLegacy
-      ? `<td style="padding:7px 10px"><button class="btn del" onclick="deleteWaste('${r.ids[0]}')">삭제</button></td>`
+      ? `<td style="padding:4px 8px"><button class="btn del" onclick="deleteWaste('${r.ids[0]}')">삭제</button></td>`
       : (isAdm && !r.isSorting
-        ? `<td style="padding:7px 10px"><button class="btn del" onclick="deleteManualPachi('${r.ids.join(',')}')">삭제</button></td>`
+        ? `<td style="padding:4px 8px"><button class="btn del" onclick="deleteManualPachi('${r.ids.join(',')}')">삭제</button></td>`
         : '<td></td>');
     return `<tr ${idsAttr}>
-      <td style="padding:7px 10px;white-space:nowrap">${r.date || '-'}</td>
-      <td style="padding:7px 10px">${esc(r.farm || '-')}</td>
-      <td style="padding:7px 10px">${esc(r.product)}</td>
-      <td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>
-      <td style="padding:7px 10px;text-align:right">${fmtN(r.kg)}</td>
+      <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
+      <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#aaa"></td>
+      ${ctCell}
+      <td style="padding:7px 10px;text-align:right;color:#666;font-size:13px">${fmtN(r.kg)}</td>
       <td style="padding:7px 10px;text-align:center">${badge}</td>
       ${memoCell}
       ${delCell}
     </tr>`;
+  };
+
+  const groupedHtml = groupOrder.map(product => {
+    const rows = groups[product];
+    const gCt = rows.reduce((s, r) => s + r.ct, 0);
+    const gKg = rows.reduce((s, r) => s + r.kg, 0);
+    return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
+        <td colspan="8" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+          [ ${esc(product)} ] &nbsp;&nbsp;
+          <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
+          <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
+          <span style="color:#555">${fmtN(gKg)} kg</span>
+        </td>
+      </tr>` + rows.map(makeDataRow).join('');
   }).join('');
 
   const totalRow = totalCt ? `<tr style="background:#F9FAFB;font-weight:700;border-top:2px solid #E5E7EB">
-    <td colspan="3" style="padding:7px 10px;text-align:right;color:#666;font-size:12px">합계</td>
-    <td style="padding:7px 10px;text-align:right;color:#E65100">${fmtN(totalCt)}</td>
-    <td style="padding:7px 10px;text-align:right;color:#555">${fmtN(totalKg)}</td>
+    <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
+    <td style="padding:8px 12px;text-align:right;color:#E65100">${fmtN(totalCt)} CT</td>
+    <td style="padding:8px 12px;text-align:right;color:#555">${fmtN(totalKg)} kg</td>
     <td colspan="3"></td>
   </tr>` : '';
 
@@ -7573,21 +7597,41 @@ function renderPachiSection() {
         <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
       </div>
       <div class="tbl-wrap">
-        <table style="min-width:580px;width:100%;border-collapse:collapse">
+        <table style="min-width:560px;width:100%;border-collapse:collapse">
           <thead><tr style="background:#F9FAFB">
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">농가</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">품목</th>
-            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT</th>
+            <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
+            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT ✎</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">kg</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모 ✎</th>
             <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
           </tr></thead>
-          <tbody>${rowsHtml || '<tr><td colspan="8" class="empty">파치 기록 없음</td></tr>'}${totalRow}</tbody>
+          <tbody>${groupedHtml || '<tr><td colspan="8" class="empty">파치 기록 없음</td></tr>'}${totalRow}</tbody>
         </table>
       </div>
     </div>`;
+}
+
+async function editPachiQty(trEl) {
+  const idsStr = trEl && trEl.dataset && trEl.dataset.pachiIds;
+  if (!idsStr) return;
+  const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
+  if (ids.length !== 1) { alert('수량 편집은 단일 기록만 가능합니다.'); return; }
+  const id = ids[0];
+  const rec = inventoryRecords.find(r => String(r.id) === String(id));
+  if (!rec) return;
+  const input = prompt('수량(CT) 수정:', rec.quantity || 0);
+  if (input === null) return;
+  const newQty = parseInt(input);
+  if (isNaN(newQty) || newQty < 0) return alert('유효한 숫자를 입력해주세요.');
+  try {
+    await sbUpdate('inventory_records', id, { quantity: newQty });
+    rec.quantity = newQty;
+    renderInvSummary(); renderPachiSection();
+    showToast('수량 수정 완료');
+  } catch(e) { alert('수정 실패: ' + e.message); }
 }
 
 async function editPachiMemo(trEl) {
@@ -7701,43 +7745,86 @@ function renderJuiceSection() {
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
-  // 품목별 통계
-  const statsMap = {};
+  // 품목별 재고 계산 (입고 - 출고)
+  const stockMap = {};
   invJuiceRecs.forEach(r => {
     const p = r.product_name || '기타';
-    if (!statsMap[p]) statsMap[p] = { total: 0, unit: r.unit || '병' };
-    statsMap[p].total += Number(r.total_count) || 0;
+    if (!stockMap[p]) stockMap[p] = { inTotal: 0, outTotal: 0, unit: r.unit || '병' };
+    const qty = Number(r.total_count) || 0;
+    if (r.type === 'out') stockMap[p].outTotal += qty;
+    else stockMap[p].inTotal += qty;
   });
 
-  const statsHtml = Object.keys(statsMap).length
-    ? Object.entries(statsMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, v]) => `
-        <div style="background:#F0FFF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;min-width:110px">
+  const statsHtml = Object.keys(stockMap).length
+    ? Object.entries(stockMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, v]) => {
+        const stock = v.inTotal - v.outTotal;
+        const isNeg = stock < 0;
+        return `<div style="background:${isNeg ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${isNeg ? '#FECACA' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:130px">
           <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-          <div style="font-size:18px;font-weight:700;color:#065F46">${fmtN(v.total)} ${esc(v.unit)}</div>
-        </div>`).join('')
+          <div style="font-size:18px;font-weight:700;color:${isNeg ? '#DC2626' : '#065F46'}">${fmtN(stock)} ${esc(v.unit)}</div>
+          <div style="font-size:11px;color:#999;margin-top:2px">입고 ${fmtN(v.inTotal)} / 출고 ${fmtN(v.outTotal)}</div>
+          ${isNeg ? '<div style="font-size:11px;color:#DC2626;font-weight:600">⚠ 재고 부족</div>' : ''}
+        </div>`;
+      }).join('')
     : `<span style="font-size:13px;color:#aaa">주스/청 기록 없음</span>`;
 
-  const sorted = [...invJuiceRecs].sort((a, b) => {
+  // 품목별 그룹화 (품목명 가나다 → 날짜 최신순)
+  const sortedRecs = [...invJuiceRecs].sort((a, b) => {
     const pc = (a.product_name || '').localeCompare(b.product_name || '', 'ko');
     return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
   });
+  const jGroups = {}, jGroupOrder = [];
+  sortedRecs.forEach(r => {
+    const p = r.product_name || '기타';
+    if (!jGroups[p]) { jGroups[p] = []; jGroupOrder.push(p); }
+    jGroups[p].push(r);
+  });
 
-  const rowsHtml = sorted.map(r => `<tr>
-    <td style="padding:7px 10px;white-space:nowrap">${r.date || '-'}</td>
-    <td style="padding:7px 10px">${esc(r.product_name)}</td>
-    <td style="padding:7px 10px;text-align:right">${r.box_count || 0}</td>
-    <td style="padding:7px 10px;text-align:right">${r.loose_count || 0}</td>
-    <td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(Number(r.total_count) || 0)}</td>
-    <td style="padding:7px 10px">${esc(r.unit)}</td>
-    <td style="padding:7px 10px">${r.expiry_date || '-'}</td>
-    <td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.note || '-')}</td>
-    <td style="padding:7px 10px">${isAdm ? `<button class="btn del" onclick="deleteJuiceRecord('${r.id}')">삭제</button>` : ''}</td>
-  </tr>`).join('');
+  const groupedRowsHtml = jGroupOrder.map(product => {
+    const rows = jGroups[product];
+    const gIn  = rows.filter(r => r.type !== 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
+    const gOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
+    const unit = rows[0]?.unit || '병';
+    const headerHtml = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
+      <td colspan="9" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+        [ ${esc(product)} ] &nbsp;&nbsp;
+        <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
+        <span style="color:#1D4ED8">입고 ${fmtN(gIn)}</span> / <span style="color:#DC2626">출고 ${fmtN(gOut)}</span>
+        &nbsp;→&nbsp; <span style="color:#065F46;font-weight:600">재고 ${fmtN(gIn - gOut)} ${esc(unit)}</span>
+      </td>
+    </tr>`;
+    const dataRows = rows.map(r => {
+      const isOut = r.type === 'out';
+      const badge = isOut
+        ? `<span style="background:#FEE2E2;color:#DC2626;border-radius:10px;padding:2px 7px;font-size:11px">출고</span>`
+        : `<span style="background:#DBEAFE;color:#1D4ED8;border-radius:10px;padding:2px 7px;font-size:11px">입고</span>`;
+      const rowBg = isOut ? 'background:#FAFAFA' : '';
+      return `<tr style="${rowBg}">
+        <td style="padding:7px 10px;white-space:nowrap;font-size:13px;color:#555">${r.date || '-'}</td>
+        <td style="padding:7px 10px;font-size:13px">${esc(r.product_name)}</td>
+        <td style="padding:7px 10px;text-align:center">${badge}</td>
+        <td style="padding:7px 10px;text-align:right;font-size:13px">${r.box_count || 0}</td>
+        <td style="padding:7px 10px;text-align:right;font-size:13px">${r.loose_count || 0}</td>
+        <td style="padding:7px 10px;text-align:right;font-weight:600;color:${isOut ? '#DC2626' : '#065F46'}">${isOut ? '-' : ''}${fmtN(Number(r.total_count) || 0)}</td>
+        <td style="padding:7px 10px;font-size:13px">${esc(r.unit)}</td>
+        <td style="padding:7px 10px;font-size:12px;color:#666">${r.expiry_date || '-'}</td>
+        <td style="padding:7px 10px;font-size:12px;color:#888">${esc(r.note || '-')}</td>
+        <td style="padding:4px 8px">${isAdm ? `<button class="btn del" onclick="deleteJuiceRecord('${r.id}')">삭제</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+    return headerHtml + dataRows;
+  }).join('');
 
   const formHtml = isAdm ? `
     <div style="padding:14px 16px;border-top:1px solid #E5E7EB">
       <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:10px">🧃 주스/청 등록</div>
       <div class="form-grid">
+        <div class="fg"><label>구분 *</label>
+          <select id="ju-type" style="font-weight:600">
+            <option value="in">입고</option>
+            <option value="out">출고</option>
+          </select>
+        </div>
         <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
         <div class="fg"><label>단위 *</label><select id="ju-unit"><option value="병">병</option><option value="박스">박스</option><option value="kg">kg</option></select></div>
         <div class="fg" style="grid-column:1/-1"><label>품명 *</label><input id="ju-product" placeholder="예) 카라향 원액, 천혜향청"></div>
@@ -7760,10 +7847,11 @@ function renderJuiceSection() {
         <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
       </div>
       <div class="tbl-wrap">
-        <table style="min-width:600px;width:100%;border-collapse:collapse">
+        <table style="min-width:640px;width:100%;border-collapse:collapse">
           <thead><tr style="background:#F9FAFB">
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">품명</th>
+            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">구분</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">박스</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">낱개</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">총수량</th>
@@ -7772,7 +7860,7 @@ function renderJuiceSection() {
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">비고</th>
             <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
           </tr></thead>
-          <tbody>${rowsHtml || '<tr><td colspan="9" class="empty">주스/청 기록 없음</td></tr>'}</tbody>
+          <tbody>${groupedRowsHtml || '<tr><td colspan="10" class="empty">주스/청 기록 없음</td></tr>'}</tbody>
         </table>
       </div>
       ${formHtml}
@@ -7797,11 +7885,12 @@ async function addJuice() {
   const per_box = parseInt(document.getElementById('ju-perbox').value) || null;
   if (!date || !product_name || !unit) return alert('날짜, 품명, 단위는 필수입니다.');
   if (!box_count && !loose_count) return alert('박스 또는 낱개 수량을 입력해주세요.');
+  const type = gv('ju-type') || 'in';
   const data = {
     date, product_name, unit, box_count, loose_count,
     per_box: per_box || null,
     expiry_date: gv('ju-expiry') || null,
-    type: 'in', note: gv('ju-note') || null,
+    type, note: gv('ju-note') || null,
     is_void: false, created_by: 'admin'
   };
   try {
@@ -7820,22 +7909,6 @@ async function deleteJuiceRecord(id) {
     invJuiceRecs = invJuiceRecs.filter(r => r.id !== id);
     renderInvSummary(); renderJuiceSection();
   } catch(e) { alert('삭제 오류: ' + e.message); }
-}
-
-// ── IME 안내 배너
-function initImeNotice() {
-  // Windows 이외 환경(Mac, iOS, Android)에서는 이 문제가 없으므로 표시 안 함
-  const isWindows = /Win/i.test(navigator.platform || navigator.userAgent);
-  if (!isWindows) return;
-  if (localStorage.getItem('ime_notice_dismissed') === '1') return;
-  const el = document.getElementById('ime-notice');
-  if (el) el.style.display = 'flex';
-}
-
-function dismissImeNotice() {
-  localStorage.setItem('ime_notice_dismissed', '1');
-  const el = document.getElementById('ime-notice');
-  if (el) el.style.display = 'none';
 }
 
 // ── 개별 이력 모달 ───────────────────────────────────────────

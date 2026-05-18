@@ -249,16 +249,6 @@
 
 <div class="main">
 
-<!-- IME 안내 배너: Windows Chrome/Edge 사용자에게만 표시 -->
-<div id="ime-notice" style="display:none;margin-bottom:10px;background:#E8F5E9;border:1px solid #A5D6A7;border-left:3px solid #2E7D32;border-radius:8px;padding:9px 14px;font-size:12px;color:#1B5E20;align-items:flex-start;gap:10px;line-height:1.6">
-  <span style="font-size:16px;flex-shrink:0">⌨️</span>
-  <div style="flex:1">
-    <strong>한영 전환이 풀리면</strong> 다음 필드 클릭 후 <kbd style="background:#fff;border:1px solid #ccc;border-radius:3px;padding:1px 5px;font-size:11px">한/영</kbd> 키를 다시 눌러주세요.
-    <span style="color:#388E3C;margin-left:4px">Windows IME 특성상 탭 이동 시 입력 언어가 초기화될 수 있습니다. 완벽한 해결은 <strong>Windows 설정 → 시간 및 언어 → 언어 → 기본 입력 언어를 한국어</strong>로 설정하면 줄어듭니다.</span>
-  </div>
-  <button onclick="dismissImeNotice()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#555;padding:0 2px;flex-shrink:0;line-height:1" title="닫기">✕</button>
-</div>
-
 <!-- 현황판 -->
 <div id="p-dash" class="panel active">
   <div class="sec-hdr"><div class="sec-title">🏭 공장 보유 재고</div></div>
@@ -1346,6 +1336,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=10"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=15"></script>
+<script src="src/app.js?v=16"></script>
 </body>
 </html>
