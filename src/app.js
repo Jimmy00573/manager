@@ -4829,6 +4829,60 @@ function renderInvSummary() {
     juiceMap[p].net += Number(r.total_qty) || 0;
   });
 
+  // ── 우선처리 집계 (21일+)
+  const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
+  const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
+  const priorityByProduct = {};
+  let priorityCount = 0;
+  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
+    const rem = r.quantity - (processedByInbound[r.id] || 0);
+    if (rem > 0 && daysSince(r.date) >= 21) {
+      priorityCount++;
+      priorityByProduct[r.product] = (priorityByProduct[r.product] || 0) + 1;
+    }
+  });
+
+  // ── KPI 집계
+  const unsTotalCt    = Object.values(unsMap).reduce((s, v) => s + v.raw + v.small, 0);
+  const manGamTotalKg = Object.values(manGamMap).reduce((s, m) => s + Object.values(m).reduce((a, b) => a + b, 0), 0);
+  const manGamItems   = Object.keys(manGamMap).length;
+  const citrusTotalKg = Object.values(citrusMap).reduce((s, m) => s + Object.values(m).reduce((a, b) => a + b, 0), 0);
+  const citrusItems   = Object.keys(citrusMap).length;
+  const pachiTotalKg  = Object.entries(pachiMap).reduce((s, [p, ct]) => s + ct * kgPerCt(p), 0);
+  const juiceTotalNet = Object.values(juiceMap).reduce((s, v) => s + Math.max(0, v.net), 0);
+  const pachiJuiceItems = Object.values(pachiMap).filter(ct => ct > 0).length + Object.values(juiceMap).filter(v => v.net > 0).length;
+
+  // ── 미선과 비중 막대 색상
+  const BAR_COLORS = {
+    '카라향':    '#F97316', '노지감귤':   '#F59E0B', '한라봉':    '#3B82F6',
+    '황금향':    '#84CC16', '천혜향':     '#EC4899', '레드향':    '#EF4444',
+    '수라향':    '#8B5CF6', '하우스감귤': '#10B981', '비가림감귤':'#06B6D4',
+    '타이벡감귤':'#14B8A6',
+  };
+  const barColor = p => BAR_COLORS[p] || '#9CA3AF';
+
+  // ── KPI 카드 HTML
+  const kpiSub = (txt, color) => `<div style="font-size:12px;color:${color};margin-top:4px;min-height:16px">${txt}</div>`;
+  const kpiCard = (label, val, unit, sub) => `
+    <div class="kpi" style="padding:14px 16px">
+      <div class="kpi-label" style="font-size:12px;color:#6B7280;margin-bottom:6px">${label}</div>
+      <div class="kpi-val" style="font-size:22px;font-weight:800;color:#111827;line-height:1.2">${val}<span style="font-size:14px;font-weight:500;color:#6B7280;margin-left:4px">${unit}</span></div>
+      ${sub}
+    </div>`;
+  const kpiHtml = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    ${kpiCard('미선과 재고', fmtN(unsTotalCt), 'CT',
+      priorityCount > 0
+        ? kpiSub(`⚠ ${priorityCount}건 우선처리`, '#DC2626')
+        : kpiSub('정상', '#059669'))}
+    ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
+      kpiSub(manGamItems ? `${manGamItems}개 품목` : '재고 없음', '#6B7280'))}
+    ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
+      kpiSub(citrusItems ? `${citrusItems}개 품목` : '재고 없음', '#6B7280'))}
+    ${kpiCard('파치 + 주스/청',
+      pachiTotalKg || juiceTotalNet ? `${fmtN(Math.round(pachiTotalKg))} kg · ${fmtN(Math.round(juiceTotalNet))} 병` : '—', '',
+      kpiSub(pachiJuiceItems ? `${pachiJuiceItems}개 품목` : '재고 없음', '#6B7280'))}
+  </div>`;
+
   // ── 오늘 입고 (리스트 형식, 클릭 시 미선과 탭)
   const todayStr = td();
   const todayInbounds = inboundRecords.filter(r => !r.is_void && r.date === todayStr);
@@ -4848,9 +4902,31 @@ function renderInvSummary() {
     </table>
   </div>` : '';
 
-  // 섹션 1: 미선과 (원물 / 소과 / 합계)
+  // ── 비중 막대 (미선과 섹션용)
   const unsEntries = Object.entries(unsMap).filter(([, v]) => v.raw + v.small > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const barEntriesSorted = [...unsEntries].sort((a, b) => (b[1].raw + b[1].small) - (a[1].raw + a[1].small));
+  const barHtml = unsTotalCt > 0 ? (() => {
+    const segments = barEntriesSorted.map(([p, v]) => {
+      const ct = v.raw + v.small;
+      const pct = ct / unsTotalCt * 100;
+      const label = pct >= 5 ? `${esc(p)} ${fmtN(ct)} CT (${pct.toFixed(1)}%)` : '';
+      return `<div style="width:${pct.toFixed(3)}%;background:${barColor(p)};display:flex;align-items:center;justify-content:center;overflow:hidden;min-width:${pct >= 1 ? '2px' : '0'};transition:opacity .15s" title="${esc(p)}: ${fmtN(ct)} CT (${pct.toFixed(1)}%)" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+        ${label ? `<span style="font-size:10px;font-weight:600;color:#fff;white-space:nowrap;padding:0 4px;text-shadow:0 1px 2px rgba(0,0,0,.35)">${label}</span>` : ''}
+      </div>`;
+    }).join('');
+    const chips = barEntriesSorted
+      .filter(([p]) => priorityByProduct[p])
+      .map(([p]) => `<span style="background:#FEE2E2;color:#B91C1C;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">⚠ ${esc(p)}: ${priorityByProduct[p]}건</span>`)
+      .join('');
+    return `<div style="padding:10px 16px 14px">
+      <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;width:100%">${segments}</div>
+      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${chips}</div>` : ''}
+    </div>`;
+  })() : '';
+
+  // 섹션 1: 미선과 (원물 / 소과 / 합계)
   const unsHtml = `<div style="${CARD}">${secHdr(1, '미선과 재고', '단위: CT')}
+    ${barHtml}
     <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:360px">
       <thead><tr><th style="${THL}">품목</th><th style="${THR}">원물 (CT)</th><th style="${THR}">소과 (CT)</th><th style="${THR}">합계 (CT)</th></tr></thead>
       <tbody>${unsEntries.length
@@ -4913,7 +4989,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.4);padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">🖨️ PDF 출력</button>
     </div>
-    ${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}${pachiHtml}${juiceHtml}
+    ${kpiHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}${pachiHtml}${juiceHtml}
   </div>`;
 }
 

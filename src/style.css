@@ -375,6 +375,8 @@ textarea {
   #p-inv .ext-tabs { display: none !important; }
   #inv-sum-div { display: block !important; }
   #inv-uns-div, #inv-srt-div, #inv-wj-div, #inv-log-div, #inv-loc-div, #inv-qc-div, #inv-cfg-div { display: none !important; }
+  .kpi-grid { grid-template-columns: repeat(4, 1fr) !important; }
+  .kpi { box-shadow: none !important; border: 1px solid #D1D5DB !important; }
   .main { max-width: 100%; padding: 0; }
   .inv-excel-wrap { max-width: 100%; }
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
