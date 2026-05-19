@@ -33,6 +33,7 @@ let showVoidData = false;
 let _voidTargetId = null;
 let _pendingInboundInsert = null;
 let _priSectionOpen = false;
+let _invAgeDaysTimer = null;
 let ibViewMode = 'list';
 let ibFilterCat = '';
 let ibFilterSrc = '';
@@ -3885,6 +3886,22 @@ function invSetAgeDays(val) {
   renderInventoryStatus();
 }
 
+function invSetAgeDaysDebounced(val) {
+  clearTimeout(_invAgeDaysTimer);
+  if (val === '' || val === null) return;
+  _invAgeDaysTimer = setTimeout(() => {
+    const num = parseInt(val);
+    if (isNaN(num) || num < 1) return;
+    invSetAgeDays(Math.min(num, 365));
+  }, 500);
+}
+
+function invSetAgeDaysOnBlur(val) {
+  clearTimeout(_invAgeDaysTimer);
+  const num = parseInt(val);
+  invSetAgeDays((val === '' || isNaN(num) || num < 1) ? 7 : num);
+}
+
 function _renderInvDateCtrl() {
   const el = document.getElementById('inv-date-ctrl');
   if (!el) return;
@@ -3899,7 +3916,8 @@ function _renderInvDateCtrl() {
       <span style="width:1px;height:16px;background:#BAE6FD;flex-shrink:0"></span>
       <span style="font-weight:600;color:#0369A1;white-space:nowrap">⚠ 기준</span>
       <input type="number" value="${_invAgeDays}" min="1" max="365"
-        oninput="invSetAgeDays(this.value)"
+        oninput="invSetAgeDaysDebounced(this.value)"
+        onblur="invSetAgeDaysOnBlur(this.value)"
         style="width:52px;padding:3px 6px;border:1.5px solid #D1D5DB;border-radius:6px;font-size:12px;font-family:inherit;text-align:center">
       <span style="color:#6B7280">일</span>
       <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6B7280;margin-left:2px">
