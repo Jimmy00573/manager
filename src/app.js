@@ -34,6 +34,8 @@ let _voidTargetId = null;
 let _pendingInboundInsert = null;
 let _priSectionOpen = false;
 let _invAgeDaysTimer = null;
+let URGENCY_THRESHOLD_HIGH = 21;
+let URGENCY_THRESHOLD_MID  = 14;
 let ibViewMode = 'list';
 let ibFilterCat = '';
 let ibFilterSrc = '';
@@ -100,12 +102,24 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceMenu(); } });
 
+// ── 우선처리 기준 로드
+async function loadUrgencySettings() {
+  try {
+    const rows = await sbGet('settings', 'key=eq.urgency_thresholds');
+    if (rows && rows.length > 0) {
+      const v = rows[0].value;
+      if (v && typeof v.high === 'number') URGENCY_THRESHOLD_HIGH = v.high;
+      if (v && typeof v.mid  === 'number') URGENCY_THRESHOLD_MID  = v.mid;
+    }
+  } catch(e) {}
+}
+
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
 
   try {
-    const [data, qcData, locData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations()]);
+    const [data, qcData, locData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -4906,7 +4920,7 @@ function renderInvSummary() {
   let priorityCount = 0;
   inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
-    if (rem > 0 && daysSince(r.date) >= 21) {
+    if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_HIGH) {
       priorityCount++;
       priorityByProduct[r.product] = (priorityByProduct[r.product] || 0) + 1;
     }
@@ -6662,7 +6676,7 @@ function renderIbCatSummary() {
 
   const _today = new Date(); _today.setHours(0,0,0,0);
   const _daysSince = ds => Math.floor((_today - new Date(ds)) / 86400000);
-  const _urgLevel  = d  => d >= 21 ? 'high' : d >= 14 ? 'mid' : 'low';
+  const _urgLevel  = d  => d >= URGENCY_THRESHOLD_HIGH ? 'high' : d >= URGENCY_THRESHOLD_MID ? 'mid' : 'low';
   const _URG = {
     high: { label: '🔴 매우 시급 (3주+)', col: '#991B1B' },
     mid:  { label: '🟡 시급 (2~3주)',     col: '#92400E' },
@@ -6739,7 +6753,7 @@ function renderIbCatSummary() {
 
     // 경과일
     const oldDays = _daysSince(oldestDate);
-    const oldCol  = oldDays >= 21 ? '#991B1B' : oldDays >= 14 ? '#92400E' : '#14532D';
+    const oldCol  = oldDays >= URGENCY_THRESHOLD_HIGH ? '#991B1B' : oldDays >= URGENCY_THRESHOLD_MID ? '#92400E' : '#14532D';
 
     // 왼쪽 보더 색
     const bdrCol = buckets.high.length ? '#F87171' : buckets.mid.length ? '#FBBF24' : '#86EFAC';
@@ -6750,7 +6764,7 @@ function renderIbCatSummary() {
       const rowsHtml = buckets[k].sort((a,b)=>a.date.localeCompare(b.date)).map(r => {
         const qInline = qualityInline(r) || '';
         const locBit  = r.location ? `<span style="color:#888;font-size:10px">📍${esc(r.location)}</span>` : '';
-        const daysCol = r.days >= 21 ? '#991B1B' : r.days >= 14 ? '#92400E' : '#14532D';
+        const daysCol = r.days >= URGENCY_THRESHOLD_HIGH ? '#991B1B' : r.days >= URGENCY_THRESHOLD_MID ? '#92400E' : '#14532D';
         return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 4px 8px;border-bottom:1px solid #f5f5f5;font-size:12px">
           <span style="color:#aaa;font-size:10px">${r.date.slice(5)}</span>
           ${productChip(r.product)}
@@ -7142,7 +7156,7 @@ function _renderScStats() {
   const todayMs = new Date(today).getTime();
   const urgLvl = date => {
     const d = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
-    return d >= 21 ? 3 : d >= 14 ? 2 : 1;
+    return d >= URGENCY_THRESHOLD_HIGH ? 3 : d >= URGENCY_THRESHOLD_MID ? 2 : 1;
   };
   const allW = inboundRecords
     .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0)
@@ -7282,8 +7296,8 @@ function _renderScTable() {
 
   const urgency = date => {
     const days = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
-    if (days >= 21) return { icon: '🔴', label: `${days}일`, color: '#DC2626', level: 3 };
-    if (days >= 14) return { icon: '🟡', label: `${days}일`, color: '#D97706', level: 2 };
+    if (days >= URGENCY_THRESHOLD_HIGH) return { icon: '🔴', label: `${days}일`, color: '#DC2626', level: 3 };
+    if (days >= URGENCY_THRESHOLD_MID)  return { icon: '🟡', label: `${days}일`, color: '#D97706', level: 2 };
     return { icon: '🟢', label: `${days}일`, color: '#16A34A', level: 1 };
   };
 
@@ -9448,6 +9462,49 @@ async function openSortingDetailModal(inboundId) {
     </div>
     ${sessionHtml}
     ${cumHtml}`;
+}
+
+// ── 우선처리 기준 모달
+function openUrgencyThresholdsModal() {
+  document.getElementById('urg-input-high').value = URGENCY_THRESHOLD_HIGH;
+  document.getElementById('urg-input-mid').value  = URGENCY_THRESHOLD_MID;
+  document.getElementById('modal-urgency').style.display = 'flex';
+}
+function closeUrgencyThresholdsModal() {
+  document.getElementById('modal-urgency').style.display = 'none';
+}
+async function saveUrgencyThresholds() {
+  const high = parseInt(document.getElementById('urg-input-high').value);
+  const mid  = parseInt(document.getElementById('urg-input-mid').value);
+  if (isNaN(high) || isNaN(mid) || high < 1 || mid < 1) {
+    alert('기준일은 1 이상의 숫자를 입력해 주세요.');
+    return;
+  }
+  if (mid >= high) {
+    alert(`시급 기준(${mid}일)은 매우 시급 기준(${high}일)보다 작아야 합니다.`);
+    return;
+  }
+  try {
+    const rows = await sbGet('settings', 'key=eq.urgency_thresholds');
+    const payload = { value: { high, mid }, updated_at: new Date().toISOString() };
+    if (rows && rows.length > 0) {
+      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.urgency_thresholds`, {
+        method: 'PATCH',
+        headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      await sbInsert('settings', { key: 'urgency_thresholds', ...payload });
+    }
+    URGENCY_THRESHOLD_HIGH = high;
+    URGENCY_THRESHOLD_MID  = mid;
+    closeUrgencyThresholdsModal();
+    renderIbCatSummary();
+    renderInvSummary();
+    showToast('✓ 우선처리 기준이 저장되었습니다.');
+  } catch(e) {
+    alert('저장 오류: ' + e.message);
+  }
 }
 
 // ── 시작
