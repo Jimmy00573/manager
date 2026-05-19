@@ -500,7 +500,6 @@ function T(id) {
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
-  if (id === 'drv') renderAdmPwChange();
   if (id === 'vehicle') renderVehicles();
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
@@ -959,80 +958,6 @@ async function saveDispEdit() {
     dispatches = dispatches.map(x => x.id === _editDispId ? { ...x, ...data } : x);
     CM('disp'); renderDisp(); renderDDash(); renderSC(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
-}
-
-function renderAdmPwChange() {
-  const el = document.getElementById('adm-pin-change');
-  if (!el) return;
-  el.innerHTML = `
-    <div class="form-card" style="border-left:3px solid #C05800">
-      <div class="form-title">🔐 내 비밀번호 변경</div>
-      <div class="form-grid">
-        <div class="fg"><label>현재 비밀번호</label><input id="apc-cur" type="password" placeholder="현재 비밀번호"></div>
-        <div class="fg"><label>새 비밀번호</label><input id="apc-new" type="password" placeholder="새 비밀번호"></div>
-        <div class="fg"><label>새 비밀번호 확인</label><input id="apc-confirm" type="password" placeholder="새 비밀번호 재입력"></div>
-      </div>
-      <div id="apc-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
-      <div class="form-actions"><button class="btn pri" onclick="changeAdmPw()">비밀번호 변경</button></div>
-    </div>
-    <div class="form-card" style="border-left:3px solid #1565C0;margin-top:12px">
-      <div class="form-title">👷 직원 비밀번호 변경</div>
-      <div class="form-grid">
-        <div class="fg"><label>새 직원 비밀번호</label><input id="spw-new" type="password" placeholder="새 비밀번호"></div>
-        <div class="fg"><label>새 직원 비밀번호 확인</label><input id="spw-confirm" type="password" placeholder="새 비밀번호 재입력"></div>
-      </div>
-      <div id="spw-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
-      <div class="form-actions"><button class="btn pri" onclick="changeStaffPw()">직원 비밀번호 변경</button></div>
-    </div>
-  `;
-}
-
-async function changeAdmPw() {
-  const curEl = document.getElementById('apc-cur');
-  const nwEl = document.getElementById('apc-new');
-  const cfEl = document.getElementById('apc-confirm');
-  const msg = document.getElementById('apc-msg');
-  if (!curEl || !nwEl || !cfEl || !msg) return;
-  const cur = curEl.value, nw = nwEl.value, cf = cfEl.value;
-  msg.style.display = 'block';
-  if (!cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호를 입력하세요'; return; }
-  if (!nw) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
-  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호가 일치하지 않습니다'; return; }
-  if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호와 동일합니다'; return; }
-  try {
-    const username = sessionStorage.getItem('citrus_adm_user') || 'admin';
-    const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
-    if (!rows || !rows.length) { msg.style.color = '#C62828'; msg.textContent = '❌ 계정을 찾을 수 없습니다'; return; }
-    if (rows[0].password !== cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호가 맞지 않습니다'; return; }
-    await sbUpdate('admin_accounts', rows[0].id, { password: nw });
-    msg.style.color = '#2E7D32'; msg.textContent = '✅ 비밀번호 변경 완료!';
-    curEl.value = ''; nwEl.value = ''; cfEl.value = '';
-  } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
-}
-
-async function changeStaffPw() {
-  const nwEl = document.getElementById('spw-new');
-  const cfEl = document.getElementById('spw-confirm');
-  const msg = document.getElementById('spw-msg');
-  if (!nwEl || !cfEl || !msg) return;
-  const nw = nwEl.value, cf = cfEl.value;
-  msg.style.display = 'block';
-  if (!nw) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
-  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 비밀번호가 일치하지 않습니다'; return; }
-  try {
-    const rows = await sbGet('settings', 'key=eq.staff_password');
-    if (rows && rows.length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.staff_password`, {
-        method: 'PATCH',
-        headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ value: nw, updated_at: new Date().toISOString() })
-      });
-    } else {
-      await sbInsert('settings', { key: 'staff_password', value: nw });
-    }
-    msg.style.color = '#2E7D32'; msg.textContent = '✅ 직원 비밀번호 변경 완료!';
-    nwEl.value = ''; cfEl.value = '';
-  } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
 }
 
 function renderDrivers() {
@@ -1778,7 +1703,7 @@ function renderDash() {
   if (bkBadge) bkBadge.innerHTML = `<span class="badge b-neu">총 ${picks.filter(p => p.type === '빈콘회수').length}건</span><span class="badge b-ok">누적 ${bkTotal}개 회수</span>`;
 }
 
-function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderVehicles(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); renderAdmPwChange(); }
+function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderVehicles(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); }
 
 let _dbView = 'sched';
 function switchDBView(v) {
