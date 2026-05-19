@@ -6670,8 +6670,8 @@ function renderInboundList() {
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     let driverCell;
-    if (r.driver_id && r.drivers?.name) {
-      driverCell = `<span class="driver-cell driver-registered"><span class="driver-dot dot-gray"></span><span class="driver-name">${esc(r.drivers.name)}</span></span>`;
+    if (r.driver_id && r.driver?.name) {
+      driverCell = `<span class="driver-cell driver-registered"><span class="driver-dot dot-gray"></span><span class="driver-name">${esc(r.driver.name)}</span></span>`;
     } else if (r.driver_name_manual) {
       driverCell = `<span class="driver-cell driver-manual"><span class="driver-dot dot-orange"></span><span class="driver-name">${esc(r.driver_name_manual)}</span></span>`;
     } else {
@@ -6704,8 +6704,8 @@ function renderInboundList() {
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
       <td title="${esc(r.location || '')}">${locCell}</td>
-      <td>${driverCell}</td>
-      <td>${gradeCell}</td>
+      <td style="white-space:nowrap">${driverCell}</td>
+      <td style="white-space:nowrap">${gradeCell}</td>
       <td>${memoCell}</td>
       <td>${actionCell}</td>
     </tr>`;

@@ -198,7 +198,7 @@ async function loadCategorySystem() {
 
 // ── 입고 기록
 async function dbGetInbounds() {
-  return sbGet('inbound_records', 'select=*,drivers(name,type)&order=date.desc,created_at.desc');
+  return sbGet('inbound_records', 'select=*,driver:drivers(name,type)&order=date.desc,created_at.desc');
 }
 async function dbInsertInbound(data) { const r = await sbInsert('inbound_records', data); return r[0]; }
 async function dbUpdateInbound(id, data) { const r = await sbUpdate('inbound_records', id, data); return r[0]; }
