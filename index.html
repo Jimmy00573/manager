@@ -255,6 +255,7 @@
   <button class="nbtn" onclick="T('vehicle')">🚛 차량 관리</button>
   <button class="nbtn" onclick="T('stats')" style="border-left:1px solid var(--border)">📊 실적 현황</button>
   <button class="nbtn" onclick="T('export')">📥 내보내기</button>
+  <button class="nbtn" onclick="T('set')" style="border-left:1px solid var(--border)">⚙ 설정</button>
 </div>
 
 <!-- 기사 탭 -->
@@ -552,6 +553,14 @@
   <div id="rep-history" style="display:none">
     <div class="date-range"><span>기간</span><input type="date" id="rp-from" onchange="renderRep()"><span>~</span><input type="date" id="rp-to" onchange="renderRep()"><button class="btn sm" onclick="clearRepF()">전체</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>기사명</th><th>농가명</th><th>수량</th><th>특이사항</th></tr></thead><tbody id="rep-tb"></tbody></table><div class="pagination" id="rep-pg"></div></div>
+  </div>
+</div>
+
+<!-- 설정 -->
+<div id="p-set" class="panel">
+  <div class="form-card">
+    <h2 style="margin:0 0 8px;font-size:18px">⚙ 설정</h2>
+    <p style="color:var(--text-secondary);font-size:13px;margin:0">설정 항목은 다음 단계에서 추가됩니다.</p>
   </div>
 </div>
 
@@ -1504,6 +1513,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=11"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=41"></script>
+<script src="src/app.js?v=42"></script>
 </body>
 </html>

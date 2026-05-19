@@ -494,7 +494,7 @@ function _applyEditRestrictions(canEdit) {
 function T(id) {
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv'].forEach(p => {
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
