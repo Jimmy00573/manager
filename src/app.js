@@ -7935,6 +7935,7 @@ async function addInbound() {
 
   const doInsert = async () => {
     try {
+      const driverObj = driver_id ? (drivers.find(d => d.id === driver_id) || null) : null;
       if (isDistributed) {
         const distribution_group_id = generateUUID();
         const inserted = [];
@@ -7942,10 +7943,10 @@ async function addInbound() {
           const row = await dbInsertInbound({ ...commonData, location: loc.name, quantity: loc.qty, distribution_group_id });
           inserted.push(row);
         }
-        inserted.forEach(row => inboundRecords.unshift(row));
+        inserted.forEach(row => inboundRecords.unshift({ ...row, driver: driverObj }));
       } else {
         const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
-        inboundRecords.unshift(row);
+        inboundRecords.unshift({ ...row, driver: driverObj });
       }
       renderInvSummary(); renderInboundList();
       clearForm();
