@@ -1416,9 +1416,23 @@
   </div>
 </div>
 
+<div id="modal-dup-warn" class="modal-bg" style="display:none" onclick="if(event.target===this)cancelDupWarn()">
+  <div class="modal" style="max-width:400px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title">⚠️ 중복 입고 경고</div>
+      <button class="modal-close" onclick="cancelDupWarn()">✕</button>
+    </div>
+    <div id="dup-warn-body" style="padding:4px 0 16px;font-size:14px;line-height:1.7;color:#374151"></div>
+    <div class="modal-actions">
+      <button class="btn cancel" onclick="cancelDupWarn()">취소</button>
+      <button class="btn" style="background:#DC2626;color:#fff" onclick="confirmAddInbound()">그래도 등록</button>
+    </div>
+  </div>
+</div>
+
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=11"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=28"></script>
+<script src="src/app.js?v=29"></script>
 </body>
 </html>

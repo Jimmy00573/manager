@@ -31,6 +31,7 @@ function generateUUID() {
 }
 let showVoidData = false;
 let _voidTargetId = null;
+let _pendingInboundInsert = null;
 let ibViewMode = 'list';
 let ibFilterCat = '';
 let ibFilterSrc = '';
@@ -7814,6 +7815,49 @@ function cancelIbForm() {
   syncReclassList('ib');
 }
 
+function relativeTime(isoStr) {
+  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+  if (diff < 60) return '방금 전';
+  const mins = Math.floor(diff / 60);
+  const t = new Date(isoStr);
+  const hh = t.getHours(), mm = t.getMinutes();
+  const ampm = hh < 12 ? '오전' : '오후';
+  const h12 = hh % 12 || 12;
+  return `${mins}분 전 (${ampm} ${h12}:${String(mm).padStart(2, '0')})`;
+}
+
+function _showDupWarnModal(dup, farm_name, product, qty, driver_id, driver_name_manual) {
+  const drvName = driver_id
+    ? (drivers.find(d => d.id === driver_id)?.name || '기사')
+    : (driver_name_manual || '—');
+  const body = document.getElementById('dup-warn-body');
+  if (body) body.innerHTML = `
+    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-weight:600;color:#991B1B;margin-bottom:6px">직전 5분 내 동일한 입고가 있습니다</div>
+      <div>농가: <strong>${esc(dup.farm_name)}</strong></div>
+      <div>품목: <strong>${esc(dup.product)}</strong></div>
+      <div>기사: <strong>${esc(drvName)}</strong></div>
+      <div>수량: <strong>${fmtN(dup.quantity)} CT</strong></div>
+      <div style="color:#6B7280;font-size:12px;margin-top:6px">${relativeTime(dup.created_at)}</div>
+    </div>
+    <div style="color:#374151">정말 이 입고를 추가로 등록하시겠습니까?</div>
+  `;
+  document.getElementById('modal-dup-warn').style.display = '';
+}
+
+async function confirmAddInbound() {
+  document.getElementById('modal-dup-warn').style.display = 'none';
+  if (_pendingInboundInsert) {
+    await _pendingInboundInsert();
+    _pendingInboundInsert = null;
+  }
+}
+
+function cancelDupWarn() {
+  document.getElementById('modal-dup-warn').style.display = 'none';
+  _pendingInboundInsert = null;
+}
+
 async function addInbound() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
@@ -7840,6 +7884,24 @@ async function addInbound() {
   const original_work_date = isReclass ? (document.getElementById('ib-reclass-date')?.value || null) : null;
   const note = gv('ib-note') || null;
   const isDistributed = document.getElementById('ib-loc-multi')?.checked;
+
+  // Qty / location validation (needed before dup check)
+  let qty = 0, locs = [];
+  if (isDistributed) {
+    const locRows = document.querySelectorAll('#ib-loc-list .loc-dist-row');
+    locRows.forEach(row => {
+      const name = row.querySelector('.loc-dist-sel')?.value;
+      const q = parseInt(row.querySelector('.loc-dist-qty')?.value) || 0;
+      if (name) locs.push({ name, qty: q });
+    });
+    if (locs.length < 2) return alert('분산 저장은 위치를 2개 이상 지정해야 합니다.');
+    if (locs.some(l => !l.qty || l.qty <= 0)) return alert('각 위치의 수량을 입력해 주세요.');
+    const locNames = locs.map(l => l.name);
+    if (new Set(locNames).size !== locNames.length) return alert('중복된 위치가 있습니다.');
+  } else {
+    qty = parseInt(document.getElementById('ib-qty').value) || 0;
+    if (!qty) return alert('수량은 필수입니다.');
+  }
 
   const commonData = {
     date, product, farm_name,
@@ -7871,35 +7933,43 @@ async function addInbound() {
     const drvMan = document.getElementById('inv-driver-manual'); if (drvMan) { drvMan.value = ''; drvMan.style.display = 'none'; }
   };
 
-  try {
-    if (isDistributed) {
-      const locRows = document.querySelectorAll('#ib-loc-list .loc-dist-row');
-      const locs = [];
-      locRows.forEach(row => {
-        const name = row.querySelector('.loc-dist-sel')?.value;
-        const qty = parseInt(row.querySelector('.loc-dist-qty')?.value) || 0;
-        if (name) locs.push({ name, qty });
-      });
-      if (locs.length < 2) return alert('분산 저장은 위치를 2개 이상 지정해야 합니다.');
-      if (locs.some(l => !l.qty || l.qty <= 0)) return alert('각 위치의 수량을 입력해 주세요.');
-      const locNames = locs.map(l => l.name);
-      if (new Set(locNames).size !== locNames.length) return alert('중복된 위치가 있습니다.');
-      const distribution_group_id = generateUUID();
-      const inserted = [];
-      for (const loc of locs) {
-        const row = await dbInsertInbound({ ...commonData, location: loc.name, quantity: loc.qty, distribution_group_id });
-        inserted.push(row);
+  const doInsert = async () => {
+    try {
+      if (isDistributed) {
+        const distribution_group_id = generateUUID();
+        const inserted = [];
+        for (const loc of locs) {
+          const row = await dbInsertInbound({ ...commonData, location: loc.name, quantity: loc.qty, distribution_group_id });
+          inserted.push(row);
+        }
+        inserted.forEach(row => inboundRecords.unshift(row));
+      } else {
+        const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
+        inboundRecords.unshift(row);
       }
-      inserted.forEach(row => inboundRecords.unshift(row));
-    } else {
-      const qty = parseInt(document.getElementById('ib-qty').value) || 0;
-      if (!qty) return alert('수량은 필수입니다.');
-      const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
-      inboundRecords.unshift(row);
+      renderInvSummary(); renderInboundList();
+      clearForm();
+    } catch(e) { alert('등록 오류: ' + e.message); }
+  };
+
+  // 5분 이내 중복 체크 (단일 등록만)
+  if (!isDistributed) {
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    const dups = inboundRecords.filter(r => {
+      if (!r.created_at || new Date(r.created_at).getTime() < fiveMinAgo) return false;
+      if (r.farm_name !== farm_name || r.product !== product || r.quantity !== qty) return false;
+      if (driver_id) return r.driver_id === driver_id;
+      if (driver_name_manual) return r.driver_name_manual === driver_name_manual;
+      return !r.driver_id && !r.driver_name_manual;
+    });
+    if (dups.length) {
+      _pendingInboundInsert = doInsert;
+      _showDupWarnModal(dups[0], farm_name, product, qty, driver_id, driver_name_manual);
+      return;
     }
-    renderInvSummary(); renderInboundList();
-    clearForm();
-  } catch(e) { alert('등록 오류: ' + e.message); }
+  }
+
+  await doInsert();
 }
 
 async function addProcessing() {
