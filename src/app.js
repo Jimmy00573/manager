@@ -5067,22 +5067,20 @@ function renderInvSummary() {
     const segments = barEntriesSorted.map(([p, v]) => {
       const ct = v.raw + v.small;
       const pct = ct / unsTotalCt * 100;
-      const label = pct >= 5 ? `${esc(p)} ${fmtN(ct)} CT (${pct.toFixed(1)}%)` : '';
-      return `<div style="width:${pct.toFixed(3)}%;background:${barColor(p)};display:flex;align-items:center;justify-content:center;overflow:hidden;min-width:${pct >= 1 ? '2px' : '0'};transition:opacity .15s" title="${esc(p)}: ${fmtN(ct)} CT (${pct.toFixed(1)}%)" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
-        ${label ? `<span style="font-size:13px;font-weight:600;color:#fff;white-space:nowrap;padding:0 4px;text-shadow:0 1px 2px rgba(0,0,0,.35)">${label}</span>` : ''}
-      </div>`;
+      return `<div style="width:${pct.toFixed(3)}%;background:${barColor(p)};min-width:${pct >= 1 ? '2px' : '0'};transition:opacity .15s" title="${esc(p)}: ${fmtN(ct)} CT (${pct.toFixed(1)}%)" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'"></div>`;
     }).join('');
-    const legend = barEntriesSorted.map(([p, v]) => {
-      const pct = (v.raw + v.small) / unsTotalCt * 100;
-      return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#9CA3AF;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:${barColor(p)};flex-shrink:0;display:inline-block"></span>${esc(p)} ${pct.toFixed(1)}%</span>`;
+    const labelGrid = barEntriesSorted.map(([p, v]) => {
+      const ct = v.raw + v.small;
+      const pct = ct / unsTotalCt * 100;
+      return `<div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#1F2937"><span style="width:8px;height:8px;border-radius:50%;background:${barColor(p)};flex-shrink:0;display:inline-block"></span>${esc(p)} ${fmtN(ct)} CT (${pct.toFixed(1)}%)</div>`;
     }).join('');
     const chips = barEntriesSorted
       .filter(([p]) => priorityByProduct[p])
       .map(([p]) => `<span style="background:#FCEBEB;color:#A32D2D;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600">⚠ ${esc(p)} ${priorityByProduct[p]}건 경과</span>`)
       .join('');
     return `<div style="padding:10px 16px 14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;row-gap:4px;margin-bottom:10px">${labelGrid}</div>
       <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;width:100%">${segments}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px">${legend}</div>
       ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">${chips}</div>` : ''}
     </div>`;
   })() : '';
