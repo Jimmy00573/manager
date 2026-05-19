@@ -32,6 +32,7 @@ function generateUUID() {
 let showVoidData = false;
 let _voidTargetId = null;
 let _pendingInboundInsert = null;
+let _priSectionOpen = false;
 let ibViewMode = 'list';
 let ibFilterCat = '';
 let ibFilterSrc = '';
@@ -6679,6 +6680,16 @@ function renderIbCatSummary() {
 
   const totalPriCT = priList.reduce((s,r) => s+r.remaining, 0);
 
+  // 헤더 강화: 최다 품목 + 최장 경과일
+  const _productTotals = {};
+  priList.forEach(r => { _productTotals[r.product] = (_productTotals[r.product]||0) + r.remaining; });
+  const _topProdEntries = Object.entries(_productTotals).sort(([,a],[,b]) => b-a);
+  const _topProd = _topProdEntries[0]?.[0] || '';
+  const _topProdCT = _topProdEntries[0]?.[1] || 0;
+  const _prodCount = _topProdEntries.length;
+  const _prodLabel = _prodCount > 1 ? `${esc(_topProd)} 등 ${_prodCount}개 품목` : esc(_topProd);
+  const _maxDays = Math.max(...priList.map(r => _daysSince(r.date)));
+
   const _cards = _farmEntries.map(([farm, { rows, totalCT, oldestDate, products }], fi) => {
     const cardId = `pri-card-${fi}`;
 
@@ -6763,13 +6774,16 @@ function renderIbCatSummary() {
 
   priEl.innerHTML = `<div style="margin-bottom:12px">
     <div onclick="togglePriSection()" id="pri-section-hdr"
-      style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF5F5;border:1px solid #FECACA;border-radius:8px;cursor:pointer;user-select:none;margin-bottom:0">
-      <span id="pri-section-arrow" style="font-size:11px;color:#C62828;transition:transform .2s">▶</span>
+      style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF5F5;border:1px solid #FECACA;border-radius:8px;cursor:pointer;user-select:none;margin-bottom:0;flex-wrap:wrap">
+      <span id="pri-section-arrow" style="font-size:11px;color:#C62828">${_priSectionOpen ? '▼' : '▶'}</span>
       <span style="font-size:13px;font-weight:700;color:#C62828">⚠️ 우선 처리 필요</span>
-      <span style="font-size:12px;color:#888">${_farmEntries.length}개 농가 · ${priList.length}건 · 총 ${totalPriCT.toLocaleString()} CT</span>
+      <span style="font-size:12px;color:#888">${_farmEntries.length}개 농가 · ${priList.length}건 · ${_prodLabel} <strong style="color:#991B1B">${_topProdCT.toLocaleString()} CT</strong> · 최장 <strong style="color:#C62828">${_maxDays}일</strong> 경과</span>
     </div>
-    <div id="pri-section-body" style="display:none;margin-top:8px">
+    <div id="pri-section-body" style="display:${_priSectionOpen ? '' : 'none'};margin-top:8px">
       ${_cards}
+      <div style="text-align:right;padding:4px 2px 2px;font-size:12px">
+        <button onclick="scrollToIbList()" style="background:none;border:none;color:#1565C0;cursor:pointer;font-family:inherit;font-size:12px;padding:4px 0">📋 입고 내역에서 보기 →</button>
+      </div>
     </div>
   </div>`;
 }
@@ -6781,6 +6795,11 @@ function togglePriSection() {
   const open = body.style.display === 'none';
   body.style.display = open ? '' : 'none';
   if (arrow) arrow.textContent = open ? '▼' : '▶';
+  _priSectionOpen = open;
+}
+
+function scrollToIbList() {
+  document.getElementById('ib-view-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function togglePriDetail(id) {
