@@ -6667,21 +6667,20 @@ function renderIbCatSummary() {
     </div>`;
 
   if (!priEl) return;
-  const priList = active
-    .filter(r => r.is_priority)
-    .map(r => ({ ...r, remaining: r.quantity - (processedByInbound[r.id] || 0) }))
-    .filter(r => r.remaining > 0);
-
-  if (!priList.length) { priEl.innerHTML = ''; return; }
-
   const _today = new Date(); _today.setHours(0,0,0,0);
   const _daysSince = ds => Math.floor((_today - new Date(ds)) / 86400000);
   const _urgLevel  = d  => d >= URGENCY_THRESHOLD_HIGH ? 'high' : d >= URGENCY_THRESHOLD_MID ? 'mid' : 'low';
   const _URG = {
-    high: { label: '🔴 매우 시급 (3주+)', col: '#991B1B' },
-    mid:  { label: '🟡 시급 (2~3주)',     col: '#92400E' },
-    low:  { label: '🟢 일반 (2주 미만)',   col: '#14532D' },
+    high: { label: `🔴 매우 시급 (${URGENCY_THRESHOLD_HIGH}일+)`, col: '#991B1B' },
+    mid:  { label: `🟡 시급 (${URGENCY_THRESHOLD_MID}~${URGENCY_THRESHOLD_HIGH}일)`, col: '#92400E' },
+    low:  { label: `🟢 일반 (${URGENCY_THRESHOLD_MID}일 미만)`,   col: '#14532D' },
   };
+  const priList = active
+    .filter(r => _daysSince(r.date) >= URGENCY_THRESHOLD_MID)
+    .map(r => ({ ...r, remaining: r.quantity - (processedByInbound[r.id] || 0) }))
+    .filter(r => r.remaining > 0);
+
+  if (!priList.length) { priEl.innerHTML = ''; return; }
   const _GSCORE = { '상':3, '중':2, '하':1 };
   const _GBACK  = [null,'하','중','상'];
   const _avgGrade = (rows, field) => {
@@ -9485,6 +9484,7 @@ async function saveUrgencyThresholds() {
     return;
   }
   try {
+    console.log('[urgency] Saving:', high, mid);
     const rows = await sbGet('settings', 'key=eq.urgency_thresholds');
     const payload = { value: { high, mid }, updated_at: new Date().toISOString() };
     if (rows && rows.length > 0) {
@@ -9496,11 +9496,15 @@ async function saveUrgencyThresholds() {
     } else {
       await sbInsert('settings', { key: 'urgency_thresholds', ...payload });
     }
+    console.log('[urgency] Saved to DB');
     URGENCY_THRESHOLD_HIGH = high;
     URGENCY_THRESHOLD_MID  = mid;
+    console.log('[urgency] Globals updated:', URGENCY_THRESHOLD_HIGH, URGENCY_THRESHOLD_MID);
     closeUrgencyThresholdsModal();
     renderIbCatSummary();
+    console.log('[urgency] Called: renderIbCatSummary');
     renderInvSummary();
+    console.log('[urgency] Called: renderInvSummary');
     showToast('✓ 우선처리 기준이 저장되었습니다.');
   } catch(e) {
     alert('저장 오류: ' + e.message);
