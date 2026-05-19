@@ -7858,7 +7858,10 @@ function cancelDupWarn() {
   _pendingInboundInsert = null;
 }
 
-async function addInbound() {
+async function addInbound() { await _addInboundCore(false); }
+async function addInboundAndContinue() { await _addInboundCore(true); }
+
+async function _addInboundCore(keepOpen) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
@@ -7921,16 +7924,17 @@ async function addInbound() {
     ...(original_work_date && { original_work_date }),
   };
 
-  const clearForm = () => {
-    sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib'); clearGrades('ib');
+  // Reset everything except date/farm/driver
+  const clearFormPartial = () => {
+    const prodEl = document.getElementById('ib-product'); if (prodEl) prodEl.value = '';
+    const catEl = document.getElementById('ib-category'); if (catEl) catEl.value = '상품';
+    sv('ib-qty', ''); sv('ib-note', '');
+    resetLocForm('ib'); clearGrades('ib');
     ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    const priEl = document.getElementById('ib-priority');
-    if (priEl) priEl.checked = false;
+    const priEl = document.getElementById('ib-priority'); if (priEl) priEl.checked = false;
     syncReclassList('ib');
-    const drvSel = document.getElementById('inv-driver-select'); if (drvSel) drvSel.value = '';
-    const drvMan = document.getElementById('inv-driver-manual'); if (drvMan) { drvMan.value = ''; drvMan.style.display = 'none'; }
   };
 
   const doInsert = async () => {
@@ -7949,7 +7953,22 @@ async function addInbound() {
         inboundRecords.unshift({ ...row, driver: driverObj });
       }
       renderInvSummary(); renderInboundList();
-      clearForm();
+      if (keepOpen) {
+        clearFormPartial();
+        showToast('✓ 등록 완료 — 같은 농가/기사로 계속 입력 중');
+        setTimeout(() => document.getElementById('ib-product')?.focus(), 50);
+      } else {
+        clearFormPartial();
+        const drvSel = document.getElementById('inv-driver-select'); if (drvSel) drvSel.value = '';
+        const drvMan = document.getElementById('inv-driver-manual'); if (drvMan) { drvMan.value = ''; drvMan.style.display = 'none'; }
+        const body = document.getElementById('ib-form-body');
+        const arrow = document.getElementById('ib-form-arrow');
+        const btn = document.getElementById('ib-form-toggle');
+        if (body) { body.style.maxHeight = body.scrollHeight + 'px'; body._ibOpen = false; requestAnimationFrame(() => requestAnimationFrame(() => { body.style.maxHeight = '0'; })); }
+        if (arrow) arrow.style.transform = 'rotate(0deg)';
+        if (btn) btn.style.borderBottomColor = 'transparent';
+        showToast('입고가 등록되었습니다.');
+      }
     } catch(e) { alert('등록 오류: ' + e.message); }
   };
 
