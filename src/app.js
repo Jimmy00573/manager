@@ -591,21 +591,30 @@ function popSels() {
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
     el.value = v;
   });
-  const invDrvSel = document.getElementById('inv-driver-select');
-  if (invDrvSel) {
-    const v = invDrvSel.value;
-    invDrvSel.innerHTML = '<option value="" disabled selected>선택하세요</option>';
+  const _fillDrvSel = (id, keepVal) => {
+    const el = document.getElementById(id); if (!el) return;
+    el.innerHTML = '<option value="" disabled selected>선택하세요</option>';
     drivers.filter(d => d.pin_active !== false).forEach(d => {
-      invDrvSel.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
+      el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
     });
-    invDrvSel.innerHTML += `<option disabled style="color:#ccc">──────────</option><option value="__manual__">✏️ 직접 입력</option>`;
-    if (v === '__manual__' || drivers.some(d => String(d.id) === v)) invDrvSel.value = v;
-  }
+    el.innerHTML += `<option disabled style="color:#ccc">──────────</option><option value="__manual__">✏️ 직접 입력</option>`;
+    if (keepVal === '__manual__' || drivers.some(d => String(d.id) === keepVal)) el.value = keepVal;
+  };
+  _fillDrvSel('inv-driver-select', document.getElementById('inv-driver-select')?.value || '');
+  _fillDrvSel('eib-driver-sel', document.getElementById('eib-driver-sel')?.value || '');
 }
 
 function onInvDriverSelChange() {
   const v = document.getElementById('inv-driver-select')?.value;
   const manual = document.getElementById('inv-driver-manual');
+  if (!manual) return;
+  manual.style.display = v === '__manual__' ? '' : 'none';
+  if (v !== '__manual__') manual.value = '';
+}
+
+function onEibDriverSelChange() {
+  const v = document.getElementById('eib-driver-sel')?.value;
+  const manual = document.getElementById('eib-driver-manual');
   if (!manual) return;
   manual.style.display = v === '__manual__' ? '' : 'none';
   if (v !== '__manual__') manual.value = '';
@@ -7199,6 +7208,21 @@ function editInboundRow(id) {
   if (dateEl) dateEl.value = r.original_work_date || '';
   syncReclassList('eib');
 
+  // 수송기사 prefill
+  const eibDrvSel = document.getElementById('eib-driver-sel');
+  const eibDrvMan = document.getElementById('eib-driver-manual');
+  if (eibDrvSel) {
+    if (r.driver_id) {
+      eibDrvSel.value = String(r.driver_id);
+    } else if (r.driver_name_manual) {
+      eibDrvSel.value = '__manual__';
+      if (eibDrvMan) { eibDrvMan.value = r.driver_name_manual; eibDrvMan.style.display = ''; }
+    } else {
+      eibDrvSel.value = '';
+    }
+    if (eibDrvMan && !r.driver_name_manual) eibDrvMan.style.display = 'none';
+  }
+
   document.getElementById('modal-edit-inbound').style.display = 'flex';
 }
 
@@ -7222,7 +7246,11 @@ function closeEditInboundModal() {
       document.getElementById('eib-m-priority').checked !== !!r.is_priority ||
       (document.getElementById('eib-reclass-src')?.value || '') !== (r.reclassification_source || '') ||
       (document.getElementById('eib-reclass-reason')?.value || '') !== (r.reclassification_reason || '') ||
-      (document.getElementById('eib-reclass-date')?.value || '') !== (r.original_work_date || '');
+      (document.getElementById('eib-reclass-date')?.value || '') !== (r.original_work_date || '') ||
+      (() => { const v = document.getElementById('eib-driver-sel')?.value || '';
+        const did = (v && v !== '__manual__') ? Number(v) : null;
+        const dmn = v === '__manual__' ? (document.getElementById('eib-driver-manual')?.value.trim() || null) : null;
+        return did !== (r.driver_id || null) || dmn !== (r.driver_name_manual || null); })();
     if (changed && !confirm('변경사항이 있습니다. 취소할까요?')) return;
   }
   document.getElementById('modal-edit-inbound').style.display = 'none';
@@ -7252,6 +7280,12 @@ async function saveInboundModal() {
   const original_work_date = isReclass ? (document.getElementById('eib-reclass-date')?.value || null) : null;
 
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
+  const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
+  const eibDrvManInput = document.getElementById('eib-driver-manual');
+  if (!eibDrvSelVal) return alert('수송기사를 선택해주세요.');
+  if (eibDrvSelVal === '__manual__' && !eibDrvManInput?.value.trim()) return alert('기사명을 입력해주세요.');
+  const driver_id = (eibDrvSelVal && eibDrvSelVal !== '__manual__') ? Number(eibDrvSelVal) : null;
+  const driver_name_manual = eibDrvSelVal === '__manual__' ? (eibDrvManInput.value.trim() || null) : null;
 
   const prev = inboundRecords.find(r => r.id === id);
   const changed =
@@ -7270,7 +7304,9 @@ async function saveInboundModal() {
     is_priority !== !!prev.is_priority ||
     reclassification_source !== (prev.reclassification_source || null) ||
     reclassification_reason !== (prev.reclassification_reason || null) ||
-    original_work_date !== (prev.original_work_date || null);
+    original_work_date !== (prev.original_work_date || null) ||
+    driver_id !== (prev.driver_id || null) ||
+    driver_name_manual !== (prev.driver_name_manual || null);
 
   if (changed && !reason) return alert('변경사항이 있습니다. 수정 사유를 입력해주세요.');
 
@@ -7282,6 +7318,7 @@ async function saveInboundModal() {
     brix_grade, acidity_grade, appearance_grade, defect_tags,
     brix_range, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
+    driver_id, driver_name_manual,
   };
   try {
     await dbUpdateInbound(id, updatePayload);
@@ -7292,11 +7329,13 @@ async function saveInboundModal() {
           inbound_category: prev.inbound_category, is_priority: prev.is_priority,
           brix_grade: prev.brix_grade, acidity_grade: prev.acidity_grade, appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
           brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
-          reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date },
+          reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date,
+          driver_id: prev.driver_id, driver_name_manual: prev.driver_name_manual },
         after_val: { date, quantity: qty, location, note, inbound_category, is_priority,
           brix_grade, acidity_grade, appearance_grade, defect_tags,
           brix_range, acidity_range, size_distribution,
-          reclassification_source, reclassification_reason, original_work_date },
+          reclassification_source, reclassification_reason, original_work_date,
+          driver_id, driver_name_manual },
         reason, staff: 'admin'
       });
     }
@@ -7305,7 +7344,9 @@ async function saveInboundModal() {
       date, quantity: qty, location, note, inbound_category, is_priority,
       brix_grade, acidity_grade, appearance_grade, defect_tags,
       brix_range, acidity_range, size_distribution,
-      reclassification_source, reclassification_reason, original_work_date };
+      reclassification_source, reclassification_reason, original_work_date,
+      driver_id, driver_name_manual,
+      driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null };
     document.getElementById('modal-edit-inbound').style.display = 'none';
     _editInboundId = null;
     renderInvSummary(); renderInboundList();
