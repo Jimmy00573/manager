@@ -4909,24 +4909,99 @@ function renderInvSummary() {
       pachiJuiceItems ? kpiSub(`${pachiJuiceItems}개 품목`) : '', true)}
   </div>`;
 
-  // ── 오늘 입고 (미니멀 카드, 클릭 시 미선과 탭)
+  // ── 오늘 입고 (탭 카드: 목록 / 기사별 / 품목별)
   const todayStr = td();
   const todayInbounds = inboundRecords.filter(r => !r.is_void && r.date === todayStr);
-  const todayHtml = todayInbounds.length ? `<div class="sum-today-card" onclick="invTab('uns')" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer" onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background='#F9FAFB'">
-    <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:8px">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)}) &nbsp;·&nbsp; ${todayInbounds.length}건 &nbsp;·&nbsp; 합계 ${fmtN(todayInbounds.reduce((s,r)=>s+r.quantity,0))} CT &nbsp;<span style="font-size:11px;color:#9CA3AF;font-weight:400">→ 미선과 탭 바로가기</span></div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr>
-        <th style="text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px">농가</th>
-        <th style="text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px">품목</th>
-        <th style="text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px">수량 (CT)</th>
-      </tr></thead>
-      <tbody>${todayInbounds.map(r => `<tr>
-        <td style="padding:4px 8px;color:#374151">${esc(r.farm_name)}</td>
-        <td style="padding:4px 8px;color:#374151">${esc(r.product)}</td>
-        <td style="padding:4px 8px;text-align:right;font-weight:600;color:#111827">${fmtN(r.quantity)}</td>
-      </tr>`).join('')}</tbody>
-    </table>
-  </div>` : '';
+  let todayHtml = '';
+  if (todayInbounds.length > 0) {
+    const totalQty = todayInbounds.reduce((s, r) => s + r.quantity, 0);
+    const totalCount = todayInbounds.length;
+
+    const getDrv = r => {
+      if (r.driver_id && r.driver?.name)
+        return { key: `reg:${r.driver_id}`, display: r.driver.name, dotColor: r.driver.type === '내부' ? '#6B7280' : '#D97706' };
+      if (r.driver_name_manual)
+        return { key: `man:${r.driver_name_manual}`, display: r.driver_name_manual, dotColor: '#D97706' };
+      return { key: 'none', display: null, dotColor: null };
+    };
+    const drvHtml = drv => drv.display
+      ? `<span class="driver-cell"><span class="driver-dot" style="background:${drv.dotColor}"></span><span class="driver-name">${esc(drv.display)}</span></span>`
+      : '<span style="color:#9CA3AF">—</span>';
+
+    const TH_T = 'text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
+    const TH_R = 'text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
+    const TD_L = 'padding:4px 8px;color:#374151;font-size:12px';
+    const TD_R = 'padding:4px 8px;text-align:right;font-weight:600;color:#111827;font-size:12px';
+    const TD_TL = 'padding:6px 8px;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
+    const TD_TR = 'padding:6px 8px;text-align:right;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
+
+    // 목록 탭: group by (farm + product + driverKey)
+    const listMap = {};
+    todayInbounds.forEach(r => {
+      const drv = getDrv(r);
+      const key = `${r.farm_name}|${r.product}|${drv.key}`;
+      if (!listMap[key]) listMap[key] = { farm: r.farm_name, product: r.product, drv, qty: 0, cnt: 0 };
+      listMap[key].qty += r.quantity; listMap[key].cnt++;
+    });
+    const listTabHtml = `<table style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="${TH_T}">농가</th><th style="${TH_T}">품목</th><th style="${TH_T}">수송기사</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <tbody>${Object.values(listMap).map(g =>
+        `<tr><td style="${TD_L}">${esc(g.farm)}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
+      ).join('')}</tbody>
+    </table>`;
+
+    // 기사별 탭: group by driverKey
+    const drvMap = {};
+    todayInbounds.forEach(r => {
+      const drv = getDrv(r);
+      if (!drvMap[drv.key]) drvMap[drv.key] = { drv, qty: 0, cnt: 0 };
+      drvMap[drv.key].qty += r.quantity; drvMap[drv.key].cnt++;
+    });
+    const drvRows = Object.values(drvMap).sort((a, b) => b.qty - a.qty);
+    const driverTabHtml = `<table style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="${TH_T}">수송기사</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <tbody>
+        ${drvRows.map(g => `<tr><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${g.cnt}</td><td style="${TD_R}">${fmtN(g.qty)}</td></tr>`).join('')}
+        <tr><td style="${TD_TL}">합계</td><td style="${TD_TR}">${totalCount}</td><td style="${TD_TR}">${fmtN(totalQty)}</td></tr>
+      </tbody>
+    </table>`;
+
+    // 품목별 탭: group by product
+    const prodMap = {};
+    todayInbounds.forEach(r => {
+      if (!prodMap[r.product]) prodMap[r.product] = { qty: 0, cnt: 0 };
+      prodMap[r.product].qty += r.quantity; prodMap[r.product].cnt++;
+    });
+    const prodRows = Object.entries(prodMap).sort((a, b) => b[1].qty - a[1].qty);
+    const productTabHtml = `<table style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="${TH_T}">품목</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <tbody>
+        ${prodRows.map(([p, g]) => `<tr><td style="${TD_L}">${esc(p)}</td><td style="${TD_R}">${g.cnt}</td><td style="${TD_R}">${fmtN(g.qty)}</td></tr>`).join('')}
+        <tr><td style="${TD_TL}">합계</td><td style="${TD_TR}">${totalCount}</td><td style="${TD_TR}">${fmtN(totalQty)}</td></tr>
+      </tbody>
+    </table>`;
+
+    todayHtml = `<div style="${CARD}">
+      <div style="padding:12px 16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid #F3F4F6;cursor:pointer" onclick="invTab('uns')" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
+        <span style="font-size:13px;font-weight:600;color:#374151">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)})</span>
+        <span style="color:#D1D5DB">·</span>
+        <span style="font-size:12px;color:#6B7280">${totalCount}건</span>
+        <span style="color:#D1D5DB">·</span>
+        <span style="font-size:12px;color:#6B7280">합계 ${fmtN(totalQty)} CT</span>
+        <span style="font-size:11px;color:#9CA3AF;margin-left:4px">→ 미선과 탭 바로가기</span>
+      </div>
+      <div style="padding:0 16px 12px">
+        <div class="today-tabs">
+          <span id="today-tab-btn-list" class="today-tab active" onclick="todayTabSwitch('list')">목록</span>
+          <span id="today-tab-btn-driver" class="today-tab" onclick="todayTabSwitch('driver')">기사별</span>
+          <span id="today-tab-btn-product" class="today-tab" onclick="todayTabSwitch('product')">품목별</span>
+        </div>
+        <div id="today-tab-list">${listTabHtml}</div>
+        <div id="today-tab-driver" style="display:none">${driverTabHtml}</div>
+        <div id="today-tab-product" style="display:none">${productTabHtml}</div>
+      </div>
+    </div>`;
+  }
 
   // ── 비중 막대 (미선과 섹션용)
   const unsEntries = Object.entries(unsMap).filter(([, v]) => v.raw + v.small > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
@@ -5025,6 +5100,15 @@ function renderInvSummary() {
     ${kpiHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
     <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
+}
+
+function todayTabSwitch(tab) {
+  ['list', 'driver', 'product'].forEach(t => {
+    const btn = document.getElementById(`today-tab-btn-${t}`);
+    const content = document.getElementById(`today-tab-${t}`);
+    if (btn) btn.className = `today-tab${t === tab ? ' active' : ''}`;
+    if (content) content.style.display = t === tab ? '' : 'none';
+  });
 }
 
 function getProcessedForInbound(id) {
