@@ -6670,7 +6670,7 @@ function renderIbCatSummary() {
 
   if (!priEl) return;
   const _today = new Date(); _today.setHours(0,0,0,0);
-  const _daysSince = ds => Math.floor((_today - new Date(ds)) / 86400000);
+  const _daysSince = ds => Math.floor((_today - new Date(ds + 'T00:00:00')) / 86400000);
   const _urgLevel  = d  => d >= URGENCY_THRESHOLD_HIGH ? 'high' : d >= URGENCY_THRESHOLD_MID ? 'mid' : 'low';
   const _URG = {
     high: { label: `🔴 매우 시급 (${URGENCY_THRESHOLD_HIGH}일+)`, col: '#991B1B' },
