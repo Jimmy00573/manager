@@ -471,6 +471,9 @@ textarea {
 .today-tab.active { color: #111827; border-bottom-color: #111827; font-weight: 500; }
 
 /* ── 수송기사 셀 ── */
+.ib-chip { display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#F3F4F6; border:1px solid #E5E7EB; border-radius:4px; padding:4px 8px; color:#374151; }
+.ib-chip-x { cursor:pointer; color:#9CA3AF; font-size:11px; line-height:1; }
+.ib-chip-x:hover { color:#374151; }
 .driver-cell { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
 .driver-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot-gray { background: #6B7280; }

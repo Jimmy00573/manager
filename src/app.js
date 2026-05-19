@@ -40,6 +40,10 @@ let ibSortDir = null;   // 'desc' | 'asc' | null
 let ibPage = 1;
 let ibPageSize = 25;
 let ibSearch = '';
+let ibFilterProduct = '';
+let ibFilterDriver = '';
+let ibFilterDateFrom = '';
+let ibFilterDateTo = '';
 let _farmViewSearch = '';
 let _farmViewSort = 'remaining-desc';
 let _farmExpanded = new Set();
@@ -603,6 +607,16 @@ function popSels() {
   };
   _fillDrvSel('inv-driver-select', document.getElementById('inv-driver-select')?.value || '');
   _fillDrvSel('eib-driver-sel', document.getElementById('eib-driver-sel')?.value || '');
+  const filterDrvSel = document.getElementById('ib-filter-driver');
+  if (filterDrvSel) {
+    const cur = filterDrvSel.value;
+    filterDrvSel.innerHTML = '<option value="">수송기사 전체</option>';
+    drivers.filter(d => d.pin_active !== false).forEach(d => {
+      filterDrvSel.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
+    });
+    filterDrvSel.innerHTML += `<option disabled style="color:#ccc">──────────</option><option value="__manual__">직접 입력 (수동)</option><option value="__null__">수송기사 미입력</option>`;
+    if (cur) filterDrvSel.value = cur;
+  }
 }
 
 function onInvDriverSelChange() {
@@ -5707,6 +5721,142 @@ function ibSetSearch(val) {
   renderInboundList();
 }
 
+function ibSetProduct(val) {
+  ibFilterProduct = val;
+  ibPage = 1;
+  renderInboundList();
+}
+
+function ibSetDriver(val) {
+  ibFilterDriver = val;
+  ibPage = 1;
+  renderInboundList();
+}
+
+function ibClearNewFilters() {
+  ibFilterProduct = ''; ibFilterDriver = ''; ibFilterDateFrom = ''; ibFilterDateTo = '';
+  const p = document.getElementById('ib-filter-product'); if (p) p.value = '';
+  const d = document.getElementById('ib-filter-driver'); if (d) d.value = '';
+  const f = document.getElementById('ib-date-from'); if (f) f.value = '';
+  const t = document.getElementById('ib-date-to'); if (t) t.value = '';
+  _updateIbDateBtn();
+  ibPage = 1;
+  renderInboundList();
+}
+
+function ibClearSingleFilter(type) {
+  if (type === 'product') {
+    ibFilterProduct = '';
+    const el = document.getElementById('ib-filter-product'); if (el) el.value = '';
+  } else if (type === 'driver') {
+    ibFilterDriver = '';
+    const el = document.getElementById('ib-filter-driver'); if (el) el.value = '';
+  } else if (type === 'date') {
+    ibFilterDateFrom = ''; ibFilterDateTo = '';
+    const f = document.getElementById('ib-date-from'); if (f) f.value = '';
+    const t = document.getElementById('ib-date-to'); if (t) t.value = '';
+    _updateIbDateBtn();
+  }
+  ibPage = 1;
+  renderInboundList();
+}
+
+function toggleIbDatePanel(e) {
+  if (e) e.stopPropagation();
+  const panel = document.getElementById('ib-date-panel');
+  if (!panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  const fromEl = document.getElementById('ib-date-from'); if (fromEl) fromEl.value = ibFilterDateFrom;
+  const toEl = document.getElementById('ib-date-to'); if (toEl) toEl.value = ibFilterDateTo;
+  panel.style.display = '';
+  setTimeout(() => {
+    const close = (ev) => {
+      if (!panel.contains(ev.target) && ev.target.id !== 'ib-date-btn') {
+        panel.style.display = 'none';
+        document.removeEventListener('click', close);
+      }
+    };
+    document.addEventListener('click', close);
+  }, 0);
+}
+
+function ibApplyDateShortcut(type) {
+  const today = td();
+  let from = '', to = '';
+  if (type === 'today') { from = today; to = today; }
+  else if (type === 'yesterday') {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    from = to = d.toISOString().slice(0, 10);
+  } else if (type === 'week') {
+    const d = new Date(); const day = d.getDay();
+    const mon = new Date(d); mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    from = mon.toISOString().slice(0, 10); to = today;
+  } else if (type === 'month') {
+    from = today.slice(0, 7) + '-01'; to = today;
+  }
+  ibFilterDateFrom = from; ibFilterDateTo = to;
+  const f = document.getElementById('ib-date-from'); if (f) f.value = from;
+  const t = document.getElementById('ib-date-to'); if (t) t.value = to;
+  _updateIbDateBtn();
+  document.getElementById('ib-date-panel').style.display = 'none';
+  ibPage = 1;
+  renderInboundList();
+}
+
+function ibApplyDateRange() {
+  ibFilterDateFrom = document.getElementById('ib-date-from')?.value || '';
+  ibFilterDateTo = document.getElementById('ib-date-to')?.value || '';
+  _updateIbDateBtn();
+  document.getElementById('ib-date-panel').style.display = 'none';
+  ibPage = 1;
+  renderInboundList();
+}
+
+function _updateIbDateBtn() {
+  const btn = document.getElementById('ib-date-btn');
+  if (!btn) return;
+  if (ibFilterDateFrom || ibFilterDateTo) {
+    const f = ibFilterDateFrom ? ibFilterDateFrom.slice(5).replace('-', '/') : '?';
+    const t = ibFilterDateTo ? ibFilterDateTo.slice(5).replace('-', '/') : '?';
+    btn.textContent = `📅 ${f} ~ ${t}`;
+    btn.style.cssText = 'font-size:12px;padding:4px 10px;border:1px solid #D97706;border-radius:8px;background:#FEF3C7;color:#92400E;font-family:inherit;cursor:pointer;white-space:nowrap';
+  } else {
+    btn.textContent = '📅 기간: 전체';
+    btn.style.cssText = 'font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;font-family:inherit;cursor:pointer;white-space:nowrap';
+  }
+}
+
+function _refreshIbProductOptions() {
+  const el = document.getElementById('ib-filter-product');
+  if (!el) return;
+  const cur = el.value;
+  const prods = [...new Set(inboundRecords.filter(r => !r.is_void && r.product).map(r => r.product))].sort();
+  el.innerHTML = '<option value="">품목 전체</option>' + prods.map(p => `<option value="${esc(p)}"${p === cur ? ' selected' : ''}>${esc(p)}</option>`).join('');
+}
+
+function _renderIbFilterChips() {
+  const container = document.getElementById('ib-filter-chips');
+  if (!container) return;
+  const chips = [];
+  if (ibFilterProduct) chips.push(`<span class="ib-chip">품목: ${esc(ibFilterProduct)} <span class="ib-chip-x" onclick="ibClearSingleFilter('product')">✕</span></span>`);
+  if (ibFilterDriver) {
+    let label = ibFilterDriver === '__manual__' ? '직접입력 (수동)' : ibFilterDriver === '__null__' ? '기사 미입력' : (drivers.find(d => String(d.id) === ibFilterDriver)?.name || ibFilterDriver);
+    chips.push(`<span class="ib-chip">기사: ${esc(label)} <span class="ib-chip-x" onclick="ibClearSingleFilter('driver')">✕</span></span>`);
+  }
+  if (ibFilterDateFrom || ibFilterDateTo) {
+    const f = ibFilterDateFrom ? ibFilterDateFrom.slice(5).replace('-', '/') : '?';
+    const t = ibFilterDateTo ? ibFilterDateTo.slice(5).replace('-', '/') : '?';
+    chips.push(`<span class="ib-chip">기간: ${f}~${t} <span class="ib-chip-x" onclick="ibClearSingleFilter('date')">✕</span></span>`);
+  }
+  if (chips.length) {
+    container.style.display = 'flex';
+    container.innerHTML = chips.join('') + `<button class="btn" onclick="ibClearNewFilters()" style="font-size:11px;padding:2px 8px;margin-left:4px;color:#6B7280">필터 초기화</button>`;
+  } else {
+    container.style.display = 'none';
+    container.innerHTML = '';
+  }
+}
+
 function ibSetPageSize(n) {
   ibPageSize = n === 'all' ? Infinity : parseInt(n);
   ibPage = 1;
@@ -6685,20 +6835,38 @@ function renderInboundList() {
     visible = visible.filter(r => (r.farm_name || '').toLowerCase().includes(q));
   }
 
-  // 필터 카운트 업데이트
+  // 품목 필터
+  if (ibFilterProduct) visible = visible.filter(r => r.product === ibFilterProduct);
+
+  // 수송기사 필터
+  if (ibFilterDriver === '__manual__') visible = visible.filter(r => r.driver_name_manual);
+  else if (ibFilterDriver === '__null__') visible = visible.filter(r => !r.driver_id && !r.driver_name_manual);
+  else if (ibFilterDriver) { const dId = Number(ibFilterDriver); visible = visible.filter(r => r.driver_id === dId); }
+
+  // 기간 필터
+  if (ibFilterDateFrom) visible = visible.filter(r => (r.date || '') >= ibFilterDateFrom);
+  if (ibFilterDateTo) visible = visible.filter(r => (r.date || '') <= ibFilterDateTo);
+
+  // 품목 옵션 갱신 + 필터 칩 + 카운트
+  _refreshIbProductOptions();
+  _renderIbFilterChips();
+  const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
   const fcountEl = document.getElementById('ib-filter-count');
-  if (fcountEl) fcountEl.textContent = (ibFilterCat || ibSearch) ? `${visible.length}건 표시 중` : '';
+  if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중` : '';
 
   // 버튼 활성 상태 동기화 (뷰 전환 후에도 유지)
   _updateIbFilterBtns();
   _updateIbSortIcons();
 
   if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">${
-      ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
-      ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
-      !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'
-    }</td></tr>`;
+    const hasNewFilter = ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty" style="padding:20px 10px">
+      ${hasNewFilter ? '조건에 맞는 입고 내역이 없습니다.' :
+        ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
+        ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
+        !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}
+      ${hasNewFilter ? '<br><button class="btn" onclick="ibClearNewFilters()" style="font-size:12px;margin-top:8px">필터 초기화</button>' : ''}
+    </td></tr>`;
     document.getElementById('ib-pagination') && (document.getElementById('ib-pagination').innerHTML = '');
     return;
   }
