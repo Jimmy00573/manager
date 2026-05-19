@@ -607,6 +607,16 @@
             </select>
           </div>
           <div class="fg"><label>농가명 *</label><select id="ib-farm"><option value="">선택</option></select></div>
+          <div class="fg">
+            <label>수송기사</label>
+            <select id="ib-driver-sel" onchange="onIbDriverSelChange()">
+              <option value="">선택 안 함</option>
+              <option value="__manual__">✏️ 직접 입력</option>
+            </select>
+            <div id="ib-driver-manual-wrap" style="display:none;margin-top:6px">
+              <input id="ib-driver-manual" type="text" placeholder="기사명 입력 (예: 김운송)" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box">
+            </div>
+          </div>
           <div class="fg" style="grid-column:1/-1">
             <label>위치</label>
             <div class="checkbox-row">
@@ -797,9 +807,9 @@
               <th class="sort-header" onclick="ibToggleSort('farm')">농가명<span id="ib-si-farm" class="sort-icon">↕</span></th>
               <th>품목</th><th>카테고리</th>
               <th class="sort-header" onclick="ibToggleSort('qty')">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
-              <th>위치</th><th>품질</th><th>메모</th><th></th>
+              <th>위치</th><th>수송기사</th><th>품질</th><th>메모</th><th></th>
             </tr></thead>
-            <tbody id="ib-tb"><tr><td colspan="9" class="empty">입고 기록 없음</td></tr></tbody>
+            <tbody id="ib-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
           </table>
         </div>
         <div id="ib-pagination" class="ib-pagination"></div>
@@ -1402,6 +1412,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=10"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=23"></script>
+<script src="src/app.js?v=24"></script>
 </body>
 </html>

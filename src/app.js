@@ -591,6 +591,22 @@ function popSels() {
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
     el.value = v;
   });
+  const ibDrvSel = document.getElementById('ib-driver-sel');
+  if (ibDrvSel) {
+    const v = ibDrvSel.value;
+    ibDrvSel.innerHTML = '<option value="">선택 안 함</option>';
+    drivers.filter(d => d.pin_active !== false).forEach(d => {
+      ibDrvSel.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
+    });
+    ibDrvSel.innerHTML += `<option disabled style="color:#ccc">──────────</option><option value="__manual__">✏️ 직접 입력</option>`;
+    if (v === '' || v === '__manual__' || drivers.some(d => d.id === v)) ibDrvSel.value = v;
+  }
+}
+
+function onIbDriverSelChange() {
+  const v = document.getElementById('ib-driver-sel')?.value;
+  const wrap = document.getElementById('ib-driver-manual-wrap');
+  if (wrap) wrap.style.display = v === '__manual__' ? '' : 'none';
 }
 
 function setDates() {
@@ -6582,7 +6598,7 @@ function renderInboundList() {
   _updateIbSortIcons();
 
   if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${
       ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
       ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
       !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'
@@ -6604,7 +6620,7 @@ function renderInboundList() {
 
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
   const hasLegacy = pageRows.some(r => r._legacy);
-  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="9" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
+  tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="10" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(pageRows.map(r => {
     if (r.is_void) {
@@ -6630,6 +6646,7 @@ function renderInboundList() {
         <td style="text-align:right;${td}">${fmtN(r.quantity)}</td>
         <td style="${td}">${esc(r.location || '-')}</td>
         <td style="color:#999">—</td>
+        <td style="color:#999">—</td>
         <td></td>
         <td>${voidActionCell}</td>
       </tr>`;
@@ -6650,6 +6667,17 @@ function renderInboundList() {
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
+    let driverCell = '<span style="color:#D1D5DB">—</span>';
+    if (r.driver_id) {
+      const drv = drivers.find(d => d.id === r.driver_id);
+      const drvName = drv ? esc(drv.name) : '알 수 없음';
+      const drvType = drv ? esc(drv.type || '') : '';
+      driverCell = drvType
+        ? `${drvName} <span style="font-size:10px;background:#E3F2FD;color:#1565C0;padding:1px 5px;border-radius:4px;white-space:nowrap">${drvType}</span>`
+        : drvName;
+    } else if (r.driver_name_manual) {
+      driverCell = `${esc(r.driver_name_manual)} <span style="font-size:10px;background:#F3F4F6;color:#6B7280;padding:1px 5px;border-radius:4px;white-space:nowrap">수동</span>`;
+    }
     const memoCell = r.note
       ? `<button class="memo-icon-btn" onclick="toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>`
       : `<span style="color:#D1D5DB">-</span>`;
@@ -6677,6 +6705,7 @@ function renderInboundList() {
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
       <td title="${esc(r.location || '')}">${locCell}</td>
+      <td style="white-space:nowrap">${driverCell}</td>
       <td>${gradeCell}</td>
       <td>${memoCell}</td>
       <td>${actionCell}</td>
@@ -7665,6 +7694,11 @@ async function addInbound() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
+  const drvSelVal = document.getElementById('ib-driver-sel')?.value || '';
+  const driver_id = (drvSelVal && drvSelVal !== '__manual__') ? drvSelVal : null;
+  const driver_name_manual = drvSelVal === '__manual__'
+    ? (document.getElementById('ib-driver-manual')?.value.trim() || null)
+    : null;
   const inbound_category = gv('ib-category') || '상품';
   const brix_grade = getGradeVal('ib-brix-grade');
   const acidity_grade = getGradeVal('ib-acid-grade');
@@ -7685,6 +7719,8 @@ async function addInbound() {
     date, product, farm_name,
     note, staff: 'admin',
     inbound_category, is_priority,
+    driver_id,
+    driver_name_manual,
     ...(brix_grade && { brix_grade }),
     ...(acidity_grade && { acidity_grade }),
     ...(appearance_grade && { appearance_grade }),
@@ -7705,6 +7741,9 @@ async function addInbound() {
     const priEl = document.getElementById('ib-priority');
     if (priEl) priEl.checked = false;
     syncReclassList('ib');
+    const drvSel = document.getElementById('ib-driver-sel'); if (drvSel) drvSel.value = '';
+    const drvManWrap = document.getElementById('ib-driver-manual-wrap'); if (drvManWrap) drvManWrap.style.display = 'none';
+    const drvMan = document.getElementById('ib-driver-manual'); if (drvMan) drvMan.value = '';
   };
 
   try {
