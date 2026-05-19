@@ -5079,7 +5079,7 @@ function renderInvSummary() {
       .map(([p]) => `<span style="background:#FCEBEB;color:#A32D2D;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600">⚠ ${esc(p)} ${priorityByProduct[p]}건 경과</span>`)
       .join('');
     return `<div style="padding:10px 16px 14px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;row-gap:4px;margin-bottom:10px">${labelGrid}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:10px">${labelGrid}</div>
       <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;width:100%">${segments}</div>
       ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">${chips}</div>` : ''}
     </div>`;
