@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🍊 감귤 수송·콘테이너 통합 관리</title>
-  <link rel="stylesheet" href="src/style.css?v=4">
+  <link rel="stylesheet" href="src/style.css?v=5">
 </head>
 <body>
 
@@ -805,9 +805,9 @@
               <th class="sort-header" onclick="ibToggleSort('farm')">농가명<span id="ib-si-farm" class="sort-icon">↕</span></th>
               <th>품목</th><th>카테고리</th>
               <th class="sort-header" onclick="ibToggleSort('qty')">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
-              <th>위치</th><th>품질</th><th>메모</th><th></th>
+              <th>위치</th><th>수송기사</th><th>품질</th><th>메모</th><th></th>
             </tr></thead>
-            <tbody id="ib-tb"><tr><td colspan="9" class="empty">입고 기록 없음</td></tr></tbody>
+            <tbody id="ib-tb"><tr><td colspan="10" class="empty">입고 기록 없음</td></tr></tbody>
           </table>
         </div>
         <div id="ib-pagination" class="ib-pagination"></div>
@@ -1410,6 +1410,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=10"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=24"></script>
+<script src="src/app.js?v=25"></script>
 </body>
 </html>

@@ -465,3 +465,11 @@ textarea {
 
 .inv-kebab:hover { background: #F3F4F6 !important; color: #374151 !important; }
 .inv-menu-item:hover { background: #F3F4F6; }
+
+/* ── 수송기사 셀 ── */
+.driver-cell { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
+.driver-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot-gray { background: #6B7280; }
+.dot-orange { background: #D97706; }
+.driver-name { color: #111827; }
+.driver-cell-empty { color: #9CA3AF; }
