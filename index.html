@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🍊 감귤 수송·콘테이너 통합 관리</title>
-  <link rel="stylesheet" href="src/style.css?v=9">
+  <link rel="stylesheet" href="src/style.css?v=10">
 </head>
 <body>
 
@@ -558,37 +558,89 @@
 
 <!-- 설정 -->
 <div id="p-set" class="panel">
-  <div class="form-card">
-    <div class="form-title" style="margin-bottom:20px">⚙ 설정</div>
+  <!-- 설정 메뉴 -->
+  <div id="set-menu-view">
+    <div class="form-card">
+      <div class="form-title" style="margin-bottom:20px">⚙ 설정</div>
 
-    <div class="set-section">
-      <div class="set-section-title">📋 기준 설정</div>
-      <div class="set-item">
-        <div class="set-item-info">
-          <div class="set-item-title">⚠ 우선처리 기준</div>
-          <div class="set-item-desc">우선처리 시급도 분류 기준 (매우 시급 / 시급 경과일)</div>
+      <div class="set-section">
+        <div class="set-section-title">📋 기준 설정</div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">⚠ 우선처리 기준</div>
+            <div class="set-item-desc">우선처리 시급도 분류 기준 (매우 시급 / 시급 경과일)</div>
+          </div>
+          <button class="set-item-btn" onclick="openUrgencyThresholdsModal()">열기</button>
         </div>
-        <button class="set-item-btn" onclick="openUrgencyThresholdsModal()">열기</button>
+      </div>
+
+      <div class="set-section">
+        <div class="set-section-title">🔒 보안</div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">관리자 비밀번호 변경</div>
+            <div class="set-item-desc">관리자 계정 로그인 비밀번호</div>
+          </div>
+          <button class="set-item-btn" onclick="openPwChangeModal('adm')">변경</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">직원 비밀번호 변경</div>
+            <div class="set-item-desc">직원 공통 로그인 비밀번호</div>
+          </div>
+          <button class="set-item-btn" onclick="openPwChangeModal('staff')">변경</button>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-section-title">🗂 재고 설정</div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">📍 위치 관리</div>
+            <div class="set-item-desc">저장 위치 추가·수정·삭제</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('loc')">열기</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">🎯 품질 기준</div>
+            <div class="set-item-desc">당도·산도 품질 기준 설정</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('qc')">열기</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">⚙️ 선과 기준</div>
+            <div class="set-item-desc">카테고리·등급·과수 선과 기준 설정</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('cfg')">열기</button>
+        </div>
       </div>
     </div>
-
-    <div class="set-section">
-      <div class="set-section-title">🔒 보안</div>
-      <div class="set-item">
-        <div class="set-item-info">
-          <div class="set-item-title">관리자 비밀번호 변경</div>
-          <div class="set-item-desc">관리자 계정 로그인 비밀번호</div>
-        </div>
-        <button class="set-item-btn" onclick="openPwChangeModal('adm')">변경</button>
-      </div>
-      <div class="set-item">
-        <div class="set-item-info">
-          <div class="set-item-title">직원 비밀번호 변경</div>
-          <div class="set-item-desc">직원 공통 로그인 비밀번호</div>
-        </div>
-        <button class="set-item-btn" onclick="openPwChangeModal('staff')">변경</button>
-      </div>
+  </div>
+  <!-- 위치 관리 -->
+  <div id="set-loc-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">📍 위치 관리</span>
     </div>
+    <div id="inv-loc-div"></div>
+  </div>
+  <!-- 품질 기준 -->
+  <div id="set-qc-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">🎯 품질 기준</span>
+    </div>
+    <div id="inv-qc-div"></div>
+  </div>
+  <!-- 선과 기준 -->
+  <div id="set-cfg-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">⚙️ 선과 기준</span>
+    </div>
+    <div id="inv-cfg-div"></div>
   </div>
 </div>
 
@@ -958,15 +1010,6 @@
     <!-- 주스/청 섹션 (통계 카드 + 내역 표 + 등록 폼) — JS 렌더링 -->
     <div id="inv-juice-section"></div>
   </div>
-  <!-- 위치 관리 -->
-  <div id="inv-loc-div" style="display:none"></div>
-
-  <!-- 품질 기준 -->
-  <div id="inv-qc-div" style="display:none"></div>
-
-  <!-- 선과 기준 설정 -->
-  <div id="inv-cfg-div" style="display:none"></div>
-
   <!-- 변경 이력 -->
   <div id="inv-log-div" style="display:none">
     <div class="form-card" style="margin-bottom:12px">
@@ -1589,6 +1632,6 @@
 <script src="src/supabase-client.js"></script>
 <script src="src/db.js?v=11"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=43"></script>
+<script src="src/app.js?v=44"></script>
 </body>
 </html>

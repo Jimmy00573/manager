@@ -505,6 +505,7 @@ function T(id) {
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
   if (id === 'inv') loadAndRenderInv();
+  if (id === 'set') setTab('menu');
   if (id === 'export') {
     const t = td();
     const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -3153,19 +3154,27 @@ async function deleteQcCriteria() {
 
 // ── 재고관리 ──────────────────────────────────────────────────
 
+function setTab(t) {
+  ['menu', 'loc', 'qc', 'cfg'].forEach(s => {
+    const el = document.getElementById('set-' + s + '-view');
+    if (el) el.style.display = t === s ? '' : 'none';
+  });
+  if (t === 'loc') renderStorageLocations();
+  if (t === 'qc') loadQualityCriteria();
+  if (t === 'cfg') renderSizeCfg();
+}
+function setBack() { setTab('menu'); }
+
 function invTab(t) {
-  ['sum', 'uns', 'srt', 'wj', 'loc', 'qc', 'cfg', 'log'].forEach(s => {
+  ['sum', 'uns', 'srt', 'wj', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
   if (t === 'srt') renderInventoryStatus();
-  if (t === 'cfg') renderSizeCfg();
   if (t === 'log') loadAuditLogs();
   if (t === 'sum') renderInvSummary();
-  if (t === 'loc') renderStorageLocations();
-  if (t === 'qc') loadQualityCriteria();
   if (t === 'wj') {
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
