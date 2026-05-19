@@ -4916,7 +4916,6 @@ function renderInvSummary() {
   // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준)
   const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
   const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
-  console.log('renderInvSummary: 우선처리 카운트 계산 중, HIGH=', URGENCY_THRESHOLD_HIGH, 'MID=', URGENCY_THRESHOLD_MID);
   const priorityByProduct = {};
   let priorityCount = 0;
   inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
@@ -4926,7 +4925,6 @@ function renderInvSummary() {
       priorityByProduct[r.product] = (priorityByProduct[r.product] || 0) + 1;
     }
   });
-  console.log('우선처리 카운트:', priorityCount);
 
   // ── KPI 집계
   const unsTotalCt    = Object.values(unsMap).reduce((s, v) => s + v.raw + v.small, 0);
@@ -9486,7 +9484,6 @@ async function saveUrgencyThresholds() {
     return;
   }
   try {
-    console.log('[urgency] Saving:', high, mid);
     const rows = await sbGet('settings', 'key=eq.urgency_thresholds');
     const payload = { value: { high, mid }, updated_at: new Date().toISOString() };
     if (rows && rows.length > 0) {
@@ -9498,15 +9495,11 @@ async function saveUrgencyThresholds() {
     } else {
       await sbInsert('settings', { key: 'urgency_thresholds', ...payload });
     }
-    console.log('[urgency] Saved to DB');
     URGENCY_THRESHOLD_HIGH = high;
     URGENCY_THRESHOLD_MID  = mid;
-    console.log('[urgency] Globals updated:', URGENCY_THRESHOLD_HIGH, URGENCY_THRESHOLD_MID);
     closeUrgencyThresholdsModal();
     renderIbCatSummary();
-    console.log('[urgency] Called: renderIbCatSummary');
     renderInvSummary();
-    console.log('[urgency] Called: renderInvSummary');
     showToast('✓ 우선처리 기준이 저장되었습니다.');
   } catch(e) {
     alert('저장 오류: ' + e.message);
