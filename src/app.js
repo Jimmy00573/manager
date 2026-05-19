@@ -9461,6 +9461,70 @@ async function openSortingDetailModal(inboundId) {
     ${cumHtml}`;
 }
 
+// ── 설정 탭 — 비밀번호 변경 모달
+function openPwChangeModal(type) {
+  const isAdm = type === 'adm';
+  document.getElementById('pw-modal-title').textContent = isAdm ? '🔐 관리자 비밀번호 변경' : '👷 직원 비밀번호 변경';
+  document.getElementById('pw-adm-form').style.display   = isAdm ? '' : 'none';
+  document.getElementById('pw-staff-form').style.display = isAdm ? 'none' : '';
+  ['set-apc-cur','set-apc-new','set-apc-confirm','set-spw-new','set-spw-confirm'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['set-apc-msg','set-spw-msg'].forEach(id => {
+    const el = document.getElementById(id); if (el) { el.style.display = 'none'; el.textContent = ''; }
+  });
+  document.getElementById('modal-pw-change').style.display = 'flex';
+}
+function closePwChangeModal() {
+  document.getElementById('modal-pw-change').style.display = 'none';
+}
+async function changeSetAdmPw() {
+  const curEl = document.getElementById('set-apc-cur');
+  const nwEl  = document.getElementById('set-apc-new');
+  const cfEl  = document.getElementById('set-apc-confirm');
+  const msg   = document.getElementById('set-apc-msg');
+  if (!curEl || !nwEl || !cfEl || !msg) return;
+  const cur = curEl.value, nw = nwEl.value, cf = cfEl.value;
+  msg.style.display = 'block';
+  if (!cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호를 입력하세요'; return; }
+  if (!nw)  { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
+  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호가 일치하지 않습니다'; return; }
+  if (nw === cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호와 동일합니다'; return; }
+  try {
+    const username = sessionStorage.getItem('citrus_adm_user') || 'admin';
+    const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
+    if (!rows || !rows.length) { msg.style.color = '#C62828'; msg.textContent = '❌ 계정을 찾을 수 없습니다'; return; }
+    if (rows[0].password !== cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호가 맞지 않습니다'; return; }
+    await sbUpdate('admin_accounts', rows[0].id, { password: nw });
+    msg.style.color = '#2E7D32'; msg.textContent = '✅ 비밀번호 변경 완료!';
+    curEl.value = ''; nwEl.value = ''; cfEl.value = '';
+  } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
+}
+async function changeSetStaffPw() {
+  const nwEl = document.getElementById('set-spw-new');
+  const cfEl = document.getElementById('set-spw-confirm');
+  const msg  = document.getElementById('set-spw-msg');
+  if (!nwEl || !cfEl || !msg) return;
+  const nw = nwEl.value, cf = cfEl.value;
+  msg.style.display = 'block';
+  if (!nw) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
+  if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 비밀번호가 일치하지 않습니다'; return; }
+  try {
+    const rows = await sbGet('settings', 'key=eq.staff_password');
+    if (rows && rows.length > 0) {
+      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.staff_password`, {
+        method: 'PATCH',
+        headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ value: nw, updated_at: new Date().toISOString() })
+      });
+    } else {
+      await sbInsert('settings', { key: 'staff_password', value: nw });
+    }
+    msg.style.color = '#2E7D32'; msg.textContent = '✅ 직원 비밀번호 변경 완료!';
+    nwEl.value = ''; cfEl.value = '';
+  } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
+}
+
 // ── 우선처리 기준 모달
 function openUrgencyThresholdsModal() {
   document.getElementById('urg-input-high').value = URGENCY_THRESHOLD_HIGH;
