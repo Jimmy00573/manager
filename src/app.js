@@ -4913,18 +4913,20 @@ function renderInvSummary() {
     juiceMap[p].net += Number(r.total_qty) || 0;
   });
 
-  // ── 우선처리 집계 (21일+)
+  // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준)
   const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
   const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
+  console.log('renderInvSummary: 우선처리 카운트 계산 중, HIGH=', URGENCY_THRESHOLD_HIGH, 'MID=', URGENCY_THRESHOLD_MID);
   const priorityByProduct = {};
   let priorityCount = 0;
   inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
-    if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_HIGH) {
+    if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_MID) {
       priorityCount++;
       priorityByProduct[r.product] = (priorityByProduct[r.product] || 0) + 1;
     }
   });
+  console.log('우선처리 카운트:', priorityCount);
 
   // ── KPI 집계
   const unsTotalCt    = Object.values(unsMap).reduce((s, v) => s + v.raw + v.small, 0);
