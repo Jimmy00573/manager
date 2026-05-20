@@ -33,7 +33,11 @@ async function sbInsert(table, data) {
     body: JSON.stringify(data)
   });
   if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const json = await res.json();
+  if (!Array.isArray(json) || json.length === 0) {
+    throw new Error(`sbInsert: ${table} - 삽입된 행 없음 (RLS 차단 또는 거부)`);
+  }
+  return json;
 }
 
 async function sbUpdate(table, id, data) {
@@ -43,7 +47,11 @@ async function sbUpdate(table, id, data) {
     body: JSON.stringify(data)
   });
   if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const json = await res.json();
+  if (!Array.isArray(json) || json.length === 0) {
+    throw new Error(`sbUpdate: ${table} id=${id} - 영향받은 행 없음 (RLS 차단 또는 id 불일치)`);
+  }
+  return json;
 }
 
 async function sbDelete(table, id) {
