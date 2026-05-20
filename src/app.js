@@ -5144,6 +5144,39 @@ function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
 
+async function getInboundLinks(id) {
+  let sortingResultIds = [];
+  let sorting = 0, details = 0, inventory = 0;
+
+  try {
+    const srs = await sbGet('sorting_results', `inbound_record_id=eq.${id}&select=id`);
+    sortingResultIds = (srs || []).map(r => r.id);
+    sorting = sortingResultIds.length;
+  } catch (e) {
+    console.error('getInboundLinks sorting_results 조회 실패:', e);
+  }
+
+  if (sortingResultIds.length > 0) {
+    try {
+      const sds = await sbGet('sorting_details', `sorting_result_id=in.(${sortingResultIds.join(',')})&select=id`);
+      details = (sds || []).length;
+    } catch (e) {
+      console.error('getInboundLinks sorting_details 조회 실패:', e);
+    }
+
+    try {
+      const invs = await sbGet('inventory_records', `sorting_result_id=in.(${sortingResultIds.join(',')})&or=(is_void.eq.false,is_void.is.null)&select=id`);
+      inventory = (invs || []).length;
+    } catch (e) {
+      console.error('getInboundLinks inventory_records 조회 실패:', e);
+    }
+  }
+
+  const processing = processingRecords.filter(r => r.inbound_id === id).length;
+
+  return { sorting, details, inventory, processing, sortingResultIds };
+}
+
 function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   if (!cat || cat === '상품') return `<span class="badge" style="background:#E3F2FD;color:#1565C0">상품</span>`;
   if (cat === '대과') return `<span class="badge" style="background:#FFF3E0;color:#E65100">대과</span>`;
