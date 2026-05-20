@@ -289,7 +289,7 @@ async function chkAdmLogin() {
   if (!username || !password) return;
   try {
     const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
-    if (rows && rows.length > 0 && rows[0].password === password) {
+    if (rows && rows.length > 0 && verifyPassword(password, rows[0].password)) {
       sessionStorage.setItem('citrus_role', 'admin');
       sessionStorage.setItem('citrus_adm_user', rows[0].username);
       document.getElementById('pin-screen').style.display = 'none';
@@ -314,7 +314,7 @@ async function chkStaffLogin() {
   try {
     const rows = await sbGet('settings', 'key=eq.staff_password');
     const correctPw = rows && rows.length > 0 ? String(rows[0].value) : '1234';
-    if (pw === correctPw) {
+    if (verifyPassword(pw, correctPw)) {
       sessionStorage.setItem('citrus_role', 'staff');
       document.getElementById('pin-screen').style.display = 'none';
       document.getElementById('hdr-btns').style.display = 'flex';
