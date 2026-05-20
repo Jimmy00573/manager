@@ -758,33 +758,46 @@ async function saveFarmEdit() {
     await dbUpdateFarm(_editFarmId, data);
     farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
     if (oldName && oldName !== name) {
-      const cascadeTables = ['dispatches', 'picks', 'own_ins', 'own_outs', 'reports', 'harvests'];
-      const results = await Promise.all(cascadeTables.map(async tbl => {
+      const cascadeTables = [
+        { table: 'dispatches',         col: 'farm' },
+        { table: 'picks',              col: 'farm' },
+        { table: 'own_ins',            col: 'farm' },
+        { table: 'own_outs',           col: 'farm' },
+        { table: 'reports',            col: 'farm' },
+        { table: 'harvests',           col: 'farm' },
+        { table: 'inbound_records',    col: 'farm_name' },
+        { table: 'inventory_records',  col: 'farm_name' },
+        { table: 'inventory_unsorted', col: 'farm_name' },
+        { table: 'inventory_sorted',   col: 'farm_name' },
+      ];
+      const results = await Promise.all(cascadeTables.map(async ({ table, col }) => {
         try {
-          const res = await fetch(`${SUPABASE_URL}/rest/v1/${tbl}?farm=eq.${encodeURIComponent(oldName)}`, {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${col}=eq.${encodeURIComponent(oldName)}`, {
             method: 'PATCH',
             headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-            body: JSON.stringify({ farm: name })
+            body: JSON.stringify({ [col]: name })
           });
-          if (!res.ok) return { tbl, success: false, error: `HTTP ${res.status}` };
+          if (!res.ok) return { table, success: false, error: `HTTP ${res.status}` };
           const json = await res.json();
-          return { tbl, success: true, count: Array.isArray(json) ? json.length : 0 };
+          return { table, success: true, count: Array.isArray(json) ? json.length : 0 };
         } catch (e) {
-          return { tbl, success: false, error: e.message };
+          return { table, success: false, error: e.message };
         }
       }));
       const failed = results.filter(r => !r.success);
       if (failed.length > 0) {
-        const failedNames = failed.map(r => `${r.tbl}(${r.error})`).join(', ');
+        const failedNames = failed.map(r => `${r.table}(${r.error})`).join(', ');
         throw new Error(`농가명 변경 일부 실패: ${failedNames}\n수동 복구 필요할 수 있음`);
       }
-      console.log(`농가명 cascade 완료: ${results.map(r => `${r.tbl}: ${r.count}건`).join(', ')}`);
-      dispatches = dispatches.map(d => d.farm === oldName ? { ...d, farm: name } : d);
-      picks     = picks.map(p => p.farm === oldName ? { ...p, farm: name } : p);
-      ownIns    = ownIns.map(o => o.farm === oldName ? { ...o, farm: name } : o);
-      ownOuts   = ownOuts.map(o => o.farm === oldName ? { ...o, farm: name } : o);
-      reports   = reports.map(r => r.farm === oldName ? { ...r, farm: name } : r);
-      harvests  = harvests.map(h => h.farm === oldName ? { ...h, farm: name } : h);
+      console.log(`농가명 cascade 완료: ${results.map(r => `${r.table}: ${r.count}건`).join(', ')}`);
+      dispatches      = dispatches.map(d => d.farm === oldName ? { ...d, farm: name } : d);
+      picks           = picks.map(p => p.farm === oldName ? { ...p, farm: name } : p);
+      ownIns          = ownIns.map(o => o.farm === oldName ? { ...o, farm: name } : o);
+      ownOuts         = ownOuts.map(o => o.farm === oldName ? { ...o, farm: name } : o);
+      reports         = reports.map(r => r.farm === oldName ? { ...r, farm: name } : r);
+      harvests        = harvests.map(h => h.farm === oldName ? { ...h, farm: name } : h);
+      inboundRecords  = inboundRecords.map(r => r.farm_name === oldName ? { ...r, farm_name: name } : r);
+      inventoryRecords = inventoryRecords.map(r => r.farm_name === oldName ? { ...r, farm_name: name } : r);
     }
     CM('farm'); popSels(); renderFarm(); renderDash(); renderCal();
   } catch (e) { alert('오류: ' + e.message); }
