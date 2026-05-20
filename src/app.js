@@ -759,13 +759,26 @@ async function saveFarmEdit() {
     farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
     if (oldName && oldName !== name) {
       const cascadeTables = ['dispatches', 'picks', 'own_ins', 'own_outs', 'reports', 'harvests'];
-      await Promise.all(cascadeTables.map(tbl =>
-        fetch(`${SUPABASE_URL}/rest/v1/${tbl}?farm=eq.${encodeURIComponent(oldName)}`, {
-          method: 'PATCH',
-          headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ farm: name })
-        })
-      ));
+      const results = await Promise.all(cascadeTables.map(async tbl => {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/${tbl}?farm=eq.${encodeURIComponent(oldName)}`, {
+            method: 'PATCH',
+            headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+            body: JSON.stringify({ farm: name })
+          });
+          if (!res.ok) return { tbl, success: false, error: `HTTP ${res.status}` };
+          const json = await res.json();
+          return { tbl, success: true, count: Array.isArray(json) ? json.length : 0 };
+        } catch (e) {
+          return { tbl, success: false, error: e.message };
+        }
+      }));
+      const failed = results.filter(r => !r.success);
+      if (failed.length > 0) {
+        const failedNames = failed.map(r => `${r.tbl}(${r.error})`).join(', ');
+        throw new Error(`농가명 변경 일부 실패: ${failedNames}\n수동 복구 필요할 수 있음`);
+      }
+      console.log(`농가명 cascade 완료: ${results.map(r => `${r.tbl}: ${r.count}건`).join(', ')}`);
       dispatches = dispatches.map(d => d.farm === oldName ? { ...d, farm: name } : d);
       picks     = picks.map(p => p.farm === oldName ? { ...p, farm: name } : p);
       ownIns    = ownIns.map(o => o.farm === oldName ? { ...o, farm: name } : o);
