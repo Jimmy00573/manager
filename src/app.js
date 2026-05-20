@@ -9487,11 +9487,16 @@ async function saveUrgencyThresholds() {
     const rows = await sbGet('settings', 'key=eq.urgency_thresholds');
     const payload = { value: { high, mid }, updated_at: new Date().toISOString() };
     if (rows && rows.length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.urgency_thresholds`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.urgency_thresholds`, {
         method: 'PATCH',
         headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
         body: JSON.stringify(payload)
       });
+      if (!res.ok) throw new Error(`우선처리 기준 저장 실패: HTTP ${res.status}`);
+      const json = await res.json();
+      if (!Array.isArray(json) || json.length === 0) {
+        throw new Error('우선처리 기준 저장 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)');
+      }
     } else {
       await sbInsert('settings', { key: 'urgency_thresholds', ...payload });
     }
