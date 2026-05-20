@@ -9397,6 +9397,7 @@ async function openSortingDetailModal(inboundId) {
     { label: '극소과', ct: cumTiny     },
     { label: '손실',   ct: cumLoss     },
   ];
+  const cumAbn = cumPachi + cumHighacid + cumTiny + cumLoss;
 
   const sessionHtml = results.map(r => {
     const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
@@ -9446,6 +9447,7 @@ async function openSortingDetailModal(inboundId) {
     <div style="padding:10px 14px;background:#F0F9FF;border-radius:10px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px">
       <span>📦 총 투입 <strong>${fmtN(totalInput)} CT</strong> (${results.length}차)</span>
       <span>🟢 정상품 <strong>${fmtN(totalNormal)} CT</strong></span>
+      <span>🔴 비정상품 <strong>${fmtN(cumAbn)} CT</strong></span>
       ${totalLoss > 0 ? `<span style="color:#DC2626">📉 손실률 <strong>${lossRate}%</strong></span>` : `<span style="color:#059669">✅ 손실 없음</span>`}
       ${ib ? `<span style="width:100%;color:#6B7280">📋 입고 ${[ib.date, ib.quantity != null ? fmtN(ib.quantity) + '개' : ''].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
