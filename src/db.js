@@ -11,18 +11,19 @@ async function getStockSettings() {
 }
 
 async function saveStockSettings(data) {
-  try {
-    const rows = await sbGet('settings', 'key=eq.stock');
-    if (rows && rows.length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.stock`, {
-        method: 'PATCH',
-        headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ value: data, updated_at: new Date().toISOString() })
-      });
-    } else {
-      await sbInsert('settings', { key: 'stock', value: data });
-    }
-  } catch (e) { console.error('설정 저장 오류:', e); }
+  const rows = await sbGet('settings', 'key=eq.stock');
+  if (rows && rows.length > 0) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.stock`, {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ value: data, updated_at: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error(`재고 설정 저장 실패: HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || json.length === 0) throw new Error('재고 설정 저장 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)');
+  } else {
+    await sbInsert('settings', { key: 'stock', value: data });
+  }
 }
 
 async function dbGetFarms() { return sbGet('farms', 'order=name'); }
@@ -110,11 +111,14 @@ async function loadSizeConfig() {
 async function saveSizeConfig(data) {
   const rows = await sbGet('settings', 'key=eq.inv_size_config');
   if (rows && rows.length > 0) {
-    await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.inv_size_config`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.inv_size_config`, {
       method: 'PATCH',
       headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
       body: JSON.stringify({ value: data, updated_at: new Date().toISOString() })
     });
+    if (!res.ok) throw new Error(`선과 기준 저장 실패: HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || json.length === 0) throw new Error('선과 기준 저장 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)');
   } else {
     await sbInsert('settings', { key: 'inv_size_config', value: data });
   }
