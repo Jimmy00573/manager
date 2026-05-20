@@ -2619,7 +2619,7 @@ function addLocRow(pfx, locName = '', qty = '') {
 function getLocValue(pfx) {
   const isMulti = document.getElementById(`${pfx}-loc-multi`)?.checked;
   if (!isMulti) {
-    const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
+    const selId = pfx === 'ib' ? 'ib-loc' : pfx === 'mv' ? 'mv-loc' : 'eib-m-loc';
     return document.getElementById(selId)?.value || null;
   }
   const rows = document.querySelectorAll(`#${pfx}-loc-list .loc-dist-row`);
