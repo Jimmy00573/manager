@@ -9387,6 +9387,16 @@ async function openSortingDetailModal(inboundId) {
   details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
     cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
   });
+  const cumPachi    = details.filter(d => d.category === '파치').reduce((s,d)   => s + Number(d.ct), 0);
+  const cumHighacid = details.filter(d => d.category === '고산도').reduce((s,d) => s + Number(d.ct), 0);
+  const cumTiny     = details.filter(d => d.category === '극소과').reduce((s,d) => s + Number(d.ct), 0);
+  const cumLoss     = details.filter(d => d.category === '손실').reduce((s,d)   => s + Number(d.ct), 0);
+  const cumAbnList  = [
+    { label: '파치',   ct: cumPachi    },
+    { label: '고산도', ct: cumHighacid },
+    { label: '극소과', ct: cumTiny     },
+    { label: '손실',   ct: cumLoss     },
+  ];
 
   const sessionHtml = results.map(r => {
     const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
@@ -9420,8 +9430,15 @@ async function openSortingDetailModal(inboundId) {
   const cumHtml = `
     <div style="border:1px solid #DDD6FE;border-radius:10px;overflow:hidden;margin-top:4px">
       <div style="padding:8px 12px;background:#F5F3FF">
-        <div style="font-size:12px;font-weight:700;color:#7C3AED;margin-bottom:2px">사이즈별 누적 합계</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+          <div style="font-size:12px;font-weight:700;color:#7C3AED">사이즈별 누적 합계</div>
+          <div style="font-size:12px;font-weight:700;color:#059669">🟢 정상품 누적 ${fmtN(totalNormal)} CT</div>
+        </div>
         ${_sizeGroupCols(allGroups, cumSizeMap, '#7C3AED')}
+      </div>
+      <div style="padding:8px 12px;border-top:1px solid #DDD6FE;background:#F5F3FF">
+        <div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:2px">🔴 비정상품 누계</div>
+        ${abnGrid(cumAbnList)}
       </div>
     </div>`;
 
@@ -9430,6 +9447,7 @@ async function openSortingDetailModal(inboundId) {
       <span>📦 총 투입 <strong>${fmtN(totalInput)} CT</strong> (${results.length}차)</span>
       <span>🟢 정상품 <strong>${fmtN(totalNormal)} CT</strong></span>
       ${totalLoss > 0 ? `<span style="color:#DC2626">📉 손실률 <strong>${lossRate}%</strong></span>` : `<span style="color:#059669">✅ 손실 없음</span>`}
+      ${ib ? `<span style="width:100%;color:#6B7280">📋 입고 ${[ib.date, ib.quantity != null ? fmtN(ib.quantity) + '개' : ''].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
     ${sessionHtml}
     ${cumHtml}`;
