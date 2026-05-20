@@ -2643,7 +2643,7 @@ function setLocValue(pfx, locStr) {
     document.getElementById(`${pfx}-loc-list`).innerHTML = '';
     parsed.forEach(p => addLocRow(pfx, p.name, p.qty !== null ? p.qty : ''));
   } else {
-    const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
+    const selId = pfx === 'ib' ? 'ib-loc' : pfx === 'mv' ? 'mv-loc' : 'eib-m-loc';
     setLocSelectValue(selId, locStr || '');
   }
 }
@@ -2655,7 +2655,7 @@ function resetLocForm(pfx) {
   document.getElementById(`${pfx}-loc-single`).style.display = '';
   document.getElementById(`${pfx}-loc-rows`).style.display = 'none';
   document.getElementById(`${pfx}-loc-list`).innerHTML = '';
-  const selId = pfx === 'ib' ? 'ib-loc' : 'eib-m-loc';
+  const selId = pfx === 'ib' ? 'ib-loc' : pfx === 'mv' ? 'mv-loc' : 'eib-m-loc';
   const sel = document.getElementById(selId);
   if (sel) sel.value = '';
   if (pfx === 'ib') {
