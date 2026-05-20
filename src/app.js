@@ -447,12 +447,14 @@ function renderSC() {
 
 function editStock(t) { stockEd[t] = true; renderSC(); }
 function cancelStock(t) { stockEd[t] = false; renderSC(); }
-function saveStock(t) {
+async function saveStock(t) {
   const v = parseInt(document.getElementById('si-' + t)?.value) || 0;
   stock[t] = { init: v };
   stockEd[t] = false;
-  saveStockSettings(stock);
-  renderSC(); chkStW();
+  try {
+    await saveStockSettings(stock);
+    renderSC(); chkStW();
+  } catch (e) { alert('재고 설정 저장 오류: ' + e.message); }
 }
 
 function chkStW() {
