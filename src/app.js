@@ -5177,6 +5177,64 @@ async function getInboundLinks(id) {
   return { sorting, details, inventory, processing, sortingResultIds };
 }
 
+async function cascadeDeleteInbound(id) {
+  const links = await getInboundLinks(id);
+  const { sortingResultIds } = links;
+
+  let deletedSortingDetails = 0;
+  let deletedInventoryRecords = 0;
+
+  // (a) sorting_details 삭제
+  for (const srId of sortingResultIds) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/sorting_details?sorting_result_id=eq.${srId}`, {
+      method: 'DELETE', headers: SB_HEADERS
+    });
+    if (!res.ok) throw new Error(`cascade 삭제 실패 (sorting_details 단계): HTTP ${res.status} srId=${srId}`);
+    deletedSortingDetails += links.details;
+  }
+
+  // (b) inventory_records 삭제
+  for (const srId of sortingResultIds) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/inventory_records?sorting_result_id=eq.${srId}`, {
+      method: 'DELETE', headers: SB_HEADERS
+    });
+    if (!res.ok) throw new Error(`cascade 삭제 실패 (inventory_records 단계): HTTP ${res.status} srId=${srId}`);
+    deletedInventoryRecords += links.inventory;
+  }
+
+  // (c) sorting_results 삭제
+  for (const srId of sortingResultIds) {
+    try { await sbDelete('sorting_results', srId); }
+    catch (e) { throw new Error(`cascade 삭제 실패 (sorting_results 단계): ${e.message}`); }
+  }
+
+  // (d) processing_records 삭제
+  const prIds = processingRecords.filter(r => r.inbound_id === id).map(r => r.id);
+  for (const prId of prIds) {
+    try { await sbDelete('processing_records', prId); }
+    catch (e) { throw new Error(`cascade 삭제 실패 (processing_records 단계): ${e.message}`); }
+  }
+
+  // (e) inbound_records 삭제
+  try { await sbDelete('inbound_records', id); }
+  catch (e) { throw new Error(`cascade 삭제 실패 (inbound_records 단계): ${e.message}`); }
+
+  // 메모리 정리
+  inboundRecords     = inboundRecords.filter(r => r.id !== id);
+  processingRecords  = processingRecords.filter(r => r.inbound_id !== id);
+
+  return {
+    ok: true,
+    deleted: {
+      sorting_details:    deletedSortingDetails,
+      inventory_records:  deletedInventoryRecords,
+      sorting_results:    sortingResultIds.length,
+      processing_records: prIds.length,
+      inbound:            1
+    }
+  };
+}
+
 function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   if (!cat || cat === '상품') return `<span class="badge" style="background:#E3F2FD;color:#1565C0">상품</span>`;
   if (cat === '대과') return `<span class="badge" style="background:#FFF3E0;color:#E65100">대과</span>`;
