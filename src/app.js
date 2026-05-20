@@ -9468,8 +9468,9 @@ async function changeSetAdmPw() {
     const username = sessionStorage.getItem('citrus_adm_user') || 'admin';
     const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
     if (!rows || !rows.length) { msg.style.color = '#C62828'; msg.textContent = '❌ 계정을 찾을 수 없습니다'; return; }
-    if (rows[0].password !== cur) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호가 맞지 않습니다'; return; }
-    await sbUpdate('admin_accounts', rows[0].id, { password: nw });
+    if (!verifyPassword(cur, rows[0].password)) { msg.style.color = '#C62828'; msg.textContent = '❌ 현재 비밀번호가 맞지 않습니다'; return; }
+    const hashedAdmPw = await hashPassword(nw);
+    await sbUpdate('admin_accounts', rows[0].id, { password: hashedAdmPw });
     msg.style.color = '#2E7D32'; msg.textContent = '✅ 비밀번호 변경 완료!';
     curEl.value = ''; nwEl.value = ''; cfEl.value = '';
   } catch(e) { msg.style.color = '#C62828'; msg.textContent = '❌ 변경 실패: ' + e.message; }
@@ -9484,12 +9485,13 @@ async function changeSetStaffPw() {
   if (!nw) { msg.style.color = '#C62828'; msg.textContent = '❌ 새 비밀번호를 입력하세요'; return; }
   if (nw !== cf) { msg.style.color = '#C62828'; msg.textContent = '❌ 비밀번호가 일치하지 않습니다'; return; }
   try {
+    const hashedStaffPw = await hashPassword(nw);
     const rows = await sbGet('settings', 'key=eq.staff_password');
     if (rows && rows.length > 0) {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.staff_password`, {
         method: 'PATCH',
         headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ value: nw, updated_at: new Date().toISOString() })
+        body: JSON.stringify({ value: hashedStaffPw, updated_at: new Date().toISOString() })
       });
       if (!res.ok) throw new Error(`직원 비밀번호 변경 실패: HTTP ${res.status}`);
       const json = await res.json();
@@ -9497,7 +9499,7 @@ async function changeSetStaffPw() {
         throw new Error('직원 비밀번호 변경 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)');
       }
     } else {
-      await sbInsert('settings', { key: 'staff_password', value: nw });
+      await sbInsert('settings', { key: 'staff_password', value: hashedStaffPw });
     }
     msg.style.color = '#2E7D32'; msg.textContent = '✅ 직원 비밀번호 변경 완료!';
     nwEl.value = ''; cfEl.value = '';
