@@ -3,6 +3,19 @@
 //  Supabase 연동 버전
 // ============================================================
 
+// ── 비밀번호 헬퍼 (B-1) — CDN: dcodeIO.bcrypt
+async function hashPassword(plainPw) {
+  const salt = dcodeIO.bcrypt.genSaltSync(10);
+  return dcodeIO.bcrypt.hashSync(plainPw, salt);
+}
+function verifyPassword(plainPw, storedValue) {
+  if (typeof storedValue === 'string' &&
+      (storedValue.startsWith('$2a$') || storedValue.startsWith('$2b$') || storedValue.startsWith('$2y$'))) {
+    return dcodeIO.bcrypt.compareSync(plainPw, storedValue);
+  }
+  return plainPw === storedValue;
+}
+
 const PER = 7;
 const OT = ['노랑', '초록', '헌콘'];
 const td = () => new Date().toISOString().slice(0, 10);
