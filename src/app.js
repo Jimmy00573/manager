@@ -9445,11 +9445,16 @@ async function changeSetStaffPw() {
   try {
     const rows = await sbGet('settings', 'key=eq.staff_password');
     if (rows && rows.length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.staff_password`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.staff_password`, {
         method: 'PATCH',
         headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
         body: JSON.stringify({ value: nw, updated_at: new Date().toISOString() })
       });
+      if (!res.ok) throw new Error(`직원 비밀번호 변경 실패: HTTP ${res.status}`);
+      const json = await res.json();
+      if (!Array.isArray(json) || json.length === 0) {
+        throw new Error('직원 비밀번호 변경 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)');
+      }
     } else {
       await sbInsert('settings', { key: 'staff_password', value: nw });
     }
