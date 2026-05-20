@@ -2700,10 +2700,10 @@ async function saveMoveLocation() {
     const updated = await dbUpdateInbound(id, { location: newLoc });
     await dbInsertAuditLog({
       target_table: 'inbound_records', target_id: id,
-      action: 'UPDATE', changed_by: 'admin',
-      old_data: { location: r.location || null },
-      new_data: { location: newLoc },
-      reason: '위치 이동'
+      before_val: { location: r.location || null },
+      after_val: { location: newLoc },
+      reason: '위치 이동',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     Object.assign(r, updated);
     renderInvSummary(); renderInboundList();
@@ -4456,8 +4456,7 @@ async function saveInvEdit() {
       target_table: 'inventory_records', target_id: ref?.id,
       before_val: oldQty, after_val: newQty,
       reason: '재고 현황 [수정] 버튼',
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin',
-      action: '수정'
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     document.getElementById('modal-inv-edit').style.display = 'none';
     renderInvSummary();
