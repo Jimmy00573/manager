@@ -63,6 +63,19 @@ async function sbDelete(table, id) {
   return true;
 }
 
+async function sbDeleteStrict(table, filter) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: 'DELETE',
+    headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const json = await res.json();
+  if (!Array.isArray(json) || json.length === 0) {
+    throw new Error(`sbDeleteStrict: ${table} (${filter}) — 삭제된 행 없음`);
+  }
+  return json.length;
+}
+
 // 연결 확인
 async function testConnection() {
   try {

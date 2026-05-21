@@ -5195,39 +5195,41 @@ async function cascadeDeleteInbound(id) {
   let deletedSortingDetails = 0;
   let deletedInventoryRecords = 0;
 
-  // (a) sorting_details 삭제
+  // (a) sorting_details 삭제 (0건 허용, 실제 삭제 수 집계)
   for (const srId of sortingResultIds) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/sorting_details?sorting_result_id=eq.${srId}`, {
-      method: 'DELETE', headers: SB_HEADERS
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
     });
     if (!res.ok) throw new Error(`cascade 삭제 실패 (sorting_details 단계): HTTP ${res.status} srId=${srId}`);
-    deletedSortingDetails += links.details;
+    const json = await res.json();
+    deletedSortingDetails += Array.isArray(json) ? json.length : 0;
   }
 
-  // (b) inventory_records 삭제
+  // (b) inventory_records 삭제 (0건 허용, 실제 삭제 수 집계)
   for (const srId of sortingResultIds) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/inventory_records?sorting_result_id=eq.${srId}`, {
-      method: 'DELETE', headers: SB_HEADERS
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
     });
     if (!res.ok) throw new Error(`cascade 삭제 실패 (inventory_records 단계): HTTP ${res.status} srId=${srId}`);
-    deletedInventoryRecords += links.inventory;
+    const json = await res.json();
+    deletedInventoryRecords += Array.isArray(json) ? json.length : 0;
   }
 
   // (c) sorting_results 삭제
   for (const srId of sortingResultIds) {
-    try { await sbDelete('sorting_results', srId); }
+    try { await sbDeleteStrict('sorting_results', `id=eq.${srId}`); }
     catch (e) { throw new Error(`cascade 삭제 실패 (sorting_results 단계): ${e.message}`); }
   }
 
   // (d) processing_records 삭제
   const prIds = processingRecords.filter(r => r.inbound_id === id).map(r => r.id);
   for (const prId of prIds) {
-    try { await sbDelete('processing_records', prId); }
+    try { await sbDeleteStrict('processing_records', `id=eq.${prId}`); }
     catch (e) { throw new Error(`cascade 삭제 실패 (processing_records 단계): ${e.message}`); }
   }
 
   // (e) inbound_records 삭제
-  try { await sbDelete('inbound_records', id); }
+  try { await sbDeleteStrict('inbound_records', `id=eq.${id}`); }
   catch (e) { throw new Error(`cascade 삭제 실패 (inbound_records 단계): ${e.message}`); }
 
   // 메모리 정리
