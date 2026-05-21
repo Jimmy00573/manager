@@ -2716,8 +2716,7 @@ function openMoveModal(id) {
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
   _moveInboundId = id;
-  const processed = getProcessedForInbound(id);
-  const remaining = r.quantity - processed;
+  const remaining = getRemainingCT(r);
   document.getElementById('mv-info').innerHTML =
     `<b>${esc(r.product)}</b> | ${esc(r.farm_name)} | ${r.date} | 잔여 <b>${fmtN(remaining)}CT</b>`;
   document.getElementById('mv-cur-loc').textContent = r.location || '미지정';
@@ -7041,7 +7040,7 @@ function renderInboundList() {
       </tr>`;
     }
     const processed = getProcessedForInbound(r.id);
-    const remaining = r.quantity - processed;
+    const remaining = getRemainingCT(r);
     const qtyTitle = processed > 0 ? `입고 ${fmtN(r.quantity)}CT · 처리 ${fmtN(processed)}CT · 잔여 ${fmtN(remaining)}CT` : `입고 ${fmtN(r.quantity)}CT`;
     const srtCount = _sortingCountMap[r.id] || 0;
     const srtBadge = srtCount > 0
@@ -7727,8 +7726,8 @@ async function openSortingModal(id) {
   if (!r) return;
 
   const processed = getProcessedForInbound(id);
-  const remaining = r.quantity - processed;
-  if (remaining <= 0) { alert('잔여 재고가 없습니다.'); return; }
+  const remaining = getRemainingCT(r);
+  if (remaining <= 0) { alert('이미 선과가 완료된 입고입니다. (잔여 재고 없음)'); return; }
 
   _sortingInboundId = id;
 
@@ -7835,8 +7834,7 @@ async function saveSortingResult() {
   const tiny        = parseFloat(document.getElementById('srt-tiny').value)     || 0;
   const loss        = parseFloat(document.getElementById('srt-loss').value)     || 0;
 
-  const processed  = getProcessedForInbound(_sortingInboundId);
-  const remaining  = r.quantity - processed;
+  const remaining  = getRemainingCT(r);
 
   if (!sortingDate)         { alert('선과일을 입력하세요.'); return; }
   if (inputCt <= 0)         { alert('투입량을 입력하세요.'); return; }
@@ -8306,7 +8304,7 @@ async function addProcessing() {
   if (!inboundId || !date || !qty) return alert('입고 건, 처리일, 수량은 필수입니다.');
   const ib = inboundRecords.find(r => r.id === inboundId);
   if (!ib) return alert('선택한 입고 건을 찾을 수 없습니다.');
-  const remaining = ib.quantity - getProcessedForInbound(inboundId);
+  const remaining = getRemainingCT(ib);
   if (qty > remaining) return alert(`처리 수량(${fmtN(qty)}CT)이 남은 재고(${fmtN(remaining)}CT)를 초과합니다.`);
   const data = {
     inbound_id: inboundId, date, process_type: processType, quantity: qty,
