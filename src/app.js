@@ -33,6 +33,7 @@ let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [];
+let sortingResults = [];
 let _editLocId = null;
 
 function generateUUID() {
@@ -3178,7 +3179,7 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters, allSorting] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
@@ -3186,7 +3187,8 @@ async function loadAndRenderInv() {
       loadSizeConfig(), loadCategorySystem(),
       dbGetInventoryRecords().catch(() => []),
       dbGetJuiceRecords().catch(() => []),
-      dbGetJuiceMasters().catch(() => [])
+      dbGetJuiceMasters().catch(() => []),
+      sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3202,6 +3204,7 @@ async function loadAndRenderInv() {
       inboundRecords = newIn;
     }
     processingRecords = newProc;
+    sortingResults = allSorting;
     invUnsorted = legacyIn;
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
     invJuiceRecs = juiceRecs;
@@ -5142,6 +5145,15 @@ function todayTabSwitch(tab) {
 
 function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
+}
+
+function getRemainingCT(inboundRecord) {
+  if (!inboundRecord || !inboundRecord.quantity) return 0;
+  const processed = getProcessedForInbound(inboundRecord.id);
+  const sortingInput = sortingResults
+    .filter(r => r.inbound_record_id === inboundRecord.id)
+    .reduce((s, r) => s + (parseFloat(r.input_ct) || 0), 0);
+  return inboundRecord.quantity - processed - sortingInput;
 }
 
 async function getInboundLinks(id) {
