@@ -7638,12 +7638,24 @@ async function saveInboundModal() {
 
 async function deleteInbound(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const processed = getProcessedForInbound(id);
-  if (processed > 0) { showVoidModal(id); return; }
-  if (!confirm('이 입고 기록을 삭제하시겠습니까?')) return;
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  const links = await getInboundLinks(id);
+  const hasLinks = links.sorting > 0 || links.inventory > 0 || links.processing > 0;
   try {
-    await dbDeleteInbound(id);
-    inboundRecords = inboundRecords.filter(r => r.id !== id);
+    if (!hasLinks) {
+      if (!confirm('이 입고 기록을 삭제하시겠습니까?\n\n' + esc(r.farm_name) + ' · ' + esc(r.product) + ' · ' + r.date)) return;
+      await dbDeleteInbound(id);
+      inboundRecords = inboundRecords.filter(x => x.id !== id);
+    } else {
+      const msg = '⚠️ 이 입고에는 연결된 데이터가 있습니다.\n\n'
+        + '· 선과 결과 ' + links.sorting + '건\n'
+        + '· 재고 ' + links.inventory + '건\n'
+        + '· 가공 기록 ' + links.processing + '건\n\n'
+        + '[확인]을 누르면 위 데이터가 모두 영구 삭제됩니다.\n복구할 수 없습니다.';
+      if (!confirm(msg)) return;
+      await cascadeDeleteInbound(id);
+    }
     renderInvSummary(); renderInboundList();
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
