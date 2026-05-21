@@ -7952,18 +7952,6 @@ async function saveSortingResult() {
     });
     processingRecords.push(procRow);
 
-    // 4. 비정상품 → inbound_records 자동 생성
-    const base = {
-      date: sortingDate, farm_name: r.farm_name, product: r.product,
-      location: '선과결과', reclassification_source: '선과결과', original_work_date: r.date
-    };
-    const autoRows = [];
-    if (waste > 0) autoRows.push(sbInsert('inbound_records', { ...base, quantity: waste, inbound_category: '파치', note: `원본#${_sortingInboundId} ${_sortingSeq}차 선과` }));
-    if (highacid > 0) autoRows.push(sbInsert('inbound_records', { ...base, quantity: highacid, inbound_category: '재선별', reclassification_reason: '고산도', note: `원본#${_sortingInboundId} ${_sortingSeq}차 선과` }));
-    if (tiny > 0) autoRows.push(sbInsert('inbound_records', { ...base, quantity: tiny, inbound_category: '재선별', reclassification_reason: '극소과', note: `원본#${_sortingInboundId} ${_sortingSeq}차 선과` }));
-    const newRows = await Promise.all(autoRows);
-    newRows.forEach(rows => { if (rows && rows[0]) inboundRecords.unshift(rows[0]); });
-
     // 5. audit_log
     const parts = [`정상 ${fmtN(normalTotal)}CT`];
     if (waste    > 0) parts.push(`파치 ${fmtN(waste)}CT`);
