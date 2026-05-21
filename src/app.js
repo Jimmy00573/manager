@@ -8695,13 +8695,15 @@ function renderPachiSection() {
   // Source 1: inventory_records (선과 자동 + 수동 등록)
   const irRecs = inventoryRecords.filter(r => ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type));
   const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_tiny'].includes(st);
+  const pachiKindLabel = (st) => ({pachi:'파치', pachi_highacid:'고산도', pachi_tiny:'극소과', pachi_manual:'파치'}[st] || '파치');
   const irGrouped = {};
   irRecs.forEach(r => {
-    const key = (isSortingPachi(r.source_type) && r.sorting_result_id) ? `srt_${r.sorting_result_id}` : `ir_${r.id}`;
+    const key = (isSortingPachi(r.source_type) && r.sorting_result_id) ? `srt_${r.sorting_result_id}_${r.source_type}` : `ir_${r.id}`;
     if (!irGrouped[key]) {
       irGrouped[key] = {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
-        ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false
+        ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false,
+        pachiKind: pachiKindLabel(r.source_type)
       };
     }
     irGrouped[key].ct += Number(r.quantity) || 0;
@@ -8718,7 +8720,7 @@ function renderPachiSection() {
     ct: Number(r.quantity) || 0,
     kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
     ids: [r.id], memo: [r.purpose, r.note].filter(Boolean).join(' / '),
-    isSorting: false, isLegacy: true
+    isSorting: false, isLegacy: true, pachiKind: '파치'
   }));
 
   // 통합 정렬: 품목명 가나다 → 날짜 최신순
@@ -8730,19 +8732,30 @@ function renderPachiSection() {
   // 품목별 통계
   const statsMap = {};
   allRows.forEach(r => {
-    if (!statsMap[r.product]) statsMap[r.product] = 0;
-    statsMap[r.product] += r.ct;
+    if (!statsMap[r.product]) statsMap[r.product] = {};
+    const kind = r.pachiKind || '파치';
+    statsMap[r.product][kind] = (statsMap[r.product][kind] || 0) + r.ct;
   });
   const totalCt = allRows.reduce((s, r) => s + r.ct, 0);
   const totalKg = allRows.reduce((s, r) => s + r.kg, 0);
 
+  const kindOrder = ['파치', '고산도', '극소과'];
   const statsHtml = Object.keys(statsMap).length
-    ? Object.entries(statsMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, ct]) => `
-        <div style="background:#FFF8F0;border:1px solid #FFCC80;border-radius:8px;padding:12px 16px;min-width:110px">
-          <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-          <div style="font-size:18px;font-weight:700;color:#E65100">${fmtN(ct)} CT</div>
-          <div style="font-size:12px;color:#666">${fmtN(Math.round(ct * kgPerCt(p)))} kg</div>
-        </div>`).join('')
+    ? Object.entries(statsMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, kinds]) => {
+        const pTotal = Object.values(kinds).reduce((s, v) => s + v, 0);
+        const kindLines = kindOrder.filter(k => kinds[k]).map(k =>
+          `<div style="display:flex;justify-content:space-between;font-size:12px;color:#666;margin-top:2px"><span>${k}</span><span>${fmtN(kinds[k])} CT</span></div>`).join('');
+        return `
+        <div style="background:#FFF8F0;border:1px solid #FFCC80;border-radius:8px;padding:12px 16px;min-width:130px">
+          <div style="font-size:12px;color:#888;margin-bottom:4px">${esc(p)}</div>
+          ${kindLines}
+          <div style="display:flex;justify-content:space-between;margin-top:6px;border-top:1px solid #FFCC80;padding-top:4px">
+            <span style="font-size:12px;color:#888">합계</span>
+            <span style="font-size:16px;font-weight:700;color:#E65100">${fmtN(pTotal)} CT</span>
+          </div>
+          <div style="font-size:12px;color:#666;text-align:right">${fmtN(Math.round(pTotal * kgPerCt(p)))} kg</div>
+        </div>`;
+      }).join('')
     : `<span style="font-size:13px;color:#aaa">파치 기록 없음</span>`;
 
   // 품목별 그룹화 (정렬은 이미 allRows에 적용됨)
@@ -8758,6 +8771,8 @@ function renderPachiSection() {
     const badge = r.isSorting
       ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:2px 7px;font-size:11px">선과</span>`
       : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
+    const kindStyleMap = { '파치': 'background:#F5F5F5;color:#757575', '고산도': 'background:#FFF8E1;color:#F57F17', '극소과': 'background:#E8F5E9;color:#2E7D32' };
+    const kindBadge = `<span style="${kindStyleMap[r.pachiKind] || 'background:#F5F5F5;color:#757575'};border-radius:10px;padding:2px 7px;font-size:11px">${esc(r.pachiKind || '파치')}</span>`;
     const idsAttr = !r.isLegacy ? `data-pachi-ids="${r.ids.join(',')}"` : '';
     const ctCell = `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
     const memoCell = `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
@@ -8774,6 +8789,7 @@ function renderPachiSection() {
       ${ctCell}
       <td style="padding:7px 10px;text-align:right;color:#666;font-size:13px">${fmtN(r.kg)}</td>
       <td style="padding:7px 10px;text-align:center">${badge}</td>
+      <td style="padding:7px 10px;text-align:center">${kindBadge}</td>
       ${memoCell}
       ${kebabCell}
     </tr>`;
@@ -8784,7 +8800,7 @@ function renderPachiSection() {
     const gCt = rows.reduce((s, r) => s + r.ct, 0);
     const gKg = rows.reduce((s, r) => s + r.kg, 0);
     return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-        <td colspan="${isAdm ? 8 : 7}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+        <td colspan="${isAdm ? 9 : 8}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
           [ ${esc(product)} ] &nbsp;&nbsp;
           <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
           <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
@@ -8797,7 +8813,7 @@ function renderPachiSection() {
     <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
     <td style="padding:8px 12px;text-align:right;color:#E65100">${fmtN(totalCt)} CT</td>
     <td style="padding:8px 12px;text-align:right;color:#555">${fmtN(totalKg)} kg</td>
-    <td colspan="${isAdm ? 3 : 2}"></td>
+    <td colspan="${isAdm ? 4 : 3}"></td>
   </tr>` : '';
 
   el.innerHTML = `
@@ -8818,10 +8834,11 @@ function renderPachiSection() {
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">kg</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
+            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">항목</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
             ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 8 : 7}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 9 : 8}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
         </table>
       </div>
     </div>`;
