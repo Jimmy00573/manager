@@ -8694,13 +8694,14 @@ function renderPachiSection() {
 
   // Source 1: inventory_records (선과 자동 + 수동 등록)
   const irRecs = inventoryRecords.filter(r => ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type));
+  const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_tiny'].includes(st);
   const irGrouped = {};
   irRecs.forEach(r => {
-    const key = (r.source_type === 'pachi' && r.sorting_result_id) ? `srt_${r.sorting_result_id}` : `ir_${r.id}`;
+    const key = (isSortingPachi(r.source_type) && r.sorting_result_id) ? `srt_${r.sorting_result_id}` : `ir_${r.id}`;
     if (!irGrouped[key]) {
       irGrouped[key] = {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
-        ct: 0, kg: 0, ids: [], memo: '', isSorting: r.source_type === 'pachi', isLegacy: false
+        ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false
       };
     }
     irGrouped[key].ct += Number(r.quantity) || 0;
