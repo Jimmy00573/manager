@@ -4865,7 +4865,7 @@ function renderInvSummary() {
 
   // ── 섹션 4: 파치 재고
   const pachiMap = {};
-  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual'].includes(r.source_type)).forEach(r => {
+  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type)).forEach(r => {
     const p = r.product || '기타';
     pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
   });
@@ -7916,22 +7916,28 @@ async function saveSortingResult() {
     }
     console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
 
-    // 6-2단계. inventory_records 파치 등록
-    if (waste > 0) {
+    // 6-2단계. inventory_records 파치/부산물 등록 (파치·고산도·극소과)
+    const pachiItems = [
+      { value: waste,    sourceType: 'pachi' },
+      { value: highacid, sourceType: 'pachi_highacid' },
+      { value: tiny,     sourceType: 'pachi_tiny' },
+    ];
+    for (const item of pachiItems) {
+      if (item.value <= 0) continue;
       try {
         try {
-          const exPachi = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&source_type=eq.pachi&or=(is_void.eq.false,is_void.is.null)&select=id`);
+          const exPachi = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&source_type=eq.${item.sourceType}&or=(is_void.eq.false,is_void.is.null)&select=id`);
           for (const row of exPachi) await sbUpdate('inventory_records', row.id, { is_void: true });
-        } catch(e) { console.warn('[8단계] 파치 void 처리 실패 (무시):', e); }
+        } catch(e) { console.warn(`[8단계] ${item.sourceType} void 처리 실패 (무시):`, e); }
         await sbInsert('inventory_records', {
           date: sortingDate, farm_name: r.farm_name, product: r.product,
-          size_code: null, quantity: waste, location: r.location || null,
-          source_type: 'pachi', sorting_result_id: headerId,
+          size_code: null, quantity: item.value, location: r.location || null,
+          source_type: item.sourceType, sorting_result_id: headerId,
           is_void: false, note: null, created_by: 'admin'
         });
-        console.log('[8단계] 파치 등록 완료:', waste, 'CT');
+        console.log(`[8단계] ${item.sourceType} 등록 완료:`, item.value, 'CT');
       } catch(pachiErr) {
-        console.warn('[8단계] 파치 등록 실패 (무시):', pachiErr.message);
+        console.warn(`[8단계] ${item.sourceType} 등록 실패 (무시):`, pachiErr.message);
       }
     }
 
@@ -8687,7 +8693,7 @@ function renderPachiSection() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
   // Source 1: inventory_records (선과 자동 + 수동 등록)
-  const irRecs = inventoryRecords.filter(r => r.source_type === 'pachi' || r.source_type === 'pachi_manual');
+  const irRecs = inventoryRecords.filter(r => ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type));
   const irGrouped = {};
   irRecs.forEach(r => {
     const key = (r.source_type === 'pachi' && r.sorting_result_id) ? `srt_${r.sorting_result_id}` : `ir_${r.id}`;
