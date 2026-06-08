@@ -3155,7 +3155,7 @@ function ibTab(t) {
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
   if (t === 'proc') renderProcessingTab();
-  if (t === 'list') renderInboundList();
+  if (t === 'list') ibListTab(ibViewMode || 'list');
 }
 
 function ibListTab(t) {
@@ -8135,7 +8135,7 @@ async function saveSortingResult() {
     });
 
     closeSortingModal();
-    renderInvSummary(); renderInboundList(); renderProcessingTab();
+    renderInvSummary(); ibListTab(ibViewMode || 'list'); renderProcessingTab();
     showToast(`${_sortingSeq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
   } catch (e) {
     alert('선과 처리 저장 오류: ' + e.message);
