@@ -4777,7 +4777,8 @@ function renderInvSummary() {
   // ── 공통 헬퍼
   const kgPerCt = p => (p && p.includes('한라봉')) ? 13 : 17;
   const [y, mo, d] = td().split('-');
-  const dateLabel = `${parseInt(y)}년 ${parseInt(mo)}월 ${parseInt(d)}일`;
+  const _dow = ['일','월','화','수','목','금','토'][new Date(`${y}-${mo}-${d}`).getDay()];
+  const dateLabel = `${parseInt(y)}년 ${parseInt(mo)}월 ${parseInt(d)}일 (${_dow})`;
 
   // ── 스타일 상수 (화면: 미니멀 / 인쇄: .sum-th .sum-td-hl 클래스로 복원)
   const CARD   = 'background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:16px';
@@ -5016,7 +5017,7 @@ function renderInvSummary() {
 
     todayHtml = `<div style="${CARD}">
       <div style="padding:12px 16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid #F3F4F6;cursor:pointer" onclick="invTab('uns')" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
-        <span style="font-size:13px;font-weight:600;color:#374151">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)})</span>
+        <span style="font-size:13px;font-weight:600;color:#374151">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)} ${_dow})</span>
         <span style="color:#D1D5DB">·</span>
         <span style="font-size:12px;color:#6B7280">${totalCount}건</span>
         <span style="color:#D1D5DB">·</span>
