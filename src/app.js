@@ -3155,6 +3155,7 @@ function ibTab(t) {
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
   if (t === 'proc') renderProcessingTab();
+  if (t === 'list') renderInboundList();
 }
 
 function ibListTab(t) {
