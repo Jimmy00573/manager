@@ -1264,41 +1264,6 @@
   </div>
 </div>
 
-<!-- 모달: 입고 무효 처리 / 강제 삭제 -->
-<div id="modal-void-inbound" class="modal-bg" style="display:none" onclick="if(event.target===this)CM('void-inbound')">
-  <div class="modal" style="max-width:460px;width:95%">
-    <div class="modal-hdr">
-      <div class="modal-title">이 입고건은 이미 처리됨</div>
-      <button class="modal-close" onclick="CM('void-inbound')">✕</button>
-    </div>
-    <div id="void-modal-info" style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.7"></div>
-    <div style="margin-bottom:14px">
-      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:2px solid #A5D6A7;border-radius:8px;cursor:pointer;margin-bottom:8px;background:#F9FBE7" id="void-opt-void-label">
-        <input type="radio" name="void-action" value="void" id="void-opt-void" checked style="margin-top:3px;cursor:pointer">
-        <div>
-          <div style="font-weight:600;margin-bottom:3px">무효 처리 <span style="font-size:11px;background:#E8F5E9;color:#2E7D32;padding:2px 7px;border-radius:4px;font-weight:700">추천</span></div>
-          <div style="font-size:12px;color:var(--text-secondary)">데이터는 남기되 화면·집계에서 제외됩니다.<br>언제든지 되돌릴 수 있습니다.</div>
-        </div>
-      </label>
-      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer" id="void-opt-force-label">
-        <input type="radio" name="void-action" value="force" id="void-opt-force" style="margin-top:3px;cursor:pointer">
-        <div>
-          <div style="font-weight:600;color:#C62828;margin-bottom:3px">강제 삭제</div>
-          <div style="font-size:12px;color:var(--text-secondary)">입고 + 처리 기록 모두 영구 삭제됩니다.<br>되돌릴 수 없습니다.</div>
-        </div>
-      </label>
-    </div>
-    <div style="margin-bottom:14px">
-      <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">사유 입력 <span style="color:#C62828">*</span></label>
-      <input id="void-reason" placeholder="예: 농가명 오기재, 품목 오류 등" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box">
-    </div>
-    <div class="modal-actions">
-      <button class="btn cancel" onclick="CM('void-inbound')">취소</button>
-      <button class="btn pri" onclick="confirmVoidAction()">확인</button>
-    </div>
-  </div>
-</div>
-
 <!-- 품질 기준 툴팁 -->
 <div id="grade-tooltip"></div>
 
@@ -1627,6 +1592,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=52"></script>
+<script src="src/app.js?v=53"></script>
 </body>
 </html>

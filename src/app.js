@@ -44,7 +44,6 @@ function generateUUID() {
     }));
 }
 let showVoidData = false;
-let _voidTargetId = null;
 let _pendingInboundInsert = null;
 let _priSectionOpen = false;
 let _invAgeDaysTimer = null;
@@ -7882,49 +7881,6 @@ function toggleVoidData() {
   renderInboundList();
 }
 
-function showVoidModal(id) {
-  _voidTargetId = id;
-  const r = inboundRecords.find(x => x.id === id);
-  if (!r) return;
-  const processed = getProcessedForInbound(id);
-  const remaining = r.quantity - processed;
-  document.getElementById('void-modal-info').innerHTML =
-    `<strong>${esc(r.farm_name)}</strong> · ${esc(r.product)} · ${r.date}<br>` +
-    `입고 <strong>${fmtN(r.quantity)}CT</strong> / 처리됨 <strong style="color:#E65100">${fmtN(processed)}CT</strong> / 남은재고 ${fmtN(remaining)}CT`;
-  document.getElementById('void-reason').value = '';
-  document.getElementById('void-opt-void').checked = true;
-  document.getElementById('modal-void-inbound').style.display = 'flex';
-}
-
-async function confirmVoidAction() {
-  const id = _voidTargetId;
-  if (!id) return;
-  const action = document.querySelector('input[name="void-action"]:checked')?.value;
-  const reason = (document.getElementById('void-reason').value || '').trim();
-  if (!reason) return alert('사유를 입력해주세요.');
-  CM('void-inbound');
-  if (action === 'void') {
-    await voidInbound(id, reason);
-  } else if (action === 'force') {
-    await forceDeleteInbound(id, reason);
-  }
-}
-
-async function voidInbound(id, reason) {
-  try {
-    const now = new Date().toISOString();
-    await dbUpdateInbound(id, { is_void: true, void_reason: reason, void_at: now, void_by: 'admin' });
-    await dbInsertAuditLog({
-      target_table: 'inbound_records', target_id: id,
-      before_val: { is_void: false }, after_val: { is_void: true, void_reason: reason },
-      reason, staff: 'admin'
-    });
-    const idx = inboundRecords.findIndex(r => r.id === id);
-    if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx], is_void: true, void_reason: reason, void_at: now, void_by: 'admin' };
-    renderInvSummary(); renderInboundList(); renderProcessingTab();
-  } catch(e) { alert('무효 처리 오류: ' + e.message); }
-}
-
 // ── 선과 처리 모달 ─────────────────────────────────────────────────
 
 async function openSortingModal(id) {
@@ -8261,24 +8217,6 @@ async function permanentDeleteInbound(id) {
     renderInvSummary(); renderInboundList(); renderProcessingTab();
     showToast('영구 삭제되었습니다.');
   } catch(e) { alert('영구 삭제 오류: ' + e.message); }
-}
-
-async function forceDeleteInbound(id, reason) {
-  if (!confirm(`[강제 삭제] 입고 기록과 연관된 처리 기록 모두 영구 삭제됩니다.\n되돌릴 수 없습니다. 계속할까요?\n\n사유: ${reason}`)) return;
-  try {
-    const r = inboundRecords.find(x => x.id === id);
-    const procs = processingRecords.filter(x => x.inbound_id === id);
-    await dbInsertAuditLog({
-      target_table: 'inbound_records', target_id: id,
-      before_val: { record: r, processings: procs }, after_val: null,
-      reason, staff: 'admin'
-    });
-    for (const pr of procs) await dbDeleteProcessing(pr.id);
-    await dbDeleteInbound(id);
-    inboundRecords = inboundRecords.filter(x => x.id !== id);
-    processingRecords = processingRecords.filter(x => x.inbound_id !== id);
-    renderInvSummary(); renderInboundList(); renderProcessingTab();
-  } catch(e) { alert('강제 삭제 오류: ' + e.message); }
 }
 
 function toggleIbForm() {
@@ -9511,7 +9449,6 @@ document.addEventListener('keydown', e => {
   if (_expandedMemoId) { toggleMemo(_expandedMemoId); return; }
   if (document.getElementById('modal-record-history')?.style.display !== 'none') { CM('record-history'); return; }
   if (document.getElementById('modal-edit-inbound')?.style.display !== 'none') { closeEditInboundModal(); return; }
-  if (document.getElementById('modal-void-inbound')?.style.display !== 'none') { CM('void-inbound'); return; }
   if (document.getElementById('modal-pachi-edit')?.style.display !== 'none') { document.getElementById('modal-pachi-edit').style.display = 'none'; return; }
   if (document.getElementById('modal-juice-edit')?.style.display !== 'none') { document.getElementById('modal-juice-edit').style.display = 'none'; return; }
 });
