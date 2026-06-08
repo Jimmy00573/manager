@@ -5713,6 +5713,7 @@ const SIZE_GROUPS_만감류 = [
 
 let _sortingInboundId = null;
 let _sortingSeq = 1;
+let _sortingSaving = false;
 
 let _scSort = 'date-asc';
 let _scSearch = '';
@@ -8028,6 +8029,8 @@ async function saveSortingResult() {
   const r = inboundRecords.find(x => x.id === _sortingInboundId);
   if (!r) return;
 
+  if (_sortingSaving) return;
+
   const sortingDate = document.getElementById('srt-date').value;
   const operator    = document.getElementById('srt-operator').value.trim();
   const inputCt     = parseFloat(document.getElementById('srt-input-ct').value) || 0;
@@ -8059,6 +8062,10 @@ async function saveSortingResult() {
   if (diffPct > 5) {
     if (!confirm(`투입량과 결과 합계 차이가 ${diffPct.toFixed(1)}%입니다.\n투입 ${fmtN(inputCt)} CT / 결과 ${fmtN(outputTotal)} CT\n그래도 저장하시겠습니까?`)) return;
   }
+
+  _sortingSaving = true;
+  const _saveBtn = document.getElementById('srt-save-btn');
+  if (_saveBtn) { _saveBtn.disabled = true; _saveBtn.dataset.orig = _saveBtn.textContent; _saveBtn.textContent = '처리 중...'; }
 
   try {
     // 1. 헤더
@@ -8173,6 +8180,9 @@ async function saveSortingResult() {
     showToast(`${_sortingSeq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
   } catch (e) {
     alert('선과 처리 저장 오류: ' + e.message);
+  } finally {
+    _sortingSaving = false;
+    if (_saveBtn) { _saveBtn.disabled = false; _saveBtn.textContent = _saveBtn.dataset.orig || '✅ 선과 완료'; }
   }
 }
 
