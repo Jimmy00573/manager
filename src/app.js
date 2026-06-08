@@ -7874,7 +7874,7 @@ async function deleteInbound(id) {
       if (!confirm(msg)) return;
       await cascadeDeleteInbound(id);
     }
-    renderInvSummary(); renderInboundList();
+    await loadAndRenderInv();
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
