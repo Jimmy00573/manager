@@ -9445,6 +9445,8 @@ function renderRecordHistoryModal(logs, record) {
 // ── ESC 키로 모달 닫기
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (document.getElementById('modal-sort-detail') && document.getElementById('modal-sort-detail')?.style.display !== 'none') { document.getElementById('modal-sort-detail').style.display = 'none'; return; }
+  if (document.getElementById('modal-sorting')?.style.display !== 'none') { closeSortingModal(); return; }
   if (document.getElementById('modal-quality')?.style.display !== 'none') { closeQualityModal(); return; }
   if (document.getElementById('modal-move-loc')?.style.display !== 'none') { closeMoveModal(); return; }
   if (_expandedMemoId) { toggleMemo(_expandedMemoId); return; }
