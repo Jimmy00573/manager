@@ -7639,7 +7639,7 @@ function _renderScDoingTable() {
                   </div>
                   <span style="font-size:10px;color:#9CA3AF">${pct}%</span>
                 </div>`;
-              return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
+              return `<tr onclick="openSortingDetailModal('${r.id}')" style="background:${rowBg};border-bottom:1px solid #F3F4F6;cursor:pointer" title="클릭하여 선과 결과 상세 보기">
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
                   ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}
                 </td>
@@ -7653,7 +7653,7 @@ function _renderScDoingTable() {
                 </td>
                 <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
                 <td style="padding:4px;text-align:center">
-                  <button onclick="openSortingModal('${r.id}')"
+                  <button onclick="event.stopPropagation(); openSortingModal('${r.id}')"
                     style="background:#C2410C;color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
                     ✂️ 입력
                   </button>
