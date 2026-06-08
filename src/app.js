@@ -5148,7 +5148,9 @@ function getProcessedForInbound(id) {
 
 function getRemainingCT(inboundRecord) {
   if (!inboundRecord || !inboundRecord.quantity) return 0;
-  const processed = getProcessedForInbound(inboundRecord.id);
+  const processed = processingRecords
+    .filter(r => r.inbound_id === inboundRecord.id && r.process_type !== '선과')
+    .reduce((s, r) => s + (r.quantity || 0), 0);
   const sortingInput = sortingResults
     .filter(r => r.inbound_record_id === inboundRecord.id)
     .reduce((s, r) => s + (parseFloat(r.input_ct) || 0), 0);
