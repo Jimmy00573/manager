@@ -4310,7 +4310,7 @@ function openPachiEditModal(regId) {
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">날짜</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.date || '-')}</div></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">농가</label>
-          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.farm || '-')}</div></div>
+          <input id="pachi-edit-farm" type="text" value="${esc(row.farm || '')}" placeholder="농가명" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품목</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.product)}</div></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">출처</label>
@@ -4322,16 +4322,23 @@ function openPachiEditModal(regId) {
           ? `<input id="pachi-edit-ct" type="number" min="0" value="${row.ct}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">`
           : `<div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${fmtN(row.ct)} CT${row.ids.length > 1 ? ' (복수 기록)' : ''}</div>`}
       </div>
-      <div style="margin-bottom:20px">
+      <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">메모</label>
         ${canEditMemo
           ? `<input id="pachi-edit-memo" type="text" value="${esc(row.memo || '')}" placeholder="메모 없음" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">`
           : `<div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px;color:#888">${esc(row.memo || '-')}</div>`}
       </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">사용처</label>
+        <select id="pachi-edit-usage" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
+          <option value="">(미분류)</option>
+          ${[...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
+        </select>
+      </div>
       <input type="hidden" id="pachi-edit-regid" value="${regId}">
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn" onclick="document.getElementById('modal-pachi-edit').style.display='none'">취소</button>
-        ${(canEditQty || canEditMemo) ? `<button class="btn pri" onclick="savePachiEdit()">저장</button>` : ''}
+        <button class="btn pri" onclick="savePachiEdit()">저장</button>
       </div>
     </div>`;
   modal.style.display = 'flex';
@@ -4359,6 +4366,14 @@ async function savePachiEdit() {
         const rec = inventoryRecords.find(r => String(r.id) === String(id));
         if (rec) rec.note = newMemo || null;
       }
+    }
+    // 농가명·사용처 (ids 전체 적용)
+    const newFarm = document.getElementById('pachi-edit-farm')?.value?.trim() || null;
+    const newUsage = document.getElementById('pachi-edit-usage')?.value || null;
+    for (const id of row.ids) {
+      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage });
+      const rec = inventoryRecords.find(r => String(r.id) === String(id));
+      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; }
     }
     document.getElementById('modal-pachi-edit').style.display = 'none';
     renderInvSummary(); renderPachiSection();
@@ -8929,7 +8944,7 @@ function renderPachiSection() {
       irGrouped[key] = {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
         ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false,
-        pachiKind: pachiKindLabel(r.source_type)
+        pachiKind: pachiKindLabel(r.source_type), usage: r.usage || '미분류'
       };
     }
     irGrouped[key].ct += Number(r.quantity) || 0;
@@ -8946,7 +8961,7 @@ function renderPachiSection() {
     ct: Number(r.quantity) || 0,
     kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
     ids: [r.id], memo: [r.purpose, r.note].filter(Boolean).join(' / '),
-    isSorting: false, isLegacy: true, pachiKind: '파치'
+    isSorting: false, isLegacy: true, pachiKind: '파치', usage: r.usage || '미분류'
   }));
 
   // 통합 정렬: 품목명 가나다 → 날짜 최신순
@@ -8964,6 +8979,17 @@ function renderPachiSection() {
   });
   const totalCt = allRows.reduce((s, r) => s + r.ct, 0);
   const totalKg = allRows.reduce((s, r) => s + r.kg, 0);
+
+  // 사용처별 통계
+  const usageStats = {};
+  allRows.forEach(r => { const u = r.usage || '미분류'; usageStats[u] = (usageStats[u] || 0) + r.ct; });
+  const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
+  usageOrder.push('미분류');
+  Object.keys(usageStats).forEach(u => { if (!usageOrder.includes(u)) usageOrder.push(u); });
+  const usageParts = usageOrder.filter(u => usageStats[u] > 0).map(u => `${esc(u)} ${fmtN(usageStats[u])} CT`);
+  const usageHtml = usageParts.length
+    ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:8px 14px;font-size:13px;color:#166534">♻️ 사용처별 — ${usageParts.join(' · ')}</div>`
+    : '';
 
   const kindOrder = ['파치', '고산도', '극소과'];
   const statsHtml = Object.keys(statsMap).length
@@ -9050,6 +9076,7 @@ function renderPachiSection() {
       </div>
       <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
         <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
+        ${usageHtml ? `<div style="margin-top:10px">${usageHtml}</div>` : ''}
       </div>
       <div class="tbl-wrap">
         <table style="min-width:560px;width:100%;border-collapse:collapse">
