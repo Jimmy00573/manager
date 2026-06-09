@@ -8992,11 +8992,11 @@ function renderPachiSection() {
 
   // 사용처별 통계
   const usageStats = {};
-  allRows.forEach(r => { const u = r.usage || '미분류'; usageStats[u] = (usageStats[u] || 0) + r.ct; });
+  allRows.forEach(r => { const u = r.usage || '미분류'; if (!usageStats[u]) usageStats[u] = {ct:0, kg:0}; usageStats[u].ct += r.ct; usageStats[u].kg += r.kg; });
   const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   usageOrder.push('미분류');
   Object.keys(usageStats).forEach(u => { if (!usageOrder.includes(u)) usageOrder.push(u); });
-  const usageParts = usageOrder.filter(u => usageStats[u] > 0).map(u => `${esc(u)} ${fmtN(usageStats[u])} CT`);
+  const usageParts = usageOrder.filter(u => usageStats[u] && usageStats[u].ct > 0).map(u => `${esc(u)} ${fmtN(usageStats[u].ct)} CT · ${fmtN(usageStats[u].kg)} kg`);
   const usageHtml = usageParts.length
     ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:8px 14px;font-size:13px;color:#166534">♻️ 사용처별 — ${usageParts.join(' · ')}</div>`
     : '';
@@ -9066,12 +9066,23 @@ function renderPachiSection() {
     const rows = groups[product];
     const gCt = rows.reduce((s, r) => s + r.ct, 0);
     const gKg = rows.reduce((s, r) => s + r.kg, 0);
+    const gUsage = {};
+    rows.forEach(r => { const u = r.usage || '미분류'; gUsage[u] = (gUsage[u] || 0) + r.ct; });
+    const gUsageParts = usageOrder.filter(u => gUsage[u] > 0).map(u =>
+      u === '미분류'
+        ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u])}</span>`
+        : `${esc(u)} ${fmtN(gUsage[u])}`
+    );
+    const gUsageLine = gUsageParts.length
+      ? `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${gUsageParts.join(' · ')}</div>`
+      : '';
     return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
         <td colspan="${isAdm ? 10 : 9}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
           [ ${esc(product)} ] &nbsp;&nbsp;
           <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
           <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
           <span style="color:#555">${fmtN(gKg)} kg</span>
+          ${gUsageLine}
         </td>
       </tr>` + rows.map(makeDataRow).join('');
   }).join('');
