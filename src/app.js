@@ -4020,7 +4020,8 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
-  const activeRecs = inventoryRecords.filter(r => !r.is_void);
+  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny'];
+  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
 
   // 품목별 합계 (필터 무관, 전체 기준)
   const productTotals = {};
