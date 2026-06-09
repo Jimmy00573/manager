@@ -32,7 +32,7 @@ let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record
 let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
-let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [];
+let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let sortingResults = [];
 let _editLocId = null;
 
@@ -132,7 +132,7 @@ async function initApp() {
   showLoading('데이터 불러오는 중...');
 
   try {
-    const [data, qcData, locData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings()]);
+    const [data, qcData, locData, usageData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -147,6 +147,7 @@ async function initApp() {
     vehicles = data.vehicles || [];
     qualityCriteria = qcData || [];
     storageLocations = locData || [];
+    pachiUsages = usageData || [];
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -3344,20 +3345,95 @@ function renderSizeCfg() {
         <button class="cfg-stab af" id="cst-cat"   onclick="cfgSubTab('cat')">📁 카테고리·품목</button>
         <button class="cfg-stab"   id="cst-grade" onclick="cfgSubTab('grade')">🍊 감귤류 등급</button>
         <button class="cfg-stab"   id="cst-rule"  onclick="cfgSubTab('rule')">📐 만감류 기준</button>
+        <button class="cfg-stab"   id="cst-usage" onclick="cfgSubTab('usage')">♻️ 파치 사용처</button>
       </div>
       <div id="csp-cat"   style="padding-top:14px">${_renderCfgCatHTML()}</div>
       <div id="csp-grade" style="display:none;padding-top:14px">${_renderCfgGradeHTML()}</div>
       <div id="csp-rule"  style="display:none;padding-top:14px">${_renderCfgRuleHTML()}</div>
+      <div id="csp-usage" style="display:none;padding-top:14px"></div>
     </div>`;
 }
 
 function cfgSubTab(t) {
-  ['cat', 'grade', 'rule'].forEach(s => {
+  ['cat', 'grade', 'rule', 'usage'].forEach(s => {
     const btn = document.getElementById('cst-' + s);
     const div = document.getElementById('csp-' + s);
     if (btn) btn.className = 'cfg-stab' + (t === s ? ' af' : '');
     if (div) div.style.display = t === s ? '' : 'none';
   });
+  if (t === 'usage') renderPachiUsageCfg();
+}
+
+// ── 파치 사용처 관리 ────────────────────────────────────────────
+
+function renderPachiUsageCfg() {
+  const el = document.getElementById('csp-usage');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const sorted = [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const rows = sorted.map(u => `<tr>
+    <td style="font-weight:600">${esc(u.name)}</td>
+    <td style="color:#888;font-size:12px">${u.sort_order ?? '—'}</td>
+    <td>${u.is_active !== false ? '<span style="color:#059669;font-size:12px;font-weight:600">● 사용</span>' : '<span style="color:#bbb;font-size:12px">○ 미사용</span>'}</td>
+    ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn edt" onclick="editPachiUsage(${u.id})">수정</button>
+      <button class="btn del" onclick="deletePachiUsage(${u.id})">삭제</button>
+    </td>` : '<td></td>'}
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">파치 사용처 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">파치 등록 시 선택할 사용처를 관리합니다.</div>
+      </div>
+      ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPachiUsage()">+ 사용처 추가</button>` : ''}
+    </div>
+    ${sorted.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>사용처명</th><th>순서</th><th>상태</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 사용처가 없습니다.</div>`}`;
+}
+
+async function addPachiUsage() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const name = prompt('사용처 이름을 입력하세요.')?.trim();
+  if (!name) return;
+  if (pachiUsages.some(u => u.name === name)) return alert(`"${name}"은 이미 등록된 사용처입니다.`);
+  try {
+    const row = await dbInsertPachiUsage({ name, sort_order: pachiUsages.length + 1, is_active: true });
+    pachiUsages.push(row);
+    renderPachiUsageCfg();
+    showToast(`"${name}" 사용처가 추가되었습니다.`);
+  } catch(e) { alert('추가 오류: ' + e.message); }
+}
+
+async function editPachiUsage(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const u = pachiUsages.find(x => x.id === id);
+  if (!u) return;
+  const name = prompt('새 이름을 입력하세요.', u.name)?.trim();
+  if (!name) return;
+  if (pachiUsages.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 사용처입니다.`);
+  try {
+    const updated = await dbUpdatePachiUsage(id, { name });
+    const idx = pachiUsages.findIndex(x => x.id === id);
+    if (idx !== -1) pachiUsages[idx] = updated;
+    renderPachiUsageCfg();
+    showToast('수정되었습니다.');
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deletePachiUsage(id) {
+  const u = pachiUsages.find(x => x.id === id);
+  if (!u || !confirm(`"${u.name}" 사용처를 삭제할까요?`)) return;
+  try {
+    await dbDeletePachiUsage(id);
+    pachiUsages = pachiUsages.filter(x => x.id !== id);
+    renderPachiUsageCfg();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
 function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-size:12px;color:#666;font-weight:500;background:#f5f5f5">${txt}</th>`; }

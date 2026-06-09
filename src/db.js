@@ -88,6 +88,12 @@ async function dbInsertLocation(data) { const r = await sbInsert('storage_locati
 async function dbUpdateLocation(id, data) { const r = await sbUpdate('storage_locations', id, data); return r[0]; }
 async function dbDeleteLocation(id) { return sbDelete('storage_locations', id); }
 
+// ── 파치 사용처
+async function dbGetPachiUsages() { try { return await sbGet('pachi_usages', 'order=sort_order'); } catch(e) { return []; } }
+async function dbInsertPachiUsage(data) { const r = await sbInsert('pachi_usages', data); return r[0]; }
+async function dbUpdatePachiUsage(id, data) { const r = await sbUpdate('pachi_usages', id, data); return r[0]; }
+async function dbDeletePachiUsage(id) { return sbDelete('pachi_usages', id); }
+
 // ── 품질 기준
 async function dbGetQualityCriteria() { try { return await sbGet('quality_criteria', 'order=product_name'); } catch(e) { return []; } }
 async function dbInsertQualityCriteria(data) { const r = await sbInsert('quality_criteria', data); return r[0]; }
