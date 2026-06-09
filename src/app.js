@@ -3389,6 +3389,7 @@ function renderPachiUsageCfg() {
   const rows = sorted.map(u => `<tr>
     <td style="font-weight:600">${esc(u.name)}</td>
     <td style="color:#888;font-size:12px">${u.sort_order ?? '—'}</td>
+    <td style="text-align:center"><input type="checkbox" onchange="togglePachiUsageStock(${u.id}, this.checked)" ${u.include_in_stock !== false ? 'checked' : ''}></td>
     ${isAdm ? `<td style="white-space:nowrap">
       <button class="btn edt" onclick="editPachiUsage(${u.id})">수정</button>
       <button class="btn del" onclick="deletePachiUsage(${u.id})">삭제</button>
@@ -3405,7 +3406,7 @@ function renderPachiUsageCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>사용처명</th><th>순서</th><th></th></tr></thead>
+      <thead><tr><th>사용처명</th><th>순서</th><th>재고 포함</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 사용처가 없습니다.</div>`}`;
 }
@@ -3448,6 +3449,18 @@ async function deletePachiUsage(id) {
     renderPachiUsageCfg(); popUsageSelects();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function togglePachiUsageStock(id, checked) {
+  try {
+    await dbUpdatePachiUsage(id, { include_in_stock: checked });
+    const idx = pachiUsages.findIndex(u => u.id === id);
+    if (idx !== -1) pachiUsages[idx].include_in_stock = checked;
+    renderPachiUsageCfg();
+    renderPachiSection();
+    renderInvSummary();
+    showToast(checked ? '재고 포함으로 변경' : '재고 미포함으로 변경');
+  } catch(e) { alert('변경 오류: ' + e.message); }
 }
 
 function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-size:12px;color:#666;font-weight:500;background:#f5f5f5">${txt}</th>`; }
@@ -8994,15 +9007,21 @@ function renderPachiSection() {
     return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
   });
 
-  // 품목별 통계
+  // 사용처 재고포함 여부 맵
+  const usageInclude = {};
+  pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
+  const isIncluded = u => { const n = u || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
+
+  // 품목별 통계 (미포함 사용처 제외)
   const statsMap = {};
   allRows.forEach(r => {
+    if (!isIncluded(r.usage)) return;
     if (!statsMap[r.product]) statsMap[r.product] = {};
     const kind = r.pachiKind || '파치';
     statsMap[r.product][kind] = (statsMap[r.product][kind] || 0) + r.ct;
   });
-  const totalCt = allRows.reduce((s, r) => s + r.ct, 0);
-  const totalKg = allRows.reduce((s, r) => s + r.kg, 0);
+  const totalCt = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
+  const totalKg = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
 
   // 사용처별 통계
   const usageStats = {};
@@ -9010,7 +9029,7 @@ function renderPachiSection() {
   const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   usageOrder.push('미분류');
   Object.keys(usageStats).forEach(u => { if (!usageOrder.includes(u)) usageOrder.push(u); });
-  const usageParts = usageOrder.filter(u => usageStats[u] && usageStats[u].ct > 0).map(u => `${esc(u)} ${fmtN(usageStats[u].ct)} CT`);
+  const usageParts = usageOrder.filter(u => usageStats[u] && usageStats[u].ct > 0 && isIncluded(u)).map(u => `${esc(u)} ${fmtN(usageStats[u].ct)} CT`);
   const usageHtml = usageParts.length
     ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:8px 14px;font-size:13px;color:#166534">♻️ 사용처별 — ${usageParts.join(' · ')}</div>`
     : '';
@@ -9078,10 +9097,10 @@ function renderPachiSection() {
 
   const groupedHtml = groupOrder.map(product => {
     const rows = groups[product];
-    const gCt = rows.reduce((s, r) => s + r.ct, 0);
-    const gKg = rows.reduce((s, r) => s + r.kg, 0);
+    const gCt = rows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
+    const gKg = rows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
     const gUsage = {};
-    rows.forEach(r => { const u = r.usage || '미분류'; if (!gUsage[u]) gUsage[u] = {ct:0, kg:0}; gUsage[u].ct += r.ct; gUsage[u].kg += r.kg; });
+    rows.forEach(r => { if (!isIncluded(r.usage)) return; const u = r.usage || '미분류'; if (!gUsage[u]) gUsage[u] = {ct:0, kg:0}; gUsage[u].ct += r.ct; gUsage[u].kg += r.kg; });
     const gUsageParts = usageOrder.filter(u => gUsage[u] && gUsage[u].ct > 0).map(u =>
       u === '미분류'
         ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg</span>`
