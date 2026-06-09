@@ -5430,18 +5430,31 @@ function renderInvSummary() {
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div>`;
 
-  // 섹션 5: 주스/청 (단위 컬럼 제거, tbl-wrap 제거)
+  // 섹션 5: 주스/청 (그룹 분리: 청으로 끝나면 '청', 나머지 '주스')
+  const isCheong = name => (name || '').trim().endsWith('청');
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const juiceGroup  = juiceEntries.filter(([p]) => !isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const cheongGroup = juiceEntries.filter(([p]) =>  isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const juiceRow = ([p, v]) => {
+    const isNeg = v.net < 0;
+    const noteStr = v.perBox ? `1BOX/${v.perBox}개` : DASH;
+    return `<tr><td style="${TL}">${productChip(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)} ${esc(v.unit || '병')}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
+  };
+  const juiceGroupHtml = grp => {
+    if (!grp.length) return '';
+    const label = isCheong(grp[0][0]) ? '🍯 청' : '🧃 주스';
+    const subtotal = grp.reduce((s, [, v]) => s + v.net, 0);
+    const unit = grp[0][1].unit || '병';
+    return `<tr><td colspan="3" style="background:#F9FAFB;font-weight:600;color:#374151;padding:6px 8px;font-size:12px">${label}</td></tr>`
+      + grp.map(juiceRow).join('')
+      + `<tr><td style="${TL};font-weight:600">소계</td><td ${TRhl}>${fmtN(subtotal)} ${esc(unit)}</td><td></td></tr>`;
+  };
   const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
     <table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
       <colgroup><col style="width:40%"><col style="width:28%"><col style="width:32%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
-        ? juiceEntries.map(([p, v]) => {
-            const isNeg = v.net < 0;
-            const noteStr = v.perBox ? `1BOX/${v.perBox}개` : DASH;
-            return `<tr><td style="${TL}">${productChip(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)} ${esc(v.unit || '병')}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
-          }).join('')
+        ? juiceGroupHtml(juiceGroup) + juiceGroupHtml(cheongGroup)
         : EMPTY(3, '주스/청 재고 없음')}</tbody>
     </table></div>`;
 
