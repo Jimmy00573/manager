@@ -5258,9 +5258,12 @@ function renderInvSummary() {
       manGamItems ? kpiSub(`${manGamItems}개 품목`) : '')}
     ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
       citrusItems ? kpiSub(`${citrusItems}개 품목`) : '')}
-    ${kpiCard('파치 + 주스/청',
-      pachiTotalKg || juiceTotalNet ? `${fmtN(Math.round(pachiTotalKg))} kg · ${fmtN(Math.round(juiceTotalNet))} 병` : '—', '',
-      pachiJuiceItems ? kpiSub(`${pachiJuiceItems}개 품목`) : '', true)}
+    ${kpiCard('파치',
+      pachiTotalKg ? fmtN(Math.round(pachiTotalKg)) : '—', pachiTotalKg ? 'kg' : '',
+      '', true)}
+    ${kpiCard('주스/청',
+      juiceTotalNet ? fmtN(Math.round(juiceTotalNet)) : '—', juiceTotalNet ? '병' : '',
+      '', true)}
   </div>`;
 
   // ── 오늘 입고 (탭 카드: 목록 / 기사별 / 품목별)

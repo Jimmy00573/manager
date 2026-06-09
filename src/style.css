@@ -367,7 +367,7 @@ textarea {
 
 
 /* ── 전체현황 탭 전용 레이아웃 */
-#inv-sum-div .sum-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+#inv-sum-div .sum-kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
 #inv-sum-div .sum-pj-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 #inv-sum-div .sum-pj-grid > * { min-width: 0; }
 #inv-sum-div .sum-pj-tbl { min-width: 0; }
@@ -390,7 +390,7 @@ textarea {
   #inv-uns-div, #inv-srt-div, #inv-wj-div, #inv-log-div, #inv-loc-div, #inv-qc-div, #inv-cfg-div { display: none !important; }
   .kpi-grid { grid-template-columns: repeat(4, 1fr) !important; }
   .kpi { box-shadow: none !important; border: 1px solid #D1D5DB !important; }
-  #inv-sum-div .sum-kpi-grid { grid-template-columns: repeat(4, 1fr) !important; }
+  #inv-sum-div .sum-kpi-grid { grid-template-columns: repeat(5, 1fr) !important; }
   #inv-sum-div .sum-pj-grid  { grid-template-columns: 1fr 1fr !important; }
   .main { max-width: 100%; padding: 0; }
   .inv-excel-wrap { max-width: 100%; }
