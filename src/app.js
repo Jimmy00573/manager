@@ -628,6 +628,13 @@ function popSels() {
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
     el.value = v;
   });
+  const waFarm = document.getElementById('wa-farm');
+  if (waFarm) {
+    const v = waFarm.value;
+    waFarm.innerHTML = '<option value="">(미지정)</option>' +
+      farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+    if (v && [...waFarm.options].some(o => o.value === v)) waFarm.value = v;
+  }
   const _fillDrvSel = (id, keepVal) => {
     const el = document.getElementById(id); if (!el) return;
     el.innerHTML = '<option value="" disabled selected>선택하세요</option>';
@@ -4310,7 +4317,10 @@ function openPachiEditModal(regId) {
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">날짜</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.date || '-')}</div></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">농가</label>
-          <input id="pachi-edit-farm" type="text" value="${esc(row.farm || '')}" placeholder="농가명" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+          <select id="pachi-edit-farm" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
+            <option value="">(미지정)</option>
+            ${farms.map(f => `<option value="${esc(f.name)}"${row.farm === f.name ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}
+          </select></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품목</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.product)}</div></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">출처</label>
@@ -9025,6 +9035,10 @@ function renderPachiSection() {
       : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
     const kindStyleMap = { '파치': 'background:#F5F5F5;color:#757575', '고산도': 'background:#FFF8E1;color:#F57F17', '극소과': 'background:#E8F5E9;color:#2E7D32' };
     const kindBadge = `<span style="${kindStyleMap[r.pachiKind] || 'background:#F5F5F5;color:#757575'};border-radius:10px;padding:2px 7px;font-size:11px">${esc(r.pachiKind || '파치')}</span>`;
+    const usageLabel = r.usage && r.usage !== '미분류' ? r.usage : '미분류';
+    const usageBadge = usageLabel === '미분류'
+      ? `<span style="background:#F5F5F5;color:#999;border-radius:10px;padding:2px 7px;font-size:11px">미분류</span>`
+      : `<span style="background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:2px 7px;font-size:11px">${esc(usageLabel)}</span>`;
     const idsAttr = !r.isLegacy ? `data-pachi-ids="${r.ids.join(',')}"` : '';
     const ctCell = `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
     const memoCell = `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
@@ -9042,6 +9056,7 @@ function renderPachiSection() {
       <td style="padding:7px 10px;text-align:right;color:#666;font-size:13px">${fmtN(r.kg)}</td>
       <td style="padding:7px 10px;text-align:center">${badge}</td>
       <td style="padding:7px 10px;text-align:center">${kindBadge}</td>
+      <td style="padding:7px 10px;text-align:center">${usageBadge}</td>
       ${memoCell}
       ${kebabCell}
     </tr>`;
@@ -9052,7 +9067,7 @@ function renderPachiSection() {
     const gCt = rows.reduce((s, r) => s + r.ct, 0);
     const gKg = rows.reduce((s, r) => s + r.kg, 0);
     return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-        <td colspan="${isAdm ? 9 : 8}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+        <td colspan="${isAdm ? 10 : 9}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
           [ ${esc(product)} ] &nbsp;&nbsp;
           <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
           <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
@@ -9065,7 +9080,7 @@ function renderPachiSection() {
     <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
     <td style="padding:8px 12px;text-align:right;color:#E65100">${fmtN(totalCt)} CT</td>
     <td style="padding:8px 12px;text-align:right;color:#555">${fmtN(totalKg)} kg</td>
-    <td colspan="${isAdm ? 4 : 3}"></td>
+    <td colspan="${isAdm ? 5 : 4}"></td>
   </tr>` : '';
 
   el.innerHTML = `
@@ -9088,10 +9103,11 @@ function renderPachiSection() {
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">kg</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">항목</th>
+            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">사용처</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
             ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 9 : 8}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 10 : 9}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
         </table>
       </div>
     </div>`;
