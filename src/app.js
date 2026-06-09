@@ -4738,7 +4738,7 @@ function openInvEditModal(regId) {
           const idx = allSizes.indexOf(sz);
           return `<div>
             <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}</label>
-            <input type="number" min="0" id="inv-edit-${regId}-${idx}" value="${curQty[sz] || 0}" style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
+            <input type="number" min="0" step="0.1" id="inv-edit-${regId}-${idx}" value="${curQty[sz] || 0}" style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
           </div>`;
         }).join('')}
       </div>
