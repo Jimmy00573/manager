@@ -8996,7 +8996,7 @@ function renderPachiSection() {
   const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   usageOrder.push('미분류');
   Object.keys(usageStats).forEach(u => { if (!usageOrder.includes(u)) usageOrder.push(u); });
-  const usageParts = usageOrder.filter(u => usageStats[u] && usageStats[u].ct > 0).map(u => `${esc(u)} ${fmtN(usageStats[u].ct)} CT · ${fmtN(usageStats[u].kg)} kg`);
+  const usageParts = usageOrder.filter(u => usageStats[u] && usageStats[u].ct > 0).map(u => `${esc(u)} ${fmtN(usageStats[u].ct)} CT`);
   const usageHtml = usageParts.length
     ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:8px 14px;font-size:13px;color:#166534">♻️ 사용처별 — ${usageParts.join(' · ')}</div>`
     : '';
@@ -9067,11 +9067,11 @@ function renderPachiSection() {
     const gCt = rows.reduce((s, r) => s + r.ct, 0);
     const gKg = rows.reduce((s, r) => s + r.kg, 0);
     const gUsage = {};
-    rows.forEach(r => { const u = r.usage || '미분류'; gUsage[u] = (gUsage[u] || 0) + r.ct; });
-    const gUsageParts = usageOrder.filter(u => gUsage[u] > 0).map(u =>
+    rows.forEach(r => { const u = r.usage || '미분류'; if (!gUsage[u]) gUsage[u] = {ct:0, kg:0}; gUsage[u].ct += r.ct; gUsage[u].kg += r.kg; });
+    const gUsageParts = usageOrder.filter(u => gUsage[u] && gUsage[u].ct > 0).map(u =>
       u === '미분류'
-        ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u])}</span>`
-        : `${esc(u)} ${fmtN(gUsage[u])}`
+        ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg</span>`
+        : `${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg`
     );
     const gUsageLine = gUsageParts.length
       ? `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${gUsageParts.join(' · ')}</div>`
