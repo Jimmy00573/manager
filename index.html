@@ -613,6 +613,13 @@
           </div>
           <button class="set-item-btn" onclick="setTab('cfg')">열기</button>
         </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">♻️ 파치 사용처</div>
+            <div class="set-item-desc">파치 사용처 목록 추가·수정·삭제</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('usage')">열기</button>
+        </div>
       </div>
     </div>
   </div>
@@ -639,6 +646,14 @@
       <span class="set-back-title">⚙️ 선과 기준</span>
     </div>
     <div id="inv-cfg-div"></div>
+  </div>
+  <!-- 파치 사용처 -->
+  <div id="set-usage-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">♻️ 파치 사용처</span>
+    </div>
+    <div id="csp-usage"></div>
   </div>
 </div>
 
@@ -1592,6 +1607,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=60"></script>
+<script src="src/app.js?v=61"></script>
 </body>
 </html>

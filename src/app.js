@@ -3121,13 +3121,14 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
   if (t === 'cfg') renderSizeCfg();
+  if (t === 'usage') renderPachiUsageCfg();
 }
 function setBack() { setTab('menu'); }
 
@@ -3345,23 +3346,20 @@ function renderSizeCfg() {
         <button class="cfg-stab af" id="cst-cat"   onclick="cfgSubTab('cat')">📁 카테고리·품목</button>
         <button class="cfg-stab"   id="cst-grade" onclick="cfgSubTab('grade')">🍊 감귤류 등급</button>
         <button class="cfg-stab"   id="cst-rule"  onclick="cfgSubTab('rule')">📐 만감류 기준</button>
-        <button class="cfg-stab"   id="cst-usage" onclick="cfgSubTab('usage')">♻️ 파치 사용처</button>
       </div>
       <div id="csp-cat"   style="padding-top:14px">${_renderCfgCatHTML()}</div>
       <div id="csp-grade" style="display:none;padding-top:14px">${_renderCfgGradeHTML()}</div>
       <div id="csp-rule"  style="display:none;padding-top:14px">${_renderCfgRuleHTML()}</div>
-      <div id="csp-usage" style="display:none;padding-top:14px"></div>
     </div>`;
 }
 
 function cfgSubTab(t) {
-  ['cat', 'grade', 'rule', 'usage'].forEach(s => {
+  ['cat', 'grade', 'rule'].forEach(s => {
     const btn = document.getElementById('cst-' + s);
     const div = document.getElementById('csp-' + s);
     if (btn) btn.className = 'cfg-stab' + (t === s ? ' af' : '');
     if (div) div.style.display = t === s ? '' : 'none';
   });
-  if (t === 'usage') renderPachiUsageCfg();
 }
 
 // ── 파치 사용처 관리 ────────────────────────────────────────────
