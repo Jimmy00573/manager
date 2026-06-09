@@ -4596,11 +4596,10 @@ async function saveJuiceEdit() {
   const box_count = parseInt(document.getElementById('je-box')?.value) || 0;
   const loose_count = parseInt(document.getElementById('je-single')?.value) || 0;
   const per_box = parseInt(document.getElementById('je-perbox')?.value) || null;
-  const total_count = parseInt(document.getElementById('je-total')?.value) || 0;
   const expiry_date = document.getElementById('je-expiry')?.value || null;
   const note = document.getElementById('je-note')?.value || null;
   try {
-    const updatedArr = await sbUpdate('juice_records', id, { date, type, unit, box_count, loose_count, per_box, total_count, expiry_date, note });
+    const updatedArr = await sbUpdate('juice_records', id, { date, type, unit, box_count, loose_count, per_box, expiry_date, note });
     const idx = invJuiceRecs.findIndex(r => String(r.id) === String(id));
     if (idx >= 0 && updatedArr && updatedArr[0]) invJuiceRecs[idx] = updatedArr[0];
     document.getElementById('modal-juice-edit').style.display = 'none';
