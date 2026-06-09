@@ -177,6 +177,8 @@ async function dbGetJuiceMasters() {
   try { return await sbGet('juice_product_master', 'is_active=eq.true&order=product_name'); } catch(e) { return []; }
 }
 async function dbInsertJuiceMaster(data) { const r = await sbInsert('juice_product_master', data); return r[0]; }
+async function dbUpdateJuiceMaster(id, data) { const r = await sbUpdate('juice_product_master', id, data); return r[0]; }
+async function dbDeleteJuiceMaster(id) { return await sbDelete('juice_product_master', id); }
 
 // ── 카테고리 시스템
 async function dbGetCategories() { try { return await sbGet('categories', 'order=id'); } catch(e) { return []; } }

@@ -3175,7 +3175,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight', 'juicemaster'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
@@ -3184,6 +3184,7 @@ function setTab(t) {
   if (t === 'cfg') renderSizeCfg();
   if (t === 'usage') renderPachiUsageCfg();
   if (t === 'weight') renderProductWeightCfg();
+  if (t === 'juicemaster') renderJuiceMasterCfg();
 }
 function setBack() { setTab('menu'); }
 
@@ -3546,6 +3547,88 @@ async function setProductWeight(product, value) {
   productWeights[product] = num;
   await saveProductWeights();
   renderInvSummary();
+}
+
+function renderJuiceMasterCfg() {
+  const el = document.getElementById('csp-juicemaster');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const sorted = [...invJuiceMasters].sort((a, b) => a.product_name.localeCompare(b.product_name, 'ko'));
+  const rows = sorted.map(m => `<tr>
+    <td style="font-weight:600">${esc(m.product_name)}</td>
+    <td style="color:#888;font-size:12px">${esc(m.default_unit || '병')}</td>
+    <td style="color:#888;font-size:12px;text-align:center">${m.default_per_box ?? '—'}</td>
+    ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn edt" onclick="editJuiceMaster(${m.id})">수정</button>
+      <button class="btn del" onclick="deleteJuiceMaster(${m.id})">삭제</button>
+    </td>` : '<td></td>'}
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">주스/청 품명 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">등록된 주스·청 품명을 수정하거나 삭제합니다.</div>
+      </div>
+    </div>
+    ${sorted.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>품명</th><th>단위</th><th style="text-align:center">박스당</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 품명이 없습니다.</div>`}`;
+}
+
+async function deleteJuiceMaster(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const m = invJuiceMasters.find(x => x.id === id);
+  if (!m) return;
+  if (invJuiceRecs.some(r => r.product_name === m.product_name)) {
+    return alert(`"${m.product_name}" 재고가 있어 삭제할 수 없습니다.\n먼저 해당 재고를 모두 삭제하세요.`);
+  }
+  if (!confirm(`"${m.product_name}" 품명을 삭제할까요?`)) return;
+  try {
+    await dbDeleteJuiceMaster(id);
+    invJuiceMasters = invJuiceMasters.filter(x => x.id !== id);
+    renderJuiceMasterCfg();
+    renderJuiceSection();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function editJuiceMaster(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const m = invJuiceMasters.find(x => x.id === id);
+  if (!m) return;
+  const newName = prompt('새 품명을 입력하세요.', m.product_name)?.trim();
+  if (!newName) return;
+  if (invJuiceMasters.some(x => x.product_name === newName && x.id !== id)) {
+    return alert(`"${newName}"은 이미 등록된 품명입니다.`);
+  }
+  const newUnit = prompt('단위를 입력하세요.', m.default_unit || '병')?.trim() || m.default_unit || '병';
+  const newPerBoxRaw = prompt('박스당 수량을 입력하세요. (없으면 빈칸)', m.default_per_box ?? '')?.trim();
+  const newPerBox = newPerBoxRaw ? (parseInt(newPerBoxRaw) || null) : null;
+
+  const nameChanged = newName !== m.product_name;
+  const affected = nameChanged ? invJuiceRecs.filter(r => r.product_name === m.product_name) : [];
+  if (nameChanged && affected.length > 0 && !confirm(`이 품명으로 등록된 재고 ${affected.length}건의 이름도 함께 변경됩니다. 진행할까요?`)) return;
+
+  try {
+    const updatePayload = { product_name: newName, default_unit: newUnit, default_per_box: newPerBox };
+    const updated = await dbUpdateJuiceMaster(id, updatePayload);
+    const idx = invJuiceMasters.findIndex(x => x.id === id);
+    if (idx !== -1) invJuiceMasters[idx] = updated;
+    invJuiceMasters.sort((a, b) => a.product_name.localeCompare(b.product_name, 'ko'));
+
+    if (nameChanged) {
+      for (const r of affected) {
+        await sbUpdate('juice_records', r.id, { product_name: newName });
+        r.product_name = newName;
+      }
+    }
+    renderJuiceMasterCfg();
+    renderJuiceSection();
+    showToast('수정되었습니다.');
+  } catch(e) { alert('수정 오류: ' + e.message); }
 }
 
 function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-size:12px;color:#666;font-weight:500;background:#f5f5f5">${txt}</th>`; }

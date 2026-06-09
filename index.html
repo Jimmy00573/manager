@@ -627,6 +627,13 @@
           </div>
           <button class="set-item-btn" onclick="setTab('weight')">열기</button>
         </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">🧃 주스/청 품명</div>
+            <div class="set-item-desc">등록된 주스·청 품명을 관리합니다</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('juicemaster')">열기</button>
+        </div>
       </div>
     </div>
   </div>
@@ -669,6 +676,14 @@
       <span class="set-back-title">⚖️ 중량 기준</span>
     </div>
     <div id="csp-weight"></div>
+  </div>
+  <!-- 주스/청 품명 -->
+  <div id="set-juicemaster-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">🧃 주스/청 품명</span>
+    </div>
+    <div id="csp-juicemaster"></div>
   </div>
 </div>
 
@@ -1623,6 +1638,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=75"></script>
+<script src="src/app.js?v=76"></script>
 </body>
 </html>
