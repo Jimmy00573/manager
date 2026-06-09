@@ -9509,17 +9509,27 @@ function renderJuiceSection() {
     return a.localeCompare(b, 'ko');
   };
 
-  const statsHtml = Object.keys(stockMap).length
-    ? Object.entries(stockMap).sort(juiceSortCmp).map(([p, v]) => {
-        const stock = v.inTotal - v.outTotal;
-        const isNeg = stock < 0;
-        return `<div style="background:${isNeg ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${isNeg ? '#FECACA' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:130px">
-          <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-          <div style="font-size:18px;font-weight:700;color:${isNeg ? '#DC2626' : '#065F46'}">${fmtN(stock)} ${esc(v.unit)}</div>
-          <div style="font-size:11px;color:#999;margin-top:2px">입고 ${fmtN(v.inTotal)} / 출고 ${fmtN(v.outTotal)}</div>
-          ${isNeg ? '<div style="font-size:11px;color:#DC2626;font-weight:600">⚠ 재고 부족</div>' : ''}
-        </div>`;
-      }).join('')
+  const entries = Object.entries(stockMap);
+  const juiceCards  = entries.filter(([p]) => !isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const cheongCards = entries.filter(([p]) =>  isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const cardOf = ([p, v]) => {
+    const stock = v.inTotal - v.outTotal;
+    const isNeg = stock < 0;
+    return `<div style="background:${isNeg ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${isNeg ? '#FECACA' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:130px">
+      <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
+      <div style="font-size:18px;font-weight:700;color:${isNeg ? '#DC2626' : '#065F46'}">${fmtN(stock)} ${esc(v.unit)}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px">입고 ${fmtN(v.inTotal)} / 출고 ${fmtN(v.outTotal)}</div>
+      ${isNeg ? '<div style="font-size:11px;color:#DC2626;font-weight:600">⚠ 재고 부족</div>' : ''}
+    </div>`;
+  };
+  const groupBlock = (label, cards) => cards.length
+    ? `<div style="margin-bottom:10px">
+         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">${label}</div>
+         <div style="display:flex;flex-wrap:wrap;gap:8px">${cards.map(cardOf).join('')}</div>
+       </div>`
+    : '';
+  const statsHtml = entries.length
+    ? groupBlock('🧃 주스', juiceCards) + groupBlock('🍯 청', cheongCards)
     : `<span style="font-size:13px;color:#aaa">주스/청 기록 없음</span>`;
 
   // 품목별 그룹화 (주스→청, 가나다, 날짜 최신순)
@@ -9634,7 +9644,7 @@ function renderJuiceSection() {
         <div style="font-size:14px;font-weight:700;color:#222">주스/청 내역</div>
       </div>
       <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
-        <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
+        <div>${statsHtml}</div>
       </div>
       <div class="tbl-wrap">
         <table style="min-width:640px;width:100%;border-collapse:collapse">
