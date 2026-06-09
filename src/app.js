@@ -3559,8 +3559,8 @@ function renderJuiceMasterCfg() {
     <td style="color:#888;font-size:12px">${esc(m.default_unit || '병')}</td>
     <td style="color:#888;font-size:12px;text-align:center">${m.default_per_box ?? '—'}</td>
     ${isAdm ? `<td style="white-space:nowrap">
-      <button class="btn edt" onclick="editJuiceMaster(${m.id})">수정</button>
-      <button class="btn del" onclick="deleteJuiceMaster(${m.id})">삭제</button>
+      <button class="btn edt" onclick="editJuiceMaster('${m.id}')">수정</button>
+      <button class="btn del" onclick="deleteJuiceMaster('${m.id}')">삭제</button>
     </td>` : '<td></td>'}
   </tr>`).join('');
 
