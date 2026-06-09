@@ -33,6 +33,7 @@ let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
+let productWeights = {};
 let sortingResults = [];
 let _editLocId = null;
 
@@ -127,11 +128,47 @@ async function loadUrgencySettings() {
   } catch(e) {}
 }
 
+// ── 품목별 선과 중량 기준
+const PRODUCT_WEIGHTS_DEFAULT = { 노지감귤:18, 하우스감귤:18, 비가림:18, 타이벡:18, 천혜향:18, 한라봉:15, 레드향:17, 카라향:17, 수라향:17, 황금향:17 };
+
+async function loadProductWeights() {
+  try {
+    const rows = await sbGet('settings', 'key=eq.product_weights');
+    if (rows && rows.length > 0 && rows[0].value && rows[0].value.weights) {
+      productWeights = rows[0].value.weights;
+    } else {
+      productWeights = { ...PRODUCT_WEIGHTS_DEFAULT };
+    }
+  } catch(e) {
+    productWeights = { ...PRODUCT_WEIGHTS_DEFAULT };
+  }
+}
+
+async function saveProductWeights() {
+  try {
+    const rows = await sbGet('settings', 'key=eq.product_weights');
+    if (rows && rows.length > 0) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.product_weights`, {
+        method: 'PATCH',
+        headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ value: { weights: productWeights }, updated_at: new Date().toISOString() })
+      });
+      if (!res.ok) throw new Error(`중량 기준 저장 실패: HTTP ${res.status}`);
+      const json = await res.json();
+      if (!Array.isArray(json) || json.length === 0) throw new Error('중량 기준 저장 실패: 영향받은 행 없음');
+    } else {
+      await sbInsert('settings', { key: 'product_weights', value: { weights: productWeights } });
+    }
+    showToast('중량 기준이 저장되었습니다.');
+  } catch(e) { alert('저장 오류: ' + e.message); }
+}
+
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
 
   try {
+    await loadProductWeights();
     const [data, qcData, locData, , usageData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages()]);
     farms = data.farms;
     drivers = data.drivers;
@@ -3138,7 +3175,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
@@ -3146,6 +3183,7 @@ function setTab(t) {
   if (t === 'qc') loadQualityCriteria();
   if (t === 'cfg') renderSizeCfg();
   if (t === 'usage') renderPachiUsageCfg();
+  if (t === 'weight') renderProductWeightCfg();
 }
 function setBack() { setTab('menu'); }
 
@@ -3461,6 +3499,53 @@ async function togglePachiUsageStock(id, checked) {
     renderInvSummary();
     showToast(checked ? '재고 포함으로 변경' : '재고 미포함으로 변경');
   } catch(e) { alert('변경 오류: ' + e.message); }
+}
+
+function renderProductWeightCfg() {
+  const el = document.getElementById('csp-weight');
+  if (!el) return;
+  const products = itemDefs.length > 0
+    ? itemDefs.map(i => i.name)
+    : Object.keys(productWeights).length > 0
+      ? Object.keys(productWeights)
+      : Object.keys(PRODUCT_WEIGHTS_DEFAULT);
+  const rows = products.map(p => {
+    const val = productWeights[p] != null ? productWeights[p] : 17;
+    return `<tr>
+      <td style="padding:8px 12px;font-weight:500">${esc(p)}</td>
+      <td style="padding:8px 12px;display:flex;align-items:center;gap:6px">
+        <input type="number" min="1" max="50" step="0.5" value="${val}"
+          data-p="${esc(p)}"
+          style="width:70px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;text-align:right"
+          onchange="setProductWeight(this.dataset.p, this.value)">
+        <span style="font-size:12px;color:#888">kg/CT</span>
+      </td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">품목별 선과 중량 기준</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">품목별 선과품 kg/CT 를 설정합니다. 변경 시 자동 저장됩니다.</div>
+      </div>
+    </div>
+    ${products.length
+      ? `<div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:8px 12px;background:#F9FAFB;font-size:12px;border-bottom:1px solid #E5E7EB;font-weight:600;color:#6B7280">품목</th>
+            <th style="text-align:left;padding:8px 12px;background:#F9FAFB;font-size:12px;border-bottom:1px solid #E5E7EB;font-weight:600;color:#6B7280">선과 중량</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`
+      : `<div class="empty">품목 정보가 없습니다. 먼저 선과 기준에서 품목을 추가하세요.</div>`}`;
+}
+
+async function setProductWeight(product, value) {
+  const num = parseFloat(value);
+  if (!num || num <= 0) return;
+  productWeights[product] = num;
+  await saveProductWeights();
+  renderInvSummary();
 }
 
 function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-size:12px;color:#666;font-weight:500;background:#f5f5f5">${txt}</th>`; }
@@ -4910,7 +4995,7 @@ function renderInvSummary() {
   if (!el) return;
 
   // ── 공통 헬퍼
-  const kgPerCt = p => (p && p.includes('한라봉')) ? 13 : 17;
+  const kgPerCt = p => (productWeights && productWeights[p] != null) ? Number(productWeights[p]) : 17;
   const [y, mo, d] = td().split('-');
   const _dow = ['일','월','화','수','목','금','토'][new Date(`${y}-${mo}-${d}`).getDay()];
   const dateLabel = `${parseInt(y)}년 ${parseInt(mo)}월 ${parseInt(d)}일 (${_dow})`;
@@ -8971,7 +9056,7 @@ function renderPachiSection() {
   if (!el) return;
   _pachiRowRegistry = {};
 
-  const kgPerCt = p => (p && p.includes('한라봉')) ? 13 : 17;
+  const kgPerCt = p => (productWeights && productWeights[p] != null) ? Number(productWeights[p]) : 17;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
   // Source 1: inventory_records (선과 자동 + 수동 등록)
