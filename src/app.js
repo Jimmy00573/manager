@@ -132,7 +132,7 @@ async function initApp() {
   showLoading('데이터 불러오는 중...');
 
   try {
-    const [data, qcData, locData, usageData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages()]);
+    const [data, qcData, locData, , usageData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
