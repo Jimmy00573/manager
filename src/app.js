@@ -530,6 +530,11 @@ function setRole(r) {
     const admBtn = document.getElementById('rbtn-adm');
     if (admBtn) admBtn.style.display = r === 'staff' ? 'none' : '';
     document.getElementById('rbtn-logout').style.display = '';
+    const STAFF_TABS = ['dash', 'inv'];
+    document.querySelectorAll('#anav .nbtn').forEach(btn => {
+      const tab = btn.getAttribute('data-tab');
+      btn.style.display = (r === 'staff' && !STAFF_TABS.includes(tab)) ? 'none' : '';
+    });
     _applyEditRestrictions(r === 'admin');
     T('dash');
   }
@@ -545,6 +550,7 @@ function _applyEditRestrictions(canEdit) {
 }
 
 function T(id) {
+  if (sessionStorage.getItem('citrus_role') === 'staff' && !['dash', 'inv'].includes(id)) return;
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
   ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
