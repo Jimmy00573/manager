@@ -4119,8 +4119,11 @@ function _renderInvMatrix(product, recs) {
   batches.forEach(b => allSizes.forEach(sz => { colTotals[sz] += (b.sizes[sz] || 0); }));
   const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
+  const visibleSizes = allSizes.filter(sz => (colTotals[sz] || 0) > 0);
+  const displaySizes = visibleSizes.length > 0 ? visibleSizes : allSizes;
+
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
-  const N = allSizes.length;
+  const N = displaySizes.length;
   const FARM_W = 120, SZ_W = 46, TOT_W = 70, ACT_W = 40;
   const isAdm  = sessionStorage.getItem('citrus_role') === 'admin';
   const minW   = FARM_W + N * SZ_W + TOT_W + (isAdm ? ACT_W : 0);
@@ -4139,14 +4142,16 @@ function _renderInvMatrix(product, recs) {
   // 헤더 row1: 농가 | 그룹들 | 합계 | [관리]
   h += `<div style="${HD}justify-content:flex-start;padding:6px 10px;border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4">농가</div>`;
   groups.forEach((g, gi) => {
-    h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${g.sizes.length}">${esc(g.group)}</div>`;
+    const visCount = g.sizes.filter(sz => displaySizes.includes(sz)).length;
+    if (visCount === 0) return;
+    h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${visCount}">${esc(g.group)}</div>`;
   });
   h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4">합계</div>`;
   if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
 
   // 헤더 row2: 빈칸 | 사이즈 라벨 | 빈칸 | [빈칸]
   h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
-  allSizes.forEach(sz => {
+  displaySizes.forEach(sz => {
     const gi = szGI[sz];
     h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
   });
@@ -4169,7 +4174,7 @@ function _renderInvMatrix(product, recs) {
       <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
       <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
     </div>`;
-    allSizes.forEach(sz => {
+    displaySizes.forEach(sz => {
       const val = batch.sizes[sz] || 0;
       const inner = val === 0
         ? `<span style="color:#9CA3AF">-</span>`
@@ -4186,7 +4191,7 @@ function _renderInvMatrix(product, recs) {
 
   // 합계 row
   h += `<div style="${F}justify-content:flex-start;padding:5px 10px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">합계</div>`;
-  allSizes.forEach(sz => {
+  displaySizes.forEach(sz => {
     const v = colTotals[sz] || 0;
     h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</div>`;
   });
