@@ -5000,8 +5000,12 @@ function renderInvSummary() {
   });
 
   // ── 섹션 4: 파치 재고
+  const usageInclude = {};
+  pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
+  const isUsageIncluded = name => { const n = name || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
+
   const pachiMap = {};
-  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type)).forEach(r => {
+  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type) && isUsageIncluded(r.usage)).forEach(r => {
     const p = r.product || '기타';
     pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
   });
