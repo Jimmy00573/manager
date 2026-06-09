@@ -730,6 +730,14 @@ function n(id) { return parseInt(document.getElementById(id)?.value) || 0; }
 function clr(...ids) { ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); }
 function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function fmtN(n) { if (n == null) return '-'; return Number(n).toLocaleString('ko-KR'); }
+function fmtCT(n) {
+  if (n == null) return '-';
+  const num = Number(n);
+  if (!isFinite(num)) return '-';
+  const rounded = Math.round(num * 10) / 10;
+  const str = (rounded % 1 === 0) ? String(rounded) : rounded.toFixed(1);
+  return Number(str).toLocaleString('ko-KR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+}
 function emr(c, m) { return `<tr><td colspan="${c}" class="empty">${m}</td></tr>`; }
 function ftm(iso) {
   if (!iso) return '-';
@@ -4360,12 +4368,12 @@ function _renderInvMatrix(product, recs) {
       const val = batch.sizes[sz] || 0;
       const inner = val === 0
         ? `<span style="color:#9CA3AF">-</span>`
-        : `<strong style="color:#111827">${fmtN(val)}</strong>`;
+        : `<strong style="color:#111827">${fmtCT(val)}</strong>`;
       h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
     });
     const regId = Object.keys(_matrixBatchRegistry).length;
     _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes } };
-    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:${isAdm ? '1px solid #E5E7EB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(batchTotal)}</div>`;
+    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:${isAdm ? '1px solid #E5E7EB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtCT(batchTotal)}</div>`;
     if (isAdm) {
       h += `<div style="${C}background:${rowBg};justify-content:center;padding:0;border-right:none;position:sticky;right:0;z-index:2"><button class="inv-kebab" data-regid="${regId}" onclick="toggleInvRowMenu(${regId},this)" style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit" title="메뉴">⋮</button></div>`;
     }
@@ -4375,9 +4383,9 @@ function _renderInvMatrix(product, recs) {
   h += `<div style="${F}justify-content:flex-start;padding:5px 10px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">합계</div>`;
   displaySizes.forEach(sz => {
     const v = colTotals[sz] || 0;
-    h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtN(v) : '-'}</div>`;
+    h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtCT(v) : '-'}</div>`;
   });
-  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(grandTotal)}</div>`;
+  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtCT(grandTotal)}</div>`;
   if (isAdm) h += `<div style="${F}border-right:none;position:sticky;right:0;z-index:2"></div>`;
 
   const groupTotals = groups.map(g => ({
@@ -4385,7 +4393,7 @@ function _renderInvMatrix(product, recs) {
     ct: g.sizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0)
   })).filter(gt => gt.ct > 0);
   const groupTotalsStr = groupTotals.length > 1
-    ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtN(gt.ct)}`).join(' · ')})</span>`
+    ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtCT(gt.ct)}`).join(' · ')})</span>`
     : '';
 
   return `
@@ -4393,7 +4401,7 @@ function _renderInvMatrix(product, recs) {
       <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
-        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtN(grandTotal)} CT</strong>${groupTotalsStr}</span>
+        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtCT(grandTotal)} CT</strong>${groupTotalsStr}</span>
       </div>
       <div style="overflow-x:auto">
         <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;border-left:1px solid #D1D5DB">
@@ -4411,7 +4419,7 @@ async function deleteMatrixBatch(regId) {
   const info = _matrixBatchRegistry[regId];
   if (!info) return;
   const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
-  const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}\n총 ${fmtN(info.batchTotal)} CT`;
+  const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}\n총 ${fmtCT(info.batchTotal)} CT`;
   if (!confirm(`이 배치를 삭제하시겠습니까?\n${label}`)) return;
   let toDelete;
   const gid = String(info.groupId);
@@ -4493,7 +4501,7 @@ function _closePachiMenu()  { const m = document.getElementById('pachi-row-menu'
 async function _execPachiDelete(regId) {
   const row = _pachiRowRegistry[regId];
   if (!row) return;
-  const label = `${row.product} ${row.date} ${fmtN(row.ct)} CT`;
+  const label = `${row.product} ${row.date} ${fmtCT(row.ct)} CT`;
   if (row.isLegacy) deleteWaste(row.ids[0], label);
   else deleteManualPachi(row.ids.join(','), label);
 }
@@ -5019,12 +5027,12 @@ function iemUpdateTotal() {
       return s + (parseFloat(inp?.value) || 0);
     }, 0);
     const subEl = document.getElementById(`iem-sub-${g.group.replace(/\//g, '-')}`);
-    if (subEl) subEl.textContent = fmtN(sub) + ' CT';
+    if (subEl) subEl.textContent = fmtCT(sub) + ' CT';
     grand += sub;
   });
 
   const totEl = document.getElementById('iem-grand-total');
-  if (totEl) totEl.textContent = fmtN(grand) + ' CT';
+  if (totEl) totEl.textContent = fmtCT(grand) + ' CT';
 }
 
 async function saveInvEntry() {
@@ -5238,7 +5246,7 @@ function renderInvSummary() {
   const kpiSub  = txt => `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${txt}</div>`;
   const kpiChip = txt => `<div style="display:inline-block;background:#FCEBEB;color:#A32D2D;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px">${txt}</div>`;
   const kpiHtml = `<div class="sum-kpi-grid">
-    ${kpiCard('미선과 재고', fmtN(unsTotalCt), 'CT',
+    ${kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
       priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '')}
     ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
       manGamItems ? kpiSub(`${manGamItems}개 품목`) : '')}
@@ -5350,12 +5358,12 @@ function renderInvSummary() {
     const segments = barEntriesSorted.map(([p, v]) => {
       const ct = v.raw + v.small;
       const pct = ct / unsTotalCt * 100;
-      return `<div style="width:${pct.toFixed(3)}%;background:${barColor(p)};min-width:${pct >= 1 ? '2px' : '0'};transition:opacity .15s" title="${esc(p)}: ${fmtN(ct)} CT (${pct.toFixed(1)}%)" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'"></div>`;
+      return `<div style="width:${pct.toFixed(3)}%;background:${barColor(p)};min-width:${pct >= 1 ? '2px' : '0'};transition:opacity .15s" title="${esc(p)}: ${fmtCT(ct)} CT (${pct.toFixed(1)}%)" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'"></div>`;
     }).join('');
     const labelGrid = barEntriesSorted.map(([p, v]) => {
       const ct = v.raw + v.small;
       const pct = ct / unsTotalCt * 100;
-      return `<div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#1F2937"><span style="width:8px;height:8px;border-radius:50%;background:${barColor(p)};flex-shrink:0;display:inline-block"></span>${esc(p)} ${fmtN(ct)} CT (${pct.toFixed(1)}%)</div>`;
+      return `<div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#1F2937"><span style="width:8px;height:8px;border-radius:50%;background:${barColor(p)};flex-shrink:0;display:inline-block"></span>${esc(p)} ${fmtCT(ct)} CT (${pct.toFixed(1)}%)</div>`;
     }).join('');
     const chips = barEntriesSorted
       .filter(([p]) => priorityByProduct[p])
@@ -5376,7 +5384,7 @@ function renderInvSummary() {
       <tbody>${unsEntries.length
         ? unsEntries.map(([p, v]) => {
             const total = v.raw + v.small;
-            return `<tr><td style="${TL}">${productChip(p)}</td><td style="${TR}">${v.raw ? fmtN(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtN(v.small) : DASH}</td><td ${TRhl}>${fmtN(total)}</td></tr>`;
+            return `<tr><td style="${TL}">${productChip(p)}</td><td style="${TR}">${v.raw ? fmtCT(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtCT(v.small) : DASH}</td><td ${TRhl}>${fmtCT(total)}</td></tr>`;
           }).join('')
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
@@ -5407,7 +5415,7 @@ function renderInvSummary() {
       <tbody>${pachiEntries.length
         ? pachiEntries.map(([p, ct]) => {
             const kpc = kgPerCt(p);
-            return `<tr><td style="${TL}">${productChip(p)}</td><td style="${TR}">${fmtN(ct)}</td><td style="${TC}">${kpc}</td><td ${TRhl}>${fmtN(ct * kpc)} kg</td></tr>`;
+            return `<tr><td style="${TL}">${productChip(p)}</td><td style="${TR}">${fmtCT(ct)}</td><td style="${TC}">${kpc}</td><td ${TRhl}>${fmtN(ct * kpc)} kg</td></tr>`;
           }).join('')
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div>`;
