@@ -4777,7 +4777,7 @@ async function saveInvEdit() {
   const newQty = {};
   allSizes.forEach((sz, i) => {
     const el = document.getElementById(`inv-edit-${regId}-${i}`);
-    newQty[sz] = el ? Math.max(0, parseInt(el.value) || 0) : oldQty[sz];
+    newQty[sz] = el ? Math.max(0, parseFloat(el.value) || 0) : oldQty[sz];
   });
 
   if (allSizes.every(sz => newQty[sz] === oldQty[sz])) {
