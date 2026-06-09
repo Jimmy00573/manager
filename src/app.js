@@ -3203,7 +3203,7 @@ function setTab(t) {
 function setBack() { setTab('menu'); }
 
 function invTab(t) {
-  ['sum', 'uns', 'srt', 'wj', 'log'].forEach(s => {
+  ['sum', 'uns', 'srt', 'pachi', 'juice', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
@@ -3212,11 +3212,12 @@ function invTab(t) {
   if (t === 'srt') renderInventoryStatus();
   if (t === 'log') loadAuditLogs();
   if (t === 'sum') renderInvSummary();
-  if (t === 'wj') {
+  if (t === 'pachi') {
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
-    renderPachiSection(); renderJuiceSection();
+    renderPachiSection();
   }
+  if (t === 'juice') { renderJuiceSection(); }
 }
 
 function ibTab(t) {

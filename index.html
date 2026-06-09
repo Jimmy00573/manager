@@ -693,7 +693,8 @@
     <button class="etab af" id="it-sum" onclick="invTab('sum')">📊 전체현황</button>
     <button class="etab" id="it-uns" onclick="invTab('uns')">🍊 미선과</button>
     <button class="etab" id="it-srt" onclick="invTab('srt')">📦 재고 현황</button>
-    <button class="etab" id="it-wj" onclick="invTab('wj')">🧹 파치/주스</button>
+    <button class="etab" id="it-pachi" onclick="invTab('pachi')">🧹 파치</button>
+    <button class="etab" id="it-juice" onclick="invTab('juice')">🧃 주스·청</button>
     <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
   </div>
 
@@ -1017,8 +1018,8 @@
 
   </div>
 
-  <!-- 파치/주스·청 -->
-  <div id="inv-wj-div" style="display:none">
+  <!-- 파치 -->
+  <div id="inv-pachi-div" style="display:none">
     <!-- 파치 통합 (통계 카드 + 통합 표) — JS 렌더링 -->
     <div id="inv-pachi-section" style="margin-bottom:20px"></div>
 
@@ -1046,7 +1047,10 @@
       </div>
       <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addWaste()">등록</button></div>
     </div>
+  </div>
 
+  <!-- 주스·청 -->
+  <div id="inv-juice-div" style="display:none">
     <!-- 주스/청 섹션 (통계 카드 + 내역 표 + 등록 폼) — JS 렌더링 -->
     <div id="inv-juice-section"></div>
   </div>
@@ -1638,6 +1642,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=85"></script>
+<script src="src/app.js?v=86"></script>
 </body>
 </html>
