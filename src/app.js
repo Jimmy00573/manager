@@ -9502,8 +9502,15 @@ function renderJuiceSection() {
     else stockMap[p].inTotal += qty;
   });
 
+  const isCheong = name => (name || '').trim().endsWith('청');
+  const juiceSortCmp = ([a], [b]) => {
+    const ca = isCheong(a) ? 1 : 0, cb = isCheong(b) ? 1 : 0;
+    if (ca !== cb) return ca - cb;
+    return a.localeCompare(b, 'ko');
+  };
+
   const statsHtml = Object.keys(stockMap).length
-    ? Object.entries(stockMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, v]) => {
+    ? Object.entries(stockMap).sort(juiceSortCmp).map(([p, v]) => {
         const stock = v.inTotal - v.outTotal;
         const isNeg = stock < 0;
         return `<div style="background:${isNeg ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${isNeg ? '#FECACA' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:130px">
@@ -9515,8 +9522,10 @@ function renderJuiceSection() {
       }).join('')
     : `<span style="font-size:13px;color:#aaa">주스/청 기록 없음</span>`;
 
-  // 품목별 그룹화 (품목명 가나다 → 날짜 최신순)
+  // 품목별 그룹화 (주스→청, 가나다, 날짜 최신순)
   const sortedRecs = [...invJuiceRecs].sort((a, b) => {
+    const ca = isCheong(a.product_name) ? 1 : 0, cb = isCheong(b.product_name) ? 1 : 0;
+    if (ca !== cb) return ca - cb;
     const pc = (a.product_name || '').localeCompare(b.product_name || '', 'ko');
     return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
   });
@@ -9527,7 +9536,15 @@ function renderJuiceSection() {
     jGroups[p].push(r);
   });
 
+  let _juiceCurrentGroup = null;
   const groupedRowsHtml = jGroupOrder.map(product => {
+    const thisGroup = isCheong(product) ? 'cheong' : 'juice';
+    let grpHeader = '';
+    if (thisGroup !== _juiceCurrentGroup) {
+      _juiceCurrentGroup = thisGroup;
+      const grpLabel = thisGroup === 'cheong' ? '🍯 청' : '🧃 주스';
+      grpHeader = `<tr><td colspan="${isAdm ? 10 : 9}" style="background:#F9FAFB;font-weight:600;font-size:12px;color:#374151;padding:6px 8px">${grpLabel}</td></tr>`;
+    }
     const rows = jGroups[product];
     const gIn  = rows.filter(r => r.type !== 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
     const gOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
@@ -9562,7 +9579,7 @@ function renderJuiceSection() {
             title="메뉴">⋮</button></td>` : ''}
       </tr>`;
     }).join('');
-    return headerHtml + dataRows;
+    return grpHeader + headerHtml + dataRows;
   }).join('');
 
   const masterOpts = invJuiceMasters.map(m =>
