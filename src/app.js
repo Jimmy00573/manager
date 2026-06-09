@@ -6058,19 +6058,19 @@ const IB_CATS = [
 ];
 
 const PRODUCT_COLORS = {
-  '천혜향':   { bg: '#FDDCB5', color: '#9A3412', border: '#F97316' },
-  '카라향':   { bg: '#FED7AA', color: '#C2410C', border: '#FB923C' },
-  '한라봉':   { bg: '#FCD9A0', color: '#B45309', border: '#F59E0B' },
-  '레드향':   { bg: '#FECACA', color: '#991B1B', border: '#F87171' },
-  '수라향':   { bg: '#FBCFE8', color: '#9D174D', border: '#F472B6' },
-  '황금향':   { bg: '#FEF08A', color: '#A16207', border: '#FACC15' },
-  '노지감귤': { bg: '#BBF7D0', color: '#14532D', border: '#4ADE80' },
-  '하우스감귤':{ bg: '#D9F99D', color: '#365314', border: '#A3E635' },
-  '비가림':   { bg: '#A7F3D0', color: '#064E3B', border: '#34D399' },
-  '타이벡':   { bg: '#99F6E4', color: '#134E4A', border: '#2DD4BF' },
-  '주스':     { bg: '#DDD6FE', color: '#4C1D95', border: '#A78BFA' },
-  '청':       { bg: '#E9D5FF', color: '#581C87', border: '#C084FC' },
-  '모나카':   { bg: '#F5D0FE', color: '#701A75', border: '#E879F9' },
+  '천혜향':   { bg: '#FFE0B2', color: '#E65100', border: '#FB8C00' },   // 주황
+  '카라향':   { bg: '#FFCDD2', color: '#C62828', border: '#EF5350' },   // 빨강
+  '한라봉':   { bg: '#FFF9C4', color: '#F57F17', border: '#FBC02D' },   // 노랑
+  '레드향':   { bg: '#F8BBD0', color: '#AD1457', border: '#EC407A' },   // 진분홍
+  '수라향':   { bg: '#E1BEE7', color: '#6A1B9A', border: '#AB47BC' },   // 보라
+  '황금향':   { bg: '#FFE082', color: '#FF8F00', border: '#FFB300' },   // 황금
+  '노지감귤': { bg: '#C8E6C9', color: '#2E7D32', border: '#66BB6A' },   // 초록
+  '하우스감귤':{ bg: '#B2DFDB', color: '#00695C', border: '#26A69A' },   // 청록
+  '비가림':   { bg: '#B3E5FC', color: '#0277BD', border: '#29B6F6' },   // 하늘
+  '타이벡':   { bg: '#C5CAE9', color: '#283593', border: '#5C6BC0' },   // 남보라
+  '주스':     { bg: '#CFD8DC', color: '#37474F', border: '#78909C' },   // 청회색
+  '청':       { bg: '#D1C4E9', color: '#4527A0', border: '#7E57C2' },   // 인디고
+  '모나카':   { bg: '#F0F4C3', color: '#827717', border: '#C0CA33' },   // 라임
 };
 function productChip(name) {
   const c = PRODUCT_COLORS[name] || { bg: '#F5F5F5', color: '#616161', border: '#E0E0E0' };
