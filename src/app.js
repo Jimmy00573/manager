@@ -2579,6 +2579,16 @@ function popLocSelects() {
   });
 }
 
+function popUsageSelects() {
+  const el = document.getElementById('wa-usage');
+  if (!el || el.tagName !== 'SELECT') return;
+  const cur = el.value;
+  el.innerHTML = '<option value="">(미분류)</option>' +
+    [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
+  if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+}
+
 function setLocSelectValue(selectId, value) {
   const el = document.getElementById(selectId);
   if (!el) return;
@@ -2721,7 +2731,7 @@ function openMoveModal(id) {
     `<b>${esc(r.product)}</b> | ${esc(r.farm_name)} | ${r.date} | 잔여 <b>${fmtN(remaining)}CT</b>`;
   document.getElementById('mv-cur-loc').textContent = r.location || '미지정';
   resetLocForm('mv');
-  popLocSelects();
+  popLocSelects(); popUsageSelects();
   document.getElementById('modal-move-loc').style.display = 'flex';
 }
 
@@ -2932,7 +2942,7 @@ async function saveLocation() {
     storageLocations.sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || a.name.localeCompare(b.name, 'ko'));
     closeLocModal();
     renderStorageLocations();
-    popLocSelects();
+    popLocSelects(); popUsageSelects();
     showToast(_editLocId ? '위치가 수정되었습니다.' : `"${name}" 위치가 추가되었습니다.`);
   } catch(e) { alert('저장 오류: ' + e.message); }
 }
@@ -2945,7 +2955,7 @@ async function deleteLocation(id) {
     storageLocations = storageLocations.filter(l => l.id !== id);
     if (_editLocId === id) closeLocModal();
     renderStorageLocations();
-    popLocSelects();
+    popLocSelects(); popUsageSelects();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
@@ -3221,7 +3231,7 @@ async function loadAndRenderInv() {
       } catch(e) { _invSrMap = {}; }
     } else { _invSrMap = {}; }
     popInvProductSelects();
-    popLocSelects();
+    popLocSelects(); popUsageSelects();
   } catch(e) { console.error('재고 로드 오류:', e); }
   hideLoading();
   renderInvAll();
@@ -3372,7 +3382,6 @@ function renderPachiUsageCfg() {
   const rows = sorted.map(u => `<tr>
     <td style="font-weight:600">${esc(u.name)}</td>
     <td style="color:#888;font-size:12px">${u.sort_order ?? '—'}</td>
-    <td>${u.is_active !== false ? '<span style="color:#059669;font-size:12px;font-weight:600">● 사용</span>' : '<span style="color:#bbb;font-size:12px">○ 미사용</span>'}</td>
     ${isAdm ? `<td style="white-space:nowrap">
       <button class="btn edt" onclick="editPachiUsage(${u.id})">수정</button>
       <button class="btn del" onclick="deletePachiUsage(${u.id})">삭제</button>
@@ -3389,7 +3398,7 @@ function renderPachiUsageCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>사용처명</th><th>순서</th><th>상태</th><th></th></tr></thead>
+      <thead><tr><th>사용처명</th><th>순서</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 사용처가 없습니다.</div>`}`;
 }
@@ -3402,7 +3411,7 @@ async function addPachiUsage() {
   try {
     const row = await dbInsertPachiUsage({ name, sort_order: pachiUsages.length + 1, is_active: true });
     pachiUsages.push(row);
-    renderPachiUsageCfg();
+    renderPachiUsageCfg(); popUsageSelects();
     showToast(`"${name}" 사용처가 추가되었습니다.`);
   } catch(e) { alert('추가 오류: ' + e.message); }
 }
@@ -3418,7 +3427,7 @@ async function editPachiUsage(id) {
     const updated = await dbUpdatePachiUsage(id, { name });
     const idx = pachiUsages.findIndex(x => x.id === id);
     if (idx !== -1) pachiUsages[idx] = updated;
-    renderPachiUsageCfg();
+    renderPachiUsageCfg(); popUsageSelects();
     showToast('수정되었습니다.');
   } catch(e) { alert('수정 오류: ' + e.message); }
 }
@@ -3429,7 +3438,7 @@ async function deletePachiUsage(id) {
   try {
     await dbDeletePachiUsage(id);
     pachiUsages = pachiUsages.filter(x => x.id !== id);
-    renderPachiUsageCfg();
+    renderPachiUsageCfg(); popUsageSelects();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
@@ -9154,14 +9163,14 @@ async function addWaste() {
   const data = {
     date, product, farm_name: gv('wa-farm') || null,
     quantity: qty, location: loc, size_code: null,
-    source_type: 'pachi_manual', note: gv('wa-memo') || null,
-    is_void: false, created_by: 'admin'
+    source_type: 'pachi_manual', usage: gv('wa-usage') || null,
+    note: gv('wa-memo') || null, is_void: false, created_by: 'admin'
   };
   try {
     const rows = await sbInsert('inventory_records', data);
     inventoryRecords.unshift(rows[0]);
     renderInvSummary(); renderPachiSection();
-    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-memo', '');
+    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-usage', ''); sv('wa-memo', '');
     showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
