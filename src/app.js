@@ -5245,7 +5245,7 @@ function renderInvSummary() {
 
   // ── 섹션 2 & 3: 선과 재고
   const manGamMap = {}, citrusMap = {}, sortDetail = {};
-  inventoryRecords.filter(r => !r.is_void && ['sorting','manual','adjustment'].includes(r.source_type)).forEach(r => {
+  inventoryRecords.filter(r => !r.is_void && ['sorting','manual','adjustment','inbound_sorted'].includes(r.source_type)).forEach(r => {
     if (!r.size_code) return;
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
     let grp;
