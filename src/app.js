@@ -5218,7 +5218,7 @@ function renderInvSummary() {
 
   // ── 섹션 1: 미선과 재고 (원물 / 소과 분리)
   const unsMap = {};
-  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
+  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품').forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
     if (rem <= 0) return;
     if (!unsMap[r.product]) unsMap[r.product] = { raw: 0, small: 0 };
@@ -5318,7 +5318,7 @@ function renderInvSummary() {
   const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
   const priorityByProduct = {};
   let priorityCount = 0;
-  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted).forEach(r => {
+  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품').forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
     if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_MID) {
       priorityCount++;
@@ -5636,6 +5636,7 @@ function getProcessedForInbound(id) {
 
 function getRemainingCT(inboundRecord) {
   if (!inboundRecord || !inboundRecord.quantity) return 0;
+  if (inboundRecord.inbound_category === '선과품') return 0;
   const processed = processingRecords
     .filter(r => r.inbound_id === inboundRecord.id && r.process_type !== '선과')
     .reduce((s, r) => s + (r.quantity || 0), 0);
@@ -7180,7 +7181,7 @@ function renderIbCatSummary() {
     processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
   });
 
-  const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted);
+  const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품');
 
   // (카테고리, 품목, 출처) 조합별 집계
   const catTotals = {};
