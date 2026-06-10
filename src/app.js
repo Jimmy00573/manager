@@ -4257,7 +4257,7 @@ function renderInventoryStatus() {
 
 function _renderInvMatrix(product, recs) {
   const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups   = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const groups   = getSizeGroupsFor(product);
   const allSizes = groups.flatMap(g => g.sizes);
 
   // 그룹별 컬러 (헤더 진함, 사이즈행 연함) — 감귤류 5그룹까지 지원
@@ -4726,7 +4726,7 @@ function openInvEditModal(regId) {
   const location = batchRecs.length ? (batchRecs[0].location || '-') : '-';
   const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
   const ptype = PRODUCT_TYPE_MAP[info.product] || '만감류';
-  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const groups = getSizeGroupsFor(info.product);
   const allSizes = groups.flatMap(g => g.sizes);
 
   const curQty = {};
@@ -4992,7 +4992,7 @@ function iemOnProductChange() {
   }
 
   const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const groups = getSizeGroupsFor(product);
 
   area.innerHTML = `
     <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">사이즈별 수량 (CT) — ${ptype}</div>
@@ -5021,7 +5021,7 @@ function iemUpdateTotal() {
   const product = document.getElementById('iem-product')?.value;
   if (!product) return;
   const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups = ptype === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+  const groups = getSizeGroupsFor(product);
 
   let grand = 0;
   groups.forEach(g => {
@@ -6044,6 +6044,18 @@ const SIZE_GROUPS_만감류 = [
   { group: '중과', sizes: Array.from({ length: 8  }, (_, i) => `${i + 15}수`) },
   { group: '소과', sizes: Array.from({ length: 4  }, (_, i) => `${i + 23}수`) },
 ];
+
+function getSizeGroupsFor(product) {
+  if ((PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류') return SIZE_GROUPS_감귤류;
+  const cfg = (invSizeConfig[product] && invSizeConfig[product].대과 >= 5 && invSizeConfig[product].중과 > invSizeConfig[product].대과 && invSizeConfig[product].중과 <= 26)
+    ? invSizeConfig[product] : { 대과: 14, 중과: 22 };
+  const mk = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `${from + i}수`);
+  const g = [];
+  g.push({ group: '대과', sizes: mk(5, cfg.대과) });
+  if (cfg.중과 > cfg.대과) g.push({ group: '중과', sizes: mk(cfg.대과 + 1, cfg.중과) });
+  if (26 > cfg.중과)       g.push({ group: '소과', sizes: mk(cfg.중과 + 1, 26) });
+  return g;
+}
 
 let _sortingInboundId = null;
 let _sortingSeq = 1;
