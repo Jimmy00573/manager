@@ -2628,7 +2628,7 @@ function buildLocOptHtml() {
 
 function popLocSelects() {
   const optHtml = buildLocOptHtml();
-  ['ib-loc', 'eib-m-loc', 'mv-loc'].forEach(id => {
+  ['ib-loc', 'eib-m-loc', 'mv-loc', 'wa-loc'].forEach(id => {
     const el = document.getElementById(id);
     if (!el || el.tagName !== 'SELECT') return;
     const cur = el.value;
@@ -3215,6 +3215,7 @@ function invTab(t) {
   if (t === 'pachi') {
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
+    popLocSelects(); popUsageSelects();
     renderPachiSection();
   }
   if (t === 'juice') { renderJuiceSection(); }
@@ -4548,11 +4549,17 @@ function openPachiEditModal(regId) {
           ? `<input id="pachi-edit-memo" type="text" value="${esc(row.memo || '')}" placeholder="메모 없음" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">`
           : `<div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px;color:#888">${esc(row.memo || '-')}</div>`}
       </div>
-      <div style="margin-bottom:20px">
+      <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">사용처</label>
         <select id="pachi-edit-usage" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
           <option value="">(미분류)</option>
           ${[...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">위치</label>
+        <select id="pachi-edit-loc" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
+          ${buildLocOptHtml()}
         </select>
       </div>
       <input type="hidden" id="pachi-edit-regid" value="${regId}">
@@ -4561,6 +4568,10 @@ function openPachiEditModal(regId) {
         <button class="btn pri" onclick="savePachiEdit()">저장</button>
       </div>
     </div>`;
+  if (row.location) {
+    const locSel = document.getElementById('pachi-edit-loc');
+    if (locSel && [...locSel.options].some(o => o.value === row.location)) locSel.value = row.location;
+  }
   modal.style.display = 'flex';
 }
 
@@ -4587,13 +4598,14 @@ async function savePachiEdit() {
         if (rec) rec.note = newMemo || null;
       }
     }
-    // 농가명·사용처 (ids 전체 적용)
+    // 농가명·사용처·위치 (ids 전체 적용)
     const newFarm = document.getElementById('pachi-edit-farm')?.value?.trim() || null;
     const newUsage = document.getElementById('pachi-edit-usage')?.value || null;
+    const newLoc = document.getElementById('pachi-edit-loc')?.value || null;
     for (const id of row.ids) {
-      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage });
+      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage, location: newLoc });
       const rec = inventoryRecords.find(r => String(r.id) === String(id));
-      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; }
+      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; rec.location = newLoc; }
     }
     document.getElementById('modal-pachi-edit').style.display = 'none';
     renderInvSummary(); renderPachiSection();
@@ -9183,7 +9195,7 @@ function renderPachiSection() {
       irGrouped[key] = {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
         ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false,
-        pachiKind: pachiKindLabel(r.source_type), usage: r.usage || '미분류'
+        pachiKind: pachiKindLabel(r.source_type), usage: r.usage || '미분류', location: r.location || null
       };
     }
     irGrouped[key].ct += Number(r.quantity) || 0;
@@ -9200,7 +9212,7 @@ function renderPachiSection() {
     ct: Number(r.quantity) || 0,
     kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
     ids: [r.id], memo: [r.purpose, r.note].filter(Boolean).join(' / '),
-    isSorting: false, isLegacy: true, pachiKind: '파치', usage: r.usage || '미분류'
+    isSorting: false, isLegacy: true, pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null
   }));
 
   // 통합 정렬: 품목명 가나다 → 날짜 최신순
@@ -9292,6 +9304,7 @@ function renderPachiSection() {
       <td style="padding:7px 10px;text-align:center">${badge}</td>
       <td style="padding:7px 10px;text-align:center">${kindBadge}</td>
       <td style="padding:7px 10px;text-align:center">${usageBadge}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#666">${r.location ? esc(r.location) : '<span style="color:#ccc">-</span>'}</td>
       ${memoCell}
       ${kebabCell}
     </tr>`;
@@ -9312,7 +9325,7 @@ function renderPachiSection() {
       ? `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${gUsageParts.join(' · ')}</div>`
       : '';
     return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-        <td colspan="${isAdm ? 10 : 9}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+        <td colspan="${isAdm ? 11 : 10}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
           [ ${esc(product)} ] &nbsp;&nbsp;
           <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
           <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
@@ -9326,7 +9339,7 @@ function renderPachiSection() {
     <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
     <td style="padding:8px 12px;text-align:right;color:#E65100">${fmtN(totalCt)} CT</td>
     <td style="padding:8px 12px;text-align:right;color:#555">${fmtN(totalKg)} kg</td>
-    <td colspan="${isAdm ? 5 : 4}"></td>
+    <td colspan="${isAdm ? 6 : 5}"></td>
   </tr>` : '';
 
   el.innerHTML = `
@@ -9350,10 +9363,11 @@ function renderPachiSection() {
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">항목</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">사용처</th>
+            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">위치</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
             ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 10 : 9}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 11 : 10}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
         </table>
       </div>
     </div>`;
@@ -9459,7 +9473,7 @@ async function addWaste() {
     const rows = await sbInsert('inventory_records', data);
     inventoryRecords.unshift(rows[0]);
     renderInvSummary(); renderPachiSection();
-    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-usage', ''); sv('wa-memo', '');
+    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-loc', ''); sv('wa-usage', ''); sv('wa-memo', '');
     showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
