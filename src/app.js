@@ -5083,6 +5083,11 @@ function renderInvAll() {
 }
 
 
+function toggleSumDetail(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
 function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
   if (!el) return;
@@ -5152,7 +5157,7 @@ function renderInvSummary() {
   };
 
   // ── 섹션 2 & 3: 선과 재고
-  const manGamMap = {}, citrusMap = {};
+  const manGamMap = {}, citrusMap = {}, sortDetail = {};
   inventoryRecords.filter(r => !r.is_void && ['sorting','manual','adjustment'].includes(r.source_type)).forEach(r => {
     if (!r.size_code) return;
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
@@ -5167,6 +5172,11 @@ function renderInvSummary() {
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
+    // 수별 상세
+    sortDetail[r.product] = sortDetail[r.product] || {};
+    sortDetail[r.product][r.size_code] = sortDetail[r.product][r.size_code] || {ct:0, kg:0};
+    sortDetail[r.product][r.size_code].ct += Number(r.quantity) || 0;
+    sortDetail[r.product][r.size_code].kg += kg;
   });
   invSorted.forEach(r => {
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
@@ -5175,6 +5185,11 @@ function renderInvSummary() {
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
+    // 수별 상세
+    sortDetail[r.product] = sortDetail[r.product] || {};
+    sortDetail[r.product][r.count_num] = sortDetail[r.product][r.count_num] || {ct:0, kg:0};
+    sortDetail[r.product][r.count_num].ct += Number(r.quantity) || 0;
+    sortDetail[r.product][r.count_num].kg += kg;
   });
 
   // ── 섹션 4: 파치 재고
@@ -5182,14 +5197,18 @@ function renderInvSummary() {
   pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
   const isUsageIncluded = name => { const n = name || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
 
-  const pachiMap = {};
+  const pachiMap = {}, pachiDetail = {};
   inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type) && isUsageIncluded(r.usage)).forEach(r => {
     const p = r.product || '기타';
     pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
+    const _u = r.usage || '미분류'; pachiDetail[p] = pachiDetail[p] || {};
+    pachiDetail[p][_u] = (pachiDetail[p][_u] || 0) + (Number(r.quantity) || 0);
   });
   invWaste.forEach(r => {
     const p = r.product || '기타';
     pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
+    const _u = r.usage || '미분류'; pachiDetail[p] = pachiDetail[p] || {};
+    pachiDetail[p][_u] = (pachiDetail[p][_u] || 0) + (Number(r.quantity) || 0);
   });
 
   // ── 섹션 5: 주스/청 재고
@@ -5394,32 +5413,67 @@ function renderInvSummary() {
     </table></div></div>`;
 
   // 섹션 2 & 3: 선과 빌더
-  const buildSortSection = (n, title, sub, dataMap, groups) => {
+  const citrusOrder = SIZE_GROUPS_감귤류.flatMap(g => g.sizes);
+  const buildSortSection = (n, title, sub, dataMap, groups, detailMap) => {
+    const isMangam = n === 2;
+    const sortSizes = szArr => isMangam
+      ? [...szArr].sort((a, b) => parseInt(a) - parseInt(b))
+      : [...szArr].sort((a, b) => citrusOrder.indexOf(a) - citrusOrder.indexOf(b));
     const entries = Object.entries(dataMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+    const rows = entries.length
+      ? entries.map(([p, m], idx) => {
+          const total = Object.values(m).reduce((s, v) => s + v, 0);
+          const detail = detailMap && detailMap[p];
+          const detailId = `sd-${n}-${idx}`;
+          const tdAttr = detail ? `onclick="toggleSumDetail('${detailId}')" style="${TL};cursor:pointer"` : `style="${TL}"`;
+          const arrow = detail ? '▸ ' : '';
+          const detailText = detail
+            ? sortSizes(Object.keys(detail)).map(sz => {
+                const e = detail[sz];
+                return `${esc(sz)} ${fmtCT(e.ct)} · ${fmtN(Math.round(e.kg))} kg`;
+              }).join(' | ')
+            : '';
+          const detailRow = detail
+            ? `<tr id="${detailId}" style="display:none"><td colspan="${groups.length + 2}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailText}</td></tr>`
+            : '';
+          return `<tr><td ${tdAttr}>${arrow}${productChip(p)}</td>${groups.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : DASH}</td>`).join('')}<td ${TRhl}>${total ? fmtN(Math.round(total)) : DASH}</td></tr>${detailRow}`;
+        }).join('')
+      : EMPTY(groups.length + 2, '선과 재고 없음');
     return `<div style="${CARD}">${secHdr(n, title, sub)}
       <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:480px">
         <thead><tr><th ${THL}>품목</th>${groups.map(g => `<th ${THR}>${g} (kg)</th>`).join('')}<th ${THR}>합계 (kg)</th></tr></thead>
-        <tbody>${entries.length
-          ? entries.map(([p, m]) => {
-              const total = Object.values(m).reduce((s, v) => s + v, 0);
-              return `<tr><td style="${TL}">${productChip(p)}</td>${groups.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : DASH}</td>`).join('')}<td ${TRhl}>${total ? fmtN(Math.round(total)) : DASH}</td></tr>`;
-            }).join('')
-          : EMPTY(groups.length + 2, '선과 재고 없음')}</tbody>
+        <tbody>${rows}</tbody>
       </table></div></div>`;
   };
-  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap, ['대과', '중과', '소과']);
-  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과']);
+  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap, ['대과', '중과', '소과'], sortDetail);
+  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과'], sortDetail);
 
   // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
+  const pachiUsageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const pachiHtml = `<div style="${CARD_I}">${secHdr(4, '파치 재고')}
     <table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
       <colgroup><col style="width:40%"><col style="width:18%"><col style="width:20%"><col style="width:22%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>CT</th><th ${THC}>kg/CT</th><th ${THR}>총중량</th></tr></thead>
       <tbody>${pachiEntries.length
-        ? pachiEntries.map(([p, ct]) => {
+        ? pachiEntries.map(([p, ct], idx) => {
             const kpc = kgPerCt(p);
-            return `<tr><td style="${TL}">${productChip(p)}</td><td style="${TR}">${fmtCT(ct)}</td><td style="${TC}">${kpc}</td><td ${TRhl}>${fmtN(ct * kpc)} kg</td></tr>`;
+            const dEntries = pachiDetail[p] || {};
+            const hasDetail = Object.keys(dEntries).length > 0;
+            const detailId = `pd-${idx}`;
+            const tdAttr = hasDetail ? `onclick="toggleSumDetail('${detailId}')" style="${TL};cursor:pointer"` : `style="${TL}"`;
+            const arrow = hasDetail ? '▸ ' : '';
+            const orderedKeys = [...pachiUsageOrder.filter(u => dEntries[u]),
+              ...Object.keys(dEntries).filter(k => !pachiUsageOrder.includes(k) && k !== '미분류')];
+            if (dEntries['미분류']) orderedKeys.push('미분류');
+            const detailText = orderedKeys.map(u => {
+              const style = u === '미분류' ? ' style="color:#C0392B"' : '';
+              return `<span${style}>${esc(u)} ${fmtN(dEntries[u])} CT</span>`;
+            }).join(' · ');
+            const detailRow = hasDetail
+              ? `<tr id="${detailId}" style="display:none"><td colspan="4" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailText}</td></tr>`
+              : '';
+            return `<tr><td ${tdAttr}>${arrow}${productChip(p)}</td><td style="${TR}">${fmtCT(ct)}</td><td style="${TC}">${kpc}</td><td ${TRhl}>${fmtN(ct * kpc)} kg</td></tr>${detailRow}`;
           }).join('')
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div>`;
