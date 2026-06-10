@@ -18,7 +18,8 @@ function verifyPassword(plainPw, storedValue) {
 
 const PER = 7;
 const OT = ['노랑', '초록', '헌콘'];
-const td = () => new Date().toISOString().slice(0, 10);
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const td = () => ymd(new Date());
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
@@ -598,7 +599,7 @@ function T(id) {
   if (id === 'set') setTab('menu');
   if (id === 'export') {
     const t = td();
-    const fd = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const fd = ymd(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     const ef = document.getElementById('exp-from');
     const et = document.getElementById('exp-to');
     if (ef && !ef.value) ef.value = fd;
@@ -749,7 +750,7 @@ function setDates() {
     const el = document.getElementById(id); if (el && !el.value) el.value = t;
   });
   const now = new Date();
-  const fd = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const fd = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
   const rf = document.getElementById('rp-from'), rt = document.getElementById('rp-to');
   if (rf && !rf.value) rf.value = fd;
   if (rt && !rt.value) rt.value = t;
@@ -1735,8 +1736,8 @@ async function drvDone(id) {
 
 function clearRepF() {
   const now = new Date();
-  sv('rp-from', new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
-  sv('rp-to', now.toISOString().slice(0, 10));
+  sv('rp-from', ymd(new Date(now.getFullYear(), now.getMonth(), 1)));
+  sv('rp-to', ymd(now));
   _rp = 1; renderRep();
 }
 
@@ -1849,7 +1850,7 @@ function renderDSchedule() {
   const dates = [];
   for (let i = 0; i <= 4; i++) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
+    dates.push(ymd(d));
   }
 
   const active = drivers.filter(d => d.pin_active !== false);
@@ -2355,8 +2356,8 @@ function renderStats() {
   if (!el) return;
 
   const now = new Date();
-  const fd = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const td = now.toISOString().slice(0, 10);
+  const fd = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+  const td = ymd(now);
   const sfEl = document.getElementById('st-from');
   const stEl = document.getElementById('st-to');
   if (sfEl && !sfEl.value) sfEl.value = fd;
@@ -2564,7 +2565,7 @@ function exportExcel(type) {
     URL.revokeObjectURL(url);
   }
 
-  const today = new Date().toISOString().slice(0,10);
+  const today = ymd(new Date());
 
   if (type === 'dispatch' || type === 'all') {
     const data = filterByDate(dispatches);
@@ -6460,11 +6461,11 @@ function ibApplyDateShortcut(type) {
   if (type === 'today') { from = today; to = today; }
   else if (type === 'yesterday') {
     const d = new Date(); d.setDate(d.getDate() - 1);
-    from = to = d.toISOString().slice(0, 10);
+    from = to = ymd(d);
   } else if (type === 'week') {
     const d = new Date(); const day = d.getDay();
     const mon = new Date(d); mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-    from = mon.toISOString().slice(0, 10); to = today;
+    from = ymd(mon); to = today;
   } else if (type === 'month') {
     from = today.slice(0, 7) + '-01'; to = today;
   }
@@ -10079,7 +10080,7 @@ function juiceProductChanged() {
     const el = document.getElementById('ju-expiry');
     if (el) {
       const d = new Date(); d.setMonth(d.getMonth() + parseInt(months));
-      el.value = d.toISOString().slice(0, 10);
+      el.value = ymd(d);
     }
   }
 }
