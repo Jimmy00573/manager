@@ -5674,9 +5674,17 @@ async function getInboundLinks(id) {
     }
   }
 
+  let directInv = 0;
+  try {
+    const dinvs = await sbGet('inventory_records', `inbound_record_id=eq.${id}&or=(is_void.eq.false,is_void.is.null)&select=id`);
+    directInv = (dinvs || []).length;
+  } catch (e) {
+    console.error('getInboundLinks direct inventory 조회 실패:', e);
+  }
+
   const processing = processingRecords.filter(r => r.inbound_id === id).length;
 
-  return { sorting, details, inventory, processing, sortingResultIds };
+  return { sorting, details, inventory: inventory + directInv, processing, sortingResultIds, directInv };
 }
 
 async function cascadeDeleteInbound(id) {
@@ -5702,6 +5710,16 @@ async function cascadeDeleteInbound(id) {
       method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
     });
     if (!res.ok) throw new Error(`cascade 삭제 실패 (inventory_records 단계): HTTP ${res.status} srId=${srId}`);
+    const json = await res.json();
+    deletedInventoryRecords += Array.isArray(json) ? json.length : 0;
+  }
+
+  // (b-2) inbound_record_id 직접 연결 재고(선과품) 삭제 — 항상 실행
+  {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/inventory_records?inbound_record_id=eq.${id}`, {
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+    });
+    if (!res.ok) throw new Error(`cascade 삭제 실패 (직접연결 재고 단계): HTTP ${res.status} id=${id}`);
     const json = await res.json();
     deletedInventoryRecords += Array.isArray(json) ? json.length : 0;
   }
