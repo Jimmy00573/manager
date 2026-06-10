@@ -4847,7 +4847,7 @@ function openInvEditModal(regId) {
       <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 수량 수정</div>
       ${sizeRows}
       <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid #E5E7EB">
-        <button class="btn pri" onclick="saveInvEdit()" style="flex:1;padding:10px;font-size:14px">💾 저장</button>
+        <button id="inv-edit-save-btn" class="btn pri" onclick="saveInvEdit()" style="flex:1;padding:10px;font-size:14px">💾 저장</button>
         <button class="btn" onclick="document.getElementById('modal-inv-edit').style.display='none'" style="padding:10px 20px">취소</button>
       </div>
     </div>`;
@@ -4875,6 +4875,9 @@ async function saveInvEdit() {
     document.getElementById('modal-inv-edit').style.display = 'none';
     return;
   }
+
+  const btn = document.getElementById('inv-edit-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
 
   try {
     const ref = batchRecs[0];
@@ -4907,6 +4910,7 @@ async function saveInvEdit() {
     renderInventoryStatus();
     showToast('재고 수정 완료');
   } catch(e) { alert('저장 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; } }
 }
 
 // ── 매트릭스 셀 인라인 편집 ──────────────────────────────────────
