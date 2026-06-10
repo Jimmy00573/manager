@@ -684,8 +684,7 @@ function popSels() {
     drivers.filter(d => d.pin_active !== false).forEach(d => {
       el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
     });
-    el.innerHTML += `<option disabled style="color:#ccc">──────────</option><option value="__manual__">✏️ 직접 입력</option>`;
-    if (keepVal === '__manual__' || drivers.some(d => String(d.id) === keepVal)) el.value = keepVal;
+    if (drivers.some(d => String(d.id) === keepVal)) el.value = keepVal;
   };
   _fillDrvSel('inv-driver-select', document.getElementById('inv-driver-select')?.value || '');
   _fillDrvSel('eib-driver-sel', document.getElementById('eib-driver-sel')?.value || '');
@@ -696,26 +695,11 @@ function popSels() {
     drivers.filter(d => d.pin_active !== false).forEach(d => {
       filterDrvSel.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
     });
-    filterDrvSel.innerHTML += `<option disabled style="color:#ccc">──────────</option><option value="__manual__">직접 입력 (수동)</option><option value="__null__">수송기사 미입력</option>`;
+    filterDrvSel.innerHTML += `<option value="__null__">수송기사 미입력</option>`;
     if (cur) filterDrvSel.value = cur;
   }
 }
 
-function onInvDriverSelChange() {
-  const v = document.getElementById('inv-driver-select')?.value;
-  const manual = document.getElementById('inv-driver-manual');
-  if (!manual) return;
-  manual.style.display = v === '__manual__' ? '' : 'none';
-  if (v !== '__manual__') manual.value = '';
-}
-
-function onEibDriverSelChange() {
-  const v = document.getElementById('eib-driver-sel')?.value;
-  const manual = document.getElementById('eib-driver-manual');
-  if (!manual) return;
-  manual.style.display = v === '__manual__' ? '' : 'none';
-  if (v !== '__manual__') manual.value = '';
-}
 
 function setDates() {
   const t = td();
@@ -5290,8 +5274,6 @@ function renderInvSummary() {
     const getDrv = r => {
       if (r.driver_id && r.driver?.name)
         return { key: `reg:${r.driver_id}`, display: r.driver.name, dotColor: r.driver.type === '내부' ? '#6B7280' : '#D97706' };
-      if (r.driver_name_manual)
-        return { key: `man:${r.driver_name_manual}`, display: r.driver_name_manual, dotColor: '#D97706' };
       return { key: 'none', display: null, dotColor: null };
     };
     const drvHtml = drv => drv.display
@@ -6305,7 +6287,7 @@ function _renderIbFilterChips() {
   const chips = [];
   if (ibFilterProduct) chips.push(`<span class="ib-chip">품목: ${esc(ibFilterProduct)} <span class="ib-chip-x" onclick="ibClearSingleFilter('product')">✕</span></span>`);
   if (ibFilterDriver) {
-    let label = ibFilterDriver === '__manual__' ? '직접입력 (수동)' : ibFilterDriver === '__null__' ? '기사 미입력' : (drivers.find(d => String(d.id) === ibFilterDriver)?.name || ibFilterDriver);
+    let label = ibFilterDriver === '__null__' ? '기사 미입력' : (drivers.find(d => String(d.id) === ibFilterDriver)?.name || ibFilterDriver);
     chips.push(`<span class="ib-chip">기사: ${esc(label)} <span class="ib-chip-x" onclick="ibClearSingleFilter('driver')">✕</span></span>`);
   }
   if (ibFilterDateFrom || ibFilterDateTo) {
@@ -7321,8 +7303,7 @@ function renderInboundList() {
   if (ibFilterProduct) visible = visible.filter(r => r.product === ibFilterProduct);
 
   // 수송기사 필터
-  if (ibFilterDriver === '__manual__') visible = visible.filter(r => r.driver_name_manual);
-  else if (ibFilterDriver === '__null__') visible = visible.filter(r => !r.driver_id && !r.driver_name_manual);
+  if (ibFilterDriver === '__null__') visible = visible.filter(r => !r.driver_id);
   else if (ibFilterDriver) { const dId = Number(ibFilterDriver); visible = visible.filter(r => r.driver_id === dId); }
 
   // 기간 필터
@@ -7416,8 +7397,6 @@ function renderInboundList() {
     let driverCell;
     if (r.driver_id && r.driver?.name) {
       driverCell = `<span class="driver-cell driver-registered"><span class="driver-dot dot-gray"></span><span class="driver-name">${esc(r.driver.name)}</span></span>`;
-    } else if (r.driver_name_manual) {
-      driverCell = `<span class="driver-cell driver-manual"><span class="driver-dot dot-orange"></span><span class="driver-name">${esc(r.driver_name_manual)}</span></span>`;
     } else {
       driverCell = '<span class="driver-cell-empty">—</span>';
     }
@@ -8059,18 +8038,7 @@ function editInboundRow(id) {
 
   // 수송기사 prefill
   const eibDrvSel = document.getElementById('eib-driver-sel');
-  const eibDrvMan = document.getElementById('eib-driver-manual');
-  if (eibDrvSel) {
-    if (r.driver_id) {
-      eibDrvSel.value = String(r.driver_id);
-    } else if (r.driver_name_manual) {
-      eibDrvSel.value = '__manual__';
-      if (eibDrvMan) { eibDrvMan.value = r.driver_name_manual; eibDrvMan.style.display = ''; }
-    } else {
-      eibDrvSel.value = '';
-    }
-    if (eibDrvMan && !r.driver_name_manual) eibDrvMan.style.display = 'none';
-  }
+  if (eibDrvSel) eibDrvSel.value = r.driver_id ? String(r.driver_id) : '';
 
   document.getElementById('modal-edit-inbound').style.display = 'flex';
 }
@@ -8097,9 +8065,8 @@ function closeEditInboundModal() {
       (document.getElementById('eib-reclass-reason')?.value || '') !== (r.reclassification_reason || '') ||
       (document.getElementById('eib-reclass-date')?.value || '') !== (r.original_work_date || '') ||
       (() => { const v = document.getElementById('eib-driver-sel')?.value || '';
-        const did = (v && v !== '__manual__') ? Number(v) : null;
-        const dmn = v === '__manual__' ? (document.getElementById('eib-driver-manual')?.value.trim() || null) : null;
-        return did !== (r.driver_id || null) || dmn !== (r.driver_name_manual || null); })();
+        const did = v ? Number(v) : null;
+        return did !== (r.driver_id || null); })();
     if (changed && !confirm('변경사항이 있습니다. 취소할까요?')) return;
   }
   document.getElementById('modal-edit-inbound').style.display = 'none';
@@ -8130,11 +8097,8 @@ async function saveInboundModal() {
 
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
   const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
-  const eibDrvManInput = document.getElementById('eib-driver-manual');
   if (!eibDrvSelVal) return alert('수송기사를 선택해주세요.');
-  if (eibDrvSelVal === '__manual__' && !eibDrvManInput?.value.trim()) return alert('기사명을 입력해주세요.');
-  const driver_id = (eibDrvSelVal && eibDrvSelVal !== '__manual__') ? Number(eibDrvSelVal) : null;
-  const driver_name_manual = eibDrvSelVal === '__manual__' ? (eibDrvManInput.value.trim() || null) : null;
+  const driver_id = eibDrvSelVal ? Number(eibDrvSelVal) : null;
 
   const prev = inboundRecords.find(r => r.id === id);
   const changed =
@@ -8154,8 +8118,7 @@ async function saveInboundModal() {
     reclassification_source !== (prev.reclassification_source || null) ||
     reclassification_reason !== (prev.reclassification_reason || null) ||
     original_work_date !== (prev.original_work_date || null) ||
-    driver_id !== (prev.driver_id || null) ||
-    driver_name_manual !== (prev.driver_name_manual || null);
+    driver_id !== (prev.driver_id || null);
 
   if (changed && !reason) return alert('변경사항이 있습니다. 수정 사유를 입력해주세요.');
 
@@ -8167,7 +8130,7 @@ async function saveInboundModal() {
     brix_grade, acidity_grade, appearance_grade, defect_tags,
     brix_range, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
-    driver_id, driver_name_manual,
+    driver_id, driver_name_manual: null,
   };
   try {
     await dbUpdateInbound(id, updatePayload);
@@ -8179,12 +8142,12 @@ async function saveInboundModal() {
           brix_grade: prev.brix_grade, acidity_grade: prev.acidity_grade, appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
           brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
           reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date,
-          driver_id: prev.driver_id, driver_name_manual: prev.driver_name_manual },
+          driver_id: prev.driver_id },
         after_val: { date, quantity: qty, location, note, inbound_category, is_priority,
           brix_grade, acidity_grade, appearance_grade, defect_tags,
           brix_range, acidity_range, size_distribution,
           reclassification_source, reclassification_reason, original_work_date,
-          driver_id, driver_name_manual },
+          driver_id },
         reason, staff: 'admin'
       });
     }
@@ -8194,7 +8157,7 @@ async function saveInboundModal() {
       brix_grade, acidity_grade, appearance_grade, defect_tags,
       brix_range, acidity_range, size_distribution,
       reclassification_source, reclassification_reason, original_work_date,
-      driver_id, driver_name_manual,
+      driver_id, driver_name_manual: null,
       driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null };
     document.getElementById('modal-edit-inbound').style.display = 'none';
     _editInboundId = null;
@@ -8627,10 +8590,10 @@ function relativeTime(isoStr) {
   return `${mins}분 전 (${ampm} ${h12}:${String(mm).padStart(2, '0')})`;
 }
 
-function _showDupWarnModal(dup, farm_name, product, qty, driver_id, driver_name_manual) {
+function _showDupWarnModal(dup, farm_name, product, qty, driver_id) {
   const drvName = driver_id
     ? (drivers.find(d => d.id === driver_id)?.name || '기사')
-    : (driver_name_manual || '—');
+    : '—';
   const body = document.getElementById('dup-warn-body');
   if (body) body.innerHTML = `
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px;margin-bottom:14px">
@@ -8667,12 +8630,9 @@ async function _addInboundCore(keepOpen) {
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
   const driverSelect = document.getElementById('inv-driver-select');
-  const driverManualInput = document.getElementById('inv-driver-manual');
   const drvSelVal = driverSelect?.value || '';
   if (!drvSelVal) return alert('수송기사를 선택해주세요.');
-  if (drvSelVal === '__manual__' && !driverManualInput?.value.trim()) return alert('기사명을 입력해주세요.');
-  const driver_id = (drvSelVal && drvSelVal !== '__manual__') ? Number(drvSelVal) : null;
-  const driver_name_manual = drvSelVal === '__manual__' ? (driverManualInput.value.trim() || null) : null;
+  const driver_id = drvSelVal ? Number(drvSelVal) : null;
   const inbound_category = gv('ib-category') || '상품';
   const brix_grade = getGradeVal('ib-brix-grade');
   const acidity_grade = getGradeVal('ib-acid-grade');
@@ -8712,7 +8672,6 @@ async function _addInboundCore(keepOpen) {
     note, staff: 'admin',
     inbound_category, is_priority,
     driver_id,
-    driver_name_manual,
     ...(brix_grade && { brix_grade }),
     ...(acidity_grade && { acidity_grade }),
     ...(appearance_grade && { appearance_grade }),
@@ -8761,7 +8720,6 @@ async function _addInboundCore(keepOpen) {
       } else {
         clearFormPartial();
         const drvSel = document.getElementById('inv-driver-select'); if (drvSel) drvSel.value = '';
-        const drvMan = document.getElementById('inv-driver-manual'); if (drvMan) { drvMan.value = ''; drvMan.style.display = 'none'; }
         const body = document.getElementById('ib-form-body');
         const arrow = document.getElementById('ib-form-arrow');
         const btn = document.getElementById('ib-form-toggle');
@@ -8780,12 +8738,11 @@ async function _addInboundCore(keepOpen) {
       if (!r.created_at || new Date(r.created_at).getTime() < fiveMinAgo) return false;
       if (r.farm_name !== farm_name || r.product !== product || r.quantity !== qty) return false;
       if (driver_id) return r.driver_id === driver_id;
-      if (driver_name_manual) return r.driver_name_manual === driver_name_manual;
-      return !r.driver_id && !r.driver_name_manual;
+      return !r.driver_id;
     });
     if (dups.length) {
       _pendingInboundInsert = doInsert;
-      _showDupWarnModal(dups[0], farm_name, product, qty, driver_id, driver_name_manual);
+      _showDupWarnModal(dups[0], farm_name, product, qty, driver_id);
       return;
     }
   }
