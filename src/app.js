@@ -539,7 +539,7 @@ function setRole(r) {
       btn.style.display = (r === 'staff' && !STAFF_TABS.includes(tab)) ? 'none' : '';
     });
     _applyEditRestrictions(r === 'admin');
-    T(r === 'staff' ? 'inv' : 'dash');
+    T('inv');
   }
 }
 
