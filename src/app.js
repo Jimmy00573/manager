@@ -5434,14 +5434,18 @@ function renderInvSummary() {
               const g = getGroupForSorted(p, sz) || '기타';
               (byGroup[g] = byGroup[g] || []).push(sz);
             });
-            const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => {
-              const parts = sortSizes(byGroup[g]).map(sz => `<span style="color:#9CA3AF">${esc(sz)}</span> <span style="font-weight:600;color:#1F2937">${fmtN(Math.round(detail[sz].kg))}</span><span style="color:#9CA3AF;font-size:11px"> kg</span>`).join('<span style="color:#D1D5DB"> · </span>');
-              return `<div style="margin:2px 0"><span style="font-weight:600;color:#374151">${g}</span> <span style="color:#666">${parts}</span></div>`;
-            });
-            if (byGroup['기타'] && byGroup['기타'].length) {
-              const parts = sortSizes(byGroup['기타']).map(sz => `<span style="color:#9CA3AF">${esc(sz)}</span> <span style="font-weight:600;color:#1F2937">${fmtN(Math.round(detail[sz].kg))}</span><span style="color:#9CA3AF;font-size:11px"> kg</span>`).join('<span style="color:#D1D5DB"> · </span>');
-              lines.push(`<div style="margin:2px 0"><span style="font-weight:600;color:#374151">기타</span> <span style="color:#666">${parts}</span></div>`);
-            }
+            const mkCell = sz =>
+              `<div style="text-align:center;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0">` +
+              `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}</div>` +
+              `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(detail[sz].kg))}</div>` +
+              `</div>`;
+            const mkLine = (g, szArr) =>
+              `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0;margin:6px 0">` +
+              `<span style="font-weight:500;color:#374151;min-width:42px;font-size:12px;padding-top:6px">${g}</span>` +
+              `<div style="display:flex;flex-wrap:wrap">${sortSizes(szArr).map(mkCell).join('')}</div>` +
+              `</div>`;
+            const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => mkLine(g, byGroup[g]));
+            if (byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine('기타', byGroup['기타']));
             return lines.join('');
           })();
           const detailRow = detail
