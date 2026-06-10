@@ -88,6 +88,12 @@ async function dbInsertLocation(data) { const r = await sbInsert('storage_locati
 async function dbUpdateLocation(id, data) { const r = await sbUpdate('storage_locations', id, data); return r[0]; }
 async function dbDeleteLocation(id) { return sbDelete('storage_locations', id); }
 
+// ── 거래처
+async function dbGetPartners() { try { return await sbGet('partners', 'order=sort_order.asc,name.asc'); } catch(e) { return []; } }
+async function dbInsertPartner(data) { const r = await sbInsert('partners', data); return r[0]; }
+async function dbUpdatePartner(id, data) { const r = await sbUpdate('partners', id, data); return r[0]; }
+async function dbDeletePartner(id) { return await sbDelete('partners', id); }
+
 // ── 파치 사용처
 async function dbGetPachiUsages() { try { return await sbGet('pachi_usages', 'order=sort_order'); } catch(e) { return []; } }
 async function dbInsertPachiUsage(data) { const r = await sbInsert('pachi_usages', data); return r[0]; }

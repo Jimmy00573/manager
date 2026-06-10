@@ -635,6 +635,17 @@
           <button class="set-item-btn" onclick="setTab('juicemaster')">열기</button>
         </div>
       </div>
+
+      <div class="set-section">
+        <div class="set-section-title">🏢 거래처</div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">🏢 거래처 관리</div>
+            <div class="set-item-desc">선과품 입고처(농협·도매 등) 관리</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('partner')">열기</button>
+        </div>
+      </div>
     </div>
   </div>
   <!-- 위치 관리 -->
@@ -684,6 +695,14 @@
       <span class="set-back-title">🧃 주스/청 품명</span>
     </div>
     <div id="csp-juicemaster"></div>
+  </div>
+  <!-- 거래처 관리 -->
+  <div id="set-partner-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">🏢 거래처 관리</span>
+    </div>
+    <div id="csp-partner"></div>
   </div>
 </div>
 
@@ -1635,6 +1654,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=99"></script>
+<script src="src/app.js?v=100"></script>
 </body>
 </html>

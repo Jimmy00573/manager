@@ -22,6 +22,7 @@ const td = () => new Date().toISOString().slice(0, 10);
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
+let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [];
 let _matrixBatchRegistry = {};
@@ -185,6 +186,7 @@ async function initApp() {
     qualityCriteria = qcData || [];
     storageLocations = locData || [];
     pachiUsages = usageData || [];
+    partners = await dbGetPartners().catch(() => []);
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -3173,7 +3175,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight', 'juicemaster'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight', 'juicemaster', 'partner'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
@@ -3183,6 +3185,7 @@ function setTab(t) {
   if (t === 'usage') renderPachiUsageCfg();
   if (t === 'weight') renderProductWeightCfg();
   if (t === 'juicemaster') renderJuiceMasterCfg();
+  if (t === 'partner') renderPartnerCfg();
 }
 function setBack() { setTab('menu'); }
 
@@ -3629,6 +3632,80 @@ async function editJuiceMaster(id) {
     renderJuiceSection();
     showToast('수정되었습니다.');
   } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+function renderPartnerCfg() {
+  const el = document.getElementById('csp-partner');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
+  const rows = sorted.map(p => `<tr>
+    <td style="font-weight:600">${esc(p.name)}</td>
+    ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
+      <button class="btn del" onclick="deletePartner('${p.id}')">삭제</button>
+    </td>` : '<td></td>'}
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">거래처 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">선과품 입고처(농협·도매 등)를 관리합니다.</div>
+      </div>
+    </div>
+    ${isAdm ? `<div style="display:flex;gap:8px;margin-bottom:14px">
+      <input id="pt-name" type="text" placeholder="거래처명 입력" style="flex:1;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+      <button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPartner()">+ 추가</button>
+    </div>` : ''}
+    ${sorted.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>거래처명</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 거래처가 없습니다.</div>`}`;
+}
+
+async function addPartner() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const nameEl = document.getElementById('pt-name');
+  const name = nameEl?.value.trim();
+  if (!name) return nameEl?.focus();
+  if (partners.some(p => p.name === name)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
+  try {
+    const row = await dbInsertPartner({ name, sort_order: partners.length + 1, is_active: true });
+    partners.push(row);
+    renderPartnerCfg();
+    if (nameEl) nameEl.value = '';
+    showToast(`"${name}" 거래처가 추가되었습니다.`);
+  } catch(e) { alert('추가 오류: ' + e.message); }
+}
+
+async function editPartner(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const p = partners.find(x => x.id === id);
+  if (!p) return;
+  const name = prompt('새 이름을 입력하세요.', p.name)?.trim();
+  if (!name) return;
+  if (partners.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
+  try {
+    const updated = await dbUpdatePartner(id, { name });
+    const idx = partners.findIndex(x => x.id === id);
+    if (idx !== -1) partners[idx] = updated;
+    renderPartnerCfg();
+    showToast('수정되었습니다.');
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deletePartner(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const p = partners.find(x => x.id === id);
+  if (!p || !confirm(`"${p.name}" 거래처를 삭제할까요?`)) return;
+  try {
+    await dbDeletePartner(id);
+    partners = partners.filter(x => x.id !== id);
+    renderPartnerCfg();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
 function _cfgTH(txt) { return `<th style="padding:7px 10px;text-align:left;font-size:12px;color:#666;font-weight:500;background:#f5f5f5">${txt}</th>`; }
