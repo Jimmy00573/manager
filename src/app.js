@@ -5430,7 +5430,7 @@ function renderInvSummary() {
           const detailText = detail
             ? sortSizes(Object.keys(detail)).map(sz => {
                 const e = detail[sz];
-                return `${esc(sz)} ${fmtCT(e.ct)} · ${fmtN(Math.round(e.kg))} kg`;
+                return `${esc(sz)} ${fmtN(Math.round(e.kg))} kg`;
               }).join(' | ')
             : '';
           const detailRow = detail
