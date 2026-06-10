@@ -3243,7 +3243,7 @@ function invTab(t) {
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
     popLocSelects(); popUsageSelects();
-    const wd = document.getElementById('wa-date'); if (wd && !wd.value) wd.value = td();
+    const wd = document.getElementById('wa-date'); if (wd) wd.value = td();
     renderPachiSection();
   }
   if (t === 'juice') { renderJuiceSection(); }
@@ -9843,7 +9843,6 @@ async function addWaste() {
     inventoryRecords.unshift(rows[0]);
     renderInvSummary(); renderPachiSection();
     sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-loc', ''); sv('wa-usage', ''); sv('wa-memo', '');
-    const wd = document.getElementById('wa-date'); if (wd) wd.value = td();
     showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '등록'; } }
