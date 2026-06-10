@@ -25,6 +25,9 @@
         <input id="staff-pw-in" type="password" placeholder="비밀번호 입력"
           onkeydown="if(event.key==='Enter')chkStaffLogin()">
       </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none;margin-top:8px">
+        <input type="checkbox" id="login-keep"> 접속 유지
+      </label>
       <div style="margin-top:8px">
         <button class="btn pri" onclick="chkStaffLogin()" style="width:100%">직원으로 접속</button>
       </div>
@@ -58,6 +61,9 @@
         <input id="adm-pw-in" type="password" placeholder="비밀번호"
           onkeydown="if(event.key==='Enter')chkAdmLogin()">
       </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none;margin-top:8px">
+        <input type="checkbox" id="adm-login-keep"> 접속 유지
+      </label>
       <div style="margin-top:8px">
         <button class="btn pri" onclick="chkAdmLogin()" style="width:100%">관리자로 접속</button>
       </div>
@@ -1671,6 +1677,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=116"></script>
+<script src="src/app.js?v=117"></script>
 </body>
 </html>

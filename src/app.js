@@ -197,6 +197,16 @@ async function initApp() {
   popSels();
   renderAll();
   
+  // localStorage 접속 유지 복원 (탭/브라우저 닫아도 유지)
+  if (localStorage.getItem('citrus_keep') === '1' && !sessionStorage.getItem('citrus_role')) {
+    const lr = localStorage.getItem('citrus_role');
+    if (lr) {
+      sessionStorage.setItem('citrus_role', lr);
+      const ld = localStorage.getItem('citrus_drv'); if (ld) sessionStorage.setItem('citrus_drv', ld);
+      const la = localStorage.getItem('citrus_adm_user'); if (la) sessionStorage.setItem('citrus_adm_user', la);
+    }
+  }
+
   // 새로고침 후 로그인 상태 복원
   const savedRole = sessionStorage.getItem('citrus_role');
   const savedDrvName = sessionStorage.getItem('citrus_drv');
@@ -294,6 +304,12 @@ function checkPin() {
     _loggedDrv = drv;
     sessionStorage.setItem('citrus_role', 'driver');
     sessionStorage.setItem('citrus_drv', drv.name);
+    const keepDrv = document.getElementById('login-keep')?.checked;
+    if (keepDrv) {
+      localStorage.setItem('citrus_keep', '1');
+      localStorage.setItem('citrus_role', 'driver');
+      localStorage.setItem('citrus_drv', drv.name);
+    }
     document.getElementById('pin-screen').style.display = 'none';
     document.getElementById('hdr-btns').style.display = 'none';
     document.getElementById('hdr-logged').style.display = 'flex';
@@ -333,6 +349,12 @@ async function chkAdmLogin() {
     if (rows && rows.length > 0 && verifyPassword(password, rows[0].password)) {
       sessionStorage.setItem('citrus_role', 'admin');
       sessionStorage.setItem('citrus_adm_user', rows[0].username);
+      const keepAdm = document.getElementById('adm-login-keep')?.checked;
+      if (keepAdm) {
+        localStorage.setItem('citrus_keep', '1');
+        localStorage.setItem('citrus_role', 'admin');
+        localStorage.setItem('citrus_adm_user', rows[0].username);
+      }
       document.getElementById('pin-screen').style.display = 'none';
       document.getElementById('hdr-btns').style.display = 'flex';
       document.getElementById('hdr-logged').style.display = 'none';
@@ -357,6 +379,11 @@ async function chkStaffLogin() {
     const correctPw = rows && rows.length > 0 ? String(rows[0].value) : '1234';
     if (verifyPassword(pw, correctPw)) {
       sessionStorage.setItem('citrus_role', 'staff');
+      const keepStaff = document.getElementById('login-keep')?.checked;
+      if (keepStaff) {
+        localStorage.setItem('citrus_keep', '1');
+        localStorage.setItem('citrus_role', 'staff');
+      }
       document.getElementById('pin-screen').style.display = 'none';
       document.getElementById('hdr-btns').style.display = 'flex';
       document.getElementById('hdr-logged').style.display = 'none';
@@ -375,6 +402,7 @@ async function chkStaffLogin() {
 function doLogout() {
   sessionStorage.removeItem('citrus_role');
   sessionStorage.removeItem('citrus_drv');
+  ['citrus_keep','citrus_role','citrus_drv','citrus_adm_user'].forEach(k => localStorage.removeItem(k));
   _loggedDrv = null;
   document.getElementById('hdr-btns').style.display = 'flex';
   document.getElementById('hdr-logged').style.display = 'none';
@@ -395,6 +423,7 @@ function adminLogout() {
   sessionStorage.removeItem('citrus_role');
   sessionStorage.removeItem('citrus_drv');
   sessionStorage.removeItem('citrus_adm_user');
+  ['citrus_keep','citrus_role','citrus_drv','citrus_adm_user'].forEach(k => localStorage.removeItem(k));
   document.getElementById('pin-screen').style.display = 'flex';
   document.getElementById('rbtn-logout').style.display = 'none';
   document.getElementById('rbtn-adm').className = 'rbtn active';
