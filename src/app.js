@@ -8663,14 +8663,18 @@ async function showSortingHistory(id, btnEl) {
   if (!rows.length) { showToast('선과 이력이 없습니다.'); return; }
 
   const totalInput = rows.reduce((s, r) => s + Number(r.input_ct || 0), 0);
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const items = rows.map(row => {
     const seqLabel = `${row.sequence_number}차`;
     const dateLabel = row.sorting_date ? row.sorting_date.slice(5) : '';
-    return `<div style="padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px">
-      <span style="font-weight:700;color:#1565C0;min-width:28px;display:inline-block">${seqLabel}</span>
-      <span style="color:#6B7280;margin-right:6px">${dateLabel}</span>
-      <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
-      ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
+    return `<div style="padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:6px">
+      <div>
+        <span style="font-weight:700;color:#1565C0;min-width:28px;display:inline-block">${seqLabel}</span>
+        <span style="color:#6B7280;margin-right:6px">${dateLabel}</span>
+        <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
+        ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
+      </div>
+      ${isAdm ? `<button onclick="confirmCancelSorting('${row.id}','${id}',${row.sequence_number})" style="font-size:11px;padding:2px 8px;border:1px solid #DC2626;border-radius:4px;color:#DC2626;background:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0">취소</button>` : ''}
     </div>`;
   }).join('');
 
@@ -8690,6 +8694,66 @@ async function showSortingHistory(id, btnEl) {
 
   const close = e => { if (!pop.contains(e.target) && e.target !== btnEl) { pop.remove(); document.removeEventListener('click', close); } };
   setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+function confirmCancelSorting(srId, inboundId, seq) {
+  const msg = `${seq}차 선과를 취소합니다.\n\n이 차수의 선과 결과·생성된 재고(정상/파치 포함)가 모두 영구 삭제되고,\n입고가 다시 선과 대기로 돌아갑니다.\n복구할 수 없습니다.\n\n계속하시겠습니까?`;
+  if (!confirm(msg)) return;
+  // 팝업 닫기
+  const pop = document.getElementById(`srt-hist-${inboundId}`);
+  if (pop) pop.remove();
+  cancelSortingResult(srId, inboundId, seq);
+}
+
+async function cancelSortingResult(srId, inboundId, seq) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 취소할 수 있습니다.');
+
+  try {
+    // 1) sorting_details 삭제
+    {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/sorting_details?sorting_result_id=eq.${srId}`, {
+        method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+      });
+      if (!res.ok) throw new Error(`선과 취소 실패 (상세 삭제): HTTP ${res.status}`);
+    }
+
+    // 2) inventory_records 삭제 (정상+파치 모두)
+    {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/inventory_records?sorting_result_id=eq.${srId}`, {
+        method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+      });
+      if (!res.ok) throw new Error(`선과 취소 실패 (재고 삭제): HTTP ${res.status}`);
+    }
+
+    // 3) sorting_results 삭제
+    try { await sbDeleteStrict('sorting_results', `id=eq.${srId}`); }
+    catch (e) { throw new Error(`선과 취소 실패 (헤더 삭제): ${e.message}`); }
+
+    // 4) processing_records 삭제 (note 에 결과#srId 포함 + inbound_id + process_type='선과')
+    const procToDelete = processingRecords.filter(p =>
+      p.inbound_id === inboundId && p.process_type === '선과' && p.note && p.note.includes(`결과#${srId}`)
+    );
+    for (const p of procToDelete) {
+      try { await sbDeleteStrict('processing_records', `id=eq.${p.id}`); }
+      catch (e) { console.warn('선과 취소: processing 삭제 실패 (무시):', e.message); }
+    }
+
+    // 메모리 갱신
+    sortingResults    = (sortingResults    || []).filter(r => r.id !== srId);
+    inventoryRecords  = inventoryRecords.filter(r => r.sorting_result_id !== srId);
+    processingRecords = processingRecords.filter(p => !procToDelete.some(d => d.id === p.id));
+
+    await dbInsertAuditLog({
+      target_table: 'sorting_results', target_id: srId,
+      before_val: { inbound_record_id: inboundId, sequence_number: seq },
+      after_val: null,
+      reason: `${seq}차 선과 취소 (관리자)`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(() => {});
+
+    await loadAndRenderInv();
+    showToast(`${seq}차 선과 취소 완료`);
+  } catch(e) { alert('선과 취소 오류: ' + e.message); }
 }
 
 async function restoreInbound(id) {
