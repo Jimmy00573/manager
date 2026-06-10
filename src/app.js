@@ -667,12 +667,21 @@ function popSels() {
 });
   const rf = document.getElementById('rp-farm');
   if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
-  ['ib-farm', 'so-farm'].forEach(id => {
-    const el = document.getElementById(id); if (!el) return;
-    const v = el.value; el.innerHTML = '<option value="">선택</option>';
-    farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
-    el.value = v;
-  });
+  const ibf = document.getElementById('ib-farm');
+  if (ibf) {
+    const v = ibf.value;
+    let html = '<option value="">선택</option>';
+    if (farms.length) html += '<optgroup label="농가">' + farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('') + '</optgroup>';
+    const actP = partners.filter(p => p.is_active !== false);
+    if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
+    ibf.innerHTML = html; ibf.value = v;
+  }
+  const soFarm = document.getElementById('so-farm');
+  if (soFarm) {
+    const v = soFarm.value; soFarm.innerHTML = '<option value="">선택</option>';
+    farms.forEach(f => soFarm.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+    soFarm.value = v;
+  }
   const waFarm = document.getElementById('wa-farm');
   if (waFarm) {
     const v = waFarm.value;
@@ -3674,7 +3683,7 @@ async function addPartner() {
   try {
     const row = await dbInsertPartner({ name, sort_order: partners.length + 1, is_active: true });
     partners.push(row);
-    renderPartnerCfg();
+    renderPartnerCfg(); popSels();
     if (nameEl) nameEl.value = '';
     showToast(`"${name}" 거래처가 추가되었습니다.`);
   } catch(e) { alert('추가 오류: ' + e.message); }
@@ -3691,7 +3700,7 @@ async function editPartner(id) {
     const updated = await dbUpdatePartner(id, { name });
     const idx = partners.findIndex(x => x.id === id);
     if (idx !== -1) partners[idx] = updated;
-    renderPartnerCfg();
+    renderPartnerCfg(); popSels();
     showToast('수정되었습니다.');
   } catch(e) { alert('수정 오류: ' + e.message); }
 }
@@ -3703,7 +3712,7 @@ async function deletePartner(id) {
   try {
     await dbDeletePartner(id);
     partners = partners.filter(x => x.id !== id);
-    renderPartnerCfg();
+    renderPartnerCfg(); popSels();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
