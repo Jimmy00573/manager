@@ -7804,7 +7804,7 @@ function _renderScStats() {
   }
 
   const allW = inboundRecords
-    .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMapSt[r.id] || 0) === 0)
+    .filter(r => !r.is_void && r.inbound_category !== '선과품' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMapSt[r.id] || 0) === 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
   const totalRem = allW.reduce((s, r) => s + r.remaining, 0);
   const urgCnt = allW.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
@@ -7974,7 +7974,7 @@ function _renderScTable() {
   });
 
   let rows = inboundRecords
-    .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
+    .filter(r => !r.is_void && r.inbound_category !== '선과품' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
 
   if (_scSearch) {
