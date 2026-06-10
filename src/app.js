@@ -565,7 +565,7 @@ function T(id) {
   if (id === 'vehicle') renderVehicles();
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
-  if (id === 'inv') loadAndRenderInv();
+  if (id === 'inv') { loadAndRenderInv(); invTab('sum'); }
   if (id === 'set') setTab('menu');
   if (id === 'export') {
     const t = td();
@@ -3200,6 +3200,7 @@ function setTab(t) {
 function setBack() { setTab('menu'); }
 
 function invTab(t) {
+  if (t === 'log' && sessionStorage.getItem('citrus_role') === 'staff') t = 'sum';
   ['sum', 'uns', 'srt', 'pachi', 'juice', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
