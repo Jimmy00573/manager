@@ -3243,6 +3243,7 @@ function invTab(t) {
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
     popLocSelects(); popUsageSelects();
+    const wd = document.getElementById('wa-date'); if (wd && !wd.value) wd.value = td();
     renderPachiSection();
   }
   if (t === 'juice') { renderJuiceSection(); }
@@ -4641,7 +4642,7 @@ function openPachiEditModal(regId) {
       <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">수량 (CT)</label>
         ${canEditQty
-          ? `<input id="pachi-edit-ct" type="number" min="0" value="${row.ct}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">`
+          ? `<input id="pachi-edit-ct" type="number" min="0" step="0.1" value="${row.ct}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" onfocus="this.select()">`
           : `<div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${fmtN(row.ct)} CT${row.ids.length > 1 ? ' (복수 기록)' : ''}</div>`}
       </div>
       <div style="margin-bottom:14px">
@@ -4666,7 +4667,7 @@ function openPachiEditModal(regId) {
       <input type="hidden" id="pachi-edit-regid" value="${regId}">
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn" onclick="document.getElementById('modal-pachi-edit').style.display='none'">취소</button>
-        <button class="btn pri" onclick="savePachiEdit()">저장</button>
+        <button id="pachi-edit-save-btn" class="btn pri" onclick="savePachiEdit()">저장</button>
       </div>
     </div>`;
   if (row.location) {
@@ -4683,9 +4684,11 @@ async function savePachiEdit() {
   if (!row) return;
   const canEditQty = !row.isLegacy && row.ids.length === 1;
   const canEditMemo = !row.isLegacy;
+  const btn = document.getElementById('pachi-edit-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
   try {
     if (canEditQty) {
-      const newQty = parseInt(document.getElementById('pachi-edit-ct')?.value);
+      const newQty = parseFloat(document.getElementById('pachi-edit-ct')?.value);
       if (isNaN(newQty) || newQty < 0) return alert('유효한 수량을 입력해주세요.');
       await sbUpdate('inventory_records', row.ids[0], { quantity: newQty });
       const rec = inventoryRecords.find(r => String(r.id) === String(row.ids[0]));
@@ -4712,6 +4715,7 @@ async function savePachiEdit() {
     renderInvSummary(); renderPachiSection();
     showToast('파치 수정 완료');
   } catch(e) { alert('수정 실패: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '저장'; } }
 }
 
 // ── 주스/청 kebab 메뉴
@@ -9823,7 +9827,7 @@ async function deleteSorted(id) {
 async function addWaste() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('wa-date'), product = gv('wa-product');
-  const qty = parseInt(document.getElementById('wa-qty').value) || 0;
+  const qty = parseFloat(document.getElementById('wa-qty').value) || 0;
   const loc = gv('wa-loc');
   if (!date || !product || !qty || !loc) return alert('날짜, 품목, 수량, 위치는 필수입니다.');
   const data = {
@@ -9832,13 +9836,17 @@ async function addWaste() {
     source_type: 'pachi_manual', usage: gv('wa-usage') || null,
     note: gv('wa-memo') || null, is_void: false, created_by: 'admin'
   };
+  const btn = document.getElementById('wa-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '등록 중...'; }
   try {
     const rows = await sbInsert('inventory_records', data);
     inventoryRecords.unshift(rows[0]);
     renderInvSummary(); renderPachiSection();
     sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-loc', ''); sv('wa-usage', ''); sv('wa-memo', '');
+    const wd = document.getElementById('wa-date'); if (wd) wd.value = td();
     showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '등록'; } }
 }
 
 async function deleteWaste(id, label) {

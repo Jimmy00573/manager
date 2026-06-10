@@ -1074,7 +1074,7 @@
             <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option><option>수라향</option>
           </select>
         </div>
-        <div class="fg"><label>수량(CT) *</label><input id="wa-qty" type="number" placeholder="0" min="0"></div>
+        <div class="fg"><label>수량(CT) *</label><input id="wa-qty" type="number" placeholder="0" min="0" step="0.1" onfocus="this.select()"></div>
         <div class="fg"><label>농가 (선택)</label><select id="wa-farm"></select></div>
         <div class="fg"><label>위치 *</label>
           <select id="wa-loc"></select>
@@ -1082,7 +1082,7 @@
         <div class="fg"><label>사용처</label><select id="wa-usage"></select></div>
         <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="wa-memo" placeholder="예) 주스용, 출하예정, 오름 납품"></div>
       </div>
-      <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addWaste()">등록</button></div>
+      <div class="form-actions"><button id="wa-save-btn" class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addWaste()">등록</button></div>
     </div>
   </div>
 
@@ -1677,6 +1677,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=117"></script>
+<script src="src/app.js?v=118"></script>
 </body>
 </html>
