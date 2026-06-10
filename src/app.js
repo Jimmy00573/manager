@@ -47,6 +47,7 @@ function generateUUID() {
 }
 let showVoidData = false;
 let _pendingInboundInsert = null;
+let _ibKind = 'raw';
 let _priSectionOpen = false;
 let _invAgeDaysTimer = null;
 let URGENCY_THRESHOLD_HIGH = 21;
@@ -8792,7 +8793,129 @@ function cancelDupWarn() {
 async function addInbound() { await _addInboundCore(false); }
 async function addInboundAndContinue() { await _addInboundCore(true); }
 
+function setIbKind(k) {
+  _ibKind = k;
+  const rawBtn    = document.getElementById('ib-kind-raw');
+  const sortedBtn = document.getElementById('ib-kind-sorted');
+  const rawBlock    = document.getElementById('ib-raw-block');
+  const sortedBlock = document.getElementById('ib-sorted-block');
+  if (rawBtn)    { rawBtn.style.background    = k === 'raw'    ? '#374151' : '#fff'; rawBtn.style.color    = k === 'raw'    ? '#fff' : '#6B7280'; }
+  if (sortedBtn) { sortedBtn.style.background = k === 'sorted' ? '#374151' : '#fff'; sortedBtn.style.color = k === 'sorted' ? '#fff' : '#6B7280'; }
+  if (rawBlock)    rawBlock.style.display    = k === 'raw'    ? '' : 'none';
+  if (sortedBlock) sortedBlock.style.display = k === 'sorted' ? '' : 'none';
+  if (k === 'sorted') renderIbSortedSizes();
+}
+
+function renderIbSortedSizes() {
+  const el = document.getElementById('ib-sorted-sizes');
+  if (!el) return;
+  const product = gv('ib-product');
+  if (!product) { el.innerHTML = '<div style="color:#9CA3AF;font-size:12px;padding:8px 0">품목을 먼저 선택하세요.</div>'; ibSortedTotal(); return; }
+  const groups = getSizeGroupsFor(product);
+  const html = groups.map(g =>
+    `<div style="margin-bottom:12px">` +
+    `<div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px">${esc(g.group)}</div>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">` +
+    g.sizes.map(sz =>
+      `<div style="display:flex;flex-direction:column;align-items:center;min-width:56px">` +
+      `<label style="font-size:10px;color:#9CA3AF;margin-bottom:2px">${esc(sz)}</label>` +
+      `<input id="ibs-${esc(sz)}" type="number" step="0.1" min="0" placeholder="0" oninput="ibSortedTotal()" ` +
+      `style="width:56px;text-align:center;border:1px solid #D1D5DB;border-radius:6px;padding:4px 6px;font-size:13px">` +
+      `</div>`
+    ).join('') +
+    `</div></div>`
+  ).join('');
+  el.innerHTML = html;
+  ibSortedTotal();
+}
+
+function ibSortedTotal() {
+  const el = document.getElementById('ib-sorted-total');
+  if (!el) return;
+  const product = gv('ib-product');
+  if (!product) { el.textContent = '0'; return; }
+  let total = 0;
+  const groups = getSizeGroupsFor(product);
+  groups.forEach(g => g.sizes.forEach(sz => {
+    total += parseFloat(document.getElementById(`ibs-${sz}`)?.value || 0) || 0;
+  }));
+  el.textContent = Math.round(total * 10) / 10;
+}
+
+async function saveInboundSorted(keepOpen) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const date = gv('ib-date'), product = gv('ib-product'), supplier = gv('ib-farm');
+  if (!date || !product || !supplier) return alert('날짜, 품목, 공급처는 필수입니다.');
+  const location = gv('ib-loc') || null;
+  const driverSelect = document.getElementById('inv-driver-select');
+  const drvSelVal = driverSelect?.value || '';
+  const driver_id = drvSelVal ? Number(drvSelVal) : null;
+
+  const groups = getSizeGroupsFor(product);
+  const sizeEntries = [];
+  groups.forEach(g => g.sizes.forEach(sz => {
+    const ct = parseFloat(document.getElementById(`ibs-${sz}`)?.value || 0) || 0;
+    if (ct > 0) sizeEntries.push({ size: sz, ct });
+  }));
+  if (!sizeEntries.length) return alert('사이즈별 수량을 입력하세요.');
+  const totalCt = sizeEntries.reduce((s, e) => s + e.ct, 0);
+
+  try {
+    const ibRow = await dbInsertInbound({
+      date, product, farm_name: supplier,
+      quantity: Math.round(totalCt * 10) / 10,
+      inbound_category: '선과품',
+      location, driver_id,
+      created_by: 'admin'
+    });
+    const ibId = ibRow.id;
+    inboundRecords.unshift({ ...ibRow, driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null });
+
+    const inserted = [];
+    for (const e of sizeEntries) {
+      try {
+        const rows = await sbInsert('inventory_records', {
+          date, farm_name: supplier, product,
+          size_code: e.size, quantity: e.ct,
+          location, source_type: 'inbound_sorted',
+          inbound_record_id: ibId, is_void: false, created_by: 'admin'
+        });
+        inserted.push(rows[0]);
+      } catch(rowErr) {
+        alert(`재고 등록 부분 실패 (${e.size}): ${rowErr.message}\n입고 기록(id:${ibId})은 저장됨. 재고 현황에서 수동 추가 필요.`);
+        break;
+      }
+    }
+    inventoryRecords.push(...inserted);
+    renderInvSummary(); renderInboundList();
+
+    const clearSorted = () => {
+      const sizesEl = document.getElementById('ib-sorted-sizes');
+      if (sizesEl) sizesEl.querySelectorAll('input[type=number]').forEach(i => { i.value = ''; });
+      ibSortedTotal();
+    };
+
+    if (keepOpen) {
+      clearSorted();
+      showToast('✓ 등록 완료 — 같은 공급처로 계속 입력 중');
+      document.getElementById('ib-product')?.focus();
+    } else {
+      clearSorted();
+      setIbKind('raw');
+      const drvSel = document.getElementById('inv-driver-select'); if (drvSel) drvSel.value = '';
+      const body  = document.getElementById('ib-form-body');
+      const arrow = document.getElementById('ib-form-arrow');
+      const btn   = document.getElementById('ib-form-toggle');
+      if (body)  { body.style.maxHeight = body.scrollHeight + 'px'; body._ibOpen = false; requestAnimationFrame(() => requestAnimationFrame(() => { body.style.maxHeight = '0'; })); }
+      if (arrow) arrow.style.transform = 'rotate(0deg)';
+      if (btn)   btn.style.borderBottomColor = 'transparent';
+      showToast('선과품 입고가 등록되었습니다.');
+    }
+  } catch(e) { alert('등록 오류: ' + e.message); }
+}
+
 async function _addInboundCore(keepOpen) {
+  if (_ibKind === 'sorted') return await saveInboundSorted(keepOpen);
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
