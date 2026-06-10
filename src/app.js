@@ -680,7 +680,7 @@ function popSels() {
   }
   const _fillDrvSel = (id, keepVal) => {
     const el = document.getElementById(id); if (!el) return;
-    el.innerHTML = '<option value="" disabled selected>선택하세요</option>';
+    el.innerHTML = '<option value="">선택 안 함</option>';
     drivers.filter(d => d.pin_active !== false).forEach(d => {
       el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
     });
@@ -8097,7 +8097,6 @@ async function saveInboundModal() {
 
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
   const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
-  if (!eibDrvSelVal) return alert('수송기사를 선택해주세요.');
   const driver_id = eibDrvSelVal ? Number(eibDrvSelVal) : null;
 
   const prev = inboundRecords.find(r => r.id === id);
@@ -8631,7 +8630,6 @@ async function _addInboundCore(keepOpen) {
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
   const driverSelect = document.getElementById('inv-driver-select');
   const drvSelVal = driverSelect?.value || '';
-  if (!drvSelVal) return alert('수송기사를 선택해주세요.');
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
   const inbound_category = gv('ib-category') || '상품';
   const brix_grade = getGradeVal('ib-brix-grade');
