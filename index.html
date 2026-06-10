@@ -752,11 +752,11 @@
         <!-- 기본 정보 -->
         <div class="ib-section-label">기본 정보</div>
         <div class="form-grid">
-          <div class="fg" style="grid-column:1/-1">
+          <div class="fg">
             <label>구분 *</label>
-            <div style="display:inline-flex;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden">
-              <button type="button" id="ib-kind-raw" onclick="setIbKind('raw')" style="background:#374151;color:#fff;border:none;padding:7px 20px;font-size:13px;cursor:pointer">원물</button>
-              <button type="button" id="ib-kind-sorted" onclick="setIbKind('sorted')" style="background:#fff;color:#6B7280;border:none;border-left:1px solid #D1D5DB;padding:7px 20px;font-size:13px;cursor:pointer">선과품</button>
+            <div style="display:flex;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden">
+              <button type="button" id="ib-kind-raw" onclick="setIbKind('raw')" style="flex:1;background:#374151;color:#fff;border:none;padding:7px 0;font-size:13px;cursor:pointer">원물</button>
+              <button type="button" id="ib-kind-sorted" onclick="setIbKind('sorted')" style="flex:1;background:#fff;color:#6B7280;border:none;border-left:1px solid #D1D5DB;padding:7px 0;font-size:13px;cursor:pointer">선과품</button>
             </div>
           </div>
           <div class="fg"><label>날짜 *</label><input id="ib-date" type="date"></div>
@@ -1677,6 +1677,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=120"></script>
+<script src="src/app.js?v=121"></script>
 </body>
 </html>
