@@ -3350,9 +3350,9 @@ function buildCountSelectOpts(product) {
     });
     return opts;
   }
-  // default: count-based 5~26수
+  // default: count-based 5~27수
   let opts = '<option value="">선택</option>';
-  for (let i = 5; i <= 26; i++) opts += `<option value="${i}수">${i}수</option>`;
+  for (let i = 5; i <= 27; i++) opts += `<option value="${i}수">${i}수</option>`;
   return opts;
 }
 
@@ -5549,7 +5549,7 @@ function renderInvSummary() {
         <tbody>${rows}</tbody>
       </table></div></div>`;
   };
-  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~26수 기준)', manGamMap, ['대과', '중과', '소과'], sortDetail);
+  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~27수 기준)', manGamMap, ['대과', '중과', '소과'], sortDetail);
   const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과'], sortDetail);
 
   // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
@@ -6219,13 +6219,13 @@ const SIZE_GROUPS_감귤류 = [
 const SIZE_GROUPS_만감류 = [
   { group: '대과', sizes: Array.from({ length: 10 }, (_, i) => `${i + 5}수`)  },
   { group: '중과', sizes: Array.from({ length: 8  }, (_, i) => `${i + 15}수`) },
-  { group: '소과', sizes: Array.from({ length: 4  }, (_, i) => `${i + 23}수`) },
+  { group: '소과', sizes: Array.from({ length: 5  }, (_, i) => `${i + 23}수`) },
 ];
 
 function getSizeGroupsFor(product) {
   if ((PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류') return SIZE_GROUPS_감귤류;
   const order = [], map = {};
-  for (let n = 5; n <= 26; n++) {
+  for (let n = 5; n <= 27; n++) {
     const sz = `${n}수`;
     const g = getGroupForSorted(product, sz) || '기타';
     if (!map[g]) { map[g] = { group: g, sizes: [] }; order.push(g); }
@@ -9172,9 +9172,9 @@ function renderSortedAgg() {
   const countMap = groupBy(countData);
   const gradeMap = groupBy(gradeData);
 
-  // 만감류: 재고 없는 항목 숨기지 않을 때 5~26수 전부 표시
+  // 만감류: 재고 없는 항목 숨기지 않을 때 5~27수 전부 표시
   if (!hideEmpty) {
-    for (let i = 5; i <= 26; i++) {
+    for (let i = 5; i <= 27; i++) {
       const k = `${i}수`;
       if (!countMap[k]) countMap[k] = { total: 0, entries: [] };
     }
