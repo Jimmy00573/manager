@@ -5427,14 +5427,25 @@ function renderInvSummary() {
           const detailId = `sd-${n}-${idx}`;
           const tdAttr = detail ? `onclick="toggleSumDetail('${detailId}')" style="${TL};cursor:pointer"` : `style="${TL}"`;
           const arrow = detail ? '▸ ' : '';
-          const detailText = detail
-            ? sortSizes(Object.keys(detail)).map(sz => {
-                const e = detail[sz];
-                return `${esc(sz)} ${fmtN(Math.round(e.kg))} kg`;
-              }).join(' | ')
-            : '';
+          const detailHtml = (() => {
+            if (!detail) return '';
+            const byGroup = {};
+            Object.keys(detail).forEach(sz => {
+              const g = getGroupForSorted(p, sz) || '기타';
+              (byGroup[g] = byGroup[g] || []).push(sz);
+            });
+            const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => {
+              const parts = sortSizes(byGroup[g]).map(sz => `${esc(sz)} ${fmtN(Math.round(detail[sz].kg))} kg`).join(' · ');
+              return `<div style="margin:2px 0"><span style="font-weight:600;color:#374151">${g}</span> <span style="color:#666">${parts}</span></div>`;
+            });
+            if (byGroup['기타'] && byGroup['기타'].length) {
+              const parts = sortSizes(byGroup['기타']).map(sz => `${esc(sz)} ${fmtN(Math.round(detail[sz].kg))} kg`).join(' · ');
+              lines.push(`<div style="margin:2px 0"><span style="font-weight:600;color:#374151">기타</span> <span style="color:#666">${parts}</span></div>`);
+            }
+            return lines.join('');
+          })();
           const detailRow = detail
-            ? `<tr id="${detailId}" style="display:none"><td colspan="${groups.length + 2}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailText}</td></tr>`
+            ? `<tr id="${detailId}" style="display:none"><td colspan="${groups.length + 2}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailHtml}</td></tr>`
             : '';
           return `<tr><td ${tdAttr}>${arrow}${productChip(p)}</td>${groups.map(g => `<td style="${TR}">${m[g] ? fmtN(Math.round(m[g])) : DASH}</td>`).join('')}<td ${TRhl}>${total ? fmtN(Math.round(total)) : DASH}</td></tr>${detailRow}`;
         }).join('')
