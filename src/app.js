@@ -5435,11 +5435,11 @@ function renderInvSummary() {
               (byGroup[g] = byGroup[g] || []).push(sz);
             });
             const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => {
-              const parts = sortSizes(byGroup[g]).map(sz => `${esc(sz)} ${fmtN(Math.round(detail[sz].kg))} kg`).join(' · ');
+              const parts = sortSizes(byGroup[g]).map(sz => `<span style="color:#9CA3AF">${esc(sz)}</span> <span style="font-weight:600;color:#1F2937">${fmtN(Math.round(detail[sz].kg))}</span><span style="color:#9CA3AF;font-size:11px"> kg</span>`).join('<span style="color:#D1D5DB"> · </span>');
               return `<div style="margin:2px 0"><span style="font-weight:600;color:#374151">${g}</span> <span style="color:#666">${parts}</span></div>`;
             });
             if (byGroup['기타'] && byGroup['기타'].length) {
-              const parts = sortSizes(byGroup['기타']).map(sz => `${esc(sz)} ${fmtN(Math.round(detail[sz].kg))} kg`).join(' · ');
+              const parts = sortSizes(byGroup['기타']).map(sz => `<span style="color:#9CA3AF">${esc(sz)}</span> <span style="font-weight:600;color:#1F2937">${fmtN(Math.round(detail[sz].kg))}</span><span style="color:#9CA3AF;font-size:11px"> kg</span>`).join('<span style="color:#D1D5DB"> · </span>');
               lines.push(`<div style="margin:2px 0"><span style="font-weight:600;color:#374151">기타</span> <span style="color:#666">${parts}</span></div>`);
             }
             return lines.join('');
