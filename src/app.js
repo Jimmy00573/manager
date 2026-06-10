@@ -5347,8 +5347,9 @@ function renderInvSummary() {
   const barColor = p => BAR_COLORS[p] || '#9CA3AF';
 
   // ── KPI 카드 HTML
-  const kpiCard = (label, val, unit, sub, small) => `
-    <div style="background:#E8E8E6;border-radius:8px;padding:14px 16px">
+  const kpiCard = (label, val, unit, sub, small, navTab) => `
+    <div style="background:#E8E8E6;border-radius:8px;padding:14px 16px${navTab ? ';cursor:pointer' : ''}"
+      ${navTab ? `onclick="invTab('${navTab}')" onmouseover="this.style.background='#DCDCDA'" onmouseout="this.style.background='#E8E8E6'"` : ''}>
       <div style="font-size:12px;color:#6B7280;margin-bottom:6px;font-weight:500">${label}</div>
       <div style="font-size:${small ? '20px' : '22px'};font-weight:700;color:#111827;line-height:1.2">${val}<span style="font-size:13px;font-weight:400;color:#9CA3AF;margin-left:4px">${unit}</span></div>
       ${sub || ''}
@@ -5357,17 +5358,17 @@ function renderInvSummary() {
   const kpiChip = txt => `<div style="display:inline-block;background:#FCEBEB;color:#A32D2D;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px">${txt}</div>`;
   const kpiHtml = `<div class="sum-kpi-grid">
     ${kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
-      priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '')}
+      priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns')}
     ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
-      manGamItems ? kpiSub(`${manGamItems}개 품목`) : '')}
+      manGamItems ? kpiSub(`${manGamItems}개 품목`) : '', false, 'srt')}
     ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
-      citrusItems ? kpiSub(`${citrusItems}개 품목`) : '')}
+      citrusItems ? kpiSub(`${citrusItems}개 품목`) : '', false, 'srt')}
     ${kpiCard('파치',
       pachiTotalKg ? fmtN(Math.round(pachiTotalKg)) : '—', pachiTotalKg ? 'kg' : '',
-      '', true)}
+      '', true, 'pachi')}
     ${kpiCard('주스/청',
       juiceTotalNet ? fmtN(Math.round(juiceTotalNet)) : '—', juiceTotalNet ? '병' : '',
-      '', true)}
+      '', true, 'juice')}
   </div>`;
 
   // ── 오늘 입고 (탭 카드: 목록 / 기사별 / 품목별)
