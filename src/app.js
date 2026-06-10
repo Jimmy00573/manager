@@ -8865,8 +8865,7 @@ async function saveInboundSorted(keepOpen) {
       date, product, farm_name: supplier,
       quantity: Math.round(totalCt * 10) / 10,
       inbound_category: '선과품',
-      location, driver_id,
-      created_by: 'admin'
+      location, driver_id
     });
     const ibId = ibRow.id;
     inboundRecords.unshift({ ...ibRow, driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null });
