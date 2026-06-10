@@ -6047,14 +6047,15 @@ const SIZE_GROUPS_만감류 = [
 
 function getSizeGroupsFor(product) {
   if ((PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류') return SIZE_GROUPS_감귤류;
-  const cfg = (invSizeConfig[product] && invSizeConfig[product].대과 >= 5 && invSizeConfig[product].중과 > invSizeConfig[product].대과 && invSizeConfig[product].중과 <= 26)
-    ? invSizeConfig[product] : { 대과: 14, 중과: 22 };
-  const mk = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `${from + i}수`);
-  const g = [];
-  g.push({ group: '대과', sizes: mk(5, cfg.대과) });
-  if (cfg.중과 > cfg.대과) g.push({ group: '중과', sizes: mk(cfg.대과 + 1, cfg.중과) });
-  if (26 > cfg.중과)       g.push({ group: '소과', sizes: mk(cfg.중과 + 1, 26) });
-  return g;
+  const order = [], map = {};
+  for (let n = 5; n <= 26; n++) {
+    const sz = `${n}수`;
+    const g = getGroupForSorted(product, sz) || '기타';
+    if (!map[g]) { map[g] = { group: g, sizes: [] }; order.push(g); }
+    map[g].sizes.push(sz);
+  }
+  const groups = order.map(g => map[g]);
+  return groups.length >= 2 ? groups : SIZE_GROUPS_만감류;
 }
 
 let _sortingInboundId = null;
