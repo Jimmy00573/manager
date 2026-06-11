@@ -20,6 +20,15 @@ const PER = 7;
 const OT = ['노랑', '초록', '헌콘'];
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const td = () => ymd(new Date());
+function buildSeqByDate(srRows) {
+  const sorted = [...srRows].sort((a,b) =>
+    (a.sorting_date||'').localeCompare(b.sorting_date||'')
+    || ((a.sequence_number||0) - (b.sequence_number||0))
+  );
+  const map = {};
+  sorted.forEach((r, i) => { map[r.id] = i + 1; });
+  return map;
+}
 
 // 상태
 let farms = [], drivers = [], dispatches = [], picks = [];
@@ -8693,13 +8702,13 @@ async function showSortingHistory(id, btnEl) {
   if (existing) { existing.remove(); return; }
 
   let rows = [];
-  try { rows = await sbGet('sorting_results', `inbound_record_id=eq.${id}&order=sequence_number`); } catch(e) {}
+  try { rows = await sbGet('sorting_results', `inbound_record_id=eq.${id}&order=sorting_date.asc,sequence_number.asc`); } catch(e) {}
   if (!rows.length) { showToast('선과 이력이 없습니다.'); return; }
 
   const totalInput = rows.reduce((s, r) => s + Number(r.input_ct || 0), 0);
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const items = rows.map(row => {
-    const seqLabel = `${row.sequence_number}차`;
+  const items = rows.map((row, idx) => {
+    const seqLabel = `${idx+1}차`;
     const dateLabel = row.sorting_date ? row.sorting_date.slice(5) : '';
     return `<div style="padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:6px">
       <div>
@@ -8708,7 +8717,7 @@ async function showSortingHistory(id, btnEl) {
         <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
         ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
       </div>
-      ${isAdm ? `<button onclick="confirmCancelSorting('${row.id}','${id}',${row.sequence_number})" style="font-size:11px;padding:2px 8px;border:1px solid #DC2626;border-radius:4px;color:#DC2626;background:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0">취소</button>` : ''}
+      ${isAdm ? `<button onclick="confirmCancelSorting('${row.id}','${id}',${idx+1})" style="font-size:11px;padding:2px 8px;border:1px solid #DC2626;border-radius:4px;color:#DC2626;background:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0">취소</button>` : ''}
     </div>`;
   }).join('');
 
@@ -10259,6 +10268,9 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
     return;
   }
 
+  const seqMap = buildSeqByDate(results);
+  results.sort((a,b) => (a.sorting_date||'').localeCompare(b.sorting_date||'') || ((a.sequence_number||0)-(b.sequence_number||0)));
+
   const resultIds = results.map(r => r.id);
   const details = await dbGetSortingDetails(resultIds);
 
@@ -10320,7 +10332,7 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
 
     return `<div style="padding:10px 14px;border-bottom:1px solid #f5f5f5">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <span style="background:#EDE9FE;color:#6D28D9;font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${r.sequence_number}차</span>
+        <span style="background:#EDE9FE;color:#6D28D9;font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${seqMap[r.id]}차</span>
         <span style="font-size:12px;color:#6B7280">${r.sorting_date || ''}</span>
         ${ib ? `<span style="font-size:11px;color:#9CA3AF">${esc(ib.product)}</span>` : ''}
         ${r.operator_name ? `<span style="font-size:11px;color:#9CA3AF">· ${esc(r.operator_name)}</span>` : ''}
@@ -10411,6 +10423,9 @@ async function openSortingDetailModal(inboundId) {
     return;
   }
 
+  const seqMap = buildSeqByDate(results);
+  results.sort((a,b) => (a.sorting_date||'').localeCompare(b.sorting_date||'') || ((a.sequence_number||0)-(b.sequence_number||0)));
+
   const resultIds = results.map(r => r.id);
   let details = [];
   try { details = await dbGetSortingDetails(resultIds); } catch(e) {}
@@ -10477,7 +10492,7 @@ async function openSortingDetailModal(inboundId) {
 
     return `<div style="border:1px solid #E5E7EB;border-radius:10px;margin-bottom:10px;overflow:hidden">
       <div style="padding:8px 12px;background:#F9FAFB;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="background:#EDE9FE;color:#6D28D9;font-size:12px;padding:2px 10px;border-radius:8px;font-weight:700">${r.sequence_number}차</span>
+        <span style="background:#EDE9FE;color:#6D28D9;font-size:12px;padding:2px 10px;border-radius:8px;font-weight:700">${seqMap[r.id]}차</span>
         <span style="font-size:12px;color:#6B7280">${r.sorting_date || ''}</span>
         ${r.operator_name ? `<span style="font-size:12px;color:#9CA3AF">${esc(r.operator_name)}</span>` : ''}
         <span style="font-size:13px;font-weight:700;color:#1565C0;margin-left:auto">투입 ${fmtN(r.input_ct)} CT</span>
