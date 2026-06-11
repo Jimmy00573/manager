@@ -3701,13 +3701,18 @@ function renderPartnerCfg() {
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
-  const rows = sorted.map(p => `<tr>
+  const usageLabelMap = { in:'입고처', out:'출고처', both:'둘다' };
+  const rows = sorted.map(p => {
+    const usageLabel = usageLabelMap[p.usage || 'both'];
+    return `<tr>
     <td style="font-weight:600">${esc(p.name)}</td>
+    <td><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
     ${isAdm ? `<td style="white-space:nowrap">
       <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
       <button class="btn del" onclick="deletePartner('${p.id}')">삭제</button>
     </td>` : '<td></td>'}
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -3718,11 +3723,16 @@ function renderPartnerCfg() {
     </div>
     ${isAdm ? `<div style="display:flex;gap:8px;margin-bottom:14px">
       <input id="pt-name" type="text" placeholder="거래처명 입력" style="flex:1;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+      <select id="pt-usage" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        <option value="both">둘다</option>
+        <option value="in">입고처</option>
+        <option value="out">출고처</option>
+      </select>
       <button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPartner()">+ 추가</button>
     </div>` : ''}
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>거래처명</th><th></th></tr></thead>
+      <thead><tr><th>거래처명</th><th>용도</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 거래처가 없습니다.</div>`}`;
 }
@@ -3733,8 +3743,9 @@ async function addPartner() {
   const name = nameEl?.value.trim();
   if (!name) return nameEl?.focus();
   if (partners.some(p => p.name === name)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
+  const usage = document.getElementById('pt-usage')?.value || 'both';
   try {
-    const row = await dbInsertPartner({ name, sort_order: partners.length + 1, is_active: true });
+    const row = await dbInsertPartner({ name, usage, sort_order: partners.length + 1, is_active: true });
     partners.push(row);
     renderPartnerCfg(); popSels();
     if (nameEl) nameEl.value = '';
@@ -3749,10 +3760,13 @@ async function editPartner(id) {
   const name = prompt('새 이름을 입력하세요.', p.name)?.trim();
   if (!name) return;
   if (partners.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
+  const uNum = prompt('용도 (1=둘다, 2=입고처, 3=출고처)', { both:'1', in:'2', out:'3' }[p.usage || 'both']);
+  if (uNum === null) return;
+  const usage = ({ '1':'both', '2':'in', '3':'out' })[uNum] || p.usage || 'both';
   try {
-    const updated = await dbUpdatePartner(id, { name });
+    const updated = await dbUpdatePartner(id, { name, usage });
     const idx = partners.findIndex(x => x.id === id);
-    if (idx !== -1) partners[idx] = updated;
+    if (idx !== -1) partners[idx] = { ...partners[idx], ...updated };
     renderPartnerCfg(); popSels();
     showToast('수정되었습니다.');
   } catch(e) { alert('수정 오류: ' + e.message); }
