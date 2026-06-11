@@ -6039,6 +6039,12 @@ function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
 
+function getOutboundForInbound(id) {
+  return processingRecords
+    .filter(r => r.inbound_id === id && r.process_type === '출고')
+    .reduce((s, r) => s + (r.quantity || 0), 0);
+}
+
 function getRemainingCT(inboundRecord) {
   if (!inboundRecord || !inboundRecord.quantity) return 0;
   if (inboundRecord.inbound_category === '선과품') return 0;
@@ -7973,7 +7979,13 @@ function renderInboundList() {
     }
     const processed = getProcessedForInbound(r.id);
     const remaining = getRemainingCT(r);
-    const qtyTitle = processed > 0 ? `입고 ${fmtN(r.quantity)}CT · 처리 ${fmtN(processed)}CT · 잔여 ${fmtN(remaining)}CT` : `입고 ${fmtN(r.quantity)}CT`;
+    const outbound = getOutboundForInbound(r.id);
+    const procOnly = processed - outbound;
+    const _qtyParts = [`입고 ${fmtN(r.quantity)}CT`];
+    if (procOnly > 0) _qtyParts.push(`처리 ${fmtN(procOnly)}CT`);
+    if (outbound > 0) _qtyParts.push(`출고 ${fmtN(outbound)}CT`);
+    if (processed > 0 || outbound > 0) _qtyParts.push(`잔여 ${fmtN(remaining)}CT`);
+    const qtyTitle = (processed > 0 || outbound > 0) ? _qtyParts.join(' · ') : `입고 ${fmtN(r.quantity)}CT`;
     const srtCount = _sortingCountMap[r.id] || 0;
     const srtBadge = srtCount > 0
       ? `<button onclick="showSortingHistory('${r.id}',this)" style="background:none;border:none;padding:0;cursor:pointer;font-size:10px;color:#7C3AED;font-weight:700;white-space:nowrap;display:inline-block;margin-left:3px" title="선과 이력 보기">✂️${srtCount}차</button>`
