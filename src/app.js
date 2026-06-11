@@ -749,6 +749,17 @@ function popSels() {
     filterDrvSel.innerHTML += `<option value="__null__">수송기사 미입력</option>`;
     if (cur) filterDrvSel.value = cur;
   }
+  popOperatorSel();
+}
+
+function popOperatorSel() {
+  const el = document.getElementById('srt-operator');
+  if (!el) return;
+  const v = el.value;
+  el.innerHTML = '<option value="">선택 안 함</option>' +
+    drivers.filter(d => d.type === '내부' && d.pin_active !== false)
+      .map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+  el.value = v;
 }
 
 
@@ -8465,6 +8476,7 @@ async function openSortingModal(id) {
 
   document.getElementById('srt-seq').textContent = `${seq}차`;
   document.getElementById('srt-date').value = td();
+  popOperatorSel();
   document.getElementById('srt-operator').value = '';
   document.getElementById('srt-note').value = '';
   document.getElementById('srt-input-ct').value = remaining;
