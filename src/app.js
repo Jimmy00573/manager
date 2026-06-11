@@ -3705,12 +3705,12 @@ function renderPartnerCfg() {
   const rows = sorted.map(p => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
     return `<tr>
-    <td style="font-weight:600">${esc(p.name)}</td>
-    <td><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
-    ${isAdm ? `<td style="white-space:nowrap">
+    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</td>
+    <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
+    ${isAdm ? `<td style="width:120px;white-space:nowrap;text-align:right">
       <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
       <button class="btn del" onclick="deletePartner('${p.id}')">삭제</button>
-    </td>` : '<td></td>'}
+    </td>` : '<td style="width:120px"></td>'}
   </tr>`;
   }).join('');
 
@@ -3731,8 +3731,8 @@ function renderPartnerCfg() {
       <button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPartner()">+ 추가</button>
     </div>` : ''}
     ${sorted.length ? `
-    <div class="tbl-wrap"><table>
-      <thead><tr><th>거래처명</th><th>용도</th><th></th></tr></thead>
+    <div class="tbl-wrap"><table style="width:100%;table-layout:fixed">
+      <thead><tr><th>거래처명</th><th style="width:80px">용도</th><th style="width:120px"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 거래처가 없습니다.</div>`}`;
 }
