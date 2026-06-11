@@ -34,7 +34,7 @@ function buildSeqByDate(srRows) {
 let farms = [], drivers = [], dispatches = [], picks = [];
 let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [], invJuiceBatches = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [], invJuiceBatches = [], invJuiceOutbounds = [];
 let juiceExpiryDays = 90;
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
@@ -3303,7 +3303,7 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters, allSorting, juiceBatches] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
@@ -3313,7 +3313,8 @@ async function loadAndRenderInv() {
       dbGetJuiceRecords().catch(() => []),
       dbGetJuiceMasters().catch(() => []),
       sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => []),
-      dbGetJuiceBatches().catch(() => [])
+      dbGetJuiceBatches().catch(() => []),
+      sbGet('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc').catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3335,6 +3336,7 @@ async function loadAndRenderInv() {
     invJuiceRecs = juiceRecs;
     invJuiceMasters = juiceMasters;
     invJuiceBatches = juiceBatches;
+    invJuiceOutbounds = juiceOutbounds;
     try {
       const expiryRows = await sbGet('settings', 'key=eq.juice_expiry_days');
       if (expiryRows && expiryRows[0]) juiceExpiryDays = parseInt(expiryRows[0].value) || 90;
@@ -5044,7 +5046,124 @@ async function deleteJuiceBatch(id) {
 }
 
 function openJuiceOutboundModal(id) {
-  alert('출고 기능은 4단계에서 구현됩니다.');
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const b = invJuiceBatches.find(x => x.id === id);
+  if (!b || b.remaining_bottles <= 0) { alert('출고 가능한 재고가 없습니다.'); return; }
+
+  const perBox = b.per_box || 0;
+  const hasBox = perBox > 0;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const expiryStr = (() => {
+    if (!b.expiry_date) return '';
+    const dl = Math.ceil((new Date(b.expiry_date + 'T00:00:00') - today) / 86400000);
+    const color = dl < 0 ? '#DC2626' : dl <= juiceExpiryDays ? '#E05D00' : '#6B7280';
+    const suffix = dl < 0 ? ' (만료)' : dl <= juiceExpiryDays ? ' (임박)' : '';
+    return ` · <span style="color:${color};font-size:12px">유통 ${b.expiry_date}${suffix}</span>`;
+  })();
+
+  document.getElementById('ob-title').innerHTML = `📤 출고 — ${esc(b.product_name)} · 입고 ${b.inbound_date}${expiryStr} · 현재고 <strong>${fmtN(b.remaining_bottles)}병</strong>`;
+  document.getElementById('ob-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
+          <input type="date" id="job-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
+          <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
+        </div>
+      </div>
+      ${hasBox ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">박스 수 <span style="color:#9CA3AF">(×${perBox}병)</span></label>
+          <input type="number" id="job-box" min="0" step="1" value="0"
+            onfocus="setTimeout(()=>this.select(),0)" oninput="calcJuiceOutbound(${b.remaining_bottles},${perBox})"
+            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
+        </div>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">낱개</label>
+          <input type="number" id="job-single" min="0" step="1" value="0"
+            onfocus="setTimeout(()=>this.select(),0)" oninput="calcJuiceOutbound(${b.remaining_bottles},${perBox})"
+            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
+        </div>
+      </div>` : `
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고 병 수 * <span style="color:#059669">현재고 ${fmtN(b.remaining_bottles)} 병</span></label>
+        <input type="number" id="job-single" min="0" step="1" value="0"
+          onfocus="setTimeout(()=>this.select(),0)" oninput="calcJuiceOutbound(${b.remaining_bottles},0)"
+          style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
+        <input type="hidden" id="job-box" value="0">
+      </div>`}
+      <div id="job-total-display" style="text-align:center;padding:8px;background:#F9FAFB;border-radius:6px;font-size:13px;color:#374151;margin-bottom:14px">
+        0 병 출고 · 출고 후 ${fmtN(b.remaining_bottles)} 병
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
+        <input type="text" id="job-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="job-save-btn" class="btn pri" onclick="saveJuiceOutbound('${id}')" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
+        <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+
+  window._juiceOutboundCtx = { id, b };
+  popOutboundPartners();
+  document.getElementById('modal-outbound').style.display = 'flex';
+}
+
+function calcJuiceOutbound(remaining, perBox) {
+  const box    = parseFloat(document.getElementById('job-box')?.value) || 0;
+  const single = parseFloat(document.getElementById('job-single')?.value) || 0;
+  const qty    = box * perBox + single;
+  const disp   = document.getElementById('job-total-display');
+  if (!disp) return;
+  const over = qty > remaining;
+  disp.textContent = `${fmtN(qty)} 병 출고 · 출고 후 ${fmtN(Math.max(0, remaining - qty))} 병`;
+  disp.style.color = over ? '#DC2626' : qty > 0 ? '#059669' : '#374151';
+}
+
+async function saveJuiceOutbound(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ctx = window._juiceOutboundCtx;
+  if (!ctx || ctx.id !== id) return;
+  const b = ctx.b;
+
+  const date    = document.getElementById('job-date')?.value;
+  const partner = document.getElementById('ob-partner')?.value;
+  const note    = document.getElementById('job-note')?.value?.trim() || null;
+  const box     = parseFloat(document.getElementById('job-box')?.value) || 0;
+  const single  = parseFloat(document.getElementById('job-single')?.value) || 0;
+  const qty     = box * (b.per_box || 0) + single;
+  const adm     = sessionStorage.getItem('citrus_adm_user') || 'admin';
+
+  if (!date)                     return alert('출고일을 입력해주세요.');
+  if (!partner)                  return alert('출고처를 선택해주세요.');
+  if (qty <= 0)                  return alert('출고량을 입력해주세요.');
+  if (qty > b.remaining_bottles) return alert(`현재고(${fmtN(b.remaining_bottles)}병)를 초과했습니다.`);
+
+  const btn = document.getElementById('job-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
+
+  try {
+    const row = await dbInsertOutboundRecord({
+      date, product: b.product_name, size_code: null, quantity: qty, unit: '병',
+      partner_name: partner, source_type: 'juice',
+      inventory_ref_id: b.id, box_count: box || null,
+      expiry_date: b.expiry_date || null,
+      farm_name: null, note, is_void: false, created_by: adm
+    });
+    invJuiceOutbounds.unshift(row);
+
+    const newRem = b.remaining_bottles - qty;
+    const patch  = newRem <= 0 ? { remaining_bottles: 0, is_void: true } : { remaining_bottles: newRem };
+    await sbUpdate('juice_batches', b.id, patch);
+    b.remaining_bottles = newRem;
+    if (newRem <= 0) b.is_void = true;
+
+    document.getElementById('modal-outbound').style.display = 'none';
+    showToast('출고 완료');
+    renderJuiceSection(); renderInvSummary();
+  } catch(e) { alert('출고 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
 }
 
 function toggleJuiceHistory(productKey) {
@@ -10445,17 +10564,32 @@ function renderJuiceSection() {
       </tr>`;
     }).join('');
 
-    const histProd = invJuiceBatches.filter(b => b.product_name === product && !b.is_void)
-      .sort((a, b) => (b.inbound_date || '').localeCompare(a.inbound_date || ''));
-    const histRows = histProd.map(b =>
-      `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #F3F4F6">
-        <span style="color:#9CA3AF;width:70px;flex-shrink:0">${b.inbound_date || '-'}</span>
-        <span style="background:#DBEAFE;color:#1D4ED8;border-radius:4px;padding:0 5px;font-size:10px">입고</span>
-        <span style="color:#065F46;font-weight:600">+${fmtN(b.total_bottles)} 병</span>
-        ${b.note ? `<span style="color:#9CA3AF">${esc(b.note)}</span>` : ''}
-        ${b.remaining_bottles < b.total_bottles ? `<span style="color:#9CA3AF;font-size:10px">(잔여 ${fmtN(b.remaining_bottles)})</span>` : ''}
-      </div>`
-    ).join('');
+    const histInbound  = invJuiceBatches.filter(b => b.product_name === product && !b.is_void)
+      .map(b => ({ date: b.inbound_date || '', type: 'in', rec: b }));
+    const histOutbound = invJuiceOutbounds.filter(o => o.product === product)
+      .map(o => ({ date: o.date || '', type: 'out', rec: o }));
+    const histAll = [...histInbound, ...histOutbound].sort((a, b) => b.date.localeCompare(a.date));
+    const histRows = histAll.map(h => {
+      if (h.type === 'in') {
+        const b = h.rec;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #F3F4F6">
+          <span style="color:#9CA3AF;width:70px;flex-shrink:0">${b.inbound_date || '-'}</span>
+          <span style="background:#DBEAFE;color:#1D4ED8;border-radius:4px;padding:0 5px;font-size:10px">입고</span>
+          <span style="color:#065F46;font-weight:600">+${fmtN(b.total_bottles)} 병</span>
+          ${b.note ? `<span style="color:#9CA3AF">${esc(b.note)}</span>` : ''}
+          ${b.remaining_bottles < b.total_bottles ? `<span style="color:#9CA3AF;font-size:10px">(잔여 ${fmtN(b.remaining_bottles)})</span>` : ''}
+        </div>`;
+      } else {
+        const o = h.rec;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #F3F4F6">
+          <span style="color:#9CA3AF;width:70px;flex-shrink:0">${o.date || '-'}</span>
+          <span style="background:#FEE2E2;color:#DC2626;border-radius:4px;padding:0 5px;font-size:10px">출고</span>
+          <span style="color:#DC2626;font-weight:600">-${fmtN(o.quantity)} 병</span>
+          <span style="color:#6B7280">${esc(o.partner_name || '')}</span>
+          ${o.note ? `<span style="color:#9CA3AF">${esc(o.note)}</span>` : ''}
+        </div>`;
+      }
+    }).join('');
 
     return `${grpHdr}<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:8px">
       <div style="display:flex;align-items:center;padding:10px 14px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;gap:8px">
