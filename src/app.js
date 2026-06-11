@@ -4730,6 +4730,86 @@ async function savePachiOutbound(regId) {
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
 }
 
+function openUnsortedOutboundModal(inboundId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const r = inboundRecords.find(x => x.id === inboundId);
+  if (!r) return;
+  const remaining = getRemainingCT(r);
+  if (remaining <= 0) { alert('출고 가능한 잔여 재고가 없습니다.'); return; }
+
+  document.getElementById('ob-title').textContent = `📤 출고 — ${r.product} (${r.farm_name}) · 잔여 ${fmtCT(remaining)} CT`;
+  document.getElementById('ob-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
+          <input type="date" id="uob-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
+          <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고량 (CT) * <span style="color:#059669">잔여 ${fmtCT(remaining)} CT</span></label>
+        <input type="number" id="uob-qty" min="0" max="${remaining}" step="0.1" value="0"
+          onfocus="setTimeout(()=>this.select(),0)" oninput="obClampQty(this,${remaining})"
+          style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
+        <input type="text" id="uob-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="uob-save-btn" class="btn pri" onclick="saveUnsortedOutbound('${inboundId}')" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
+        <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+
+  window._unsortedOutboundCtx = { inboundId, remaining, r };
+  popOutboundPartners();
+  document.getElementById('modal-outbound').style.display = 'flex';
+}
+
+async function saveUnsortedOutbound(inboundId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ctx = window._unsortedOutboundCtx;
+  if (!ctx || ctx.inboundId !== inboundId) return;
+  const r = ctx.r;
+
+  const date    = document.getElementById('uob-date')?.value;
+  const partner = document.getElementById('ob-partner')?.value;
+  const note    = document.getElementById('uob-note')?.value?.trim() || null;
+  const qty     = parseFloat(document.getElementById('uob-qty')?.value) || 0;
+
+  if (!date)               return alert('출고일을 입력해주세요.');
+  if (!partner)            return alert('출고처를 선택해주세요.');
+  if (qty <= 0)            return alert('출고량을 입력해주세요.');
+  if (qty > ctx.remaining) return alert(`잔여 재고(${fmtCT(ctx.remaining)} CT)를 초과했습니다.`);
+
+  const btn = document.getElementById('uob-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
+
+  try {
+    await dbInsertOutboundRecord({
+      date, product: r.product, size_code: null, quantity: qty, unit: 'CT',
+      partner_name: partner, source_type: 'unsorted',
+      farm_name: r.farm_name || null, note, is_void: false,
+      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
+
+    const procRow = await dbInsertProcessing({
+      inbound_id: inboundId, date, process_type: '출고',
+      quantity: qty, note: note || null,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
+    processingRecords.push(procRow);
+
+    document.getElementById('modal-outbound').style.display = 'none';
+    showToast('출고 완료');
+    renderInboundList(); renderInvSummary();
+  } catch(e) { alert('출고 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
+}
+
 async function _execPachiDelete(regId) {
   const row = _pachiRowRegistry[regId];
   if (!row) return;
@@ -7919,6 +7999,7 @@ function renderInboundList() {
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
+         ${remaining > 0 ? `<button onclick="openUnsortedOutboundModal('${r.id}')">📤 출고</button>` : ''}
          <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
          <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
          <div class="menu-divider"></div>
