@@ -5925,19 +5925,14 @@ function renderInvSummary() {
     pachiDetail[p][_u] = (pachiDetail[p][_u] || 0) + (Number(r.quantity) || 0);
   });
 
-  // ── 섹션 5: 주스/청 재고
+  // ── 섹션 5: 주스/청 재고 (배치 기반)
   const juiceMap = {};
-  invJuiceRecs.forEach(r => {
-    const p = r.product_name || '기타';
-    if (!juiceMap[p]) juiceMap[p] = { net: 0, unit: r.unit || '병', perBox: null };
-    if (r.type === 'out') juiceMap[p].net -= Number(r.total_count) || 0;
-    else juiceMap[p].net += Number(r.total_count) || 0;
-    if (!juiceMap[p].perBox && r.per_box) juiceMap[p].perBox = r.per_box;
-  });
-  invJuice.forEach(r => {
-    const p = r.product || '기타';
-    if (!juiceMap[p]) juiceMap[p] = { net: 0, unit: r.unit || '병', perBox: null };
-    juiceMap[p].net += Number(r.total_qty) || 0;
+  invJuiceBatches.forEach(b => {
+    if (b.is_void || (b.remaining_bottles || 0) <= 0) return;
+    const p = b.product_name || '기타';
+    if (!juiceMap[p]) juiceMap[p] = { net: 0, unit: b.unit || '병', perBox: b.per_box || null };
+    juiceMap[p].net += Number(b.remaining_bottles) || 0;
+    if (!juiceMap[p].perBox && b.per_box) juiceMap[p].perBox = b.per_box;
   });
 
   // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준)
