@@ -4992,6 +4992,12 @@ function popOutboundPartners() {
     outP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
 }
 
+function obClampQty(el, maxQty) {
+  const v = parseFloat(el.value);
+  if (!isNaN(v) && v > maxQty) el.value = maxQty;
+  if (!isNaN(v) && v < 0) el.value = 0;
+}
+
 function obOutboundTotal() {
   const ctx = window._outboundCtx;
   if (!ctx) return;
@@ -5045,7 +5051,7 @@ function openOutboundModal(regId) {
             <div>
               <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}<br><span style="color:#059669;font-weight:600">${fmtCT(curQty[sz])}</span></label>
               <input type="number" id="ob-sz-${sz}" min="0" max="${curQty[sz]}" step="0.1" value="0"
-                onfocus="setTimeout(()=>this.select(),0)" oninput="obOutboundTotal()"
+                onfocus="setTimeout(()=>this.select(),0)" oninput="obClampQty(this,${curQty[sz]});obOutboundTotal()"
                 style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
             </div>`).join('')}
         </div>
