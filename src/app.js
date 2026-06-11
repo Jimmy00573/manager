@@ -35,6 +35,7 @@ let farms = [], drivers = [], dispatches = [], picks = [];
 let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [], invJuiceBatches = [];
+let juiceExpiryDays = 90;
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
 let inventoryRecords = [];
@@ -125,8 +126,9 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.inv-kebab') && !e.target.closest('#inv-row-menu')) _closeInvMenu();
   if (!e.target.closest('.pachi-kebab') && !e.target.closest('#pachi-row-menu')) _closePachiMenu();
   if (!e.target.closest('.juice-kebab') && !e.target.closest('#juice-row-menu')) _closeJuiceMenu();
+  if (!e.target.closest('.juice-batch-kebab') && !e.target.closest('#juice-batch-menu')) _closeJuiceBatchMenu();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceMenu(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceMenu(); _closeJuiceBatchMenu(); } });
 
 // ── 우선처리 기준 로드
 async function loadUrgencySettings() {
@@ -3333,6 +3335,10 @@ async function loadAndRenderInv() {
     invJuiceRecs = juiceRecs;
     invJuiceMasters = juiceMasters;
     invJuiceBatches = juiceBatches;
+    try {
+      const expiryRows = await sbGet('settings', 'key=eq.juice_expiry_days');
+      if (expiryRows && expiryRows[0]) juiceExpiryDays = parseInt(expiryRows[0].value) || 90;
+    } catch(e) {}
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
@@ -4950,6 +4956,102 @@ function _juiceMenuDelete() {
   deleteJuiceRecord(id, label);
 }
 function _closeJuiceMenu()  { const m = document.getElementById('juice-row-menu'); if (m) m.style.display = 'none'; _juiceMenuId = null; }
+
+let _juiceBatchMenuId = null;
+function toggleJuiceBatchMenu(id, btn) {
+  const menu = document.getElementById('juice-batch-menu');
+  if (!menu) return;
+  if (_juiceBatchMenuId === id && menu.style.display !== 'none') { menu.style.display = 'none'; _juiceBatchMenuId = null; return; }
+  _juiceBatchMenuId = id;
+  const rect = btn.getBoundingClientRect();
+  menu.style.display = 'block';
+  const mw = 140, mh = 110;
+  let left = rect.right - mw; if (left < 4) left = rect.left;
+  let top = rect.bottom + 4; if (top + mh > window.innerHeight) top = rect.top - mh - 4;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = top + 'px';
+}
+function _juiceBatchMenuEdit()     { const id = _juiceBatchMenuId; _closeJuiceBatchMenu(); openJuiceBatchEdit(id); }
+function _juiceBatchMenuOutbound() { const id = _juiceBatchMenuId; _closeJuiceBatchMenu(); openJuiceOutboundModal(id); }
+function _juiceBatchMenuDelete()   { const id = _juiceBatchMenuId; _closeJuiceBatchMenu(); deleteJuiceBatch(id); }
+function _closeJuiceBatchMenu()    { const m = document.getElementById('juice-batch-menu'); if (m) m.style.display = 'none'; _juiceBatchMenuId = null; }
+
+function openJuiceBatchEdit(id) {
+  const b = invJuiceBatches.find(x => x.id === id);
+  if (!b) return;
+  const modal = document.getElementById('modal-juice-edit');
+  const body  = document.getElementById('juice-edit-body');
+  if (!modal || !body) return;
+  body.innerHTML = `
+    <div style="padding:16px 20px">
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품명</label>
+        <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(b.product_name)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">입고일</label>
+          <input id="jbe-indate" type="date" value="${esc(b.inbound_date || '')}"
+            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">소비기한</label>
+          <input id="jbe-expiry" type="date" value="${esc(b.expiry_date || '')}"
+            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 병수</label>
+          <input id="jbe-remaining" type="number" min="0" value="${b.remaining_bottles || 0}"
+            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">비고</label>
+          <input id="jbe-note" type="text" value="${esc(b.note || '')}"
+            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+      </div>
+      <input type="hidden" id="jbe-id" value="${b.id}">
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn" onclick="document.getElementById('modal-juice-edit').style.display='none'">취소</button>
+        <button class="btn pri" onclick="saveJuiceBatchEdit()">저장</button>
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+}
+
+async function saveJuiceBatchEdit() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const id       = document.getElementById('jbe-id')?.value;
+  const indate   = document.getElementById('jbe-indate')?.value;
+  const expiry   = document.getElementById('jbe-expiry')?.value || null;
+  const remaining = parseFloat(document.getElementById('jbe-remaining')?.value) || 0;
+  const note     = document.getElementById('jbe-note')?.value?.trim() || null;
+  if (!id || !indate) return alert('입고일은 필수입니다.');
+  try {
+    await sbUpdate('juice_batches', id, { inbound_date: indate, expiry_date: expiry, remaining_bottles: remaining, note });
+    const rec = invJuiceBatches.find(x => x.id === id);
+    if (rec) { rec.inbound_date = indate; rec.expiry_date = expiry; rec.remaining_bottles = remaining; rec.note = note; }
+    document.getElementById('modal-juice-edit').style.display = 'none';
+    showToast('수정 완료');
+    renderJuiceSection(); renderInvSummary();
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deleteJuiceBatch(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const b = invJuiceBatches.find(x => x.id === id);
+  const label = b ? `${b.product_name} 입고 ${b.inbound_date} ${fmtN(b.total_bottles)}병` : '';
+  if (!confirm(`이 배치를 삭제하시겠습니까?\n${label}`)) return;
+  try {
+    await sbUpdate('juice_batches', id, { is_void: true });
+    const rec = invJuiceBatches.find(x => x.id === id);
+    if (rec) rec.is_void = true;
+    showToast('삭제 완료');
+    renderJuiceSection(); renderInvSummary();
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+function openJuiceOutboundModal(id) {
+  alert('출고 기능은 4단계에서 구현됩니다.');
+}
+
+function toggleJuiceHistory(productKey) {
+  const el = document.getElementById('juice-history-' + productKey);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
 
 function openJuiceEditModal(id) {
   const rec = invJuiceRecs.find(r => r.id === id);
@@ -10264,104 +10366,110 @@ function renderJuiceSection() {
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
-  // 품목별 재고 계산 (입고 - 출고)
-  const stockMap = {};
-  invJuiceRecs.forEach(r => {
-    const p = r.product_name || '기타';
-    if (!stockMap[p]) stockMap[p] = { inTotal: 0, outTotal: 0, unit: r.unit || '병' };
-    const qty = Number(r.total_count) || 0;
-    if (r.type === 'out') stockMap[p].outTotal += qty;
-    else stockMap[p].inTotal += qty;
+  // 배치 기반 재고 표시
+  const isCheong = name => (name || '').trim().endsWith('청');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const activeBatches = invJuiceBatches.filter(b => !b.is_void && b.remaining_bottles > 0);
+
+  const productMap = {};
+  activeBatches.forEach(b => {
+    const p = b.product_name || '기타';
+    if (!productMap[p]) productMap[p] = [];
+    productMap[p].push(b);
   });
 
-  const isCheong = name => (name || '').trim().endsWith('청');
-  const juiceSortCmp = ([a], [b]) => {
+  const productKeys = Object.keys(productMap).sort((a, b) => {
     const ca = isCheong(a) ? 1 : 0, cb = isCheong(b) ? 1 : 0;
     if (ca !== cb) return ca - cb;
     return a.localeCompare(b, 'ko');
+  });
+
+  const juiceEntries  = productKeys.filter(p => !isCheong(p)).map(p => [p, productMap[p]]);
+  const cheongEntries = productKeys.filter(p =>  isCheong(p)).map(p => [p, productMap[p]]);
+
+  const expiryDisplay = expiry => {
+    if (!expiry) return `<span style="font-size:11px;color:#9CA3AF">기한없음</span>`;
+    const dleft = Math.ceil((new Date(expiry + 'T00:00:00') - today) / 86400000);
+    if (dleft < 0)
+      return `<span style="background:#DC2626;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px">만료</span> <span style="font-size:11px;color:#DC2626">${expiry.slice(5)}</span>`;
+    if (dleft <= juiceExpiryDays)
+      return `<span style="background:#FEE2E2;color:#DC2626;font-size:10px;padding:1px 5px;border-radius:4px;white-space:nowrap">유통 ${expiry.slice(5)} 임박</span>`;
+    return `<span style="font-size:11px;color:#6B7280">${expiry}</span>`;
   };
 
-  const entries = Object.entries(stockMap);
-  const juiceCards  = entries.filter(([p]) => !isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  const cheongCards = entries.filter(([p]) =>  isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  const cardOf = ([p, v]) => {
-    const stock = v.inTotal - v.outTotal;
-    const isNeg = stock < 0;
-    return `<div style="background:${isNeg ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${isNeg ? '#FECACA' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:130px">
+  const statsCardOf = ([p, batches]) => {
+    const total = batches.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
+    return `<div style="background:#F0FFF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;min-width:120px">
       <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-      <div style="font-size:18px;font-weight:700;color:${isNeg ? '#DC2626' : '#065F46'}">${fmtN(stock)} ${esc(v.unit)}</div>
-      <div style="font-size:11px;color:#999;margin-top:2px">입고 ${fmtN(v.inTotal)} / 출고 ${fmtN(v.outTotal)}</div>
-      ${isNeg ? '<div style="font-size:11px;color:#DC2626;font-weight:600">⚠ 재고 부족</div>' : ''}
+      <div style="font-size:18px;font-weight:700;color:#065F46">${fmtN(total)} 병</div>
+      <div style="font-size:11px;color:#999;margin-top:2px">${batches.length}배치</div>
     </div>`;
   };
-  const groupBlock = (label, cards) => cards.length
+  const groupBlockOf = (label, entries) => entries.length
     ? `<div style="margin-bottom:10px">
          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">${label}</div>
-         <div style="display:flex;flex-wrap:wrap;gap:8px">${cards.map(cardOf).join('')}</div>
-       </div>`
-    : '';
-  const statsHtml = entries.length
-    ? groupBlock('🧃 주스', juiceCards) + groupBlock('🍯 청', cheongCards)
-    : `<span style="font-size:13px;color:#aaa">주스/청 기록 없음</span>`;
+         <div style="display:flex;flex-wrap:wrap;gap:8px">${entries.map(statsCardOf).join('')}</div>
+       </div>` : '';
 
-  // 품목별 그룹화 (주스→청, 가나다, 날짜 최신순)
-  const sortedRecs = [...invJuiceRecs].sort((a, b) => {
-    const ca = isCheong(a.product_name) ? 1 : 0, cb = isCheong(b.product_name) ? 1 : 0;
-    if (ca !== cb) return ca - cb;
-    const pc = (a.product_name || '').localeCompare(b.product_name || '', 'ko');
-    return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
-  });
-  const jGroups = {}, jGroupOrder = [];
-  sortedRecs.forEach(r => {
-    const p = r.product_name || '기타';
-    if (!jGroups[p]) { jGroups[p] = []; jGroupOrder.push(p); }
-    jGroups[p].push(r);
-  });
+  const statsHtml = productKeys.length
+    ? groupBlockOf('🧃 주스', juiceEntries) + groupBlockOf('🍯 청', cheongEntries)
+    : `<span style="font-size:13px;color:#aaa">주스·청 재고 없음</span>`;
 
-  let _juiceCurrentGroup = null;
-  const groupedRowsHtml = jGroupOrder.map(product => {
+  let _lastJuiceGroup = null;
+  const batchSectionHtml = productKeys.map(product => {
+    const sorted = [...productMap[product]].sort((a, b) => {
+      if (!a.expiry_date && !b.expiry_date) return 0;
+      if (!a.expiry_date) return 1; if (!b.expiry_date) return -1;
+      return a.expiry_date.localeCompare(b.expiry_date);
+    });
+    const totalRemaining = sorted.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
     const thisGroup = isCheong(product) ? 'cheong' : 'juice';
-    let grpHeader = '';
-    if (thisGroup !== _juiceCurrentGroup) {
-      _juiceCurrentGroup = thisGroup;
-      const grpLabel = thisGroup === 'cheong' ? '🍯 청' : '🧃 주스';
-      grpHeader = `<tr><td colspan="${isAdm ? 10 : 9}" style="background:#F9FAFB;font-weight:600;font-size:12px;color:#374151;padding:6px 8px">${grpLabel}</td></tr>`;
+    let grpHdr = '';
+    if (thisGroup !== _lastJuiceGroup) {
+      _lastJuiceGroup = thisGroup;
+      grpHdr = `<div style="font-size:12px;font-weight:600;color:#374151;padding:6px 0 4px;margin-top:4px">${thisGroup === 'cheong' ? '🍯 청' : '🧃 주스'}</div>`;
     }
-    const rows = jGroups[product];
-    const gIn  = rows.filter(r => r.type !== 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
-    const gOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + (Number(r.total_count) || 0), 0);
-    const unit = rows[0]?.unit || '병';
-    const headerHtml = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
-      <td colspan="${isAdm ? 10 : 9}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
-        [ ${esc(product)} ] &nbsp;&nbsp;
-        <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
-        <span style="color:#1D4ED8">입고 ${fmtN(gIn)}</span> / <span style="color:#DC2626">출고 ${fmtN(gOut)}</span>
-        &nbsp;→&nbsp; <span style="color:#065F46;font-weight:600">재고 ${fmtN(gIn - gOut)} ${esc(unit)}</span>
-      </td>
-    </tr>`;
-    const dataRows = rows.map(r => {
-      const isOut = r.type === 'out';
-      const badge = isOut
-        ? `<span style="background:#FEE2E2;color:#DC2626;border-radius:10px;padding:2px 7px;font-size:11px">출고</span>`
-        : `<span style="background:#DBEAFE;color:#1D4ED8;border-radius:10px;padding:2px 7px;font-size:11px">입고</span>`;
-      const rowBg = isOut ? 'background:#FAFAFA' : '';
-      return `<tr style="${rowBg}">
-        <td style="padding:7px 10px;white-space:nowrap;font-size:13px;color:#555">${r.date || '-'}</td>
-        <td style="padding:7px 10px;font-size:13px">${esc(r.product_name)}</td>
-        <td style="padding:7px 10px;text-align:center">${badge}</td>
-        <td style="padding:7px 10px;text-align:right;font-size:13px">${r.box_count || 0}</td>
-        <td style="padding:7px 10px;text-align:right;font-size:13px">${r.loose_count || 0}</td>
-        <td style="padding:7px 10px;text-align:right;font-weight:600;color:${isOut ? '#DC2626' : '#065F46'}">${isOut ? '-' : ''}${fmtN(Number(r.total_count) || 0)}</td>
-        <td style="padding:7px 10px;font-size:13px">${esc(r.unit)}</td>
-        <td style="padding:7px 10px;font-size:12px;color:#666">${r.expiry_date || '-'}</td>
-        <td style="padding:7px 10px;font-size:12px;color:#888">${esc(r.note || '-')}</td>
-        ${isAdm ? `<td style="padding:4px 8px;text-align:center">
-          <button class="juice-kebab" onclick="toggleJuiceRowMenu('${r.id}',this)"
-            style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit"
-            title="메뉴">⋮</button></td>` : ''}
+    const productKey = product.replace(/[^a-zA-Z0-9가-힣]/g, '_');
+    const batchRows = sorted.map(b => {
+      const dl = b.expiry_date ? Math.ceil((new Date(b.expiry_date + 'T00:00:00') - today) / 86400000) : null;
+      const trBg = dl !== null && dl < 0 ? 'background:#FEF2F2' : dl !== null && dl <= juiceExpiryDays ? 'background:#FFF7F7' : '';
+      return `<tr style="${trBg}">
+        <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
+        <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> 병</span></td>
+        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">박스 ${fmtN(b.box_count)}×${b.per_box || 0}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF">${esc(b.note || '')}</td>
+        ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px">
+          <button class="juice-batch-kebab" onclick="toggleJuiceBatchMenu('${b.id}',this)"
+            style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:3px 7px;border-radius:4px;line-height:1" title="메뉴">⋮</button></td>` : ''}
       </tr>`;
     }).join('');
-    return grpHeader + headerHtml + dataRows;
+
+    const histProd = invJuiceBatches.filter(b => b.product_name === product && !b.is_void)
+      .sort((a, b) => (b.inbound_date || '').localeCompare(a.inbound_date || ''));
+    const histRows = histProd.map(b =>
+      `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #F3F4F6">
+        <span style="color:#9CA3AF;width:70px;flex-shrink:0">${b.inbound_date || '-'}</span>
+        <span style="background:#DBEAFE;color:#1D4ED8;border-radius:4px;padding:0 5px;font-size:10px">입고</span>
+        <span style="color:#065F46;font-weight:600">+${fmtN(b.total_bottles)} 병</span>
+        ${b.note ? `<span style="color:#9CA3AF">${esc(b.note)}</span>` : ''}
+        ${b.remaining_bottles < b.total_bottles ? `<span style="color:#9CA3AF;font-size:10px">(잔여 ${fmtN(b.remaining_bottles)})</span>` : ''}
+      </div>`
+    ).join('');
+
+    return `${grpHdr}<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:8px">
+      <div style="display:flex;align-items:center;padding:10px 14px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;gap:8px">
+        <span style="font-size:13px;font-weight:700;color:#111827;flex:1">${esc(product)}</span>
+        <span style="font-size:13px;font-weight:600;color:#065F46">${fmtN(totalRemaining)} 병</span>
+        <button onclick="toggleJuiceHistory('${productKey}')"
+          style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse"><tbody>${batchRows}</tbody></table>
+      <div id="juice-history-${productKey}" style="display:none;padding:10px 14px;background:#FAFAFA;border-top:1px solid #F3F4F6">
+        <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px">입출고 이력</div>
+        ${histRows || '<div style="font-size:12px;color:#9CA3AF">이력 없음</div>'}
+      </div>
+    </div>`;
   }).join('');
 
   const masterOpts = invJuiceMasters.map(m =>
@@ -10409,27 +10517,13 @@ function renderJuiceSection() {
   el.innerHTML = `
     <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB">
-        <div style="font-size:14px;font-weight:700;color:#222">주스/청 내역</div>
+        <div style="font-size:14px;font-weight:700;color:#222">주스·청 재고 현황</div>
       </div>
       <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
         <div>${statsHtml}</div>
       </div>
-      <div class="tbl-wrap">
-        <table style="min-width:640px;width:100%;border-collapse:collapse">
-          <thead><tr style="background:#F9FAFB">
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">품명</th>
-            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">구분</th>
-            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">박스</th>
-            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">낱개</th>
-            <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">총수량</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">단위</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">소비기한</th>
-            <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">비고</th>
-            ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
-          </tr></thead>
-          <tbody>${groupedRowsHtml || `<tr><td colspan="${isAdm ? 10 : 9}" class="empty">주스/청 기록 없음</td></tr>`}</tbody>
-        </table>
+      <div style="padding:12px 16px">
+        ${batchSectionHtml || '<div style="text-align:center;color:#9CA3AF;font-size:13px;padding:24px">주스·청 재고 없음</div>'}
       </div>
       ${formHtml}
     </div>`;

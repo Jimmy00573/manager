@@ -1154,6 +1154,12 @@
   <div class="inv-menu-item" onclick="_juiceMenuDelete()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#DC2626">🗑️ 삭제</div>
 </div>
 
+<div id="juice-batch-menu" style="display:none;position:fixed;z-index:9000;background:#fff;border:1px solid #E5E7EB;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:130px;overflow:hidden">
+  <div class="inv-menu-item" onclick="_juiceBatchMenuEdit()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">✏️ 수정</div>
+  <div class="inv-menu-item" onclick="_juiceBatchMenuOutbound()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">📤 출고</div>
+  <div class="inv-menu-item" onclick="_juiceBatchMenuDelete()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#DC2626">🗑️ 삭제</div>
+</div>
+
 <!-- 모달: 출고 -->
 <div id="modal-outbound" class="modal-bg" style="display:none" onclick="if(event.target===this)document.getElementById('modal-outbound').style.display='none'">
   <div class="modal" style="max-width:560px;width:95%">
@@ -1690,6 +1696,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=13"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=136"></script>
+<script src="src/app.js?v=137"></script>
 </body>
 </html>
