@@ -4613,9 +4613,10 @@ function toggleInvRowMenu(regId, btn) {
   menu.style.top = top + 'px';
 }
 
-function _invMenuEdit()   { const id = _invMenuRegId; _closeInvMenu(); openInvEditModal(id); }
-function _invMenuDelete() { const id = _invMenuRegId; _closeInvMenu(); deleteMatrixBatch(id); }
-function _closeInvMenu()  { const m = document.getElementById('inv-row-menu'); if (m) m.style.display = 'none'; _invMenuRegId = null; }
+function _invMenuEdit()      { const id = _invMenuRegId; _closeInvMenu(); openInvEditModal(id); }
+function _invMenuOutbound() { const id = _invMenuRegId; _closeInvMenu(); openOutboundModal(id); }
+function _invMenuDelete()   { const id = _invMenuRegId; _closeInvMenu(); deleteMatrixBatch(id); }
+function _closeInvMenu()    { const m = document.getElementById('inv-row-menu'); if (m) m.style.display = 'none'; _invMenuRegId = null; }
 
 // ── 파치 kebab 메뉴
 let _pachiRowRegistry = {};
@@ -4979,6 +4980,163 @@ async function saveInvEdit() {
     showToast('재고 수정 완료');
   } catch(e) { alert('저장 오류: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; } }
+}
+
+// ── 출고 기능 ──────────────────────────────────────────────────
+
+function popOutboundPartners() {
+  const el = document.getElementById('ob-partner');
+  if (!el) return;
+  const outP = partners.filter(p => p.is_active !== false && (p.usage === 'out' || p.usage === 'both' || !p.usage));
+  el.innerHTML = '<option value="">선택</option>' +
+    outP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+}
+
+function obOutboundTotal() {
+  const ctx = window._outboundCtx;
+  if (!ctx) return;
+  let total = 0;
+  ctx.allSizes.forEach(sz => {
+    const el = document.getElementById(`ob-sz-${sz}`);
+    if (el) total += parseFloat(el.value) || 0;
+  });
+  const el = document.getElementById('ob-total-display');
+  if (el) el.textContent = fmtCT(total) + ' CT';
+}
+
+function openOutboundModal(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info) return;
+
+  const gid = String(info.groupId);
+  let batchRecs;
+  if (gid.startsWith('manual_')) {
+    const date = gid.replace('manual_', '');
+    batchRecs = inventoryRecords.filter(r =>
+      r.farm_name === info.farm && r.date === date && r.product === info.product &&
+      r.source_type !== 'pachi' && r.source_type !== 'pachi_manual' && !r.is_void
+    );
+  } else {
+    batchRecs = inventoryRecords.filter(r =>
+      String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void
+    );
+  }
+
+  const groups = getSizeGroupsFor(info.product);
+  const allSizes = groups.flatMap(g => g.sizes);
+
+  const curQty = {};
+  allSizes.forEach(sz => curQty[sz] = 0);
+  batchRecs.forEach(r => { if (r.size_code) curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+
+  if (allSizes.every(sz => curQty[sz] === 0)) { alert('출고 가능한 재고가 없습니다.'); return; }
+
+  const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
+
+  const sizeRows = groups.map(g => {
+    const groupSizes = g.sizes.filter(sz => curQty[sz] > 0);
+    if (!groupSizes.length) return '';
+    return `
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px;background:#F3F4F6;padding:3px 8px;border-radius:4px">${esc(g.group)}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px">
+          ${groupSizes.map(sz => `
+            <div>
+              <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}<br><span style="color:#059669;font-weight:600">${fmtCT(curQty[sz])}</span></label>
+              <input type="number" id="ob-sz-${sz}" min="0" max="${curQty[sz]}" step="0.1" value="0"
+                onfocus="setTimeout(()=>this.select(),0)" oninput="obOutboundTotal()"
+                style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('ob-title').textContent = `📤 출고 — ${info.product} (${info.farm} · ${_fmtInvDate(dateLabel) || ''})`;
+  document.getElementById('ob-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
+          <input type="date" id="ob-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
+          <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
+        <input type="text" id="ob-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 출고량 (현재고 / CT)</div>
+      ${sizeRows}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #E5E7EB;margin-top:8px;margin-bottom:12px">
+        <span style="font-size:13px;color:#6B7280">출고 합계</span>
+        <span id="ob-total-display" style="font-size:15px;font-weight:700;color:#1565C0">0 CT</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="ob-save-btn" class="btn pri" onclick="saveOutbound(${regId})" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
+        <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+
+  window._outboundCtx = { regId, batchRecs, allSizes, curQty, info };
+  popOutboundPartners();
+  document.getElementById('modal-outbound').style.display = 'flex';
+}
+
+async function saveOutbound(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ctx = window._outboundCtx;
+  if (!ctx || ctx.regId !== regId) return;
+  const { batchRecs, allSizes, curQty, info } = ctx;
+
+  const date    = document.getElementById('ob-date')?.value;
+  const partner = document.getElementById('ob-partner')?.value;
+  const note    = document.getElementById('ob-note')?.value?.trim() || null;
+  if (!date)    return alert('출고일을 입력해주세요.');
+  if (!partner) return alert('출고처를 선택해주세요.');
+
+  const outQty = {};
+  allSizes.forEach(sz => { outQty[sz] = parseFloat(document.getElementById(`ob-sz-${sz}`)?.value) || 0; });
+
+  const outSizes = allSizes.filter(sz => outQty[sz] > 0);
+  if (!outSizes.length) return alert('출고 수량을 입력해주세요.');
+
+  for (const sz of outSizes) {
+    if (outQty[sz] > curQty[sz]) return alert(`${sz} 현재고(${fmtCT(curQty[sz])} CT) 초과입니다.`);
+  }
+
+  const btn = document.getElementById('ob-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
+
+  try {
+    for (const sz of outSizes) {
+      await dbInsertOutboundRecord({
+        date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
+        partner_name: partner, source_type: 'sorting',
+        farm_name: info.farm, note, is_void: false,
+        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      });
+
+      let remaining = outQty[sz];
+      const sizeRecs = batchRecs.filter(r => r.size_code === sz && !r.is_void);
+      for (const rec of sizeRecs) {
+        if (remaining <= 0) break;
+        const take   = Math.min(rec.quantity, remaining);
+        const newQty = Math.max(0, rec.quantity - take);
+        await sbUpdate('inventory_records', rec.id, { quantity: newQty });
+        rec.quantity = newQty;
+        const inv = inventoryRecords.find(r => r.id === rec.id);
+        if (inv) inv.quantity = newQty;
+        remaining -= take;
+      }
+    }
+
+    document.getElementById('modal-outbound').style.display = 'none';
+    showToast('출고 완료');
+    await loadAndRenderInv();
+  } catch(e) { alert('출고 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
 }
 
 // ── 매트릭스 셀 인라인 편집 ──────────────────────────────────────

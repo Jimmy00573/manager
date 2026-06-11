@@ -1137,6 +1137,7 @@
 <!-- 재고 매트릭스 kebab 드롭다운 -->
 <div id="inv-row-menu" style="display:none;position:fixed;z-index:9000;background:#fff;border:1px solid #E5E7EB;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:120px;overflow:hidden">
   <div class="inv-menu-item" onclick="_invMenuEdit()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">✏️ 수정</div>
+  <div class="inv-menu-item" onclick="_invMenuOutbound()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#2563EB">📤 출고</div>
   <div class="inv-menu-item" onclick="_invMenuDelete()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#DC2626">🗑️ 삭제</div>
 </div>
 
@@ -1150,6 +1151,17 @@
 <div id="juice-row-menu" style="display:none;position:fixed;z-index:9000;background:#fff;border:1px solid #E5E7EB;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:120px;overflow:hidden">
   <div class="inv-menu-item" onclick="_juiceMenuEdit()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">✏️ 수정</div>
   <div class="inv-menu-item" onclick="_juiceMenuDelete()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#DC2626">🗑️ 삭제</div>
+</div>
+
+<!-- 모달: 출고 -->
+<div id="modal-outbound" class="modal-bg" style="display:none" onclick="if(event.target===this)document.getElementById('modal-outbound').style.display='none'">
+  <div class="modal" style="max-width:560px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title" id="ob-title">📤 출고</div>
+      <button class="modal-close" onclick="document.getElementById('modal-outbound').style.display='none'">✕</button>
+    </div>
+    <div id="ob-body"></div>
+  </div>
 </div>
 
 <!-- 모달: 재고 수정 -->
@@ -1677,6 +1689,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=12"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=125"></script>
+<script src="src/app.js?v=126"></script>
 </body>
 </html>

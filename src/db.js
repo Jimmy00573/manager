@@ -246,6 +246,7 @@ async function dbGetInventoryRecords() {
   catch(e) { return []; }
 }
 async function dbInsertInventoryRecord(data) { const r = await sbInsert('inventory_records', data); return r[0]; }
+async function dbInsertOutboundRecord(data) { const r = await sbInsert('outbound_records', data); return r[0]; }
 async function dbUpdateInventoryRecord(id, data) { const r = await sbUpdate('inventory_records', id, data); return r[0]; }
 async function dbDeleteInventoryRecord(id) { return sbDelete('inventory_records', id); }
 
