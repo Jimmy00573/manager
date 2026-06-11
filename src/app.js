@@ -5227,7 +5227,7 @@ async function saveOutbound(regId) {
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
-    await loadAndRenderInv();
+    renderInventoryStatus(); renderInvSummary();
   } catch(e) { alert('출고 오류: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
 }
