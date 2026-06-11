@@ -4716,14 +4716,16 @@ async function savePachiOutbound(regId) {
       if (!rec) continue;
       const take   = Math.min(Number(rec.quantity) || 0, remaining);
       const newQty = Math.max(0, (Number(rec.quantity) || 0) - take);
-      await sbUpdate('inventory_records', id, { quantity: newQty });
+      const patch  = newQty <= 0 ? { quantity: 0, is_void: true } : { quantity: newQty };
+      await sbUpdate('inventory_records', id, patch);
       rec.quantity = newQty;
+      if (newQty <= 0) rec.is_void = true;
       remaining -= take;
     }
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
-    await loadAndRenderInv();
+    renderInvSummary(); renderPachiSection();
   } catch(e) { alert('출고 오류: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
 }
@@ -5214,10 +5216,11 @@ async function saveOutbound(regId) {
         if (remaining <= 0) break;
         const take   = Math.min(rec.quantity, remaining);
         const newQty = Math.max(0, rec.quantity - take);
-        await sbUpdate('inventory_records', rec.id, { quantity: newQty });
+        const patch  = newQty <= 0 ? { quantity: 0, is_void: true } : { quantity: newQty };
+        await sbUpdate('inventory_records', rec.id, patch);
         rec.quantity = newQty;
         const inv = inventoryRecords.find(r => r.id === rec.id);
-        if (inv) inv.quantity = newQty;
+        if (inv) { inv.quantity = newQty; if (newQty <= 0) inv.is_void = true; }
         remaining -= take;
       }
     }
