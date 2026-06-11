@@ -4715,26 +4715,29 @@ async function savePachiOutbound(regId) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
-    await dbInsertOutboundRecord({
-      date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
-      partner_name: partner, source_type: 'pachi',
-      farm_name: row.farm || null, note, is_void: false,
-      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
-    });
-
     let remaining = qty;
+    const detail = [];
     for (const id of row.ids) {
       if (remaining <= 0) break;
       const rec = inventoryRecords.find(r => String(r.id) === String(id) && !r.is_void);
       if (!rec) continue;
       const take   = Math.min(Number(rec.quantity) || 0, remaining);
       const newQty = Math.max(0, (Number(rec.quantity) || 0) - take);
-      const patch  = newQty <= 0 ? { quantity: 0, is_void: true } : { quantity: newQty };
+      const voided = newQty <= 0;
+      const patch  = voided ? { quantity: 0, is_void: true } : { quantity: newQty };
       await sbUpdate('inventory_records', id, patch);
       rec.quantity = newQty;
-      if (newQty <= 0) rec.is_void = true;
+      if (voided) rec.is_void = true;
+      if (take > 0) detail.push({ table: 'inventory_records', id, amount: take, voided });
       remaining -= take;
     }
+    await dbInsertOutboundRecord({
+      date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
+      partner_name: partner, source_type: 'pachi',
+      farm_name: row.farm || null, note, is_void: false,
+      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      ref_detail: detail
+    });
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
@@ -4802,19 +4805,21 @@ async function saveUnsortedOutbound(inboundId) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
-    await dbInsertOutboundRecord({
-      date, product: r.product, size_code: null, quantity: qty, unit: 'CT',
-      partner_name: partner, source_type: 'unsorted',
-      farm_name: r.farm_name || null, note, is_void: false,
-      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
-    });
-
     const procRow = await dbInsertProcessing({
       inbound_id: inboundId, date, process_type: '출고',
       quantity: qty, note: note || null,
       staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     processingRecords.push(procRow);
+
+    const procId = procRow?.id;
+    await dbInsertOutboundRecord({
+      date, product: r.product, size_code: null, quantity: qty, unit: 'CT',
+      partner_name: partner, source_type: 'unsorted',
+      farm_name: r.farm_name || null, note, is_void: false,
+      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      ref_detail: procId ? [{ table: 'processing_records', id: procId }] : []
+    });
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
@@ -5119,20 +5124,22 @@ async function saveJuiceOutbound(id) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
+    const newRem = b.remaining_bottles - qty;
+    const voided = newRem <= 0;
+    const patch  = voided ? { remaining_bottles: 0, is_void: true } : { remaining_bottles: newRem };
+    await sbUpdate('juice_batches', b.id, patch);
+    b.remaining_bottles = newRem;
+    if (voided) b.is_void = true;
+
     const row = await dbInsertOutboundRecord({
       date, product: b.product_name, size_code: null, quantity: qty, unit: '병',
       partner_name: partner, source_type: 'juice',
       inventory_ref_id: b.id, box_count: box || null,
       expiry_date: b.expiry_date || null,
-      farm_name: null, note, is_void: false, created_by: adm
+      farm_name: null, note, is_void: false, created_by: adm,
+      ref_detail: [{ table: 'juice_batches', id: b.id, amount: qty, voided }]
     });
     invJuiceOutbounds.unshift(row);
-
-    const newRem = b.remaining_bottles - qty;
-    const patch  = newRem <= 0 ? { remaining_bottles: 0, is_void: true } : { remaining_bottles: newRem };
-    await sbUpdate('juice_batches', b.id, patch);
-    b.remaining_bottles = newRem;
-    if (newRem <= 0) b.is_void = true;
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
@@ -5406,26 +5413,29 @@ async function saveOutbound(regId) {
 
   try {
     for (const sz of outSizes) {
-      await dbInsertOutboundRecord({
-        date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
-        partner_name: partner, source_type: 'sorting',
-        farm_name: info.farm, note, is_void: false,
-        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
-      });
-
       let remaining = outQty[sz];
       const sizeRecs = batchRecs.filter(r => r.size_code === sz && !r.is_void);
+      const detail = [];
       for (const rec of sizeRecs) {
         if (remaining <= 0) break;
         const take   = Math.min(rec.quantity, remaining);
         const newQty = Math.max(0, rec.quantity - take);
-        const patch  = newQty <= 0 ? { quantity: 0, is_void: true } : { quantity: newQty };
+        const voided = newQty <= 0;
+        const patch  = voided ? { quantity: 0, is_void: true } : { quantity: newQty };
         await sbUpdate('inventory_records', rec.id, patch);
         rec.quantity = newQty;
         const inv = inventoryRecords.find(r => r.id === rec.id);
-        if (inv) { inv.quantity = newQty; if (newQty <= 0) inv.is_void = true; }
+        if (inv) { inv.quantity = newQty; if (voided) inv.is_void = true; }
+        if (take > 0) detail.push({ table: 'inventory_records', id: rec.id, amount: take, voided });
         remaining -= take;
       }
+      await dbInsertOutboundRecord({
+        date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
+        partner_name: partner, source_type: 'sorting',
+        farm_name: info.farm, note, is_void: false,
+        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+        ref_detail: detail
+      });
     }
 
     document.getElementById('modal-outbound').style.display = 'none';
