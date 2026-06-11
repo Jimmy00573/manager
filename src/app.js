@@ -8606,6 +8606,10 @@ let _editInboundId = null;
 function editInboundRow(id) {
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
+  if (r.inbound_category === '선과품') {
+    alert('선과품 입고는 현재 수정 기능이 없습니다.\n수정이 필요하면 이 입고를 삭제 후 다시 등록해 주세요.\n(삭제 시 연결된 선과품 재고도 함께 정리됩니다.)');
+    return;
+  }
   _editInboundId = id;
   const processed = getProcessedForInbound(id);
 
