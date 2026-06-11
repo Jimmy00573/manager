@@ -9941,6 +9941,7 @@ function renderPachiSection() {
       ? `<span style="background:#F5F5F5;color:#999;border-radius:10px;padding:2px 7px;font-size:11px">미분류</span>`
       : `<span style="background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:2px 7px;font-size:11px">${esc(usageLabel)}</span>`;
     const idsAttr = !r.isLegacy ? `data-pachi-ids="${r.ids.join(',')}"` : '';
+    const excluded = !isIncluded(r.usage);
     const ctCell = `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
     const memoCell = `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
     const kebabCell = isAdm
@@ -9949,7 +9950,8 @@ function renderPachiSection() {
             style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit"
             title="메뉴">⋮</button></td>`
       : '';
-    return `<tr ${idsAttr}>
+    const excludedBadge = excluded ? `<span style="font-size:10px;color:#9CA3AF;background:#F3F4F6;padding:1px 5px;border-radius:4px;margin-left:4px">재고제외</span>` : '';
+    return `<tr ${idsAttr} style="${excluded ? 'opacity:0.55;background:#FCFCFC' : ''}">
       <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
       <td style="padding:7px 10px;font-size:12px;color:#aaa"></td>
@@ -9957,7 +9959,7 @@ function renderPachiSection() {
       <td style="padding:7px 10px;text-align:right;color:#666;font-size:13px">${fmtN(r.kg)}</td>
       <td style="padding:7px 10px;text-align:center">${badge}</td>
       <td style="padding:7px 10px;text-align:center">${kindBadge}</td>
-      <td style="padding:7px 10px;text-align:center">${usageBadge}</td>
+      <td style="padding:7px 10px;text-align:center">${usageBadge}${excludedBadge}</td>
       <td style="padding:7px 10px;font-size:12px;color:#666">${r.location ? esc(r.location) : '<span style="color:#ccc">-</span>'}</td>
       ${memoCell}
       ${kebabCell}
