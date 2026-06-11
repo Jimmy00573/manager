@@ -4640,9 +4640,93 @@ function togglePachiRowMenu(regId, btn) {
   menu.style.left = Math.max(4, left) + 'px';
   menu.style.top = top + 'px';
 }
-function _pachiMenuEdit()   { const id = _pachiMenuRegId; _closePachiMenu(); openPachiEditModal(id); }
-function _pachiMenuDelete() { const id = _pachiMenuRegId; _closePachiMenu(); _execPachiDelete(id); }
-function _closePachiMenu()  { const m = document.getElementById('pachi-row-menu'); if (m) m.style.display = 'none'; _pachiMenuRegId = null; }
+function _pachiMenuEdit()      { const id = _pachiMenuRegId; _closePachiMenu(); openPachiEditModal(id); }
+function _pachiMenuOutbound() { const id = _pachiMenuRegId; _closePachiMenu(); openPachiOutboundModal(id); }
+function _pachiMenuDelete()   { const id = _pachiMenuRegId; _closePachiMenu(); _execPachiDelete(id); }
+function _closePachiMenu()    { const m = document.getElementById('pachi-row-menu'); if (m) m.style.display = 'none'; _pachiMenuRegId = null; }
+
+function openPachiOutboundModal(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const row = _pachiRowRegistry[regId];
+  if (!row || row.ct <= 0) { alert('출고 가능한 재고가 없습니다.'); return; }
+
+  document.getElementById('ob-title').textContent = `📤 출고 — 파치 ${row.product}${row.usage && row.usage !== '미분류' ? ' (' + row.usage + ')' : ''}${row.farm ? ' · ' + row.farm : ''} · 현재고 ${fmtCT(row.ct)} CT`;
+  document.getElementById('ob-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
+          <input type="date" id="pob-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
+          <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고량 (CT) * <span style="color:#059669">현재고 ${fmtCT(row.ct)} CT</span></label>
+        <input type="number" id="pob-qty" min="0" max="${row.ct}" step="0.1" value="0"
+          onfocus="setTimeout(()=>this.select(),0)" oninput="obClampQty(this,${row.ct})"
+          style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
+        <input type="text" id="pob-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="pob-save-btn" class="btn pri" onclick="savePachiOutbound(${regId})" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
+        <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+
+  window._pachiOutboundCtx = { regId, row };
+  popOutboundPartners();
+  document.getElementById('modal-outbound').style.display = 'flex';
+}
+
+async function savePachiOutbound(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ctx = window._pachiOutboundCtx;
+  if (!ctx || ctx.regId !== regId) return;
+  const row = ctx.row;
+
+  const date    = document.getElementById('pob-date')?.value;
+  const partner = document.getElementById('ob-partner')?.value;
+  const note    = document.getElementById('pob-note')?.value?.trim() || null;
+  const qty     = parseFloat(document.getElementById('pob-qty')?.value) || 0;
+
+  if (!date)       return alert('출고일을 입력해주세요.');
+  if (!partner)    return alert('출고처를 선택해주세요.');
+  if (qty <= 0)    return alert('출고량을 입력해주세요.');
+  if (qty > row.ct) return alert(`현재고(${fmtCT(row.ct)} CT)를 초과했습니다.`);
+
+  const btn = document.getElementById('pob-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
+
+  try {
+    await dbInsertOutboundRecord({
+      date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
+      partner_name: partner, source_type: 'pachi',
+      farm_name: row.farm || null, note, is_void: false,
+      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
+
+    let remaining = qty;
+    for (const id of row.ids) {
+      if (remaining <= 0) break;
+      const rec = inventoryRecords.find(r => String(r.id) === String(id) && !r.is_void);
+      if (!rec) continue;
+      const take   = Math.min(Number(rec.quantity) || 0, remaining);
+      const newQty = Math.max(0, (Number(rec.quantity) || 0) - take);
+      await sbUpdate('inventory_records', id, { quantity: newQty });
+      rec.quantity = newQty;
+      remaining -= take;
+    }
+
+    document.getElementById('modal-outbound').style.display = 'none';
+    showToast('출고 완료');
+    await loadAndRenderInv();
+  } catch(e) { alert('출고 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📤 출고'; } }
+}
 
 async function _execPachiDelete(regId) {
   const row = _pachiRowRegistry[regId];
