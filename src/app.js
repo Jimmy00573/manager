@@ -34,7 +34,7 @@ function buildSeqByDate(srRows) {
 let farms = [], drivers = [], dispatches = [], picks = [];
 let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [], invJuiceBatches = [], invJuiceOutbounds = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuiceMasters = [], invJuiceBatches = [], invJuiceOutbounds = [];
 let juiceExpiryDays = 90;
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
@@ -125,10 +125,9 @@ function hideLoading() {
 document.addEventListener('click', e => {
   if (!e.target.closest('.inv-kebab') && !e.target.closest('#inv-row-menu')) _closeInvMenu();
   if (!e.target.closest('.pachi-kebab') && !e.target.closest('#pachi-row-menu')) _closePachiMenu();
-  if (!e.target.closest('.juice-kebab') && !e.target.closest('#juice-row-menu')) _closeJuiceMenu();
   if (!e.target.closest('.juice-batch-kebab') && !e.target.closest('#juice-batch-menu')) _closeJuiceBatchMenu();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceMenu(); _closeJuiceBatchMenu(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceBatchMenu(); } });
 
 // ── 우선처리 기준 로드
 async function loadUrgencySettings() {
@@ -3303,14 +3302,13 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
-      dbGetSorted(null), dbGetWaste(null), dbGetJuice(null),
+      dbGetSorted(null), dbGetWaste(null),
       loadSizeConfig(), loadCategorySystem(),
       dbGetInventoryRecords().catch(() => []),
-      dbGetJuiceRecords().catch(() => []),
       dbGetJuiceMasters().catch(() => []),
       sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => []),
       dbGetJuiceBatches().catch(() => []),
@@ -3332,8 +3330,7 @@ async function loadAndRenderInv() {
     processingRecords = newProc;
     sortingResults = allSorting;
     invUnsorted = legacyIn;
-    [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
-    invJuiceRecs = juiceRecs;
+    [invSorted, invWaste, invSizeConfig] = [sorted, waste, sizeCfg];
     invJuiceMasters = juiceMasters;
     invJuiceBatches = juiceBatches;
     invJuiceOutbounds = juiceOutbounds;
@@ -3657,8 +3654,8 @@ async function deleteJuiceMaster(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const m = invJuiceMasters.find(x => x.id === id);
   if (!m) return;
-  if (invJuiceRecs.some(r => r.product_name === m.product_name)) {
-    return alert(`"${m.product_name}" 재고가 있어 삭제할 수 없습니다.\n먼저 해당 재고를 모두 삭제하세요.`);
+  if (invJuiceBatches.some(b => !b.is_void && b.product_name === m.product_name)) {
+    return alert(`"${m.product_name}" 배치 재고가 있어 삭제할 수 없습니다.\n먼저 해당 배치를 모두 삭제하세요.`);
   }
   if (!confirm(`"${m.product_name}" 품명을 삭제할까요?`)) return;
   try {
@@ -3684,8 +3681,8 @@ async function editJuiceMaster(id) {
   const newPerBox = newPerBoxRaw ? (parseInt(newPerBoxRaw) || null) : null;
 
   const nameChanged = newName !== m.product_name;
-  const affected = nameChanged ? invJuiceRecs.filter(r => r.product_name === m.product_name) : [];
-  if (nameChanged && affected.length > 0 && !confirm(`이 품명으로 등록된 재고 ${affected.length}건의 이름도 함께 변경됩니다. 진행할까요?`)) return;
+  const affected = nameChanged ? invJuiceBatches.filter(b => !b.is_void && b.product_name === m.product_name) : [];
+  if (nameChanged && affected.length > 0 && !confirm(`이 품명으로 등록된 배치 ${affected.length}건의 이름도 함께 변경됩니다. 진행할까요?`)) return;
 
   try {
     const updatePayload = { product_name: newName, default_unit: newUnit, default_per_box: newPerBox };
@@ -3695,9 +3692,9 @@ async function editJuiceMaster(id) {
     invJuiceMasters.sort((a, b) => a.product_name.localeCompare(b.product_name, 'ko'));
 
     if (nameChanged) {
-      for (const r of affected) {
-        await sbUpdate('juice_records', r.id, { product_name: newName });
-        r.product_name = newName;
+      for (const b of affected) {
+        await sbUpdate('juice_batches', b.id, { product_name: newName });
+        b.product_name = newName;
       }
     }
     renderJuiceMasterCfg();
@@ -4930,34 +4927,6 @@ async function savePachiEdit() {
   finally { if (btn) { btn.disabled = false; btn.textContent = '저장'; } }
 }
 
-// ── 주스/청 kebab 메뉴
-let _juiceMenuId = null;
-
-function toggleJuiceRowMenu(id, btn) {
-  const menu = document.getElementById('juice-row-menu');
-  if (!menu) return;
-  if (_juiceMenuId === id && menu.style.display !== 'none') {
-    menu.style.display = 'none'; _juiceMenuId = null; return;
-  }
-  _juiceMenuId = id;
-  const rect = btn.getBoundingClientRect();
-  menu.style.display = 'block';
-  const mw = 130, mh = 80;
-  let left = rect.right - mw;
-  if (left < 4) left = rect.left;
-  let top = rect.bottom + 4;
-  if (top + mh > window.innerHeight) top = rect.top - mh - 4;
-  menu.style.left = Math.max(4, left) + 'px';
-  menu.style.top = top + 'px';
-}
-function _juiceMenuEdit()   { const id = _juiceMenuId; _closeJuiceMenu(); openJuiceEditModal(id); }
-function _juiceMenuDelete() {
-  const id = _juiceMenuId; _closeJuiceMenu();
-  const rec = invJuiceRecs.find(r => r.id === id);
-  const label = rec ? `[${rec.type === 'out' ? '출고' : '입고'}] ${rec.product_name} ${rec.date} ${fmtN(Number(rec.total_count)||0)}${rec.unit}` : '';
-  deleteJuiceRecord(id, label);
-}
-function _closeJuiceMenu()  { const m = document.getElementById('juice-row-menu'); if (m) m.style.display = 'none'; _juiceMenuId = null; }
 
 let _juiceBatchMenuId = null;
 function toggleJuiceBatchMenu(id, btn) {
@@ -5172,81 +5141,6 @@ function toggleJuiceHistory(productKey) {
   el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
-function openJuiceEditModal(id) {
-  const rec = invJuiceRecs.find(r => r.id === id);
-  if (!rec) return;
-  const modal = document.getElementById('modal-juice-edit');
-  const body = document.getElementById('juice-edit-body');
-  if (!modal || !body) return;
-  body.innerHTML = `
-    <div style="padding:16px 20px">
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품명</label>
-        <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(rec.product_name)}</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">날짜 *</label>
-          <input id="je-date" type="date" value="${esc(rec.date || '')}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">구분 *</label>
-          <select id="je-type" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px">
-            <option value="in" ${rec.type !== 'out' ? 'selected' : ''}>입고</option>
-            <option value="out" ${rec.type === 'out' ? 'selected' : ''}>출고</option>
-          </select></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">단위</label>
-          <input id="je-unit" type="text" readonly value="${esc(rec.unit || '병')}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;background:#F3F4F6;cursor:default"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">박스당 수량</label>
-          <input id="je-perbox" type="number" min="0" value="${rec.per_box || ''}" placeholder="예) 35" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">박스 수량</label>
-          <input id="je-box" type="number" min="0" value="${rec.box_count || 0}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">낱개 수량</label>
-          <input id="je-single" type="number" min="0" value="${rec.loose_count || 0}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box" oninput="calcJuiceEditTotal()"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">총수량 (자동)</label>
-          <input id="je-total" type="number" readonly value="${rec.total_count || 0}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;background:#F3F4F6"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">소비기한</label>
-          <input id="je-expiry" type="date" value="${esc(rec.expiry_date || '')}" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
-      </div>
-      <div style="margin-bottom:20px">
-        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">비고</label>
-        <input id="je-note" type="text" value="${esc(rec.note || '')}" placeholder="비고 없음" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
-      </div>
-      <input type="hidden" id="juice-edit-id" value="${rec.id}">
-      <div style="display:flex;justify-content:flex-end;gap:8px">
-        <button class="btn" onclick="document.getElementById('modal-juice-edit').style.display='none'">취소</button>
-        <button class="btn pri" onclick="saveJuiceEdit()">저장</button>
-      </div>
-    </div>`;
-  modal.style.display = 'flex';
-}
-
-function calcJuiceEditTotal() {
-  const box = parseInt(document.getElementById('je-box')?.value) || 0;
-  const single = parseInt(document.getElementById('je-single')?.value) || 0;
-  const perBox = parseInt(document.getElementById('je-perbox')?.value) || 1;
-  const tot = document.getElementById('je-total');
-  if (tot) tot.value = box * perBox + single;
-}
-
-async function saveJuiceEdit() {
-  const id = document.getElementById('juice-edit-id')?.value;
-  if (!id) return;
-  const date = document.getElementById('je-date')?.value;
-  if (!date) return alert('날짜를 입력해주세요.');
-  const type = document.getElementById('je-type')?.value || 'in';
-  const unit = document.getElementById('je-unit')?.value || '병';
-  const box_count = parseInt(document.getElementById('je-box')?.value) || 0;
-  const loose_count = parseInt(document.getElementById('je-single')?.value) || 0;
-  const per_box = parseInt(document.getElementById('je-perbox')?.value) || null;
-  const expiry_date = document.getElementById('je-expiry')?.value || null;
-  const note = document.getElementById('je-note')?.value || null;
-  try {
-    const updatedArr = await sbUpdate('juice_records', id, { date, type, unit, box_count, loose_count, per_box, expiry_date, note });
-    const idx = invJuiceRecs.findIndex(r => String(r.id) === String(id));
-    if (idx >= 0 && updatedArr && updatedArr[0]) invJuiceRecs[idx] = updatedArr[0];
-    document.getElementById('modal-juice-edit').style.display = 'none';
-    renderInvSummary(); renderJuiceSection();
-    showToast('주스/청 수정 완료');
-  } catch(e) { alert('수정 실패: ' + e.message); }
-}
 
 // ── 매트릭스 [수정] 버튼 모달 ────────────────────────────────────
 
@@ -5793,7 +5687,6 @@ function renderInvAll() {
   renderInboundList();
   renderInventoryStatus();
   renderWasteList();
-  renderJuiceList();
 }
 
 
@@ -10386,20 +10279,6 @@ async function editPachiMemo(trEl) {
   }
 }
 
-function renderJuiceList() {
-  const tbody = document.getElementById('ju-tb');
-  if (!tbody) return;
-  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const data = invJuice;
-  if (!data.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">주스/청 기록 없음</td></tr>'; return; }
-  tbody.innerHTML = data.map(r => `<tr>
-    <td>${r.date}</td>
-    <td class="nm">${esc(r.product)}</td>
-    <td>${r.total_qty} ${esc(r.unit)}</td>
-    <td>${r.expiry_date || '-'}</td>
-    <td>${isAdm ? `<button class="btn del" onclick="deleteJuice('${r.id}')">삭제</button>` : ''}</td>
-  </tr>`).join('');
-}
 
 
 async function addSorted() {
@@ -10751,40 +10630,6 @@ async function addJuiceBatch() {
   } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
-async function addJuice() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
-  const date = gv('ju-date'), product_name = gv('ju-product'), unit = gv('ju-unit');
-  const box_count = parseInt(document.getElementById('ju-box').value) || 0;
-  const loose_count = parseInt(document.getElementById('ju-single').value) || 0;
-  const per_box = parseInt(document.getElementById('ju-perbox').value) || null;
-  if (!date || !product_name || product_name === '__new__' || !unit) return alert('날짜, 품명, 단위는 필수입니다.');
-  if (!box_count && !loose_count) return alert('박스 또는 낱개 수량을 입력해주세요.');
-  const type = gv('ju-type') || 'in';
-  const data = {
-    date, product_name, unit, box_count, loose_count,
-    per_box: per_box || null,
-    expiry_date: gv('ju-expiry') || null,
-    type, note: gv('ju-note') || null,
-    is_void: false, created_by: 'admin'
-  };
-  try {
-    const row = await dbInsertJuiceRecord(data);
-    invJuiceRecs.unshift(row);
-    renderInvSummary(); renderJuiceSection();
-    showToast('주스/청 등록 완료');
-  } catch(e) { alert('등록 오류: ' + e.message); }
-}
-
-async function deleteJuiceRecord(id, label) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const msg = label ? `이 주스/청 기록을 삭제하시겠습니까?\n${label}` : '삭제하시겠습니까?';
-  if (!confirm(msg)) return;
-  try {
-    await dbDeleteJuiceRecord(id);
-    invJuiceRecs = invJuiceRecs.filter(r => r.id !== id);
-    renderInvSummary(); renderJuiceSection();
-  } catch(e) { alert('삭제 오류: ' + e.message); }
-}
 
 // ── 개별 이력 모달 ───────────────────────────────────────────
 
