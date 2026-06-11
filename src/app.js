@@ -34,8 +34,9 @@ function buildSeqByDate(srRows) {
 let farms = [], drivers = [], dispatches = [], picks = [];
 let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuiceMasters = [], invJuiceBatches = [], invJuiceOutbounds = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuiceMasters = [], invJuiceBatches = [], invJuiceOutbounds = [], invOutbounds = [];
 let juiceExpiryDays = 90;
+let _obHistFilter = {};
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
 let inventoryRecords = [];
@@ -568,6 +569,8 @@ function setRole(r) {
   document.getElementById('dnav').style.display = r === 'driver' ? 'flex' : 'none';
   const logTab = document.getElementById('it-log');
   if (logTab) logTab.style.display = r === 'staff' ? 'none' : '';
+  const outTab = document.getElementById('it-out');
+  if (outTab) outTab.style.display = r === 'staff' ? 'none' : '';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
   if (r === 'admin' || r === 'staff') {
     const admBtn = document.getElementById('rbtn-adm');
@@ -3251,8 +3254,8 @@ function setTab(t) {
 function setBack() { setTab('menu'); }
 
 function invTab(t) {
-  if (t === 'log' && sessionStorage.getItem('citrus_role') === 'staff') t = 'sum';
-  ['sum', 'uns', 'srt', 'pachi', 'juice', 'log'].forEach(s => {
+  if ((t === 'log' || t === 'out') && sessionStorage.getItem('citrus_role') === 'staff') t = 'sum';
+  ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
@@ -3269,6 +3272,7 @@ function invTab(t) {
     renderPachiSection();
   }
   if (t === 'juice') { renderJuiceSection(); }
+  if (t === 'out') { renderOutboundHistory(); }
 }
 
 function ibTab(t) {
@@ -3302,7 +3306,7 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds, allOutbounds] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
@@ -3312,7 +3316,8 @@ async function loadAndRenderInv() {
       dbGetJuiceMasters().catch(() => []),
       sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => []),
       dbGetJuiceBatches().catch(() => []),
-      sbGet('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc').catch(() => [])
+      sbGet('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc').catch(() => []),
+      sbGet('outbound_records', 'is_void=eq.false&order=date.desc').catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3334,6 +3339,7 @@ async function loadAndRenderInv() {
     invJuiceMasters = juiceMasters;
     invJuiceBatches = juiceBatches;
     invJuiceOutbounds = juiceOutbounds;
+    invOutbounds = allOutbounds;
     try {
       const expiryRows = await sbGet('settings', 'key=eq.juice_expiry_days');
       if (expiryRows && expiryRows[0]) juiceExpiryDays = parseInt(expiryRows[0].value) || 90;
@@ -5687,6 +5693,127 @@ function renderInvAll() {
   renderInboundList();
   renderInventoryStatus();
   renderWasteList();
+}
+
+function renderOutboundHistory() {
+  const div = document.getElementById('inv-out-div');
+  if (!div) return;
+
+  if (!_obHistFilter.initialized) {
+    const now = new Date();
+    _obHistFilter.from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    _obHistFilter.to = td();
+    _obHistFilter.prod = '';
+    _obHistFilter.partner = '';
+    _obHistFilter.src = '';
+    _obHistFilter.group = 'partner';
+    _obHistFilter.initialized = true;
+  }
+
+  const allProds    = [...new Set(invOutbounds.map(r => r.product).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
+  const allPartners = [...new Set(invOutbounds.map(r => r.partner_name).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
+
+  const filtered = invOutbounds.filter(r => {
+    if (_obHistFilter.from    && r.date < _obHistFilter.from)         return false;
+    if (_obHistFilter.to      && r.date > _obHistFilter.to)           return false;
+    if (_obHistFilter.prod    && r.product !== _obHistFilter.prod)    return false;
+    if (_obHistFilter.partner && r.partner_name !== _obHistFilter.partner) return false;
+    if (_obHistFilter.src     && r.source_type !== _obHistFilter.src) return false;
+    return true;
+  });
+
+  const totalCT     = filtered.filter(r => r.unit === 'CT').reduce((s,r) => s+(Number(r.quantity)||0), 0);
+  const totalBottle = filtered.filter(r => r.unit === '병').reduce((s,r) => s+(Number(r.quantity)||0), 0);
+
+  function srcBadge(src) {
+    const map = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'] };
+    const [label, color] = map[src] || [src||'?','#9CA3AF'];
+    return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:${color}20;color:${color};font-weight:600">${label}</span>`;
+  }
+
+  function rowHtml(r) {
+    const size   = r.size_code ? ` <span style="color:#9CA3AF;font-size:11px">${esc(r.size_code)}</span>` : '';
+    const expiry = (r.unit==='병' && r.expiry_date) ? ` <span style="color:#9CA3AF;font-size:11px">~${r.expiry_date}</span>` : '';
+    return `<tr style="border-bottom:1px solid #F3F4F6">
+      <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${r.date||''}</td>
+      <td style="padding:7px 10px;font-size:13px">${esc(r.product||'')}${size}${expiry}</td>
+      <td style="padding:7px 10px">${srcBadge(r.source_type)}</td>
+      <td style="padding:7px 10px;font-size:13px">${esc(r.partner_name||'-')}</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(Number(r.quantity)||0)} ${esc(r.unit||'')}</td>
+    </tr>`;
+  }
+
+  const groupField = (_obHistFilter.group||'partner') === 'partner' ? 'partner_name' : 'product';
+  const groups = {};
+  filtered.forEach(r => { const k = r[groupField]||'미분류'; if(!groups[k]) groups[k]=[]; groups[k].push(r); });
+
+  let bodyHtml = '';
+  if (!filtered.length) {
+    bodyHtml = '<tr><td colspan="5" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">출고 내역이 없습니다.</td></tr>';
+  } else {
+    Object.entries(groups).sort(([a],[b]) => a.localeCompare(b,'ko')).forEach(([key, grpRows]) => {
+      const gCT = grpRows.filter(r=>r.unit==='CT').reduce((s,r)=>s+(Number(r.quantity)||0),0);
+      const gBt = grpRows.filter(r=>r.unit==='병').reduce((s,r)=>s+(Number(r.quantity)||0),0);
+      const sub = [gCT>0?`${fmtN(gCT)} CT`:'', gBt>0?`${fmtN(gBt)} 병`:''].filter(Boolean).join(' · ') || '0';
+      bodyHtml += `<tr style="background:#F3F4F6"><td colspan="5" style="padding:6px 10px;font-weight:600;font-size:13px">
+        ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub})</span>
+      </td></tr>`;
+      bodyHtml += grpRows.map(rowHtml).join('');
+    });
+  }
+
+  const totalParts = [totalCT>0?`<strong>${fmtN(totalCT)} CT</strong>`:'', totalBottle>0?`<strong>${fmtN(totalBottle)} 병</strong>`:''].filter(Boolean).join(' · ') || '0';
+  const sel = v => `style="padding:6px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"`;
+
+  div.innerHTML = `
+    <div class="form-card" style="margin-bottom:12px">
+      <div class="form-title">📤 출고내역 검색</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">기간 시작</label>
+          <input type="date" value="${_obHistFilter.from}" onchange="_obHistFilter.from=this.value;renderOutboundHistory()" ${sel()}></div>
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">기간 종료</label>
+          <input type="date" value="${_obHistFilter.to}" onchange="_obHistFilter.to=this.value;renderOutboundHistory()" ${sel()}></div>
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">품목</label>
+          <select onchange="_obHistFilter.prod=this.value;renderOutboundHistory()" ${sel()}>
+            <option value="">전체</option>
+            ${allProds.map(p=>`<option value="${esc(p)}"${_obHistFilter.prod===p?' selected':''}>${esc(p)}</option>`).join('')}
+          </select></div>
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">출고처</label>
+          <select onchange="_obHistFilter.partner=this.value;renderOutboundHistory()" ${sel()}>
+            <option value="">전체</option>
+            ${allPartners.map(p=>`<option value="${esc(p)}"${_obHistFilter.partner===p?' selected':''}>${esc(p)}</option>`).join('')}
+          </select></div>
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">구분</label>
+          <select onchange="_obHistFilter.src=this.value;renderOutboundHistory()" ${sel()}>
+            <option value="">전체</option>
+            <option value="sorting"${_obHistFilter.src==='sorting'?' selected':''}>선과</option>
+            <option value="pachi"${_obHistFilter.src==='pachi'?' selected':''}>파치</option>
+            <option value="unsorted"${_obHistFilter.src==='unsorted'?' selected':''}>미선과</option>
+            <option value="juice"${_obHistFilter.src==='juice'?' selected':''}>주스</option>
+          </select></div>
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">묶음</label>
+          <select onchange="_obHistFilter.group=this.value;renderOutboundHistory()" ${sel()}>
+            <option value="partner"${(_obHistFilter.group||'partner')==='partner'?' selected':''}>출고처별</option>
+            <option value="product"${_obHistFilter.group==='product'?' selected':''}>품목별</option>
+          </select></div>
+      </div>
+    </div>
+    <div style="padding:0 4px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 12px;background:#F9FAFB;border-radius:8px;border:1px solid #E5E7EB">
+        <span style="color:#6B7280;font-size:13px">총 ${filtered.length}건</span>
+        <span style="font-size:14px">${totalParts}</span>
+      </div>
+      <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:#F9FAFB;border-bottom:2px solid #E5E7EB">
+          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">일자</th>
+          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">품목</th>
+          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">구분</th>
+          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">출고처</th>
+          <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">수량</th>
+        </tr></thead>
+        <tbody>${bodyHtml}</tbody>
+      </table></div>
+    </div>`;
 }
 
 

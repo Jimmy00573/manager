@@ -720,6 +720,7 @@
     <button class="etab" id="it-srt" onclick="invTab('srt')">📦 재고 현황</button>
     <button class="etab" id="it-pachi" onclick="invTab('pachi')">🧹 파치</button>
     <button class="etab" id="it-juice" onclick="invTab('juice')">🧃 주스·청</button>
+    <button class="etab" id="it-out" onclick="invTab('out')">📤 출고내역</button>
     <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
   </div>
 
@@ -1091,6 +1092,8 @@
     <!-- 주스/청 섹션 (통계 카드 + 내역 표 + 등록 폼) — JS 렌더링 -->
     <div id="inv-juice-section"></div>
   </div>
+  <!-- 출고내역 -->
+  <div id="inv-out-div" style="display:none"></div>
   <!-- 변경 이력 -->
   <div id="inv-log-div" style="display:none">
     <div class="form-card" style="margin-bottom:12px">
@@ -1691,6 +1694,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=13"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=140"></script>
+<script src="src/app.js?v=141"></script>
 </body>
 </html>
