@@ -34,7 +34,7 @@ function buildSeqByDate(srRows) {
 let farms = [], drivers = [], dispatches = [], picks = [];
 let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuice = [], invJuiceRecs = [], invJuiceMasters = [], invJuiceBatches = [];
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
 let inventoryRecords = [];
@@ -3301,7 +3301,7 @@ function ibListTab(t) {
 async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters, allSorting] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, juice, sizeCfg, catSys, invRecs, juiceRecs, juiceMasters, allSorting, juiceBatches] = await Promise.all([
       dbGetInbounds().catch(() => []),
       dbGetProcessings().catch(() => []),
       dbGetUnsorted(null).catch(() => []),
@@ -3310,7 +3310,8 @@ async function loadAndRenderInv() {
       dbGetInventoryRecords().catch(() => []),
       dbGetJuiceRecords().catch(() => []),
       dbGetJuiceMasters().catch(() => []),
-      sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => [])
+      sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => []),
+      dbGetJuiceBatches().catch(() => [])
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
@@ -3331,6 +3332,7 @@ async function loadAndRenderInv() {
     [invSorted, invWaste, invJuice, invSizeConfig] = [sorted, waste, juice, sizeCfg];
     invJuiceRecs = juiceRecs;
     invJuiceMasters = juiceMasters;
+    invJuiceBatches = juiceBatches;
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
@@ -10368,15 +10370,9 @@ function renderJuiceSection() {
 
   const formHtml = isAdm ? `
     <div style="padding:14px 16px;border-top:1px solid #E5E7EB">
-      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:10px">🧃 주스/청 등록</div>
+      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:10px">🧃 주스·청 입고(배치 등록)</div>
       <div class="form-grid">
-        <div class="fg"><label>구분 *</label>
-          <select id="ju-type" style="font-weight:600">
-            <option value="in">입고</option>
-            <option value="out">출고</option>
-          </select>
-        </div>
-        <div class="fg"><label>날짜 *</label><input id="ju-date" type="date"></div>
+        <div class="fg"><label>입고일 *</label><input id="ju-date" type="date"></div>
         <div class="fg"><label>단위</label><input id="ju-unit" type="text" value="병" readonly style="background:#F3F4F6;cursor:default"></div>
         <div class="fg" style="grid-column:1/-1"><label>품명 *</label>
           <select id="ju-product" onchange="juiceProductChanged()">
@@ -10402,10 +10398,12 @@ function renderJuiceSection() {
         <div class="fg"><label>박스 수량</label><input id="ju-box" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
         <div class="fg"><label>낱개 수량</label><input id="ju-single" type="number" placeholder="0" min="0" oninput="calcJuiceTotal()"></div>
         <div class="fg"><label>총수량 (자동)</label><input id="ju-total" type="number" readonly class="auto"></div>
-        <div class="fg"><label>소비기한</label><input id="ju-expiry" type="date"></div>
+        <div class="fg"><label>제조일</label><input id="ju-mfg" type="date" oninput="calcJuiceExpiry()"></div>
+        <div class="fg"><label>유통기한(개월)</label><input id="ju-months" type="number" min="0" placeholder="예) 18" oninput="calcJuiceExpiry()"></div>
+        <div class="fg"><label>소비기한(직접입력)</label><input id="ju-expiry" type="date"></div>
         <div class="fg" style="grid-column:1/-1"><label>비고</label><input id="ju-note"></div>
       </div>
-      <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addJuice()">등록</button></div>
+      <div class="form-actions"><button class="btn pri" style="padding:10px 24px;font-size:14px" onclick="addJuiceBatch()">등록</button></div>
     </div>` : '';
 
   el.innerHTML = `
@@ -10447,6 +10445,16 @@ function calcJuiceTotal() {
   sv('ju-total', box * perBox + single);
 }
 
+function calcJuiceExpiry() {
+  const mfg = document.getElementById('ju-mfg')?.value;
+  const months = parseInt(document.getElementById('ju-months')?.value) || 0;
+  if (!mfg || !months) return;
+  const d = new Date(mfg + 'T00:00:00');
+  d.setMonth(d.getMonth() + months);
+  const el = document.getElementById('ju-expiry');
+  if (el) el.value = ymd(d);
+}
+
 function juiceProductChanged() {
   const sel = document.getElementById('ju-product');
   if (!sel) return;
@@ -10462,11 +10470,8 @@ function juiceProductChanged() {
   if (unit) { const el = document.getElementById('ju-unit'); if (el) el.value = unit; }
   if (perBox) { const el = document.getElementById('ju-perbox'); if (el) { el.value = perBox; calcJuiceTotal(); } }
   if (months) {
-    const el = document.getElementById('ju-expiry');
-    if (el) {
-      const d = new Date(); d.setMonth(d.getMonth() + parseInt(months));
-      el.value = ymd(d);
-    }
+    const el = document.getElementById('ju-months');
+    if (el) { el.value = months; calcJuiceExpiry(); }
   }
 }
 
@@ -10492,6 +10497,35 @@ function cancelNewJuiceProduct() {
   if (area) area.style.display = 'none';
   const sel = document.getElementById('ju-product');
   if (sel) sel.value = '';
+}
+
+async function addJuiceBatch() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
+  const product = gv('ju-product');
+  const inbound_date = gv('ju-date');
+  const box = parseFloat(document.getElementById('ju-box').value) || 0;
+  const perBox = parseFloat(document.getElementById('ju-perbox').value) || 0;
+  const single = parseFloat(document.getElementById('ju-single').value) || 0;
+  const total = box * perBox + single;
+  const expiry = gv('ju-expiry') || null;
+  const note = gv('ju-note') || null;
+  const adm = sessionStorage.getItem('citrus_adm_user') || 'admin';
+
+  if (!product || product === '__new__') return alert('품명을 선택해주세요.');
+  if (!inbound_date) return alert('입고일을 입력해주세요.');
+  if (total <= 0) return alert('총 수량을 입력해주세요. (박스 또는 낱개)');
+
+  try {
+    const row = await dbInsertJuiceBatch({
+      product_name: product, inbound_date, expiry_date: expiry,
+      box_count: box, per_box: perBox,
+      total_bottles: total, remaining_bottles: total,
+      unit: '병', note, is_void: false, created_by: adm
+    });
+    invJuiceBatches.unshift(row);
+    showToast('입고 등록(배치 생성)');
+    renderJuiceSection();
+  } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
 async function addJuice() {

@@ -178,6 +178,12 @@ async function dbGetJuiceRecords() {
 async function dbInsertJuiceRecord(data) { const r = await sbInsert('juice_records', data); return r[0]; }
 async function dbDeleteJuiceRecord(id) { return sbUpdate('juice_records', id, { is_void: true }); }
 
+// ── 재고: juice_batches
+async function dbGetJuiceBatches() {
+  try { return await sbGet('juice_batches', 'is_void=eq.false&order=inbound_date.desc,created_at.desc'); } catch(e) { return []; }
+}
+async function dbInsertJuiceBatch(data) { const r = await sbInsert('juice_batches', data); return r[0]; }
+
 // ── 재고: juice_product_master
 async function dbGetJuiceMasters() {
   try { return await sbGet('juice_product_master', 'is_active=eq.true&order=product_name'); } catch(e) { return []; }
