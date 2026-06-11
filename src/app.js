@@ -9839,7 +9839,7 @@ function renderPachiSection() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
   // Source 1: inventory_records (선과 자동 + 수동 등록)
-  const irRecs = inventoryRecords.filter(r => ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type));
+  const irRecs = inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny'].includes(r.source_type));
   const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_tiny'].includes(st);
   const pachiKindLabel = (st) => ({pachi:'파치', pachi_highacid:'고산도', pachi_tiny:'극소과', pachi_manual:'파치'}[st] || '파치');
   const irGrouped = {};
