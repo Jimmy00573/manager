@@ -5812,6 +5812,7 @@ function renderOutboundHistory() {
 
   const totalCT     = filtered.filter(r => r.unit === 'CT').reduce((s,r) => s+(Number(r.quantity)||0), 0);
   const totalBottle = filtered.filter(r => r.unit === '병').reduce((s,r) => s+(Number(r.quantity)||0), 0);
+  const totalAmount = filtered.reduce((s,r) => s+(Number(r.amount)||0), 0);
 
   function srcBadge(src) {
     const map = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'] };
@@ -5830,6 +5831,9 @@ function renderOutboundHistory() {
       <td style="padding:7px 10px">${srcBadge(r.source_type)}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.partner_name||'-')}</td>
       <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(Number(r.quantity)||0)} ${esc(r.unit||'')}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:13px;white-space:nowrap">
+        ${r.amount ? `<span style="font-weight:600">${fmtN(Math.round(r.amount))}원</span>${r.unit_price ? `<br><span style="font-size:10px;color:#9CA3AF">${r.weight_kg?fmtN(r.weight_kg)+'kg·':''}×${fmtN(r.unit_price)}</span>` : ''}` : '<span style="color:#D1D5DB">-</span>'}
+      </td>
       <td style="padding:7px 10px;text-align:center;white-space:nowrap">
         ${isAdmin ? `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>` : ''}
         ${cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : ''}
@@ -5843,20 +5847,26 @@ function renderOutboundHistory() {
 
   let bodyHtml = '';
   if (!filtered.length) {
-    bodyHtml = '<tr><td colspan="6" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">출고 내역이 없습니다.</td></tr>';
+    bodyHtml = '<tr><td colspan="7" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">출고 내역이 없습니다.</td></tr>';
   } else {
     Object.entries(groups).sort(([a],[b]) => a.localeCompare(b,'ko')).forEach(([key, grpRows]) => {
-      const gCT = grpRows.filter(r=>r.unit==='CT').reduce((s,r)=>s+(Number(r.quantity)||0),0);
-      const gBt = grpRows.filter(r=>r.unit==='병').reduce((s,r)=>s+(Number(r.quantity)||0),0);
-      const sub = [gCT>0?`${fmtN(gCT)} CT`:'', gBt>0?`${fmtN(gBt)} 병`:''].filter(Boolean).join(' · ') || '0';
-      bodyHtml += `<tr style="background:#F3F4F6"><td colspan="6" style="padding:6px 10px;font-weight:600;font-size:13px">
-        ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub})</span>
+      const gCT  = grpRows.filter(r=>r.unit==='CT').reduce((s,r)=>s+(Number(r.quantity)||0),0);
+      const gBt  = grpRows.filter(r=>r.unit==='병').reduce((s,r)=>s+(Number(r.quantity)||0),0);
+      const gAmt = grpRows.reduce((s,r)=>s+(Number(r.amount)||0),0);
+      const sub  = [gCT>0?`${fmtN(gCT)} CT`:'', gBt>0?`${fmtN(gBt)} 병`:''].filter(Boolean).join(' · ') || '0';
+      const amtStr = gAmt > 0 ? ` · <span style="color:#2563EB;font-weight:600">${fmtN(Math.round(gAmt))}원</span>` : '';
+      bodyHtml += `<tr style="background:#F3F4F6"><td colspan="7" style="padding:6px 10px;font-weight:600;font-size:13px">
+        ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub}${amtStr})</span>
       </td></tr>`;
       bodyHtml += grpRows.map(rowHtml).join('');
     });
   }
 
-  const totalParts = [totalCT>0?`<strong>${fmtN(totalCT)} CT</strong>`:'', totalBottle>0?`<strong>${fmtN(totalBottle)} 병</strong>`:''].filter(Boolean).join(' · ') || '0';
+  const totalParts = [
+    totalCT>0     ? `<strong>${fmtN(totalCT)} CT</strong>` : '',
+    totalBottle>0 ? `<strong>${fmtN(totalBottle)} 병</strong>` : '',
+    totalAmount>0 ? `매출 <strong style="color:#2563EB">${fmtN(Math.round(totalAmount))}원</strong>` : ''
+  ].filter(Boolean).join(' · ') || '0';
   const sel = v => `style="padding:6px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"`;
 
   div.innerHTML = `
@@ -5907,6 +5917,7 @@ function renderOutboundHistory() {
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">구분</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">출고처</th>
           <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">수량</th>
+          <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">금액</th>
           <th style="padding:8px 10px;text-align:center;font-size:12px;color:#6B7280;font-weight:600"></th>
         </tr></thead>
         <tbody>${bodyHtml}</tbody>
