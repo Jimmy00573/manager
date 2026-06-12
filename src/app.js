@@ -8645,6 +8645,9 @@ function renderInboundList() {
       ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtBadge}</span>`
       : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}${srtBadge}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
+    const isDone = r.inbound_category !== '선과품' && remaining <= 0 && processed > 0;
+    const doneStyle = isDone ? 'opacity:0.72;' : '';
+    const doneBadge = isDone ? ` <span style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">선과완료</span>` : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     let driverCell;
@@ -8674,9 +8677,9 @@ function renderInboundList() {
     const locCell = r.distribution_group_id
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
       : esc(r.location || '-');
-    return `<tr id="ib-tr-${r.id}" style="${priorityStyle}">
+    return `<tr id="ib-tr-${r.id}" style="${priorityStyle}${doneStyle}">
       <td>${r.date}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${doneBadge}</td>
       <td>${productChip(r.product)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
