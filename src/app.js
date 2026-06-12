@@ -8614,7 +8614,7 @@ function renderInboundList() {
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const isDone = r.inbound_category !== '선과품' && remaining <= 0 && processed > 0;
     const doneStyle = isDone ? 'opacity:0.72;' : '';
-    const doneBadge = isDone ? ` <span style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">선과완료</span>` : '';
+    const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     let driverCell;
