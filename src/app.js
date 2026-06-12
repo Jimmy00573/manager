@@ -57,7 +57,7 @@ function generateUUID() {
       return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
     }));
 }
-let showVoidData = false;
+
 let _pendingInboundInsert = null;
 let _ibKind = 'raw';
 let _priSectionOpen = false;
@@ -8507,11 +8507,6 @@ function renderInboundList() {
   _expandedMemoId = null;
   renderIbCatSummary();
 
-  // void count는 뷰 모드 무관하게 항상 업데이트
-  const voidCount = inboundRecords.filter(r => r.is_void).length;
-  const voidCountEl = document.getElementById('ib-void-count');
-  if (voidCountEl) voidCountEl.textContent = voidCount > 0 ? `(무효 ${voidCount}건)` : '';
-
   // 분산저장 마이그레이션 버튼: 레거시 분산 기록이 있을 때만 표시
   const migrateBtn = document.getElementById('btn-dist-migrate');
   if (migrateBtn) {
@@ -8534,7 +8529,7 @@ function renderInboundList() {
     _sortingCountMap[p.inbound_id] = (_sortingCountMap[p.inbound_id] || 0) + 1;
   });
 
-  let visible = showVoidData ? inboundRecords : inboundRecords.filter(r => !r.is_void);
+  let visible = inboundRecords.filter(r => !r.is_void);
 
   // 카테고리·출처 필터 적용
   if (ibFilterCat) visible = visible.filter(r => (r.inbound_category || '상품') === ibFilterCat);
@@ -8597,34 +8592,6 @@ function renderInboundList() {
   tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="10" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(pageRows.map(r => {
-    if (r.is_void) {
-      const voidTime = r.void_at ? r.void_at.replace('T', ' ').slice(0, 16) : '';
-      const voidTip = `사유: ${r.void_reason || '-'}${voidTime ? '\n처리일: ' + voidTime : ''}`;
-      const voidBadge = `<span title="${esc(voidTip)}" style="background:#ef5350;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;cursor:help;white-space:nowrap;display:inline-block;margin-left:4px;vertical-align:middle">🚫</span>`;
-      const voidMenuItems = isAdm && !r._legacy
-        ? `<button onclick="restoreInbound('${r.id}')">🔄 무효 해제 (복원)</button>
-           <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
-           <div class="menu-divider"></div>
-           <button onclick="permanentDeleteInbound('${r.id}')" class="menu-danger">🗑️ 영구 삭제</button>`
-        : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
-      const voidActionCell = `<div style="position:relative;text-align:center">
-        <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)">⋮</button>
-        <div id="row-menu-${r.id}" class="row-menu" style="display:none">${voidMenuItems}</div>
-      </div>`;
-      const td = 'text-decoration:line-through;color:#999';
-      return `<tr id="ib-tr-${r.id}" style="opacity:0.55;background:#f5f5f5">
-        <td style="${td}">${r.date}</td>
-        <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px"></span> ${esc(r.farm_name)}${voidBadge}</td>
-        <td style="${td}">${esc(r.product)}</td>
-        <td style="color:#999">-</td>
-        <td style="text-align:right;${td}">${fmtN(r.quantity)}</td>
-        <td style="${td}">${esc(r.location || '-')}</td>
-        <td><span class="driver-cell-empty">—</span></td>
-        <td style="color:#999">—</td>
-        <td></td>
-        <td>${voidActionCell}</td>
-      </tr>`;
-    }
     const processed = getProcessedForInbound(r.id);
     const remaining = getRemainingCT(r);
     const outbound = getOutboundForInbound(r.id);
@@ -9483,10 +9450,7 @@ async function deleteInbound(id) {
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
-function toggleVoidData() {
-  showVoidData = document.getElementById('ib-show-void').checked;
-  renderInboundList();
-}
+
 
 // ── 선과 처리 모달 ─────────────────────────────────────────────────
 
