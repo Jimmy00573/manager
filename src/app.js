@@ -3719,7 +3719,7 @@ function renderPartnerCfg() {
   const rows = sorted.map(p => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
     return `<tr>
-    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}${p.tel||p.addr ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)}`:''}` + '</div>' : ''}</td>
+    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
     <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
     ${isAdm ? `<td style="width:120px;white-space:nowrap;text-align:right">
       <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
