@@ -6013,8 +6013,9 @@ function renderOutboundHistory() {
       actionCell += `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>`
         + (cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : '');
     }
-    return `<tr style="border-bottom:1px solid #F3F4F6">
-      <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${t.date}</td>
+    const sideColor = t.kind === 'in' ? '#1D4ED8' : '#DC2626';
+    return `<tr style="border-bottom:1px solid #F3F4F6;border-left:3px solid ${sideColor}">
+      <td style="padding:7px 10px 7px 9px;white-space:nowrap;font-size:13px">${t.date}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(t.product)}${size}${expiry}</td>
       <td style="padding:7px 10px">${kindBadge(t)}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(t.partner||'-')}</td>
