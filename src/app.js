@@ -93,7 +93,7 @@ let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 
 let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
 let _msgTxt = '', _msgDrvTel = '';
-let _editFarmId = null, _editDrvId = null, _editPickId = null;
+let _editFarmId = null, _editDrvId = null, _editPickId = null, _editPartnerId = null;
 let _XT = null, _XI = null;
 let _dt = 'w', _dt2 = 'w', _ft = 'n';
 let _dp = 1, _d2p = 1, _rp = 1;
@@ -3719,7 +3719,7 @@ function renderPartnerCfg() {
   const rows = sorted.map(p => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
     return `<tr>
-    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</td>
+    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}${p.tel||p.addr ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)}`:''}` + '</div>' : ''}</td>
     <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
     ${isAdm ? `<td style="width:120px;white-space:nowrap;text-align:right">
       <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
@@ -3767,20 +3767,35 @@ async function addPartner() {
   } catch(e) { alert('추가 오류: ' + e.message); }
 }
 
-async function editPartner(id) {
+function editPartner(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const p = partners.find(x => x.id === id);
   if (!p) return;
-  const name = prompt('새 이름을 입력하세요.', p.name)?.trim();
-  if (!name) return;
+  _editPartnerId = id;
+  document.getElementById('pe-name').value = p.name || '';
+  document.getElementById('pe-usage').value = p.usage || 'both';
+  document.getElementById('pe-tel').value = p.tel || '';
+  document.getElementById('pe-addr').value = p.addr || '';
+  document.getElementById('pe-memo').value = p.memo || '';
+  document.getElementById('modal-partner-edit').style.display = 'flex';
+}
+
+async function savePartnerEdit() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const id = _editPartnerId;
+  if (!id) return;
+  const name = document.getElementById('pe-name').value.trim();
+  if (!name) return alert('거래처명을 입력해주세요.');
   if (partners.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
-  const uNum = prompt('용도 (1=둘다, 2=입고처, 3=출고처)', { both:'1', in:'2', out:'3' }[p.usage || 'both']);
-  if (uNum === null) return;
-  const usage = ({ '1':'both', '2':'in', '3':'out' })[uNum] || p.usage || 'both';
+  const usage = document.getElementById('pe-usage').value || 'both';
+  const tel   = document.getElementById('pe-tel').value.trim() || null;
+  const addr  = document.getElementById('pe-addr').value.trim() || null;
+  const memo  = document.getElementById('pe-memo').value.trim() || null;
   try {
-    const updated = await dbUpdatePartner(id, { name, usage });
+    const updated = await dbUpdatePartner(id, { name, usage, tel, addr, memo });
     const idx = partners.findIndex(x => x.id === id);
     if (idx !== -1) partners[idx] = { ...partners[idx], ...updated };
+    CM('partner-edit');
     renderPartnerCfg(); popSels();
     showToast('수정되었습니다.');
   } catch(e) { alert('수정 오류: ' + e.message); }
