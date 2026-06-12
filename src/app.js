@@ -6391,7 +6391,7 @@ function openSortedPriceEdit(inboundId) {
       const d = sizeData[sz];
       const wVal = d.weight > 0 ? Math.round(d.weight * 10) / 10 : '';
       const pVal = d.price || '';
-      return `<div style="display:grid;grid-template-columns:44px 44px 1fr 1fr 76px;gap:5px;align-items:center;padding:5px 12px;border-bottom:1px solid #F3F4F6">
+      return `<div style="display:grid;grid-template-columns:40px 40px 72px 72px 1fr;gap:5px;align-items:center;padding:5px 12px;border-bottom:1px solid #F3F4F6">
         <span style="color:#374151;font-weight:600;font-size:12px">${esc(sz)}</span>
         <span style="text-align:right;color:#1565C0;font-weight:700;font-size:12px">${fmtCT(d.ct)}</span>
         <input type="number" id="spe-w-${esc(sz)}" min="0" step="0.1" value="${wVal}" placeholder="kg" oninput="calcSpeAmount()" style="${inpStyle}">
@@ -6405,7 +6405,7 @@ function openSortedPriceEdit(inboundId) {
   m.id = 'modal-spe';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   m.innerHTML = `
-    <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
         <div>
           <div style="font-size:14px;font-weight:700;color:#111827">단가 수정 — ${esc(ib.farm_name)} · ${esc(ib.product)}</div>
@@ -6414,7 +6414,7 @@ function openSortedPriceEdit(inboundId) {
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div>
-        <div style="display:grid;grid-template-columns:44px 44px 1fr 1fr 76px;gap:5px;padding:5px 12px;background:#F3F4F6;font-size:11px;font-weight:600;color:#6B7280;border-bottom:2px solid #E5E7EB">
+        <div style="display:grid;grid-template-columns:40px 40px 72px 72px 1fr;gap:5px;padding:5px 12px;background:#F3F4F6;font-size:11px;font-weight:600;color:#6B7280;border-bottom:2px solid #E5E7EB">
           <span>사이즈</span><span style="text-align:right">CT</span>
           <span style="text-align:center">실측 kg</span><span style="text-align:center">kg단가</span>
           <span style="text-align:right">금액</span>
