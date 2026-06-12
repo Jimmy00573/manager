@@ -4580,7 +4580,7 @@ function openPachiOutboundModal(regId) {
     <div style="padding:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
-          <input type="date" id="pob-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          <input type="date" id="pob-date" value="${td()}" max="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
         </div>
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
           <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
@@ -4619,6 +4619,7 @@ async function savePachiOutbound(regId) {
   const qty     = parseFloat(document.getElementById('pob-qty')?.value) || 0;
 
   if (!date)       return alert('출고일을 입력해주세요.');
+  if (date > td()) return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
   if (!partner)    return alert('출고처를 선택해주세요.');
   if (qty <= 0)    return alert('출고량을 입력해주세요.');
   if (qty > row.ct) return alert(`현재고(${fmtCT(row.ct)} CT)를 초과했습니다.`);
@@ -4671,7 +4672,7 @@ function openUnsortedOutboundModal(inboundId) {
     <div style="padding:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
-          <input type="date" id="uob-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          <input type="date" id="uob-date" value="${td()}" max="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
         </div>
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
           <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
@@ -4710,6 +4711,7 @@ async function saveUnsortedOutbound(inboundId) {
   const qty     = parseFloat(document.getElementById('uob-qty')?.value) || 0;
 
   if (!date)               return alert('출고일을 입력해주세요.');
+  if (date > td())         return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
   if (!partner)            return alert('출고처를 선택해주세요.');
   if (qty <= 0)            return alert('출고량을 입력해주세요.');
   if (qty > ctx.remaining) return alert(`잔여 재고(${fmtCT(ctx.remaining)} CT)를 초과했습니다.`);
@@ -4984,7 +4986,7 @@ function openJuiceOutboundModal(id) {
     <div style="padding:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
-          <input type="date" id="job-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          <input type="date" id="job-date" value="${td()}" max="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
         </div>
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
           <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
@@ -5054,6 +5056,7 @@ async function saveJuiceOutbound(id) {
   const adm     = sessionStorage.getItem('citrus_adm_user') || 'admin';
 
   if (!date)                     return alert('출고일을 입력해주세요.');
+  if (date > td())               return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
   if (!partner)                  return alert('출고처를 선택해주세요.');
   if (qty <= 0)                  return alert('출고량을 입력해주세요.');
   if (qty > b.remaining_bottles) return alert(`현재고(${fmtN(b.remaining_bottles)}병)를 초과했습니다.`);
@@ -5297,7 +5300,7 @@ function openOutboundModal(regId) {
     <div style="padding:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일 *</label>
-          <input type="date" id="ob-date" value="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          <input type="date" id="ob-date" value="${td()}" max="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
         </div>
         <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처 *</label>
           <select id="ob-partner" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box"><option value="">선택</option></select>
@@ -5334,6 +5337,7 @@ async function saveOutbound(regId) {
   const partner = document.getElementById('ob-partner')?.value;
   const note    = document.getElementById('ob-note')?.value?.trim() || null;
   if (!date)    return alert('출고일을 입력해주세요.');
+  if (date > td()) return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
   if (!partner) return alert('출고처를 선택해주세요.');
 
   const outQty = {};
@@ -5834,7 +5838,7 @@ function openOutboundEdit(id) {
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일</label>
-        <input id="obe-date" type="date" value="${r.date||''}" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:6px;padding:8px 10px;font-size:14px">
+        <input id="obe-date" type="date" value="${r.date||''}" max="${td()}" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:6px;padding:8px 10px;font-size:14px">
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처</label>
@@ -5868,6 +5872,7 @@ async function saveOutboundEdit() {
   const partner = (document.getElementById('obe-partner')?.value || '').trim();
   const note = (document.getElementById('obe-note')?.value || '').trim();
   if (!date) { alert('출고일을 입력해주세요.'); return; }
+  if (date > td()) { alert('출고일은 오늘 이후로 지정할 수 없습니다.'); return; }
   try {
     await sbUpdate('outbound_records', _obEditId, { date, partner_name: partner || null, note: note || null });
     const r = invOutbounds.find(x => String(x.id) === String(_obEditId));
