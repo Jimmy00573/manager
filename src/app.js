@@ -9991,6 +9991,80 @@ function renderIbSortedSizes() {
   ibSortedTotal();
 }
 
+function toggleIspPrice() {
+  const body = document.getElementById('isp-body');
+  const arrow = document.getElementById('isp-arrow');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  if (arrow) arrow.textContent = open ? '▾' : '▸';
+  if (open) buildIspRows();
+}
+
+function buildIspRows() {
+  const el = document.getElementById('isp-rows');
+  if (!el) return;
+  const product = gv('ib-product');
+  if (!product) { el.innerHTML = '<div style="color:#9CA3AF;font-size:12px">품목을 먼저 선택하세요.</div>'; return; }
+  const groups = getSizeGroupsFor(product);
+  const rows = [];
+  groups.forEach(g => g.sizes.forEach(sz => {
+    const ct = parseFloat(document.getElementById(`ibs-${sz}`)?.value || 0) || 0;
+    if (ct <= 0) return;
+    rows.push(`
+      <div style="display:grid;grid-template-columns:50px 50px 1fr 1fr 80px;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:#374151">${esc(sz)}</span>
+        <span style="font-size:12px;color:#6B7280;text-align:center">${fmtCT(ct)} CT</span>
+        <input id="isp-w-${esc(sz)}" type="number" step="0.1" min="0" placeholder="실측kg"
+          style="padding:4px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;font-family:inherit"
+          oninput="calcIspAmount()">
+        <input id="isp-p-${esc(sz)}" type="number" step="1" min="0" placeholder="kg단가"
+          style="padding:4px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;font-family:inherit"
+          oninput="calcIspAmount()">
+        <span id="isp-amt-${esc(sz)}" style="font-size:12px;font-weight:600;color:#1565C0;text-align:right">-</span>
+      </div>`);
+  }));
+  if (!rows.length) {
+    el.innerHTML = '<div style="color:#9CA3AF;font-size:12px">CT를 먼저 입력하세요.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:50px 50px 1fr 1fr 80px;gap:6px;margin-bottom:6px">
+      <span style="font-size:10px;color:#9CA3AF">사이즈</span>
+      <span style="font-size:10px;color:#9CA3AF;text-align:center">CT</span>
+      <span style="font-size:10px;color:#9CA3AF">실측 kg</span>
+      <span style="font-size:10px;color:#9CA3AF">kg 단가</span>
+      <span style="font-size:10px;color:#9CA3AF;text-align:right">금액</span>
+    </div>
+    ${rows.join('')}`;
+  calcIspAmount();
+}
+
+function calcIspAmount() {
+  const product = gv('ib-product');
+  if (!product) return;
+  const groups = getSizeGroupsFor(product);
+  let totalKg = 0, totalAmt = 0;
+  groups.forEach(g => g.sizes.forEach(sz => {
+    const wEl = document.getElementById(`isp-w-${sz}`);
+    const pEl = document.getElementById(`isp-p-${sz}`);
+    const aEl = document.getElementById(`isp-amt-${sz}`);
+    if (!wEl || !pEl || !aEl) return;
+    const w = parseFloat(wEl.value) || 0;
+    const p = parseFloat(pEl.value) || 0;
+    const amt = w && p ? w * p : 0;
+    aEl.textContent = (w && p) ? fmtN(Math.round(amt)) + '원' : '-';
+    totalKg  += w;
+    totalAmt += amt;
+  }));
+  const totalEl = document.getElementById('isp-total');
+  if (totalEl) {
+    totalEl.innerHTML = totalKg > 0 || totalAmt > 0
+      ? `총 ${fmtN(Math.round(totalKg * 10) / 10)} kg · <strong style="color:#1565C0">${fmtN(Math.round(totalAmt))} 원</strong>`
+      : '';
+  }
+}
+
 function ibSortedTotal() {
   const el = document.getElementById('ib-sorted-total');
   if (!el) return;
@@ -10022,12 +10096,24 @@ async function saveInboundSorted(keepOpen) {
   if (!sizeEntries.length) return alert('사이즈별 수량을 입력하세요.');
   const totalCt = sizeEntries.reduce((s, e) => s + e.ct, 0);
 
+  // 단가 수집
+  let totalWeight = 0, totalAmount = 0;
+  sizeEntries.forEach(e => {
+    const w = parseFloat(document.getElementById(`isp-w-${e.size}`)?.value) || 0;
+    const p = parseFloat(document.getElementById(`isp-p-${e.size}`)?.value) || 0;
+    e._w = w || null; e._p = p || null; e._amt = (w && p) ? Math.round(w * p) : null;
+    if (w) totalWeight += w;
+    if (e._amt) totalAmount += e._amt;
+  });
+
   try {
     const ibRow = await dbInsertInbound({
       date, product, farm_name: supplier,
       quantity: Math.round(totalCt * 10) / 10,
       inbound_category: '선과품',
-      location, driver_id
+      location, driver_id,
+      weight_kg: totalWeight ? Math.round(totalWeight * 10) / 10 : null,
+      amount: totalAmount || null
     });
     const ibId = ibRow.id;
     inboundRecords.unshift({ ...ibRow, driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null });
@@ -10039,7 +10125,8 @@ async function saveInboundSorted(keepOpen) {
           date, farm_name: supplier, product,
           size_code: e.size, quantity: e.ct,
           location, source_type: 'inbound_sorted',
-          inbound_record_id: ibId, is_void: false, created_by: 'admin'
+          inbound_record_id: ibId, is_void: false, created_by: 'admin',
+          weight_kg: e._w || null, unit_price: e._p || null, amount: e._amt || null
         });
         inserted.push(rows[0]);
       } catch(rowErr) {
@@ -10054,6 +10141,14 @@ async function saveInboundSorted(keepOpen) {
       const sizesEl = document.getElementById('ib-sorted-sizes');
       if (sizesEl) sizesEl.querySelectorAll('input[type=number]').forEach(i => { i.value = ''; });
       ibSortedTotal();
+      const ispBody = document.getElementById('isp-body');
+      if (ispBody) { ispBody.style.display = 'none'; }
+      const ispArrow = document.getElementById('isp-arrow');
+      if (ispArrow) ispArrow.textContent = '▸';
+      const ispRows = document.getElementById('isp-rows');
+      if (ispRows) ispRows.innerHTML = '';
+      const ispTotal = document.getElementById('isp-total');
+      if (ispTotal) ispTotal.innerHTML = '';
     };
 
     if (keepOpen) {
