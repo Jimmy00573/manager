@@ -4592,11 +4592,12 @@ function openPachiOutboundModal(regId) {
           onfocus="setTimeout(()=>this.select(),0)" oninput="obClampQty(this,${row.ct})"
           style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
       </div>
-      <div style="margin-bottom:16px">
+      <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
         <input type="text" id="pob-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
       </div>
-      <div style="display:flex;gap:8px">
+      ${priceBlockKg()}
+      <div style="display:flex;gap:8px;margin-top:14px">
         <button id="pob-save-btn" class="btn pri" onclick="savePachiOutbound(${regId})" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
         <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
       </div>
@@ -4644,12 +4645,16 @@ async function savePachiOutbound(regId) {
       if (take > 0) detail.push({ table: 'inventory_records', id, amount: take, voided });
       remaining -= take;
     }
+    const weight = parseFloat(document.getElementById('ob-weight')?.value) || null;
+    const price  = parseFloat(document.getElementById('ob-price')?.value) || null;
+    const amount = (weight && price) ? weight * price : null;
     const ob = await dbInsertOutboundRecord({
       date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'pachi',
       farm_name: row.farm || null, note, is_void: false,
       created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
-      ref_detail: detail
+      ref_detail: detail,
+      weight_kg: weight, unit_price: price, amount
     });
     if (ob) invOutbounds.unshift(ob);
 
@@ -4684,11 +4689,12 @@ function openUnsortedOutboundModal(inboundId) {
           onfocus="setTimeout(()=>this.select(),0)" oninput="obClampQty(this,${remaining})"
           style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
       </div>
-      <div style="margin-bottom:16px">
+      <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
         <input type="text" id="uob-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
       </div>
-      <div style="display:flex;gap:8px">
+      ${priceBlockKg()}
+      <div style="display:flex;gap:8px;margin-top:14px">
         <button id="uob-save-btn" class="btn pri" onclick="saveUnsortedOutbound('${inboundId}')" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
         <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
       </div>
@@ -4728,12 +4734,16 @@ async function saveUnsortedOutbound(inboundId) {
     processingRecords.push(procRow);
 
     const procId = procRow?.id;
+    const weight = parseFloat(document.getElementById('ob-weight')?.value) || null;
+    const price  = parseFloat(document.getElementById('ob-price')?.value) || null;
+    const amount = (weight && price) ? weight * price : null;
     const ob = await dbInsertOutboundRecord({
       date, product: r.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'unsorted',
       farm_name: r.farm_name || null, note, is_void: false,
       created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
-      ref_detail: procId ? [{ table: 'processing_records', id: procId }] : []
+      ref_detail: procId ? [{ table: 'processing_records', id: procId }] : [],
+      weight_kg: weight, unit_price: price, amount
     });
     if (ob) invOutbounds.unshift(ob);
 
@@ -5220,6 +5230,43 @@ async function saveInvEdit() {
 }
 
 // ── 출고 기능 ──────────────────────────────────────────────────
+
+function priceBlockKg() {
+  const inp = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
+  return `
+    <div style="border-top:0.5px dashed #D1D5DB;margin-top:10px;padding-top:9px">
+      <div id="ob-price-toggle" onclick="toggleObPrice()" style="font-size:12px;color:#2563EB;cursor:pointer;user-select:none">▸ 단가 입력 (거래처 정산)</div>
+      <div id="ob-price-body" style="display:none;margin-top:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">실측 중량 (kg)</label>
+            <input type="number" id="ob-weight" min="0" step="0.1" placeholder="0" oninput="calcObAmount()" style="${inp}">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">kg당 단가 (원)</label>
+            <input type="number" id="ob-price" min="0" step="1" placeholder="0" oninput="calcObAmount()" style="${inp}">
+          </div>
+        </div>
+        <div id="ob-amount-display" style="text-align:right;margin-top:8px;font-size:13px;color:#6B7280"></div>
+      </div>
+    </div>`;
+}
+
+function toggleObPrice() {
+  const b = document.getElementById('ob-price-body');
+  const t = document.getElementById('ob-price-toggle');
+  if (!b || !t) return;
+  const open = b.style.display === 'none';
+  b.style.display = open ? '' : 'none';
+  t.textContent = (open ? '▾' : '▸') + ' 단가 입력 (거래처 정산)';
+}
+
+function calcObAmount() {
+  const w = parseFloat(document.getElementById('ob-weight')?.value) || 0;
+  const p = parseFloat(document.getElementById('ob-price')?.value) || 0;
+  const el = document.getElementById('ob-amount-display');
+  if (el) el.innerHTML = (w > 0 && p > 0) ? `금액 <b style="color:#2563EB">${fmtN(Math.round(w * p))}</b> 원` : '';
+}
 
 function popOutboundPartners() {
   const el = document.getElementById('ob-partner');
