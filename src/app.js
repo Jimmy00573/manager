@@ -8614,7 +8614,8 @@ function renderInboundList() {
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const isDone = r.inbound_category !== '선과품' && remaining <= 0 && processed > 0;
     const isSorted = r.inbound_category === '선과품';
-    const grayStyle = (isDone || isSorted) ? 'opacity:0.6;' : '';
+    const isGrayed = isDone || isSorted;
+    const grayStyle = isGrayed ? 'background:#F3F4F6;opacity:0.75;' : '';
     const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
     const sortedBadge = isSorted ? `<span style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">선과품</span>` : '';
     const qInline = qualityInline(r);
@@ -8646,7 +8647,7 @@ function renderInboundList() {
     const locCell = r.distribution_group_id
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
       : esc(r.location || '-');
-    return `<tr id="ib-tr-${r.id}" style="${priorityStyle}${grayStyle}">
+    return `<tr id="ib-tr-${r.id}" style="${isGrayed ? grayStyle : priorityStyle}">
       <td>${r.date}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
