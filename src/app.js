@@ -5268,6 +5268,68 @@ function calcObAmount() {
   if (el) el.innerHTML = (w > 0 && p > 0) ? `금액 <b style="color:#2563EB">${fmtN(Math.round(w * p))}</b> 원` : '';
 }
 
+function toggleMobPrice() {
+  const body = document.getElementById('mob-price-body');
+  const tog  = document.getElementById('mob-price-toggle');
+  if (!body || !tog) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  tog.textContent = (open ? '▾' : '▸') + ' 단가 입력 (거래처 정산)';
+  if (open) buildMobPriceRows();
+}
+
+function buildMobPriceRows() {
+  const rowsEl = document.getElementById('mob-price-rows');
+  if (!rowsEl) return;
+  const ctx = window._outboundCtx;
+  const inp = 'width:100%;padding:5px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;box-sizing:border-box;text-align:right';
+  const sizes = (ctx?.allSizes || []).filter(sz => (parseFloat(document.getElementById(`ob-sz-${sz}`)?.value) || 0) > 0);
+  if (!sizes.length) {
+    rowsEl.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:4px 0">출고 CT를 먼저 입력하세요.</div>';
+    document.getElementById('mob-price-total').innerHTML = '';
+    return;
+  }
+  const thStyle = 'padding:4px 6px;font-size:11px;color:#6B7280;font-weight:600;text-align:right;white-space:nowrap';
+  const header = `<div style="display:grid;grid-template-columns:50px 50px 1fr 1fr 1fr;gap:6px;margin-bottom:4px">
+    <div style="${thStyle};text-align:left">사이즈</div>
+    <div style="${thStyle}">CT</div>
+    <div style="${thStyle}">실측 kg</div>
+    <div style="${thStyle}">kg단가(원)</div>
+    <div style="${thStyle}">금액(원)</div>
+  </div>`;
+  const rows = sizes.map(sz => {
+    const ct = parseFloat(document.getElementById(`ob-sz-${sz}`).value) || 0;
+    return `<div style="display:grid;grid-template-columns:50px 50px 1fr 1fr 1fr;gap:6px;margin-bottom:6px;align-items:center">
+      <div style="font-size:12px;font-weight:600;color:#111">${esc(sz)}</div>
+      <div style="font-size:12px;text-align:right;color:#374151">${fmtCT(ct)}</div>
+      <input type="number" id="mob-w-${sz}" min="0" step="0.1" placeholder="0" oninput="calcMobAmount()" style="${inp}">
+      <input type="number" id="mob-p-${sz}" min="0" step="1" placeholder="0" oninput="calcMobAmount()" style="${inp}">
+      <div id="mob-amt-${sz}" style="font-size:12px;text-align:right;color:#2563EB;font-weight:600"></div>
+    </div>`;
+  }).join('');
+  rowsEl.innerHTML = header + rows;
+  calcMobAmount();
+}
+
+function calcMobAmount() {
+  const ctx = window._outboundCtx;
+  const sizes = (ctx?.allSizes || []).filter(sz => (parseFloat(document.getElementById(`ob-sz-${sz}`)?.value) || 0) > 0);
+  let totalAmt = 0, totalKg = 0, hasAny = false;
+  sizes.forEach(sz => {
+    const w = parseFloat(document.getElementById(`mob-w-${sz}`)?.value) || 0;
+    const p = parseFloat(document.getElementById(`mob-p-${sz}`)?.value) || 0;
+    const el = document.getElementById(`mob-amt-${sz}`);
+    if (el) {
+      if (w > 0 && p > 0) { const a = w * p; el.textContent = fmtN(Math.round(a)); totalAmt += a; totalKg += w; hasAny = true; }
+      else el.textContent = '';
+    }
+  });
+  const tot = document.getElementById('mob-price-total');
+  if (tot) tot.innerHTML = hasAny
+    ? `합계 <b style="color:#2563EB">${fmtN(Math.round(totalAmt))}</b> 원 · ${fmtN(totalKg)} kg`
+    : '';
+}
+
 function popOutboundPartners() {
   const el = document.getElementById('ob-partner');
   if (!el) return;
@@ -5359,9 +5421,16 @@ function openOutboundModal(regId) {
       </div>
       <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 출고량 (현재고 / CT)</div>
       ${sizeRows}
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #E5E7EB;margin-top:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #E5E7EB;margin-top:8px;margin-bottom:4px">
         <span style="font-size:13px;color:#6B7280">출고 합계</span>
         <span id="ob-total-display" style="font-size:15px;font-weight:700;color:#1565C0">0 CT</span>
+      </div>
+      <div style="border-top:0.5px dashed #D1D5DB;margin-top:6px;padding-top:9px;margin-bottom:12px">
+        <div id="mob-price-toggle" onclick="toggleMobPrice()" style="font-size:12px;color:#2563EB;cursor:pointer;user-select:none">▸ 단가 입력 (거래처 정산)</div>
+        <div id="mob-price-body" style="display:none;margin-top:8px">
+          <div id="mob-price-rows"></div>
+          <div id="mob-price-total" style="text-align:right;margin-top:6px;font-size:13px;color:#6B7280"></div>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
         <button id="ob-save-btn" class="btn pri" onclick="saveOutbound(${regId})" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
@@ -5418,12 +5487,16 @@ async function saveOutbound(regId) {
         if (take > 0) detail.push({ table: 'inventory_records', id: rec.id, amount: take, voided });
         remaining -= take;
       }
+      const w   = parseFloat(document.getElementById(`mob-w-${sz}`)?.value) || null;
+      const p   = parseFloat(document.getElementById(`mob-p-${sz}`)?.value) || null;
+      const amt = (w && p) ? w * p : null;
       const ob = await dbInsertOutboundRecord({
         date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
         partner_name: partner, source_type: 'sorting',
         farm_name: info.farm, note, is_void: false,
         created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
-        ref_detail: detail
+        ref_detail: detail,
+        weight_kg: w, unit_price: p, amount: amt
       });
       if (ob) invOutbounds.unshift(ob);
     }
