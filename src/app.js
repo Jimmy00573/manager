@@ -4547,7 +4547,8 @@ async function deleteMatrixBatch(regId) {
   if (!info) return;
   const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
   const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}\n총 ${fmtCT(info.batchTotal)} CT`;
-  if (!confirm(`이 배치를 삭제하시겠습니까?\n${label}`)) return;
+  const ok = await showConfirmDanger({ title: '재고 삭제', items: [label], confirmText: '삭제' });
+  if (!ok) return;
   let toDelete;
   const gid = String(info.groupId);
   if (gid.startsWith('manual_')) {
@@ -5028,7 +5029,8 @@ async function deleteJuiceBatch(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const b = invJuiceBatches.find(x => x.id === id);
   const label = b ? `${b.product_name} 입고 ${b.inbound_date} ${fmtN(b.total_bottles)}병` : '';
-  if (!confirm(`이 배치를 삭제하시겠습니까?\n${label}`)) return;
+  const ok = await showConfirmDanger({ title: '주스 배치 삭제', items: [label], confirmText: '삭제' });
+  if (!ok) return;
   try {
     await sbUpdate('juice_batches', id, { is_void: true });
     const rec = invJuiceBatches.find(x => x.id === id);
@@ -6076,10 +6078,17 @@ function renderOutboundHistory() {
 }
 
 
-function confirmCancelOutbound(id) {
+async function confirmCancelOutbound(id) {
   const r = invOutbounds.find(x => String(x.id) === String(id));
   if (!r) return;
-  if (!confirm(`${r.product} ${fmtN(r.quantity)}${r.unit} (${r.partner_name||'-'}) 출고를 취소합니다.\n\n차감됐던 재고가 다시 복구되고, 이 출고 기록은 취소 처리됩니다.\n계속하시겠습니까?`)) return;
+  const ok = await showConfirmDanger({
+    title: '출고 취소',
+    subtitle: '차감된 재고가 복구됩니다',
+    items: [`${r.product} ${fmtN(r.quantity)}${r.unit} (${r.partner_name||'-'})`],
+    resultNote: '차감됐던 재고가 다시 복구되고, 이 출고 기록은 취소 처리됩니다',
+    confirmText: '출고 취소'
+  });
+  if (!ok) return;
   cancelOutbound(id);
 }
 
@@ -9419,18 +9428,20 @@ async function deleteInbound(id) {
   if (!r) return;
   const links = await getInboundLinks(id);
   const hasLinks = links.sorting > 0 || links.inventory > 0 || links.processing > 0;
+  const items = [`${r.farm_name} · ${r.product} · ${r.date}`];
+  if (hasLinks) items.push(`연결된 선과 결과 ${links.sorting}건 · 재고 ${links.inventory}건 · 가공 ${links.processing}건`);
+  const ok = await showConfirmDanger({
+    title: '입고 삭제',
+    items,
+    resultNote: hasLinks ? '연결된 데이터도 함께 삭제됩니다' : null,
+    confirmText: '삭제'
+  });
+  if (!ok) return;
   try {
     if (!hasLinks) {
-      if (!confirm('이 입고 기록을 삭제하시겠습니까?\n\n' + esc(r.farm_name) + ' · ' + esc(r.product) + ' · ' + r.date)) return;
       await dbDeleteInbound(id);
       inboundRecords = inboundRecords.filter(x => x.id !== id);
     } else {
-      const msg = '⚠️ 이 입고에는 연결된 데이터가 있습니다.\n\n'
-        + '· 선과 결과 ' + links.sorting + '건\n'
-        + '· 재고 ' + links.inventory + '건\n'
-        + '· 가공 기록 ' + links.processing + '건\n\n'
-        + '[확인]을 누르면 위 데이터가 모두 영구 삭제됩니다.\n복구할 수 없습니다.';
-      if (!confirm(msg)) return;
       await cascadeDeleteInbound(id);
     }
     await dbInsertAuditLog({
