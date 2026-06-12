@@ -11481,9 +11481,16 @@ async function openSortingDetailModal(inboundId) {
 }
 
 // ── 선과품 입고 내역 모달 ─────────────────────────────────────────
+let _msibEscHandler = null;
+
 function openSortedInboundDetail(inboundId) {
   const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
   if (!ib) return;
+
+  // 옛 셸 + 이전 ESC 핸들러 제거
+  const old = document.getElementById('modal-sorted-ib-detail');
+  if (old) old.remove();
+  if (_msibEscHandler) { document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; }
 
   const sizeRecs = inventoryRecords.filter(r =>
     !r.is_void && r.source_type === 'inbound_sorted' &&
@@ -11514,54 +11521,55 @@ function openSortedInboundDetail(inboundId) {
     ? `<div style="padding:16px;text-align:center;color:#9CA3AF;font-size:13px">사이즈별 재고 기록 없음</div>`
     : '';
 
-  let modal = document.getElementById('modal-sorted-ib-detail');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'modal-sorted-ib-detail';
-    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-    modal.innerHTML = `
-      <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-        <div id="msib-header" style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
-          <div id="msib-title" style="font-size:14px;font-weight:700;color:#1565C0">📦 선과품 입고 내역</div>
-          <button onclick="document.getElementById('modal-sorted-ib-detail').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+  const modal = document.createElement('div');
+  modal.id = 'modal-sorted-ib-detail';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow-y:auto;overflow-x:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
+        <div style="font-size:14px;font-weight:700;color:#1565C0">📦 ${esc(ib.farm_name)} · ${esc(ib.product)}</div>
+        <button id="msib-close" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px">
+          <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
+            <div style="font-size:11px;color:#6B7280;margin-bottom:2px">입고일</div>
+            <div style="font-size:13px;font-weight:600;color:#111827">${esc(ib.date)}</div>
+          </div>
+          <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
+            <div style="font-size:11px;color:#6B7280;margin-bottom:2px">위치</div>
+            <div style="font-size:12px;font-weight:600;color:#111827">${esc(ib.location || '-')}</div>
+          </div>
+          <div style="background:#EFF6FF;border-radius:8px;padding:8px 10px;text-align:center">
+            <div style="font-size:11px;color:#1D4ED8;margin-bottom:2px">총 CT</div>
+            <div style="font-size:15px;font-weight:800;color:#1565C0">${fmtCT(totalCt || ib.quantity)}</div>
+          </div>
         </div>
-        <div id="msib-body" style="padding:16px 18px"></div>
-      </div>`;
-    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display !== 'none') modal.style.display = 'none'; });
-    document.body.appendChild(modal);
-  }
+        ${sizeRecs.length > 0 ? `
+        <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+            <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
+            <thead><tr style="background:#F3F4F6">
+              <th style="padding:6px 12px;text-align:left;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">사이즈</th>
+              <th style="padding:6px 12px;text-align:right;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">CT</th>
+            </tr></thead>
+            <tbody>${sizeRowsHtml}</tbody>
+          </table>
+        </div>` : noSizeNote}
+        ${ib.note ? `<div style="margin-top:12px;background:#FFFBEB;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400E">📝 ${esc(ib.note)}</div>` : ''}
+      </div>
+    </div>`;
 
-  document.getElementById('msib-title').textContent = `📦 ${ib.farm_name} · ${ib.product}`;
-  document.getElementById('msib-body').innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px">
-      <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
-        <div style="font-size:11px;color:#6B7280;margin-bottom:2px">입고일</div>
-        <div style="font-size:13px;font-weight:600;color:#111827">${esc(ib.date)}</div>
-      </div>
-      <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
-        <div style="font-size:11px;color:#6B7280;margin-bottom:2px">품목</div>
-        <div style="font-size:13px;font-weight:600;color:#111827">${esc(ib.product)}</div>
-      </div>
-      <div style="background:#EFF6FF;border-radius:8px;padding:8px 10px;text-align:center">
-        <div style="font-size:11px;color:#1D4ED8;margin-bottom:2px">총 CT</div>
-        <div style="font-size:15px;font-weight:800;color:#1565C0">${fmtCT(totalCt || ib.quantity)}</div>
-      </div>
-    </div>
-    ${sizeRecs.length > 0 ? `
-    <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
-        <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
-        <thead><tr style="background:#F3F4F6">
-          <th style="padding:6px 12px;text-align:left;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">사이즈</th>
-          <th style="padding:6px 12px;text-align:right;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">CT</th>
-        </tr></thead>
-        <tbody>${sizeRowsHtml}</tbody>
-      </table>
-    </div>` : noSizeNote}
-    ${ib.note ? `<div style="margin-top:12px;background:#FFFBEB;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400E">📝 ${esc(ib.note)}</div>` : ''}`;
-
-  modal.style.display = 'flex';
+  const close = () => {
+    modal.remove();
+    document.removeEventListener('keydown', _msibEscHandler);
+    _msibEscHandler = null;
+  };
+  _msibEscHandler = e => { if (e.key === 'Escape') close(); };
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.querySelector('#msib-close').addEventListener('click', close);
+  document.addEventListener('keydown', _msibEscHandler);
+  document.body.appendChild(modal);
 }
 
 // ── 설정 탭 — 비밀번호 변경 모달
