@@ -2561,6 +2561,22 @@ function calGoPage(p) { calUpPage = p; renderCalUpcoming(); }
 function calPrevMonth() { if (calMonth === 0) { calYear--; calMonth = 11; } else calMonth--; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
 function calNextMonth() { if (calMonth === 11) { calYear++; calMonth = 0; } else calMonth++; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
 
+// ── CSV 공용 헬퍼
+function toCSV(headers, rows) {
+  const h = headers.join(',');
+  const r = rows.map(row => row.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(','));
+  return [h, ...r].join('\n');
+}
+
+function download(filename, csv) {
+  const BOM = '﻿';
+  const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── 엑셀 내보내기
 function exportExcel(type) {
   const from = document.getElementById('exp-from')?.value;
@@ -2572,21 +2588,6 @@ function exportExcel(type) {
       if (to && r.date > to) return false;
       return true;
     });
-  }
-
-  function toCSV(headers, rows) {
-    const h = headers.join(',');
-    const r = rows.map(row => row.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(','));
-    return [h, ...r].join('\n');
-  }
-
-  function download(filename, csv) {
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
   }
 
   const today = ymd(new Date());
@@ -5709,6 +5710,27 @@ function renderInvAll() {
   renderWasteList();
 }
 
+function exportOutboundCSV() {
+  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스' };
+  const filtered = invOutbounds.filter(r => {
+    if (_obHistFilter.from    && r.date < _obHistFilter.from)              return false;
+    if (_obHistFilter.to      && r.date > _obHistFilter.to)                return false;
+    if (_obHistFilter.prod    && r.product !== _obHistFilter.prod)         return false;
+    if (_obHistFilter.partner && r.partner_name !== _obHistFilter.partner) return false;
+    if (_obHistFilter.src     && r.source_type !== _obHistFilter.src)      return false;
+    return true;
+  });
+  if (!filtered.length) { alert('내보낼 출고 내역이 없습니다.'); return; }
+  const headers = ['일자','품목','사이즈','구분','출고처','수량','단위','유통기한','메모'];
+  const rows = filtered.map(r => [
+    r.date||'', r.product||'', r.size_code||'',
+    srcLabel[r.source_type] || r.source_type||'',
+    r.partner_name||'', fmtN(Number(r.quantity)||0), r.unit||'',
+    r.expiry_date||'', r.note||''
+  ]);
+  download(`출고내역_${td()}.csv`, toCSV(headers, rows));
+}
+
 function renderOutboundHistory() {
   const div = document.getElementById('inv-out-div');
   if (!div) return;
@@ -5814,6 +5836,9 @@ function renderOutboundHistory() {
             <option value="partner"${(_obHistFilter.group||'partner')==='partner'?' selected':''}>출고처별</option>
             <option value="product"${_obHistFilter.group==='product'?' selected':''}>품목별</option>
           </select></div>
+        <div style="align-self:flex-end">
+          <button onclick="exportOutboundCSV()" style="padding:6px 12px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;white-space:nowrap">📥 내보내기</button>
+        </div>
       </div>
     </div>
     <div style="padding:0 4px">
