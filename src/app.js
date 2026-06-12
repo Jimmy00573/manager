@@ -5025,9 +5025,19 @@ function openJuiceOutboundModal(id) {
       <div id="job-total-display" style="text-align:center;padding:8px;background:#F9FAFB;border-radius:6px;font-size:13px;color:#374151;margin-bottom:14px">
         0 병 출고 · 출고 후 ${fmtN(b.remaining_bottles)} 병
       </div>
-      <div style="margin-bottom:16px">
+      <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
         <input type="text" id="job-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="border-top:0.5px dashed #D1D5DB;margin-top:10px;padding-top:9px;margin-bottom:14px">
+        <div id="job-price-toggle" onclick="toggleJobPrice()" style="font-size:12px;color:#2563EB;cursor:pointer;user-select:none">▸ 단가 입력 (거래처 정산)</div>
+        <div id="job-price-body" style="display:none;margin-top:8px">
+          <div>
+            <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">병당 단가 (원)</label>
+            <input type="number" id="job-price" min="0" step="1" placeholder="0" oninput="calcJobAmount()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          </div>
+          <div id="job-amount-display" style="text-align:right;margin-top:8px;font-size:13px;color:#6B7280"></div>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
         <button id="job-save-btn" class="btn pri" onclick="saveJuiceOutbound('${id}')" style="flex:1;padding:10px;font-size:14px">📤 출고</button>
@@ -5049,6 +5059,7 @@ function calcJuiceOutbound(remaining, perBox) {
   const over = qty > remaining;
   disp.textContent = `${fmtN(qty)} 병 출고 · 출고 후 ${fmtN(Math.max(0, remaining - qty))} 병`;
   disp.style.color = over ? '#DC2626' : qty > 0 ? '#059669' : '#374151';
+  calcJobAmount();
 }
 
 async function saveJuiceOutbound(id) {
@@ -5082,13 +5093,16 @@ async function saveJuiceOutbound(id) {
     b.remaining_bottles = newRem;
     if (voided) b.is_void = true;
 
+    const price  = parseFloat(document.getElementById('job-price')?.value) || null;
+    const amount = (price && qty) ? qty * price : null;
     const row = await dbInsertOutboundRecord({
       date, product: b.product_name, size_code: null, quantity: qty, unit: '병',
       partner_name: partner, source_type: 'juice',
       inventory_ref_id: b.id, box_count: box || null,
       expiry_date: b.expiry_date || null,
       farm_name: null, note, is_void: false, created_by: adm,
-      ref_detail: [{ table: 'juice_batches', id: b.id, amount: qty, voided }]
+      ref_detail: [{ table: 'juice_batches', id: b.id, amount: qty, voided }],
+      unit_price: price, amount
     });
     if (row) invOutbounds.unshift(row);
 
@@ -5328,6 +5342,26 @@ function calcMobAmount() {
   if (tot) tot.innerHTML = hasAny
     ? `합계 <b style="color:#2563EB">${fmtN(Math.round(totalAmt))}</b> 원 · ${fmtN(totalKg)} kg`
     : '';
+}
+
+function toggleJobPrice() {
+  const b = document.getElementById('job-price-body');
+  const t = document.getElementById('job-price-toggle');
+  if (!b || !t) return;
+  const open = b.style.display === 'none';
+  b.style.display = open ? '' : 'none';
+  t.textContent = (open ? '▾' : '▸') + ' 단가 입력 (거래처 정산)';
+}
+
+function calcJobAmount() {
+  const b = window._juiceOutboundCtx?.b;
+  if (!b) return;
+  const box    = parseFloat(document.getElementById('job-box')?.value) || 0;
+  const single = parseFloat(document.getElementById('job-single')?.value) || 0;
+  const qty    = box * (b.per_box || 0) + single;
+  const p      = parseFloat(document.getElementById('job-price')?.value) || 0;
+  const el     = document.getElementById('job-amount-display');
+  if (el) el.innerHTML = (qty > 0 && p > 0) ? `금액 <b style="color:#2563EB">${fmtN(Math.round(qty * p))}</b> 원` : '';
 }
 
 function popOutboundPartners() {
