@@ -5344,6 +5344,22 @@ function calcMobAmount() {
     : '';
 }
 
+function toggleIbPrice() {
+  const b = document.getElementById('ibp-body');
+  const t = document.getElementById('ibp-toggle');
+  if (!b || !t) return;
+  const open = b.style.display === 'none';
+  b.style.display = open ? '' : 'none';
+  t.textContent = (open ? '▾' : '▸') + ' 매입 단가 (선택)';
+}
+
+function calcIbAmount() {
+  const w = parseFloat(document.getElementById('ibp-weight')?.value) || 0;
+  const p = parseFloat(document.getElementById('ibp-price')?.value) || 0;
+  const el = document.getElementById('ibp-amount');
+  if (el) el.innerHTML = (w > 0 && p > 0) ? `매입액 <b style="color:#2563EB">${fmtN(Math.round(w * p))}</b> 원` : '';
+}
+
 function toggleJobPrice() {
   const b = document.getElementById('job-price-body');
   const t = document.getElementById('job-price-toggle');
@@ -9848,6 +9864,10 @@ async function _addInboundCore(keepOpen) {
     if (!qty) return alert('수량은 필수입니다.');
   }
 
+  const ibWeight = parseFloat(document.getElementById('ibp-weight')?.value) || null;
+  const ibPrice  = parseFloat(document.getElementById('ibp-price')?.value) || null;
+  const ibAmount = (ibWeight && ibPrice) ? ibWeight * ibPrice : null;
+
   const commonData = {
     date, product, farm_name,
     note, staff: 'admin',
@@ -9863,6 +9883,9 @@ async function _addInboundCore(keepOpen) {
     ...(reclassification_source && { reclassification_source }),
     ...(reclassification_reason && { reclassification_reason }),
     ...(original_work_date && { original_work_date }),
+    ...(ibWeight && { weight_kg: ibWeight }),
+    ...(ibPrice  && { unit_price: ibPrice }),
+    ...(ibAmount && { amount: ibAmount }),
   };
 
   // Reset everything except date/farm/driver
@@ -9875,6 +9898,11 @@ async function _addInboundCore(keepOpen) {
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const priEl = document.getElementById('ib-priority'); if (priEl) priEl.checked = false;
+    const ibpW = document.getElementById('ibp-weight'); if (ibpW) ibpW.value = '';
+    const ibpP = document.getElementById('ibp-price');  if (ibpP) ibpP.value = '';
+    const ibpAmt = document.getElementById('ibp-amount'); if (ibpAmt) ibpAmt.innerHTML = '';
+    const ibpBody = document.getElementById('ibp-body'); if (ibpBody) ibpBody.style.display = 'none';
+    const ibpTog = document.getElementById('ibp-toggle'); if (ibpTog) ibpTog.textContent = '▸ 매입 단가 (선택)';
     syncReclassList('ib');
   };
 

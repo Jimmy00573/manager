@@ -918,6 +918,23 @@
           </div>
         </div>
 
+        <div style="border-top:0.5px dashed #D1D5DB;margin-top:10px;padding-top:9px">
+          <div id="ibp-toggle" onclick="toggleIbPrice()" style="font-size:12px;color:#2563EB;cursor:pointer;user-select:none">▸ 매입 단가 (선택)</div>
+          <div id="ibp-body" style="display:none;margin-top:8px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">실측 중량 (kg)</label>
+                <input type="number" id="ibp-weight" min="0" step="0.1" placeholder="0" oninput="calcIbAmount()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">kg당 단가 (원)</label>
+                <input type="number" id="ibp-price" min="0" step="1" placeholder="0" oninput="calcIbAmount()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+              </div>
+            </div>
+            <div id="ibp-amount" style="text-align:right;margin-top:8px;font-size:13px;color:#6B7280"></div>
+          </div>
+        </div>
+
         </div><!-- /ib-raw-block -->
 
         <div class="form-actions" style="display:flex;gap:8px">
@@ -1709,6 +1726,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=13"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=158"></script>
+<script src="src/app.js?v=159"></script>
 </body>
 </html>
