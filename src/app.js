@@ -7340,6 +7340,7 @@ let _scSort = 'date-asc';
 let _scSearch = '';
 let _scPriOnly = false;
 let _scProduct = '';
+let _scCategory = '';
 let _scTab = 'pending'; // 'pending' | 'doing' | 'done'
 let _scDoneSearch = '';
 let _scDoneProduct = '';
@@ -8731,6 +8732,7 @@ function renderProcessingTab() {
             style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
             <option value="">전체 품목</option>
           </select>
+          <div id="sc-cat-btns" style="display:flex;gap:4px"></div>
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
             <input type="checkbox" id="sc-pri-only"> ⭐ 우선/긴급만
           </label>
@@ -9064,8 +9066,25 @@ function _renderScTable() {
     const q = _scSearch.toLowerCase();
     rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q));
   }
-  if (_scProduct) rows = rows.filter(r => r.product === _scProduct);
-  if (_scPriOnly) rows = rows.filter(r => r.is_priority || urgency(r.date).level >= 2);
+  if (_scProduct)  rows = rows.filter(r => r.product === _scProduct);
+  if (_scCategory) rows = rows.filter(r => (r.inbound_category || '상품') === _scCategory);
+  if (_scPriOnly)  rows = rows.filter(r => r.is_priority || urgency(r.date).level >= 2);
+
+  // 카테고리 필터 버튼 렌더
+  const catBtnEl = document.getElementById('sc-cat-btns');
+  if (catBtnEl) {
+    const cats = [['', '전체'], ['상품', '상품'], ['대과', '대과'], ['소과', '소과']];
+    const catColors = { '상품': ['#DCFCE7','#15803D'], '대과': ['#FEF3C7','#B45309'], '소과': ['#DBEAFE','#1D4ED8'] };
+    catBtnEl.innerHTML = cats.map(([val, label]) => {
+      const active = _scCategory === val;
+      const [bg, col] = val ? (catColors[val] || ['#F3F4F6','#6B7280']) : ['', ''];
+      const style = active
+        ? `background:${bg||'#374151'};color:${col||'#fff'};border:1px solid ${col||'#374151'}`
+        : 'background:#fff;color:#374151;border:1px solid #D1D5DB';
+      return `<button onclick="_scCategory='${val}';_renderScTable()"
+        style="${style};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">${label}</button>`;
+    }).join('');
+  }
 
   const [sortCol, sortDir] = _scSort.split('-');
   rows.sort((a, b) => {
@@ -9094,29 +9113,36 @@ function _renderScTable() {
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
-        <col style="width:90px"><col style="width:80px"><col style="width:70px">
-        <col style="width:70px"><col style="width:60px"><col style="width:45px">
+        <col style="width:90px"><col style="width:80px"><col style="width:60px">
+        <col style="width:70px"><col style="width:70px"><col style="width:60px"><col style="width:45px">
         <col style="width:80px"><col style="width:100px"><col style="width:70px">
       </colgroup>
       <thead><tr>
-        ${thS('farm','농가')}${thN('품목')}${thS('remaining','잔여CT')}
+        ${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
         ${thS('date','입고일')}${thS('elapsed','경과')}${thN('이력')}
         ${thN('위치')}${thN('품질')}${thN('액션')}
       </tr></thead>
       <tbody>
         ${rows.length === 0
-          ? `<tr><td colspan="9" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 항목이 없습니다</td></tr>`
+          ? `<tr><td colspan="10" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 항목이 없습니다</td></tr>`
           : rows.map(r => {
               const u = urgency(r.date);
               const srtCnt = srtCntMap[r.id] || 0;
               const isPri = r.is_priority || u.level === 3;
               const rowBg = isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : '#fff');
               const qiHtml = qualityInline(r);
+              const catBadge = (() => {
+                const c = r.inbound_category || '상품';
+                const m = { '상품': ['#DCFCE7','#15803D'], '대과': ['#FEF3C7','#B45309'], '소과': ['#DBEAFE','#1D4ED8'] };
+                const [bg, col] = m[c] || ['#F3F4F6','#6B7280'];
+                return `<span style="background:${bg};color:${col};font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">${esc(c)}</span>`;
+              })();
               return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
                   ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
+                <td style="padding:6px 4px">${catBadge}</td>
                 <td style="padding:6px 4px;text-align:right;font-weight:700;color:#1565C0">${fmtN(r.remaining)}</td>
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px 4px;font-size:12px;font-weight:600;color:${u.color};white-space:nowrap">${u.icon} ${u.label}</td>
