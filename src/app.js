@@ -94,6 +94,7 @@ let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 
 let _msgTxt = '', _msgDrvTel = '';
 let _editFarmId = null, _editDrvId = null, _editPickId = null, _editPartnerId = null;
+let _obEditId = null;
 let _XT = null, _XI = null;
 let _dt = 'w', _dt2 = 'w', _ft = 'n';
 let _dp = 1, _d2p = 1, _rp = 1;
@@ -5663,14 +5664,16 @@ function renderOutboundHistory() {
   function rowHtml(r) {
     const size   = r.size_code ? ` <span style="color:#9CA3AF;font-size:11px">${esc(r.size_code)}</span>` : '';
     const expiry = (r.unit==='병' && r.expiry_date) ? ` <span style="color:#9CA3AF;font-size:11px">~${r.expiry_date}</span>` : '';
-    const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0 && sessionStorage.getItem('citrus_role') === 'admin';
+    const isAdmin = sessionStorage.getItem('citrus_role') === 'admin';
+    const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0 && isAdmin;
     return `<tr style="border-bottom:1px solid #F3F4F6">
       <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${r.date||''}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.product||'')}${size}${expiry}</td>
       <td style="padding:7px 10px">${srcBadge(r.source_type)}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.partner_name||'-')}</td>
       <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(Number(r.quantity)||0)} ${esc(r.unit||'')}</td>
-      <td style="padding:7px 10px;text-align:center">
+      <td style="padding:7px 10px;text-align:center;white-space:nowrap">
+        ${isAdmin ? `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>` : ''}
         ${cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : ''}
       </td>
     </tr>`;
@@ -5801,6 +5804,80 @@ async function cancelOutbound(id) {
     renderJuiceSection(); renderInboundList(); renderInvSummary();
   } catch(e) {
     alert('취소 중 오류가 발생했습니다. 일부 복구가 완료되지 않았을 수 있으니 재고를 확인해주세요.\n\n' + e.message);
+  }
+}
+
+function openOutboundEdit(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const r = invOutbounds.find(x => String(x.id) === String(id));
+  if (!r) return;
+  _obEditId = id;
+
+  // 기존 모달 제거 후 재생성
+  const prev = document.getElementById('modal-ob-edit');
+  if (prev) prev.remove();
+
+  const sizeInfo = r.size_code ? ` (${esc(r.size_code)})` : '';
+  const noteVal = (r.note || '').replace(/"/g, '&quot;');
+
+  const div = document.createElement('div');
+  div.id = 'modal-ob-edit';
+  div.className = 'modal-bg';
+  div.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:9999';
+  div.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:94vw;box-shadow:0 8px 32px #0002">
+      <h3 style="margin:0 0 16px;font-size:16px">출고 수정</h3>
+      <div style="background:#F9FAFB;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#6B7280;line-height:1.8">
+        <div>품목: <b style="color:#111">${esc(r.product||'')}${sizeInfo}</b></div>
+        <div>수량: <b style="color:#111">${fmtN(Number(r.quantity)||0)} ${esc(r.unit||'')}</b></div>
+        <div style="font-size:11px;color:#9CA3AF;margin-top:4px">수량 변경은 취소 후 재출고</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고일</label>
+        <input id="obe-date" type="date" value="${r.date||''}" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:6px;padding:8px 10px;font-size:14px">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고처</label>
+        <select id="obe-partner" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:6px;padding:8px 10px;font-size:14px"></select>
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
+        <input id="obe-note" type="text" value="${noteVal}" placeholder="메모 (선택)" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:6px;padding:8px 10px;font-size:14px">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="saveOutboundEdit()" style="flex:1;background:#2563EB;color:#fff;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;font-weight:600">저장</button>
+        <button onclick="document.getElementById('modal-ob-edit').remove()" style="flex:1;background:#F3F4F6;color:#374151;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer">취소</button>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+
+  // 거래처 드롭다운 채우기
+  const sel = document.getElementById('obe-partner');
+  const pts = partners || [];
+  sel.innerHTML = '<option value="">선택 안 함</option>' +
+    pts.map(p => `<option value="${esc(p.name)}"${p.name === r.partner_name ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  // 직접입력 선택지 — 현재 값이 목록에 없으면 추가
+  if (r.partner_name && !pts.find(p => p.name === r.partner_name)) {
+    sel.innerHTML += `<option value="${esc(r.partner_name)}" selected>${esc(r.partner_name)}</option>`;
+  }
+}
+
+async function saveOutboundEdit() {
+  if (!_obEditId) return;
+  const date = (document.getElementById('obe-date')?.value || '').trim();
+  const partner = (document.getElementById('obe-partner')?.value || '').trim();
+  const note = (document.getElementById('obe-note')?.value || '').trim();
+  if (!date) { alert('출고일을 입력해주세요.'); return; }
+  try {
+    await sbUpdate('outbound_records', _obEditId, { date, partner_name: partner || null, note: note || null });
+    const r = invOutbounds.find(x => String(x.id) === String(_obEditId));
+    if (r) { r.date = date; r.partner_name = partner || null; r.note = note || null; }
+    document.getElementById('modal-ob-edit')?.remove();
+    _obEditId = null;
+    showToast('출고 정보가 수정됐습니다.');
+    renderOutboundHistory(); renderJuiceSection();
+  } catch(e) {
+    alert('수정 중 오류가 발생했습니다.\n\n' + e.message);
   }
 }
 
