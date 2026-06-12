@@ -5963,6 +5963,9 @@ function renderOutboundHistory() {
     if (isAdmin) {
       actionCell += `<button onclick="openTxPriceEdit('${t.kind}','${r.id}')" style="background:none;border:1px solid #C7D2FE;color:#4F46E5;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">단가</button>`;
     }
+    if (isAdmin && t.kind === 'in' && t.category === '선과품') {
+      actionCell += `<button onclick="openSortedInboundDetail('${r.id}', true)" style="background:none;border:1px solid #A7F3D0;color:#065F46;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">사이즈별</button>`;
+    }
     if (t.kind==='out' && isAdmin) {
       const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0;
       actionCell += `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>`
@@ -11578,33 +11581,48 @@ async function openSortingDetailModal(inboundId) {
 // ── 선과품 입고 내역 모달 ─────────────────────────────────────────
 let _msibEscHandler = null;
 
-function openSortedInboundDetail(inboundId) {
+function openSortedInboundDetail(inboundId, showPrice = false) {
   const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
   if (!ib) return;
 
   document.getElementById('modal-sorted-ib-detail')?.remove();
   if (_msibEscHandler) { document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; }
 
-  // 데이터 추출
+  // 데이터 추출 — size별 CT/weight/amount 합산
   const sizeRecs = inventoryRecords.filter(r =>
     !r.is_void && r.source_type === 'inbound_sorted' &&
     String(r.inbound_record_id) === String(inboundId)
   );
-  const sizeMap = {};
-  sizeRecs.forEach(r => { sizeMap[r.size_code] = (sizeMap[r.size_code] || 0) + (Number(r.quantity) || 0); });
-  const totalCt = Object.values(sizeMap).reduce((s, v) => s + v, 0);
+  const sizeData = {};
+  sizeRecs.forEach(r => {
+    if (!sizeData[r.size_code]) sizeData[r.size_code] = { ct: 0, weight: 0, price: null, amount: 0 };
+    sizeData[r.size_code].ct     += Number(r.quantity)  || 0;
+    sizeData[r.size_code].weight += Number(r.weight_kg) || 0;
+    sizeData[r.size_code].amount += Number(r.amount)    || 0;
+    if (r.unit_price) sizeData[r.size_code].price = Number(r.unit_price);
+  });
+  const totalCt  = Object.values(sizeData).reduce((s, v) => s + v.ct, 0);
+  const totalAmt = Object.values(sizeData).reduce((s, v) => s + v.amount, 0);
 
-  // 사이즈 div 행 (table 없이)
+  // 사이즈 div 행
   const groups = getSizeGroupsFor(ib.product);
   const sizeHtml = sizeRecs.length === 0
     ? `<div style="padding:16px;text-align:center;color:#9CA3AF;font-size:13px">사이즈 기록 없음</div>`
     : groups.map(g => {
-        const rows = g.sizes.filter(sz => sizeMap[sz] > 0).map(sz =>
-          `<div style="display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #F3F4F6;font-size:13px">
-            <span style="color:#374151">${esc(sz)}</span>
-            <span style="font-weight:700;color:#1565C0">${fmtCT(sizeMap[sz])} CT</span>
-          </div>`
-        ).join('');
+        const rows = g.sizes.filter(sz => sizeData[sz]?.ct > 0).map(sz => {
+          const d = sizeData[sz];
+          const priceInfo = showPrice
+            ? `<span style="font-size:11px;color:#6B7280;margin-left:4px">${d.weight ? fmtN(Math.round(d.weight*10)/10)+'kg' : ''}${d.price ? ' ×'+fmtN(d.price) : ''}</span>`
+            : '';
+          const amtCell = showPrice
+            ? `<span style="font-weight:700;color:#1D4ED8;font-size:12px;min-width:70px;text-align:right">${d.amount ? fmtN(Math.round(d.amount))+'원' : '-'}</span>`
+            : '';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #F3F4F6;font-size:13px;gap:6px">
+            <span style="color:#374151;min-width:40px">${esc(sz)}</span>
+            <span style="font-weight:700;color:#1565C0">${fmtCT(d.ct)} CT${priceInfo}</span>
+            ${amtCell}
+          </div>`;
+        }).join('');
         if (!rows) return '';
         const hdr = groups.length > 1
           ? `<div style="padding:5px 12px 3px;font-size:11px;font-weight:600;color:#6B7280;background:#F9FAFB">${esc(g.group)}</div>`
@@ -11612,12 +11630,24 @@ function openSortedInboundDetail(inboundId) {
         return hdr + rows;
       }).join('');
 
+  const totalAmtHtml = showPrice && totalAmt > 0
+    ? `<div style="margin-top:10px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:8px 14px;display:flex;justify-content:space-between;font-size:13px">
+        <span style="color:#1D4ED8;font-weight:600">총 매입액</span>
+        <span style="font-weight:800;color:#1565C0">${fmtN(Math.round(totalAmt))} 원</span>
+       </div>`
+    : '';
+
+  // 헤더 컬럼 라벨
+  const hdrRight = showPrice
+    ? `<div style="display:flex;gap:40px"><span>CT</span><span>금액</span></div>`
+    : `<span>CT</span>`;
+
   // 모달 생성
   const m = document.createElement('div');
   m.id = 'modal-sorted-ib-detail';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   m.innerHTML = `
-    <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="background:#fff;border-radius:14px;max-width:${showPrice ? 480 : 400}px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
         <div style="font-size:14px;font-weight:700;color:#1565C0">📦 ${esc(ib.farm_name)} · ${esc(ib.product)}</div>
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
@@ -11639,10 +11669,11 @@ function openSortedInboundDetail(inboundId) {
         </div>
         <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
           <div style="display:flex;justify-content:space-between;padding:6px 12px;background:#F3F4F6;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">
-            <span>사이즈</span><span>CT</span>
+            <span>사이즈</span>${hdrRight}
           </div>
           ${sizeHtml}
         </div>
+        ${totalAmtHtml}
         ${ib.note ? `<div style="margin-top:12px;background:#FFFBEB;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400E">📝 ${esc(ib.note)}</div>` : ''}
       </div>
     </div>`;
