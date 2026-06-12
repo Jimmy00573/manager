@@ -4731,13 +4731,14 @@ async function savePachiOutbound(regId) {
       if (take > 0) detail.push({ table: 'inventory_records', id, amount: take, voided });
       remaining -= take;
     }
-    await dbInsertOutboundRecord({
+    const ob = await dbInsertOutboundRecord({
       date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'pachi',
       farm_name: row.farm || null, note, is_void: false,
       created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
       ref_detail: detail
     });
+    if (ob) invOutbounds.unshift(ob);
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
@@ -4813,13 +4814,14 @@ async function saveUnsortedOutbound(inboundId) {
     processingRecords.push(procRow);
 
     const procId = procRow?.id;
-    await dbInsertOutboundRecord({
+    const ob = await dbInsertOutboundRecord({
       date, product: r.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'unsorted',
       farm_name: r.farm_name || null, note, is_void: false,
       created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
       ref_detail: procId ? [{ table: 'processing_records', id: procId }] : []
     });
+    if (ob) invOutbounds.unshift(ob);
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
@@ -5140,6 +5142,7 @@ async function saveJuiceOutbound(id) {
       ref_detail: [{ table: 'juice_batches', id: b.id, amount: qty, voided }]
     });
     invJuiceOutbounds.unshift(row);
+    if (row) invOutbounds.unshift(row);
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
@@ -5429,13 +5432,14 @@ async function saveOutbound(regId) {
         if (take > 0) detail.push({ table: 'inventory_records', id: rec.id, amount: take, voided });
         remaining -= take;
       }
-      await dbInsertOutboundRecord({
+      const ob = await dbInsertOutboundRecord({
         date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
         partner_name: partner, source_type: 'sorting',
         farm_name: info.farm, note, is_void: false,
         created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
         ref_detail: detail
       });
+      if (ob) invOutbounds.unshift(ob);
     }
 
     document.getElementById('modal-outbound').style.display = 'none';
