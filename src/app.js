@@ -4990,6 +4990,14 @@ function _juiceBatchMenuOutbound() { const id = _juiceBatchMenuId; _closeJuiceBa
 function _juiceBatchMenuDelete()   { const id = _juiceBatchMenuId; _closeJuiceBatchMenu(); deleteJuiceBatch(id); }
 function _closeJuiceBatchMenu()    { const m = document.getElementById('juice-batch-menu'); if (m) m.style.display = 'none'; _juiceBatchMenuId = null; }
 
+function calcJbeTotal() {
+  const bx = parseFloat(document.getElementById('jbe-box')?.value) || 0;
+  const pb = parseFloat(document.getElementById('jbe-per-box')?.value) || 0;
+  const ls = parseFloat(document.getElementById('jbe-loose')?.value) || 0;
+  const el = document.getElementById('jbe-total-preview');
+  if (el) el.textContent = (bx * pb + ls) + '병';
+}
+
 function openJuiceBatchEdit(id) {
   const b = invJuiceBatches.find(x => x.id === id);
   if (!b) return;
@@ -5001,15 +5009,19 @@ function openJuiceBatchEdit(id) {
   const curLoose = perBox > 0 ? (b.remaining_bottles || 0) - curBox * perBox : (b.remaining_bottles || 0);
   const remainingSection = perBox > 0
     ? `<div style="grid-column:1/-1">
-        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 재고 <span style="color:#9CA3AF;font-weight:normal;font-size:11px">(박스당 ${perBox}병)</span></label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 재고</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
           <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스</label>
             <input id="jbe-box" type="number" min="0" step="1" value="${curBox}"
-              oninput="const b=parseFloat(this.value)||0,l=parseFloat(document.getElementById('jbe-loose')?.value)||0;document.getElementById('jbe-total-preview').textContent=(b*${perBox}+l)+'병';"
+              oninput="calcJbeTotal()"
+              style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스당 (병)</label>
+            <input id="jbe-per-box" type="number" min="0" step="1" value="${perBox}"
+              oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
           <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">낱개 (병)</label>
             <input id="jbe-loose" type="number" min="0" step="1" value="${curLoose}"
-              oninput="const b=parseFloat(document.getElementById('jbe-box')?.value)||0,l=parseFloat(this.value)||0;document.getElementById('jbe-total-preview').textContent=(b*${perBox}+l)+'병';"
+              oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
         </div>
         <div id="jbe-total-preview" style="font-size:12px;color:#6B7280;text-align:right;margin-top:4px">${b.remaining_bottles || 0}병</div>
@@ -5036,7 +5048,6 @@ function openJuiceBatchEdit(id) {
             style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
       </div>
       <input type="hidden" id="jbe-id" value="${b.id}">
-      <input type="hidden" id="jbe-per-box" value="${perBox}">
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn" onclick="document.getElementById('modal-juice-edit').style.display='none'">취소</button>
         <button class="btn pri" onclick="saveJuiceBatchEdit()">저장</button>
