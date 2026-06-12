@@ -8887,7 +8887,7 @@ function _renderScStats() {
   }
 
   const allW = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category !== '선과품' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMapSt[r.id] || 0) === 0)
+    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMapSt[r.id] || 0) === 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
   const totalRem = allW.reduce((s, r) => s + r.remaining, 0);
   const urgCnt = allW.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
@@ -8915,7 +8915,7 @@ function _renderScProductOptions() {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
   const prods = [...new Set(
-    inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
+    inboundRecords.filter(r => !r.is_void && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
       .map(r => r.product).filter(Boolean)
   )].sort();
   const cur = [...sel.options].slice(1).map(o => o.value);
@@ -9057,7 +9057,7 @@ function _renderScTable() {
   });
 
   let rows = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category !== '선과품' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
+    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
 
   if (_scSearch) {
@@ -10584,11 +10584,23 @@ function renderPachiSection() {
     ct: Number(r.quantity) || 0,
     kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
     ids: [r.id], memo: [r.purpose, r.note].filter(Boolean).join(' / '),
-    isSorting: false, isLegacy: true, pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null
+    isSorting: false, isLegacy: true, isInbound: false, pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null
   }));
 
+  // Source 3: inbound_records category=파치
+  const inboundPachi = inboundRecords
+    .filter(r => !r.is_void && r.inbound_category === '파치')
+    .map(r => ({
+      date: r.date, farm: r.farm_name || null, product: r.product || '기타',
+      ct: Number(r.quantity) || 0,
+      kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
+      ids: [r.id], memo: r.note || '',
+      isSorting: false, isLegacy: false, isInbound: true,
+      pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null
+    }));
+
   // 통합 정렬: 품목명 가나다 → 날짜 최신순
-  const allRows = [...Object.values(irGrouped), ...wasteRows].sort((a, b) => {
+  const allRows = [...Object.values(irGrouped), ...wasteRows, ...inboundPachi].sort((a, b) => {
     const pc = (a.product || '').localeCompare(b.product || '', 'ko');
     return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
   });
@@ -10651,7 +10663,9 @@ function renderPachiSection() {
     _pachiRowRegistry[regId] = r;
     const badge = r.isSorting
       ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:2px 7px;font-size:11px">선과</span>`
-      : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
+      : r.isInbound
+        ? `<span style="background:#FEF9C3;color:#92400E;border-radius:10px;padding:2px 7px;font-size:11px">입고</span>`
+        : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
     const kindStyleMap = { '파치': 'background:#F5F5F5;color:#757575', '고산도': 'background:#FFF8E1;color:#F57F17', '극소과': 'background:#E8F5E9;color:#2E7D32' };
     const kindBadge = `<span style="${kindStyleMap[r.pachiKind] || 'background:#F5F5F5;color:#757575'};border-radius:10px;padding:2px 7px;font-size:11px">${esc(r.pachiKind || '파치')}</span>`;
     const usageLabel = r.usage && r.usage !== '미분류' ? r.usage : '미분류';
