@@ -97,7 +97,7 @@
       <div class="fg"><label>기사명 *</label><input id="md-name"></div>
       <div class="fg"><label>연락처 *</label><input id="md-tel"></div>
       <div class="fg"><label>차량번호</label><input id="md-car"></div>
-      <div class="fg"><label>소속</label><select id="md-type"><option value="내부">내부 직원</option><option value="외부">외부 용역</option></select></div>
+      <div class="fg"><label>소속</label><select id="md-type"><option value="내부">직원</option><option value="외부">기사</option></select></div>
       <div class="fg full"><label>비고</label><input id="md-note"></div>
     </div>
     <div class="modal-actions"><button class="btn cancel" onclick="CM('drv')">취소</button><button class="btn pri" onclick="saveDrvEdit()">저장</button></div>
@@ -432,12 +432,12 @@
 
 <!-- 기사·PIN 관리 -->
 <div id="p-drv" class="panel">
-  <!-- 기사 등록 -->
-  <div class="form-card"><div class="form-title">기사 등록</div>
+  <!-- 직원·기사 등록 -->
+  <div class="form-card"><div class="form-title">직원·기사 등록</div>
     <div class="form-grid">
       <div class="fg"><label>기사명 *</label><input id="dv-name" placeholder="예) 홍길동"></div>
       <div class="fg"><label>연락처 *</label><input id="dv-tel" placeholder="010-0000-0000"></div>
-      <div class="fg"><label>소속</label><select id="dv-type" onchange="onDrvTypeChange()"><option value="내부">내부 직원</option><option value="외부">외부 용역</option></select></div>
+      <div class="fg"><label>소속</label><select id="dv-type" onchange="onDrvTypeChange()"><option value="내부">직원</option><option value="외부">기사</option></select></div>
       <div class="fg" id="dv-car-sel-wrap"><label>배정 차량 <span style="font-size:10px;color:#aaa">(회사 차량)</span></label><select id="dv-car-sel"><option value="">미배정</option></select></div>
       <div class="fg" id="dv-car-txt-wrap" style="display:none"><label>차량번호 <span style="font-size:10px;color:#aaa">(자가 차량)</span></label><input id="dv-car" placeholder="예) 제주 12가 3456"></div>
       <div class="fg"><label>비고</label><input id="dv-note" placeholder="메모"></div>
@@ -547,7 +547,7 @@
       <button class="btn pri" onclick="exportExcel('dispatch')">🚛 배차 내역</button>
       <button class="btn pri" onclick="exportExcel('pick')">📦 수거 내역</button>
       <button class="btn pri" onclick="exportExcel('farm')">🏡 농가 목록</button>
-      <button class="btn pri" onclick="exportExcel('driver')">👤 기사 목록</button>
+      <button class="btn pri" onclick="exportExcel('driver')">👤 직원·기사 목록</button>
       <button class="btn" style="background:#2E7D32;color:#fff;border:none" onclick="exportExcel('all')">📊 전체 (모든 시트)</button>
     </div>
   </div>
@@ -1709,6 +1709,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=13"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=150"></script>
+<script src="src/app.js?v=151"></script>
 </body>
 </html>

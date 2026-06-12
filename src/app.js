@@ -102,6 +102,8 @@ let _pinHidden = {};
 const foldSt = { 'own-tb': false, 'nhf-sum': false, 'nhf-tb': false };
 const secSt = { alert: true, 'disp-dash': true, 'farm-dash': true, 'ext-dash': true, 'bk-dash': true };
 
+const typeLabel = t => t === '외부' ? '기사' : '직원';
+
 // PIN 상태
 let _loggedDrv = null, _pinBuf = '', _pinMode = 'drv';
 
@@ -249,7 +251,7 @@ async function initApp() {
       document.getElementById('p-drep').style.display = '';
       DT('dmy');
       const wel = document.getElementById('drv-welcome');
-      if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${drv.type} · ${esc(drv.car || '차량 미등록')}</span>`;
+      if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${typeLabel(drv.type)} · ${esc(drv.car || '차량 미등록')}</span>`;
       renderMyAssign(); renderMyPending();
     } else {
       document.getElementById('pin-screen').style.display = 'flex';
@@ -258,7 +260,7 @@ async function initApp() {
     const sel = document.getElementById('pin-sel');
     sel.innerHTML = '<option value="">-- 기사를 선택하세요 --</option>';
     drivers.filter(d => d.pin_active !== false).forEach(d => {
-      sel.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${d.type})</option>`;
+      sel.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${typeLabel(d.type)})</option>`;
     });
     setPinMode('staff');
     document.getElementById('pin-screen').style.display = 'flex';
@@ -272,7 +274,7 @@ function showPin() {
   const sel = document.getElementById('pin-sel');
   sel.innerHTML = '<option value="">-- 기사를 선택하세요 --</option>';
   drivers.filter(d => d.pin_active !== false).forEach(d => {
-    sel.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${d.type})</option>`;
+    sel.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${typeLabel(d.type)})</option>`;
   });
   document.getElementById('pin-error').style.display = 'none';
   setPinMode('drv');
@@ -333,7 +335,7 @@ function checkPin() {
     document.getElementById('p-drep').style.display = '';
     DT('dmy');
     const wel = document.getElementById('drv-welcome');
-    if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${drv.type} · ${esc(drv.car || '차량 미등록')}</span>`;
+    if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${typeLabel(drv.type)} · ${esc(drv.car || '차량 미등록')}</span>`;
     const rf = document.getElementById('rp-farm');
     if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
   renderMyAssign(); renderMyPending();
@@ -696,7 +698,7 @@ function popSels() {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value;
     el.innerHTML = id === 'pk-drv' ? '<option value="">선택사항</option>' : '<option value="">선택</option>';
-    drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${d.type})</option>`);
+    drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${typeLabel(d.type)})</option>`);
     el.value = v;
   });
   const mpf = document.getElementById('mp-farm');
@@ -737,7 +739,7 @@ function popSels() {
     const el = document.getElementById(id); if (!el) return;
     el.innerHTML = '<option value="">선택 안 함</option>';
     drivers.filter(d => d.pin_active !== false).forEach(d => {
-      el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
+      el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${typeLabel(d.type)})</option>`;
     });
     if (drivers.some(d => String(d.id) === keepVal)) el.value = keepVal;
   };
@@ -748,7 +750,7 @@ function popSels() {
     const cur = filterDrvSel.value;
     filterDrvSel.innerHTML = '<option value="">수송기사 전체</option>';
     drivers.filter(d => d.pin_active !== false).forEach(d => {
-      filterDrvSel.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.type || '기사')})</option>`;
+      filterDrvSel.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${typeLabel(d.type)})</option>`;
     });
     filterDrvSel.innerHTML += `<option value="__null__">수송기사 미입력</option>`;
     if (cur) filterDrvSel.value = cur;
@@ -1052,7 +1054,7 @@ async function addDriver() {
     clr('dv-name', 'dv-tel', 'dv-car', 'dv-note');
     if (document.getElementById('dv-car-sel')) document.getElementById('dv-car-sel').value = '';
     popSels(); renderDrivers(); renderVehicles();
-    alert(`✅ ${name} 기사 등록!\n\n📌 발급 PIN: ${pin}\n\n기사에게 전달해 주세요.`);
+    alert(`✅ ${name} 등록!\n\n📌 발급 PIN: ${pin}\n\n전달해 주세요.`);
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delDriver(id) {
@@ -1121,7 +1123,7 @@ function renderDrivers() {
     return `<div class="pin-mgmt">
       <div class="pm-top">
         <div class="pm-info">
-          <div class="pm-name">${esc(d.name)} <span class="badge ${d.type === '내부' ? 'b-ok' : 'b-pur'}">${d.type}</span> <span class="badge ${d.pin_active !== false ? 'b-ok' : 'b-red'}">${d.pin_active !== false ? '활성' : '차단'}</span></div>
+          <div class="pm-name">${esc(d.name)} <span class="badge ${d.type === '내부' ? 'b-ok' : 'b-pur'}">${typeLabel(d.type)}</span> <span class="badge ${d.pin_active !== false ? 'b-ok' : 'b-red'}">${d.pin_active !== false ? '활성' : '차단'}</span></div>
           <div class="pm-sub">📞 ${esc(d.tel)} · 🚛 ${esc(d.car || '차량미등록')}</div>
         </div>
         <div class="pm-acts">
@@ -1391,7 +1393,7 @@ function renderDDash() {
       </div>
       <span style="font-size:11px;color:#888">·</span>
       <span style="font-size:12px">${esc(d.driver)}</span>
-      <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
+      <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${typeLabel(drv.type)}</span>
       <span style="font-size:12px;color:#555;margin-left:2px">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100;font-size:11px">수량미정</span>'} ${ctB(d.ctype)}</span>
       <div style="display:flex;gap:4px;margin-left:auto">
         <button class="btn edt" style="padding:3px 8px;font-size:11px" onclick="openDispEdit(${d.id})">✏️</button>
@@ -1920,7 +1922,7 @@ function renderDSchedule() {
     <td style="background:#fafafa;padding:8px 12px;white-space:nowrap;position:sticky;left:0;z-index:1;border-right:1px solid #e0e0e0">
       <div style="font-size:13px;font-weight:600">${esc(drv.name)}</div>
       <div style="display:flex;gap:4px;margin-top:2px">
-        <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${drv.type||'내부'}</span>
+        <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${typeLabel(drv.type)}</span>
         ${drv.car ? `<span style="font-size:10px;color:#aaa">${esc(drv.car)}</span>` : ''}
       </div>
     </td>
@@ -1932,7 +1934,7 @@ function renderDSchedule() {
       <div style="font-size:11px;color:#aaa;font-weight:600;margin-bottom:8px">이 기간 배차 없음 (${noWork.length}명)</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${noWork.map(drv => `<span style="font-size:12px;padding:4px 10px;background:#f5f5f5;border-radius:20px;color:#888">
-          ${esc(drv.name)} <span style="font-size:10px;color:#bbb">${drv.type||'내부'}</span>
+          ${esc(drv.name)} <span style="font-size:10px;color:#bbb">${typeLabel(drv.type)}</span>
         </span>`).join('')}
       </div>
     </div>` : '';
@@ -1966,7 +1968,7 @@ function renderDBoard() {
   function driverCard(drv) {
     const myPending = pending.filter(d => d.driver === drv.name).sort((a, b) => a.date > b.date ? 1 : -1);
     const myDone    = done.filter(d => d.driver === drv.name).length;
-    const typeBadge = `<span class="badge ${drv.type === '외부' ? 'b-pur' : 'b-ok'}" style="font-size:10px">${drv.type || '내부'}</span>`;
+    const typeBadge = `<span class="badge ${drv.type === '외부' ? 'b-pur' : 'b-ok'}" style="font-size:10px">${typeLabel(drv.type)}</span>`;
     const hasPending = myPending.length > 0;
 
     const rows = hasPending ? myPending.map(d => {
@@ -2428,7 +2430,7 @@ function renderStats() {
           const ratio = totalQty > 0 ? Math.round(d.doneQty / totalQty * 100) : 0;
           return `<tr style="border-bottom:0.5px solid #f0f0f0">
             <td style="padding:10px 12px;font-weight:500">${esc(d.name)}</td>
-            <td style="padding:10px 12px"><span class="badge ${d.type==='내부'?'b-ok':'b-pur'}">${d.type}</span></td>
+            <td style="padding:10px 12px"><span class="badge ${d.type==='내부'?'b-ok':'b-pur'}">${typeLabel(d.type)}</span></td>
             <td style="padding:10px 12px;text-align:center"><span class="badge b-ok">${d.doneCnt}건</span></td>
             <td style="padding:10px 12px;text-align:center;font-weight:500;color:#2E7D32">${d.doneQty.toLocaleString()}개</td>
             <td style="padding:10px 12px;text-align:center"><span class="badge b-info">${d.pendCnt}건</span></td>
