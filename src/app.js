@@ -1730,6 +1730,48 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
   });
 }
 
+// ── 공용 중립 확인 모달 (단가 수정 등 위험하지 않은 작업용) ────────
+let _confirmEditResolve = null;
+
+function showConfirmEdit(title, msg = '') {
+  return new Promise(resolve => {
+    if (_confirmEditResolve) _confirmEditResolve(false);
+    _confirmEditResolve = resolve;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'modal-confirm-edit';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:12px;width:100%;max-width:360px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="background:#EFF6FF;padding:18px 20px 14px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:36px;height:36px;border-radius:50%;background:#DBEAFE;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">✏️</div>
+            <div>
+              <div style="font-weight:700;font-size:15px;color:#1E3A5F">${esc(title)}</div>
+              ${msg ? `<div style="font-size:12px;color:#3B82F6;margin-top:2px">${esc(msg)}</div>` : ''}
+            </div>
+          </div>
+        </div>
+        <div style="padding:14px 20px 18px;display:flex;gap:8px;justify-content:flex-end">
+          <button id="ced-cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer">취소</button>
+          <button id="ced-confirm" style="padding:8px 18px;border-radius:8px;border:none;background:#4F46E5;color:#fff;font-size:14px;font-weight:600;cursor:pointer">확인</button>
+        </div>
+      </div>`;
+
+    const close = (result) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      if (_confirmEditResolve) { _confirmEditResolve(result); _confirmEditResolve = null; }
+    };
+    const onKey = e => { if (e.key === 'Escape') close(false); };
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+    overlay.querySelector('#ced-cancel').addEventListener('click', () => close(false));
+    overlay.querySelector('#ced-confirm').addEventListener('click', () => close(true));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  });
+}
+
 // ── 농협
 async function addNhfIn() {
   const date = gv('ni-date'), nhf = gv('ni-nhf'), type = gv('ni-type'), qty = n('ni-qty');
@@ -6225,6 +6267,7 @@ function openTxPriceEdit(kind, id) {
     ? invOutbounds.find(x => String(x.id) === String(id))
     : inboundRecords.find(x => String(x.id) === String(id));
   if (!rec) return;
+  if (kind === 'in' && rec.inbound_category === '선과품') { openSortedPriceEdit(id); return; }
   _txEditKind = kind;
   _txEditId   = id;
 
@@ -6290,6 +6333,8 @@ async function saveTxPriceEdit() {
     ? invOutbounds.find(x => String(x.id) === String(_txEditId))
     : inboundRecords.find(x => String(x.id) === String(_txEditId));
   if (!rec) return;
+  const ok = await showConfirmEdit('단가를 수정하시겠습니까?', '입력한 단가로 저장됩니다.');
+  if (!ok) return;
   const isJuice = rec.unit === '병';
   const price  = parseFloat(document.getElementById('tpe-price')?.value) || null;
   const weight = isJuice ? null : (parseFloat(document.getElementById('tpe-weight')?.value) || null);
@@ -6310,6 +6355,142 @@ async function saveTxPriceEdit() {
     renderOutboundHistory();
     if (wasIn) renderInboundList();
   } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+let _speEscHandler = null;
+
+function openSortedPriceEdit(inboundId) {
+  const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
+  if (!ib) return;
+
+  document.getElementById('modal-spe')?.remove();
+  if (_speEscHandler) { document.removeEventListener('keydown', _speEscHandler); _speEscHandler = null; }
+
+  const sizeRecs = inventoryRecords.filter(r =>
+    !r.is_void && r.source_type === 'inbound_sorted' &&
+    String(r.inbound_record_id) === String(inboundId)
+  );
+  if (sizeRecs.length === 0) { showToast('사이즈별 재고 기록이 없습니다'); return; }
+
+  // size별 집계 (CT + 기존 weight/price, 개별 rec 보관)
+  const sizeData = {};
+  sizeRecs.forEach(r => {
+    if (!sizeData[r.size_code]) sizeData[r.size_code] = { recs: [], ct: 0, weight: 0, price: null };
+    sizeData[r.size_code].recs.push(r);
+    sizeData[r.size_code].ct     += Number(r.quantity)  || 0;
+    sizeData[r.size_code].weight += Number(r.weight_kg) || 0;
+    if (r.unit_price) sizeData[r.size_code].price = Number(r.unit_price);
+  });
+  const totalCt = Object.values(sizeData).reduce((s, v) => s + v.ct, 0);
+
+  const inpStyle = 'width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;box-sizing:border-box;text-align:right';
+  const groups = getSizeGroupsFor(ib.product);
+
+  const rowsHtml = groups.flatMap(g =>
+    g.sizes.filter(sz => sizeData[sz]?.ct > 0).map(sz => {
+      const d = sizeData[sz];
+      const wVal = d.weight > 0 ? Math.round(d.weight * 10) / 10 : '';
+      const pVal = d.price || '';
+      return `<div style="display:grid;grid-template-columns:44px 44px 1fr 1fr 76px;gap:5px;align-items:center;padding:5px 12px;border-bottom:1px solid #F3F4F6">
+        <span style="color:#374151;font-weight:600;font-size:12px">${esc(sz)}</span>
+        <span style="text-align:right;color:#1565C0;font-weight:700;font-size:12px">${fmtCT(d.ct)}</span>
+        <input type="number" id="spe-w-${esc(sz)}" min="0" step="0.1" value="${wVal}" placeholder="kg" oninput="calcSpeAmount()" style="${inpStyle}">
+        <input type="number" id="spe-p-${esc(sz)}" min="0" step="1" value="${pVal}" placeholder="단가" oninput="calcSpeAmount()" style="${inpStyle}">
+        <span id="spe-amt-${esc(sz)}" style="text-align:right;color:#4F46E5;font-size:11px;font-weight:600;white-space:nowrap"></span>
+      </div>`;
+    })
+  ).join('');
+
+  const m = document.createElement('div');
+  m.id = 'modal-spe';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#111827">단가 수정 — ${esc(ib.farm_name)} · ${esc(ib.product)}</div>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:1px">총 ${fmtCT(totalCt)} CT · 수량·재고는 변경되지 않습니다</div>
+        </div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div>
+        <div style="display:grid;grid-template-columns:44px 44px 1fr 1fr 76px;gap:5px;padding:5px 12px;background:#F3F4F6;font-size:11px;font-weight:600;color:#6B7280;border-bottom:2px solid #E5E7EB">
+          <span>사이즈</span><span style="text-align:right">CT</span>
+          <span style="text-align:center">실측 kg</span><span style="text-align:center">kg단가</span>
+          <span style="text-align:right">금액</span>
+        </div>
+        ${rowsHtml}
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;position:sticky;bottom:0;background:#fff">
+        <div style="font-size:13px;color:#374151">총 매입액 <span id="spe-total" style="font-weight:700;color:#1565C0;font-size:15px;margin-left:8px">-</span></div>
+        <div style="display:flex;gap:8px">
+          <button data-close style="padding:8px 16px;border:1px solid #D1D5DB;background:#fff;border-radius:8px;font-size:13px;cursor:pointer;color:#374151">취소</button>
+          <button id="spe-save" style="padding:8px 16px;border:none;background:#4F46E5;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">저장</button>
+        </div>
+      </div>
+    </div>`;
+
+  const close = () => {
+    m.remove();
+    document.removeEventListener('keydown', _speEscHandler);
+    _speEscHandler = null;
+  };
+  _speEscHandler = e => { if (e.key === 'Escape') close(); };
+  m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close !== undefined) close(); });
+  m.querySelector('#spe-save').addEventListener('click', () => saveSortedPriceEdit(inboundId, sizeRecs, sizeData, close));
+  document.addEventListener('keydown', _speEscHandler);
+  document.body.appendChild(m);
+  calcSpeAmount();
+}
+
+function calcSpeAmount() {
+  let total = 0;
+  document.querySelectorAll('[id^="spe-w-"]').forEach(el => {
+    const sz = el.id.slice(6);
+    const w = parseFloat(el.value) || 0;
+    const p = parseFloat(document.getElementById('spe-p-' + sz)?.value) || 0;
+    const amt = (w > 0 && p > 0) ? Math.round(w * p) : 0;
+    const amtEl = document.getElementById('spe-amt-' + sz);
+    if (amtEl) amtEl.textContent = amt > 0 ? fmtN(amt) + '원' : '';
+    total += amt;
+  });
+  const totalEl = document.getElementById('spe-total');
+  if (totalEl) totalEl.textContent = total > 0 ? fmtN(total) + ' 원' : '-';
+}
+
+async function saveSortedPriceEdit(inboundId, sizeRecs, sizeData, closeFn) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ok = await showConfirmEdit('단가를 수정하시겠습니까?', '입력한 사이즈별 매입 단가로 저장됩니다.');
+  if (!ok) return;
+  try {
+    let totalWeight = 0, totalAmount = 0;
+    for (const [sz, d] of Object.entries(sizeData)) {
+      const w = parseFloat(document.getElementById('spe-w-' + sz)?.value) || null;
+      const p = parseFloat(document.getElementById('spe-p-' + sz)?.value) || null;
+      const amt = (w && p) ? w * p : null;
+      if (w) totalWeight += w;
+      if (amt) totalAmount += amt;
+      const n = d.recs.length;
+      for (const rec of d.recs) {
+        const recW = w !== null ? Math.round((w / n) * 100) / 100 : null;
+        const recAmt = amt !== null ? Math.round(amt / n) : null;
+        await sbUpdate('inventory_records', rec.id, { weight_kg: recW, unit_price: p, amount: recAmt });
+        rec.weight_kg  = recW;
+        rec.unit_price = p;
+        rec.amount     = recAmt;
+      }
+    }
+    await sbUpdate('inbound_records', inboundId, {
+      weight_kg: totalWeight || null,
+      amount:    totalAmount || null
+    });
+    const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
+    if (ib) { ib.weight_kg = totalWeight || null; ib.amount = totalAmount || null; }
+    closeFn();
+    showToast('단가 수정 완료');
+    renderOutboundHistory();
+    renderInboundList();
+  } catch (e) { alert('수정 오류: ' + e.message); }
 }
 
 function toggleSumDetail(id) {
