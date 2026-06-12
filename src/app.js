@@ -3421,12 +3421,6 @@ function buildCountSelectOpts(product) {
   return opts;
 }
 
-function onSortedProductChange() {
-  const product = gv('so-product');
-  const sel = document.getElementById('so-count');
-  if (sel) sel.innerHTML = buildCountSelectOpts(product);
-}
-
 function buildProductOptgroupHTML() {
   let html = '<option value="">선택</option>';
   if (!itemDefs.length) return html;
@@ -4179,106 +4173,6 @@ async function deleteItemRule(id) {
     renderSizeCfg(); cfgSubTab('rule');
     renderInvSummary();
   } catch(e) { alert('오류: ' + e.message); }
-}
-
-function _renderSortedSummarySection(num, title, dataMap, catType) {
-  const TH  = 'background:#1565C0;color:#fff;padding:8px 10px;font-size:12px;font-weight:600;text-align:center;border:1px solid #0D47A1';
-  const NUM = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
-  const NUMhl = NUM + ';background:#FFF8E1';
-  const EMPTY = 'padding:10px;border:1px solid #e0e0e0;font-size:13px;text-align:center;color:#bbb';
-  const fmt = v => v ? Number(v).toLocaleString() : '';
-  const secHdr = (n, t) => `<div style="background:#1565C0;color:#fff;text-align:center;padding:9px;font-size:14px;font-weight:700;border-radius:8px 8px 0 0;margin-top:18px">${n}. ${t}</div>`;
-  const wrap = inner => `<div class="tbl-wrap" style="border:1px solid #e0e0e0;border-radius:0 0 8px 8px;overflow:hidden">${inner}</div>`;
-
-  // Determine columns
-  let colNames;
-  if (catType === 'grade') {
-    const gradeCatId = categories.find(c => c.classification_type === 'grade')?.id;
-    colNames = [...new Set(
-      sizeGrades.filter(g => g.category_id === gradeCatId)
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map(g => g.group_name)
-    )];
-    if (!colNames.length) colNames = ['대과', '중과', '소과'];
-  } else {
-    const usedGroups = new Set();
-    Object.values(dataMap).forEach(m => Object.keys(m).forEach(k => usedGroups.add(k)));
-    const preferred = ['대과', '중과', '소과'];
-    const extras = [...usedGroups].filter(g => !preferred.includes(g));
-    colNames = [...preferred.filter(g => usedGroups.has(g)), ...extras];
-    if (!colNames.length) colNames = ['대과', '중과', '소과'];
-  }
-
-  const products = Object.keys(dataMap);
-  const bodyRows = products.length === 0
-    ? `<tr><td colspan="${colNames.length + 2}" style="${EMPTY}">데이터 없음</td></tr>`
-    : products.map(p => {
-        const m = dataMap[p] || {};
-        const tot = Object.values(m).reduce((s, v) => s + v, 0);
-        const cells = colNames.map(col => `<td style="${NUM}">${m[col] ? fmt(m[col]) + ' kg' : ''}</td>`).join('');
-        return `<tr>
-          <td style="padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:left">${esc(p)}</td>
-          ${cells}
-          <td style="${NUMhl}">${tot ? fmt(tot) + ' kg' : ''}</td>
-        </tr>`;
-      }).join('');
-
-  const thCols = colNames.map(col => `<th style="${TH}">${esc(col)} (kg)</th>`).join('');
-  const minW = Math.max(340, 130 + colNames.length * 110) + 'px';
-
-  return secHdr(num, title) + wrap(`<table style="width:100%;border-collapse:collapse;min-width:${minW}">
-    <thead><tr>
-      <th style="${TH}">품목</th>
-      ${thCols}
-      <th style="${TH}">합계 (kg)</th>
-    </tr></thead>
-    <tbody>${bodyRows}</tbody>
-  </table>`);
-}
-
-function _buildSortedTableWrap(dataMap, catType) {
-  const TH    = 'background:#1565C0;color:#fff;padding:8px 10px;font-size:12px;font-weight:600;text-align:center;border:1px solid #0D47A1';
-  const NUM   = 'padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:right;font-weight:600;color:#E65100';
-  const NUMhl = NUM + ';background:#FFF8E1';
-  const fmt   = v => v ? Number(v).toLocaleString() : '';
-  const wrap  = inner => `<div class="tbl-wrap" style="border:1px solid #e0e0e0;border-radius:0 0 8px 8px;overflow:hidden">${inner}</div>`;
-
-  let colNames;
-  if (catType === 'grade') {
-    const gradeCatId = categories.find(c => c.classification_type === 'grade')?.id;
-    colNames = [...new Set(
-      sizeGrades.filter(g => g.category_id === gradeCatId)
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map(g => g.group_name)
-    )];
-    if (!colNames.length) colNames = ['대과', '중과', '소과'];
-  } else {
-    const usedGroups = new Set();
-    Object.values(dataMap).forEach(m => Object.keys(m).forEach(k => usedGroups.add(k)));
-    const preferred = ['대과', '중과', '소과'];
-    const extras = [...usedGroups].filter(g => !preferred.includes(g));
-    colNames = [...preferred.filter(g => usedGroups.has(g)), ...extras];
-    if (!colNames.length) colNames = ['대과', '중과', '소과'];
-  }
-
-  const rows = Object.entries(dataMap).map(([p, m]) => {
-    const tot = Object.values(m).reduce((s, v) => s + v, 0);
-    const cells = colNames.map(col => `<td style="${NUM}">${m[col] ? fmt(m[col]) + ' kg' : ''}</td>`).join('');
-    return `<tr>
-      <td style="padding:7px 10px;border:1px solid #e0e0e0;font-size:13px;text-align:left">${esc(p)}</td>
-      ${cells}
-      <td style="${NUMhl}">${tot ? fmt(tot) + ' kg' : ''}</td>
-    </tr>`;
-  }).join('');
-
-  const thCols = colNames.map(col => `<th style="${TH}">${esc(col)} (kg)</th>`).join('');
-  const minW = Math.max(340, 130 + colNames.length * 110) + 'px';
-  return wrap(`<table style="width:100%;border-collapse:collapse;min-width:${minW}">
-    <thead><tr>
-      <th style="${TH}">품목</th>${thCols}<th style="${TH}">합계 (kg)</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`);
 }
 
 // ── 재고 현황 (inventory_records 기반 매트릭스) ──────────────────
@@ -5467,46 +5361,6 @@ async function saveOutbound(regId) {
 
 // ── 매트릭스 셀 인라인 편집 ──────────────────────────────────────
 
-function invCellEdit(cell, farm, product, size, currentVal) {
-  if (cell.querySelector('input')) return;
-  const prevHtml = cell.innerHTML;
-
-  const inp = document.createElement('input');
-  inp.type = 'number';
-  inp.value = currentVal;
-  inp.min = '0';
-  inp.step = '0.5';
-  inp.style.cssText = 'width:58px;text-align:center;border:2px solid #F59E0B;border-radius:4px;padding:3px 4px;font-size:13px;font-family:inherit;background:#FFFBEB;outline:none';
-
-  cell.innerHTML = '';
-  cell.appendChild(inp);
-  inp.focus();
-  inp.select();
-
-  let done = false;
-
-  const commit = async () => {
-    if (done) return;
-    done = true;
-    const raw    = parseFloat(inp.value);
-    const newVal = isNaN(raw) || raw < 0 ? 0 : raw;
-    if (newVal === currentVal) { cell.innerHTML = prevHtml; return; }
-    await invSaveCellEdit(cell, farm, product, size, newVal, currentVal);
-  };
-
-  const cancel = () => {
-    if (done) return;
-    done = true;
-    cell.innerHTML = prevHtml;
-  };
-
-  inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') cancel();
-  });
-  inp.addEventListener('blur', () => setTimeout(() => { if (!done) commit(); }, 150));
-}
-
 async function invSaveCellEdit(cell, farm, product, size, newVal, currentTotal) {
   const delta = newVal - currentTotal;
   cell.textContent = '…';
@@ -6560,21 +6414,6 @@ function defectChipsHtml(tagsStr, recordId, maxShow = 3) {
   return `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${visible.map(defectChip).join('')}${moreBtn}</div>`;
 }
 
-function qualityCompact(r, recordId) {
-  const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
-  const chip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
-  const chips = [chip('당', r.brix_grade), chip('산', r.acidity_grade), chip('외', r.appearance_grade)].filter(Boolean);
-  const gradeRow = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
-  const defectRow = defectChipsHtml(r.defect_tags, recordId || r.id);
-  if (!gradeRow && !defectRow) return '';
-  return gradeRow + defectRow;
-}
-
-function hasQualityDetail(r) {
-  return !!(r.brix_grade || r.acidity_grade || r.appearance_grade || r.defect_tags ||
-            r.brix_range || r.acidity_range || r.size_distribution);
-}
-
 let _expandedMemoId = null;
 let _allMemosExpanded = false;
 let _openMenuId = null;
@@ -6726,35 +6565,6 @@ function openQualityModal(id) {
 function closeQualityModal() {
   document.getElementById('modal-quality').style.display = 'none';
   _qModalId = null;
-}
-
-function qualityDisplay(r) {
-  const GRADE_STYLE = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
-  const gradeChip = (label, val) => val ? `<span style="font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid;${GRADE_STYLE[val] || ''};font-weight:600">${label} ${esc(val)}</span>` : '';
-  const gradeChips = [gradeChip('당도', r.brix_grade), gradeChip('산도', r.acidity_grade), gradeChip('외관', r.appearance_grade)].filter(Boolean);
-  const defectChips = r.defect_tags ? r.defect_tags.split(',').map(t => `<span style="font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid #FFCC80;background:#FFF3E0;color:#E65100;font-weight:600">${esc(t.trim())}</span>`).join('') : '';
-  const gradeLine = (gradeChips.length || defectChips)
-    ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${gradeChips.join('')}${defectChips}</div>`
-    : '';
-  const textParts = [];
-  if (r.brix_range) textParts.push(`당도 ${esc(r.brix_range)}`);
-  if (r.acidity_range) textParts.push(`산도 ${esc(r.acidity_range)}`);
-  if (r.size_distribution) textParts.push(`크기: ${esc(r.size_distribution)}`);
-  if (r.brix && !r.brix_range) textParts.push(`당 ${r.brix}°`);
-  if (r.acidity && !r.acidity_range) textParts.push(`산 ${r.acidity}`);
-  const textLine = textParts.length
-    ? `<div style="font-size:11px;color:#1565C0;margin-top:3px;line-height:1.6">${textParts.join(' / ')}</div>`
-    : '';
-  const reclassParts = [];
-  if (r.inbound_category === '재선별') {
-    if (r.reclassification_source) reclassParts.push(`출처: ${esc(r.reclassification_source)}`);
-    if (r.reclassification_reason) reclassParts.push(esc(r.reclassification_reason));
-    if (r.original_work_date) reclassParts.push(`원본 ${r.original_work_date}`);
-  }
-  const reclassLine = reclassParts.length
-    ? `<div style="font-size:11px;color:#7C3AED;margin-top:3px;line-height:1.6">${reclassParts.join(' / ')}</div>`
-    : '';
-  return gradeLine + textLine + reclassLine;
 }
 
 // ── 변경 이력 ──────────────────────────────────────────────────
@@ -7310,47 +7120,6 @@ function _updateIbSortIcons() {
       el.className = 'sort-icon';
     }
   });
-}
-
-async function migrateInboundGrades() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 실행할 수 있습니다.');
-  const parseAvg = str => {
-    if (!str) return null;
-    const m = str.match(/(\d+\.?\d*)~(\d+\.?\d*)/);
-    return m ? (parseFloat(m[1]) + parseFloat(m[2])) / 2 : null;
-  };
-  const toMigrate = inboundRecords.filter(r => !r.is_void && (
-    (r.brix_range && !r.brix_grade) || (r.acidity_range && !r.acidity_grade)
-  ));
-  if (!toMigrate.length) return alert('변환할 데이터가 없습니다.\n(등급이 이미 설정되었거나 수치 범위가 없는 경우)');
-  const preview = toMigrate.slice(0, 5).map(r => {
-    const bAvg = parseAvg(r.brix_range);
-    const aAvg = parseAvg(r.acidity_range);
-    const bG = !r.brix_grade && bAvg !== null ? (bAvg >= 15 ? '상' : bAvg >= 12 ? '중' : '하') : null;
-    const aG = !r.acidity_grade && aAvg !== null ? (aAvg <= 1.0 ? '상' : aAvg <= 1.5 ? '중' : '하') : null;
-    return `${r.date} ${r.product}(${r.farm_name}): 당도${bG || '-'} 산도${aG || '-'}`;
-  }).join('\n');
-  if (!confirm(`${toMigrate.length}건 자동 변환 예정\n\n미리보기 (최대 5건):\n${preview}\n\n계속할까요?`)) return;
-  let count = 0, err = 0;
-  for (const r of toMigrate) {
-    const payload = {};
-    if (r.brix_range && !r.brix_grade) {
-      const avg = parseAvg(r.brix_range);
-      if (avg !== null) payload.brix_grade = avg >= 15 ? '상' : avg >= 12 ? '중' : '하';
-    }
-    if (r.acidity_range && !r.acidity_grade) {
-      const avg = parseAvg(r.acidity_range);
-      if (avg !== null) payload.acidity_grade = avg <= 1.0 ? '상' : avg <= 1.5 ? '중' : '하';
-    }
-    if (!Object.keys(payload).length) continue;
-    try {
-      await dbUpdateInbound(r.id, payload);
-      Object.assign(r, payload);
-      count++;
-    } catch(e) { err++; console.error('마이그레이션 오류:', r.id, e); }
-  }
-  renderInvSummary(); renderInboundList();
-  showToast(`${count}건 변환 완료${err ? ` (오류 ${err}건)` : ''}`);
 }
 
 async function migrateDistributedStorage() {
@@ -9891,38 +9660,6 @@ async function _addInboundCore(keepOpen) {
   await doInsert();
 }
 
-async function addProcessing() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
-  const inboundId = gv('proc-inbound');
-  const processType = gv('proc-type');
-  const date = gv('proc-date');
-  const qty = parseInt(document.getElementById('proc-qty').value) || 0;
-  if (!inboundId || !date || !qty) return alert('입고 건, 처리일, 수량은 필수입니다.');
-  const ib = inboundRecords.find(r => r.id === inboundId);
-  if (!ib) return alert('선택한 입고 건을 찾을 수 없습니다.');
-  const remaining = getRemainingCT(ib);
-  if (qty > remaining) return alert(`처리 수량(${fmtN(qty)}CT)이 남은 재고(${fmtN(remaining)}CT)를 초과합니다.`);
-  const data = {
-    inbound_id: inboundId, date, process_type: processType, quantity: qty,
-    note: gv('proc-note') || null, staff: 'admin'
-  };
-  try {
-    const row = await dbInsertProcessing(data);
-    processingRecords.unshift(row);
-    renderInvSummary(); renderInboundList(); renderProcessingTab();
-    sv('proc-qty', ''); sv('proc-note', '');
-  } catch(e) { alert('등록 오류: ' + e.message); }
-}
-
-async function deleteProcessing(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!confirm('처리 기록을 삭제하시겠습니까? 삭제 시 미선과 재고가 복원됩니다.')) return;
-  try {
-    await dbDeleteProcessing(id);
-    processingRecords = processingRecords.filter(r => r.id !== id);
-    renderInvSummary(); renderInboundList(); renderProcessingTab();
-  } catch(e) { alert('삭제 오류: ' + e.message); }
-}
 
 function _daysSince(dateStr) {
   if (!dateStr) return 999;
@@ -9942,26 +9679,6 @@ function _dateChip(dates) {
     ? `📅 ${mmdd(oldest)} (${dLabel(days)})`
     : `📅 ${mmdd(oldest)}~${mmdd(sorted[sorted.length - 1])} (${sorted.length}건)`;
   return `<span style="font-size:11px;color:${color};white-space:nowrap;flex-shrink:0;margin-left:6px">${text}</span>`;
-}
-
-function setSortedView(v) {
-  sortedView = v;
-  const listDiv = document.getElementById('srt-list-div');
-  const aggDiv  = document.getElementById('srt-agg-div');
-  const farmDiv = document.getElementById('srt-farm-div');
-  const filters = document.getElementById('srt-agg-filters');
-  const btnList = document.getElementById('srt-v-list');
-  const btnAgg  = document.getElementById('srt-v-agg');
-  const btnFarm = document.getElementById('srt-v-farm');
-  if (listDiv) listDiv.style.display = v === 'list' ? '' : 'none';
-  if (aggDiv)  aggDiv.style.display  = v === 'agg'  ? '' : 'none';
-  if (farmDiv) farmDiv.style.display = v === 'farm' ? '' : 'none';
-  if (filters) filters.style.display = (v === 'agg' || v === 'farm') ? 'flex' : 'none';
-  if (btnList) btnList.className = 'etab' + (v === 'list' ? ' af' : '');
-  if (btnAgg)  btnAgg.className  = 'etab' + (v === 'agg'  ? ' af' : '');
-  if (btnFarm) btnFarm.className = 'etab' + (v === 'farm' ? ' af' : '');
-  if (v === 'agg')  renderSortedAgg();
-  if (v === 'farm') renderSortedAggFarm();
 }
 
 function renderSortedAgg() {
@@ -10471,66 +10188,6 @@ function renderPachiSection() {
         </table>
       </div>
     </div>`;
-}
-
-async function editPachiQty(trEl) {
-  const idsStr = trEl && trEl.dataset && trEl.dataset.pachiIds;
-  if (!idsStr) return;
-  const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
-  if (ids.length !== 1) { alert('수량 편집은 단일 기록만 가능합니다.'); return; }
-  const id = ids[0];
-  const rec = inventoryRecords.find(r => String(r.id) === String(id));
-  if (!rec) return;
-  const input = prompt('수량(CT) 수정:', rec.quantity || 0);
-  if (input === null) return;
-  const newQty = parseInt(input);
-  if (isNaN(newQty) || newQty < 0) return alert('유효한 숫자를 입력해주세요.');
-  try {
-    await sbUpdate('inventory_records', id, { quantity: newQty });
-    rec.quantity = newQty;
-    renderInvSummary(); renderPachiSection();
-    showToast('수량 수정 완료');
-  } catch(e) { alert('수정 실패: ' + e.message); }
-}
-
-async function editPachiMemo(trEl) {
-  const idsStr = trEl && trEl.dataset && trEl.dataset.pachiIds;
-  if (!idsStr) return;
-  const rawIds = idsStr.split(',');
-  const ids = rawIds.map(id => isNaN(id) ? id.trim() : Number(id.trim()));
-  const recs = inventoryRecords.filter(r => ids.includes(r.id));
-  const current = recs.map(r => r.note).filter(n => n && n !== '파치 자동 변환').join(', ');
-  const memo = prompt('메모 입력 (이 배치의 파치):', current);
-  if (memo === null) return;
-  try {
-    for (const id of ids) {
-      await sbUpdate('inventory_records', id, { note: memo || null });
-      const rec = inventoryRecords.find(r => r.id === id);
-      if (rec) rec.note = memo || null;
-    }
-    renderPachiSection();
-    showToast('메모 저장 완료');
-  } catch(e) {
-    alert('저장 실패: ' + e.message);
-  }
-}
-
-
-
-async function addSorted() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
-  const date = gv('so-date'), product = gv('so-product'), product_type = gv('so-ptype');
-  const farm_name = gv('so-farm'), count_num = gv('so-count');
-  const qty = parseFloat(document.getElementById('so-qty').value) || 0;
-  if (!date || !product || !product_type || !farm_name || !count_num || !qty)
-    return alert('모든 필수 항목을 입력해주세요.');
-  const data = { date, product, product_type, farm_name, count_num, quantity: qty, location: gv('so-loc') || null };
-  try {
-    const row = await dbInsertSorted(data);
-    invSorted.unshift(row);
-    renderInvSummary(); renderSortedList();
-    sv('so-qty', ''); sv('so-loc', '');
-  } catch(e) { alert('등록 오류: ' + e.message); }
 }
 
 async function deleteSorted(id) {
