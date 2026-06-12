@@ -34,7 +34,7 @@ function buildSeqByDate(srRows) {
 let farms = [], drivers = [], dispatches = [], picks = [];
 let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
-let invUnsorted = [], invSorted = [], invWaste = [], invJuiceMasters = [], invJuiceBatches = [], invJuiceOutbounds = [], invOutbounds = [];
+let invUnsorted = [], invSorted = [], invWaste = [], invJuiceMasters = [], invJuiceBatches = [], invOutbounds = [];
 let juiceExpiryDays = 90;
 let _obHistFilter = {};
 let _matrixBatchRegistry = {};
@@ -3339,7 +3339,6 @@ async function loadAndRenderInv() {
     [invSorted, invWaste, invSizeConfig] = [sorted, waste, sizeCfg];
     invJuiceMasters = juiceMasters;
     invJuiceBatches = juiceBatches;
-    invJuiceOutbounds = juiceOutbounds;
     invOutbounds = allOutbounds;
     try {
       const expiryRows = await sbGet('settings', 'key=eq.juice_expiry_days');
@@ -5075,7 +5074,6 @@ async function saveJuiceOutbound(id) {
       farm_name: null, note, is_void: false, created_by: adm,
       ref_detail: [{ table: 'juice_batches', id: b.id, amount: qty, voided }]
     });
-    invJuiceOutbounds.unshift(row);
     if (row) invOutbounds.unshift(row);
 
     document.getElementById('modal-outbound').style.display = 'none';
@@ -10357,7 +10355,7 @@ function renderJuiceSection() {
 
     const histInbound  = invJuiceBatches.filter(b => b.product_name === product && !b.is_void)
       .map(b => ({ date: b.inbound_date || '', type: 'in', rec: b }));
-    const histOutbound = invJuiceOutbounds.filter(o => o.product === product)
+    const histOutbound = invOutbounds.filter(o => o.source_type === 'juice' && !o.is_void && o.product === product)
       .map(o => ({ date: o.date || '', type: 'out', rec: o }));
     const histAll = [...histInbound, ...histOutbound].sort((a, b) => b.date.localeCompare(a.date));
     const histRows = histAll.map(h => {
