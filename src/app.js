@@ -5744,12 +5744,16 @@ function renderOutboundHistory() {
   function rowHtml(r) {
     const size   = r.size_code ? ` <span style="color:#9CA3AF;font-size:11px">${esc(r.size_code)}</span>` : '';
     const expiry = (r.unit==='병' && r.expiry_date) ? ` <span style="color:#9CA3AF;font-size:11px">~${r.expiry_date}</span>` : '';
+    const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0 && sessionStorage.getItem('citrus_role') === 'admin';
     return `<tr style="border-bottom:1px solid #F3F4F6">
       <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${r.date||''}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.product||'')}${size}${expiry}</td>
       <td style="padding:7px 10px">${srcBadge(r.source_type)}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.partner_name||'-')}</td>
       <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(Number(r.quantity)||0)} ${esc(r.unit||'')}</td>
+      <td style="padding:7px 10px;text-align:center">
+        ${cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : ''}
+      </td>
     </tr>`;
   }
 
@@ -5759,13 +5763,13 @@ function renderOutboundHistory() {
 
   let bodyHtml = '';
   if (!filtered.length) {
-    bodyHtml = '<tr><td colspan="5" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">출고 내역이 없습니다.</td></tr>';
+    bodyHtml = '<tr><td colspan="6" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">출고 내역이 없습니다.</td></tr>';
   } else {
     Object.entries(groups).sort(([a],[b]) => a.localeCompare(b,'ko')).forEach(([key, grpRows]) => {
       const gCT = grpRows.filter(r=>r.unit==='CT').reduce((s,r)=>s+(Number(r.quantity)||0),0);
       const gBt = grpRows.filter(r=>r.unit==='병').reduce((s,r)=>s+(Number(r.quantity)||0),0);
       const sub = [gCT>0?`${fmtN(gCT)} CT`:'', gBt>0?`${fmtN(gBt)} 병`:''].filter(Boolean).join(' · ') || '0';
-      bodyHtml += `<tr style="background:#F3F4F6"><td colspan="5" style="padding:6px 10px;font-weight:600;font-size:13px">
+      bodyHtml += `<tr style="background:#F3F4F6"><td colspan="6" style="padding:6px 10px;font-weight:600;font-size:13px">
         ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub})</span>
       </td></tr>`;
       bodyHtml += grpRows.map(rowHtml).join('');
@@ -5820,12 +5824,63 @@ function renderOutboundHistory() {
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">구분</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">출고처</th>
           <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">수량</th>
+          <th style="padding:8px 10px;text-align:center;font-size:12px;color:#6B7280;font-weight:600"></th>
         </tr></thead>
         <tbody>${bodyHtml}</tbody>
       </table></div>
     </div>`;
 }
 
+
+function confirmCancelOutbound(id) {
+  const r = invOutbounds.find(x => String(x.id) === String(id));
+  if (!r) return;
+  if (!confirm(`${r.product} ${fmtN(r.quantity)}${r.unit} (${r.partner_name||'-'}) 출고를 취소합니다.\n\n차감됐던 재고가 다시 복구되고, 이 출고 기록은 취소 처리됩니다.\n계속하시겠습니까?`)) return;
+  cancelOutbound(id);
+}
+
+async function cancelOutbound(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const r = invOutbounds.find(x => String(x.id) === String(id));
+  if (!r) return;
+  if (!Array.isArray(r.ref_detail) || r.ref_detail.length === 0) {
+    alert('이 출고는 취소 정보가 없어 자동 취소할 수 없습니다.\n수동으로 재고를 조정해주세요.');
+    return;
+  }
+  try {
+    for (const d of r.ref_detail) {
+      if (d.table === 'inventory_records') {
+        const rec = inventoryRecords.find(x => String(x.id) === String(d.id));
+        const base = rec ? (Number(rec.quantity) || 0) : 0;
+        const newQty = base + Number(d.amount || 0);
+        const patch = { quantity: newQty };
+        if (d.voided) patch.is_void = false;
+        await sbUpdate('inventory_records', d.id, patch);
+        if (rec) { rec.quantity = newQty; if (d.voided) rec.is_void = false; }
+      } else if (d.table === 'juice_batches') {
+        const b = invJuiceBatches.find(x => String(x.id) === String(d.id));
+        const base = b ? (Number(b.remaining_bottles) || 0) : 0;
+        const newRem = base + Number(d.amount || 0);
+        const patch = { remaining_bottles: newRem };
+        if (d.voided) patch.is_void = false;
+        await sbUpdate('juice_batches', d.id, patch);
+        if (b) { b.remaining_bottles = newRem; if (d.voided) b.is_void = false; }
+      } else if (d.table === 'processing_records') {
+        await sbDelete('processing_records', d.id);
+        const i = processingRecords.findIndex(x => String(x.id) === String(d.id));
+        if (i >= 0) processingRecords.splice(i, 1);
+      }
+    }
+    await sbUpdate('outbound_records', id, { is_void: true });
+    const i = invOutbounds.findIndex(x => String(x.id) === String(id));
+    if (i >= 0) invOutbounds.splice(i, 1);
+    showToast('출고 취소 — 재고 복구 완료');
+    renderOutboundHistory(); renderInventoryStatus(); renderPachiSection();
+    renderJuiceSection(); renderInboundList(); renderInvSummary();
+  } catch(e) {
+    alert('취소 중 오류가 발생했습니다. 일부 복구가 완료되지 않았을 수 있으니 재고를 확인해주세요.\n\n' + e.message);
+  }
+}
 
 function toggleSumDetail(id) {
   const el = document.getElementById(id);
