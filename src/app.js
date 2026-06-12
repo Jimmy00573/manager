@@ -5789,24 +5789,38 @@ function renderInvAll() {
 }
 
 function exportOutboundCSV() {
-  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스' };
-  const filtered = invOutbounds.filter(r => {
-    if (_obHistFilter.from    && r.date < _obHistFilter.from)              return false;
-    if (_obHistFilter.to      && r.date > _obHistFilter.to)                return false;
-    if (_obHistFilter.prod    && r.product !== _obHistFilter.prod)         return false;
-    if (_obHistFilter.partner && r.partner_name !== _obHistFilter.partner) return false;
-    if (_obHistFilter.src     && r.source_type !== _obHistFilter.src)      return false;
+  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스', inbound: '입고' };
+  const txOut = invOutbounds.filter(r => !r.is_void).map(r => ({
+    kind: 'out', date: r.date, product: r.product||'', size_code: r.size_code||'',
+    qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
+    amount: Number(r.amount)||0, source_type: r.source_type, expiry_date: r.expiry_date||'',
+    note: r.note||'', unit_price: r.unit_price||null, weight_kg: r.weight_kg||null
+  }));
+  const txIn = inboundRecords.filter(r => !r.is_void).map(r => ({
+    kind: 'in', date: r.date, product: r.product||'', size_code: '',
+    qty: Number(r.quantity)||0, unit: 'CT', partner: r.farm_name||'',
+    amount: Number(r.amount)||0, source_type: 'inbound', expiry_date: '',
+    note: r.note||'', unit_price: r.unit_price||null, weight_kg: r.weight_kg||null
+  }));
+  const filtered = [...txOut, ...txIn].filter(t => {
+    if (_obHistFilter.kind    && t.kind !== _obHistFilter.kind)          return false;
+    if (_obHistFilter.from    && t.date < _obHistFilter.from)            return false;
+    if (_obHistFilter.to      && t.date > _obHistFilter.to)              return false;
+    if (_obHistFilter.prod    && t.product !== _obHistFilter.prod)       return false;
+    if (_obHistFilter.partner && t.partner !== _obHistFilter.partner)    return false;
+    if (_obHistFilter.src     && t.source_type !== _obHistFilter.src)    return false;
     return true;
   });
-  if (!filtered.length) { alert('내보낼 출고 내역이 없습니다.'); return; }
-  const headers = ['일자','품목','사이즈','구분','출고처','수량','단위','유통기한','메모'];
-  const rows = filtered.map(r => [
-    r.date||'', r.product||'', r.size_code||'',
-    srcLabel[r.source_type] || r.source_type||'',
-    r.partner_name||'', fmtN(Number(r.quantity)||0), r.unit||'',
-    r.expiry_date||'', r.note||''
+  if (!filtered.length) { alert('내보낼 거래 내역이 없습니다.'); return; }
+  const headers = ['일자','입출고','품목','사이즈','구분','거래처/농가','수량','단위','금액','유통기한','메모'];
+  const rows = filtered.map(t => [
+    t.date, t.kind === 'in' ? '입고' : '출고', t.product, t.size_code,
+    srcLabel[t.source_type] || t.source_type,
+    t.partner, fmtN(t.qty), t.unit,
+    t.amount > 0 ? (t.kind==='in' ? `-${fmtN(Math.round(t.amount))}` : `+${fmtN(Math.round(t.amount))}`) : '',
+    t.expiry_date, t.note
   ]);
-  download(`출고내역_${td()}.csv`, toCSV(headers, rows));
+  download(`거래내역_${td()}.csv`, toCSV(headers, rows));
 }
 
 function renderOutboundHistory() {
@@ -5821,84 +5835,121 @@ function renderOutboundHistory() {
     _obHistFilter.partner = '';
     _obHistFilter.src = '';
     _obHistFilter.group = 'partner';
+    _obHistFilter.kind = '';
     _obHistFilter.initialized = true;
   }
+  if (_obHistFilter.kind === undefined) _obHistFilter.kind = '';
 
-  const allProds    = [...new Set(invOutbounds.map(r => r.product).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
-  const allPartners = [...new Set(invOutbounds.map(r => r.partner_name).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
+  // ── 통합 거래 배열
+  const txOut = invOutbounds.filter(r => !r.is_void).map(r => ({
+    kind: 'out', date: r.date||'', product: r.product||'', size_code: r.size_code||null,
+    qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
+    amount: Number(r.amount)||0, source_type: r.source_type, expiry_date: r.expiry_date||null, _raw: r
+  }));
+  const txIn = inboundRecords.filter(r => !r.is_void).map(r => ({
+    kind: 'in', date: r.date||'', product: r.product||'', size_code: null,
+    qty: Number(r.quantity)||0, unit: 'CT', partner: r.farm_name||'',
+    amount: Number(r.amount)||0, source_type: 'inbound', expiry_date: null, category: r.inbound_category, _raw: r
+  }));
+  const allTx = [...txOut, ...txIn];
 
-  const filtered = invOutbounds.filter(r => {
-    if (_obHistFilter.from    && r.date < _obHistFilter.from)         return false;
-    if (_obHistFilter.to      && r.date > _obHistFilter.to)           return false;
-    if (_obHistFilter.prod    && r.product !== _obHistFilter.prod)    return false;
-    if (_obHistFilter.partner && r.partner_name !== _obHistFilter.partner) return false;
-    if (_obHistFilter.src     && r.source_type !== _obHistFilter.src) return false;
+  const allProds    = [...new Set(allTx.map(t => t.product).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
+  const allPartners = [...new Set(allTx.map(t => t.partner).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
+
+  const filtered = allTx.filter(t => {
+    if (_obHistFilter.kind    && t.kind !== _obHistFilter.kind)          return false;
+    if (_obHistFilter.from    && t.date < _obHistFilter.from)            return false;
+    if (_obHistFilter.to      && t.date > _obHistFilter.to)              return false;
+    if (_obHistFilter.prod    && t.product !== _obHistFilter.prod)       return false;
+    if (_obHistFilter.partner && t.partner !== _obHistFilter.partner)    return false;
+    if (_obHistFilter.src     && t.source_type !== _obHistFilter.src)    return false;
     return true;
-  });
+  }).sort((a,b) => b.date.localeCompare(a.date));
 
-  const totalCT     = filtered.filter(r => r.unit === 'CT').reduce((s,r) => s+(Number(r.quantity)||0), 0);
-  const totalBottle = filtered.filter(r => r.unit === '병').reduce((s,r) => s+(Number(r.quantity)||0), 0);
-  const totalAmount = filtered.reduce((s,r) => s+(Number(r.amount)||0), 0);
+  const totalIn  = filtered.filter(t => t.kind==='in').reduce((s,t) => s+t.amount, 0);
+  const totalOut = filtered.filter(t => t.kind==='out').reduce((s,t) => s+t.amount, 0);
 
-  function srcBadge(src) {
-    const map = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'] };
-    const [label, color] = map[src] || [src||'?','#9CA3AF'];
+  // ── 뱃지
+  function kindBadge(t) {
+    if (t.kind === 'in') return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#DBEAFE;color:#1D4ED8;font-weight:600">입고</span>`;
+    const srcMap = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'] };
+    const [label, color] = srcMap[t.source_type] || ['출고','#EF4444'];
     return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:${color}20;color:${color};font-weight:600">${label}</span>`;
   }
 
-  function rowHtml(r) {
-    const size   = r.size_code ? ` <span style="color:#9CA3AF;font-size:11px">${esc(r.size_code)}</span>` : '';
-    const expiry = (r.unit==='병' && r.expiry_date) ? ` <span style="color:#9CA3AF;font-size:11px">~${r.expiry_date}</span>` : '';
-    const isAdmin = sessionStorage.getItem('citrus_role') === 'admin';
-    const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0 && isAdmin;
+  const isAdmin = sessionStorage.getItem('citrus_role') === 'admin';
+
+  function txRowHtml(t) {
+    const r = t._raw;
+    const size   = t.size_code ? ` <span style="color:#9CA3AF;font-size:11px">${esc(t.size_code)}</span>` : '';
+    const expiry = (t.unit==='병' && t.expiry_date) ? ` <span style="color:#9CA3AF;font-size:11px">~${t.expiry_date}</span>` : '';
+    const amtCell = t.amount > 0
+      ? (t.kind==='in'
+          ? `<span style="font-weight:600;color:#1D4ED8">−${fmtN(Math.round(t.amount))}원</span>${r.unit_price?`<br><span style="font-size:10px;color:#9CA3AF">${r.weight_kg?fmtN(r.weight_kg)+'kg·':''}×${fmtN(r.unit_price)}</span>`:''}`
+          : `<span style="font-weight:600;color:#DC2626">+${fmtN(Math.round(t.amount))}원</span>${r.unit_price?`<br><span style="font-size:10px;color:#9CA3AF">${r.weight_kg?fmtN(r.weight_kg)+'kg·':''}×${fmtN(r.unit_price)}</span>`:''}`)
+      : '<span style="color:#D1D5DB">-</span>';
+    let actionCell = '';
+    if (t.kind==='out' && isAdmin) {
+      const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0;
+      actionCell = `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>`
+        + (cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : '');
+    }
     return `<tr style="border-bottom:1px solid #F3F4F6">
-      <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${r.date||''}</td>
-      <td style="padding:7px 10px;font-size:13px">${esc(r.product||'')}${size}${expiry}</td>
-      <td style="padding:7px 10px">${srcBadge(r.source_type)}</td>
-      <td style="padding:7px 10px;font-size:13px">${esc(r.partner_name||'-')}</td>
-      <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(Number(r.quantity)||0)} ${esc(r.unit||'')}</td>
-      <td style="padding:7px 10px;text-align:right;font-size:13px;white-space:nowrap">
-        ${r.amount ? `<span style="font-weight:600">${fmtN(Math.round(r.amount))}원</span>${r.unit_price ? `<br><span style="font-size:10px;color:#9CA3AF">${r.weight_kg?fmtN(r.weight_kg)+'kg·':''}×${fmtN(r.unit_price)}</span>` : ''}` : '<span style="color:#D1D5DB">-</span>'}
-      </td>
-      <td style="padding:7px 10px;text-align:center;white-space:nowrap">
-        ${isAdmin ? `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>` : ''}
-        ${cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : ''}
-      </td>
+      <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${t.date}</td>
+      <td style="padding:7px 10px;font-size:13px">${esc(t.product)}${size}${expiry}</td>
+      <td style="padding:7px 10px">${kindBadge(t)}</td>
+      <td style="padding:7px 10px;font-size:13px">${esc(t.partner||'-')}</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(t.qty)} ${esc(t.unit)}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:13px;white-space:nowrap">${amtCell}</td>
+      <td style="padding:7px 10px;text-align:center;white-space:nowrap">${actionCell}</td>
     </tr>`;
   }
 
-  const groupField = (_obHistFilter.group||'partner') === 'partner' ? 'partner_name' : 'product';
+  const groupField = (_obHistFilter.group||'partner') === 'partner' ? 'partner' : 'product';
   const groups = {};
-  filtered.forEach(r => { const k = r[groupField]||'미분류'; if(!groups[k]) groups[k]=[]; groups[k].push(r); });
+  filtered.forEach(t => { const k = t[groupField]||'미분류'; if(!groups[k]) groups[k]=[]; groups[k].push(t); });
 
   let bodyHtml = '';
   if (!filtered.length) {
-    bodyHtml = '<tr><td colspan="7" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">출고 내역이 없습니다.</td></tr>';
+    bodyHtml = '<tr><td colspan="7" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">거래 내역이 없습니다.</td></tr>';
   } else {
     Object.entries(groups).sort(([a],[b]) => a.localeCompare(b,'ko')).forEach(([key, grpRows]) => {
-      const gCT  = grpRows.filter(r=>r.unit==='CT').reduce((s,r)=>s+(Number(r.quantity)||0),0);
-      const gBt  = grpRows.filter(r=>r.unit==='병').reduce((s,r)=>s+(Number(r.quantity)||0),0);
-      const gAmt = grpRows.reduce((s,r)=>s+(Number(r.amount)||0),0);
+      const gCT  = grpRows.filter(t=>t.unit==='CT').reduce((s,t)=>s+t.qty, 0);
+      const gBt  = grpRows.filter(t=>t.unit==='병').reduce((s,t)=>s+t.qty, 0);
+      const gIn  = grpRows.filter(t=>t.kind==='in').reduce((s,t)=>s+t.amount, 0);
+      const gOut = grpRows.filter(t=>t.kind==='out').reduce((s,t)=>s+t.amount, 0);
       const sub  = [gCT>0?`${fmtN(gCT)} CT`:'', gBt>0?`${fmtN(gBt)} 병`:''].filter(Boolean).join(' · ') || '0';
-      const amtStr = gAmt > 0 ? ` · <span style="color:#2563EB;font-weight:600">${fmtN(Math.round(gAmt))}원</span>` : '';
+      const amtParts = [
+        gIn>0  ? `매입 <span style="color:#1D4ED8;font-weight:600">−${fmtN(Math.round(gIn))}원</span>` : '',
+        gOut>0 ? `매출 <span style="color:#DC2626;font-weight:600">+${fmtN(Math.round(gOut))}원</span>` : ''
+      ].filter(Boolean).join(' · ');
       bodyHtml += `<tr style="background:#F3F4F6"><td colspan="7" style="padding:6px 10px;font-weight:600;font-size:13px">
-        ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub}${amtStr})</span>
+        ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub}${amtParts?' · '+amtParts:''})</span>
       </td></tr>`;
-      bodyHtml += grpRows.map(rowHtml).join('');
+      bodyHtml += grpRows.map(txRowHtml).join('');
     });
   }
 
   const totalParts = [
-    totalCT>0     ? `<strong>${fmtN(totalCT)} CT</strong>` : '',
-    totalBottle>0 ? `<strong>${fmtN(totalBottle)} 병</strong>` : '',
-    totalAmount>0 ? `매출 <strong style="color:#2563EB">${fmtN(Math.round(totalAmount))}원</strong>` : ''
-  ].filter(Boolean).join(' · ') || '0';
-  const sel = v => `style="padding:6px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"`;
+    totalIn>0  ? `매입 <strong style="color:#1D4ED8">−${fmtN(Math.round(totalIn))}원</strong>` : '',
+    totalOut>0 ? `매출 <strong style="color:#DC2626">+${fmtN(Math.round(totalOut))}원</strong>` : ''
+  ].filter(Boolean).join(' · ') || `${filtered.length}건`;
+  const sel = () => `style="padding:6px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"`;
+  const kBtn = k => {
+    const on = _obHistFilter.kind === k;
+    return `style="padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid ${on?'#2563EB':'#D1D5DB'};background:${on?'#EFF6FF':'#fff'};color:${on?'#2563EB':'#374151'};font-weight:${on?'700':'400'}"`;
+  };
 
   div.innerHTML = `
     <div class="form-card" style="margin-bottom:12px">
-      <div class="form-title">📤 출고내역 검색</div>
+      <div class="form-title">🔄 거래내역 검색</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">거래 구분</label>
+          <div style="display:flex;gap:4px">
+            <button onclick="_obHistFilter.kind='';renderOutboundHistory()" ${kBtn('')}>전체</button>
+            <button onclick="_obHistFilter.kind='in';renderOutboundHistory()" ${kBtn('in')}>🔵 입고</button>
+            <button onclick="_obHistFilter.kind='out';renderOutboundHistory()" ${kBtn('out')}>🔴 출고</button>
+          </div></div>
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">기간 시작</label>
           <input type="date" value="${_obHistFilter.from}" onchange="_obHistFilter.from=this.value;renderOutboundHistory()" ${sel()}></div>
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">기간 종료</label>
@@ -5908,22 +5959,23 @@ function renderOutboundHistory() {
             <option value="">전체</option>
             ${allProds.map(p=>`<option value="${esc(p)}"${_obHistFilter.prod===p?' selected':''}>${esc(p)}</option>`).join('')}
           </select></div>
-        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">출고처</label>
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">거래처/농가</label>
           <select onchange="_obHistFilter.partner=this.value;renderOutboundHistory()" ${sel()}>
             <option value="">전체</option>
             ${allPartners.map(p=>`<option value="${esc(p)}"${_obHistFilter.partner===p?' selected':''}>${esc(p)}</option>`).join('')}
           </select></div>
-        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">구분</label>
+        ${_obHistFilter.kind!=='in'?`
+        <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">출고 종류</label>
           <select onchange="_obHistFilter.src=this.value;renderOutboundHistory()" ${sel()}>
             <option value="">전체</option>
             <option value="sorting"${_obHistFilter.src==='sorting'?' selected':''}>선과</option>
             <option value="pachi"${_obHistFilter.src==='pachi'?' selected':''}>파치</option>
             <option value="unsorted"${_obHistFilter.src==='unsorted'?' selected':''}>미선과</option>
             <option value="juice"${_obHistFilter.src==='juice'?' selected':''}>주스</option>
-          </select></div>
+          </select></div>`:''}
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">묶음</label>
           <select onchange="_obHistFilter.group=this.value;renderOutboundHistory()" ${sel()}>
-            <option value="partner"${(_obHistFilter.group||'partner')==='partner'?' selected':''}>출고처별</option>
+            <option value="partner"${(_obHistFilter.group||'partner')==='partner'?' selected':''}>거래처/농가별</option>
             <option value="product"${_obHistFilter.group==='product'?' selected':''}>품목별</option>
           </select></div>
         <div style="align-self:flex-end">
@@ -5941,7 +5993,7 @@ function renderOutboundHistory() {
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">일자</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">품목</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">구분</th>
-          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">출고처</th>
+          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">거래처/농가</th>
           <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">수량</th>
           <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">금액</th>
           <th style="padding:8px 10px;text-align:center;font-size:12px;color:#6B7280;font-weight:600"></th>
