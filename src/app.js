@@ -5344,6 +5344,16 @@ function calcMobAmount() {
     : '';
 }
 
+function calcIbWeightFromCt() {
+  const kgct = parseFloat(document.getElementById('ibp-kgct')?.value) || 0;
+  if (kgct > 0) {
+    const ct = parseFloat(document.getElementById('ib-qty')?.value) || 0;
+    const wEl = document.getElementById('ibp-weight');
+    if (wEl && ct > 0) wEl.value = Math.round(ct * kgct * 10) / 10;
+  }
+  calcIbAmount();
+}
+
 function toggleIbPrice() {
   const b = document.getElementById('ibp-body');
   const t = document.getElementById('ibp-toggle');
@@ -9898,6 +9908,7 @@ async function _addInboundCore(keepOpen) {
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const priEl = document.getElementById('ib-priority'); if (priEl) priEl.checked = false;
+    const ibpKgct = document.getElementById('ibp-kgct'); if (ibpKgct) ibpKgct.value = '';
     const ibpW = document.getElementById('ibp-weight'); if (ibpW) ibpW.value = '';
     const ibpP = document.getElementById('ibp-price');  if (ibpP) ibpP.value = '';
     const ibpAmt = document.getElementById('ibp-amount'); if (ibpAmt) ibpAmt.innerHTML = '';
