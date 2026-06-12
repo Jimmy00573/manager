@@ -4511,6 +4511,12 @@ async function deleteMatrixBatch(regId) {
       await sbUpdate('inventory_records', rec.id, { is_void: true });
       rec.is_void = true;
     }
+    await dbInsertAuditLog({
+      target_table: 'inventory_records', target_id: toDelete[0]?.id,
+      before_val: { farm: info.farm, product: info.product, total_ct: info.batchTotal, count: toDelete.length },
+      after_val: null, reason: '재고 삭제',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
     renderInvSummary();
     renderInventoryStatus();
     showToast(`${toDelete.length}건 삭제 완료`);
@@ -4971,6 +4977,12 @@ async function deleteJuiceBatch(id) {
     await sbUpdate('juice_batches', id, { is_void: true });
     const rec = invJuiceBatches.find(x => x.id === id);
     if (rec) rec.is_void = true;
+    await dbInsertAuditLog({
+      target_table: 'juice_batches', target_id: id,
+      before_val: b ? { product_name: b.product_name, remaining_bottles: b.remaining_bottles, inbound_date: b.inbound_date } : {},
+      after_val: null, reason: '주스 배치 삭제',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
     showToast('삭제 완료');
     renderJuiceSection(); renderInvSummary();
   } catch(e) { alert('삭제 오류: ' + e.message); }
@@ -6048,6 +6060,12 @@ async function cancelOutbound(id) {
       }
     }
     await sbUpdate('outbound_records', id, { is_void: true });
+    await dbInsertAuditLog({
+      target_table: 'outbound_records', target_id: id,
+      before_val: { product: r.product, partner_name: r.partner_name, quantity: r.quantity, unit: r.unit, amount: r.amount || null },
+      after_val: null, reason: '출고 취소(재고 복구)',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
     const i = invOutbounds.findIndex(x => String(x.id) === String(id));
     if (i >= 0) invOutbounds.splice(i, 1);
     showToast('출고 취소 — 재고 복구 완료');
@@ -7066,7 +7084,9 @@ function getAuditDiff(log) {
 function getAuditTableLabel(t) {
   return ({ inbound_records: '미선과 입고', processing_records: '선과 처리',
     inventory_sorted: '선과 재고', inventory_waste: '파치', inventory_juice: '주스',
-    inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업' })[t] || t;
+    inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업',
+    juice_batches: '주스 배치', outbound_records: '출고',
+    inventory_records: '재고', sorting_results: '선과 차수' })[t] || t;
 }
 
 const AUDIT_ACTION_STYLE = {
@@ -9357,6 +9377,12 @@ async function deleteInbound(id) {
       if (!confirm(msg)) return;
       await cascadeDeleteInbound(id);
     }
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { product: r.product, farm_name: r.farm_name, quantity: r.quantity, date: r.date },
+      after_val: null, reason: hasLinks ? '입고 삭제(cascade)' : '입고 삭제',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
     await loadAndRenderInv();
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
