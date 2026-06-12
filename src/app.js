@@ -11173,13 +11173,14 @@ function renderJuiceSection() {
     const batchRows = sorted.map(b => {
       const dl = b.expiry_date ? Math.ceil((new Date(b.expiry_date + 'T00:00:00') - today) / 86400000) : null;
       const trBg = dl !== null && dl < 0 ? 'background:#FEF2F2' : dl !== null && dl <= juiceExpiryDays ? 'background:#FFF7F7' : '';
+      const stickyBg = dl !== null && dl < 0 ? '#FEF2F2' : dl !== null && dl <= juiceExpiryDays ? '#FFF7F7' : '#fff';
       return `<tr style="${trBg}">
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
         <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> 병</span></td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">박스 ${fmtN(b.box_count)}×${b.per_box || 0}</td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF">${esc(b.note || '')}</td>
-        ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px">
+        ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px;position:sticky;right:0;background:${stickyBg};z-index:1">
           <button class="juice-batch-kebab" onclick="toggleJuiceBatchMenu('${b.id}',this)"
             style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:3px 7px;border-radius:4px;line-height:1" title="메뉴">⋮</button></td>` : ''}
       </tr>`;
@@ -11219,14 +11220,16 @@ function renderJuiceSection() {
         <button onclick="toggleJuiceHistory('${productKey}')"
           style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
       </div>
-      <table style="width:100%;border-collapse:collapse"><thead><tr>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr>
         <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB;white-space:nowrap">입고일</th>
         <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB;white-space:nowrap">소비기한</th>
         <th style="padding:5px 10px;text-align:right;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB">잔량</th>
         <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB">박스</th>
         <th style="padding:5px 10px;border-bottom:1px solid #E5E7EB"></th>
-        ${isAdm ? '<th style="border-bottom:1px solid #E5E7EB"></th>' : ''}
+        ${isAdm ? '<th style="border-bottom:1px solid #E5E7EB;position:sticky;right:0;background:#fff;z-index:2"></th>' : ''}
       </tr></thead><tbody>${batchRows}</tbody></table>
+      </div>
       <div id="juice-history-${productKey}" style="display:none;padding:10px 14px;background:#FAFAFA;border-top:1px solid #F3F4F6">
         <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px">입출고 이력</div>
         ${histRows || '<div style="font-size:12px;color:#9CA3AF">이력 없음</div>'}
