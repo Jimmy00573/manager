@@ -1674,6 +1674,62 @@ function showToast(msg) {
   el._t = setTimeout(() => { el.style.opacity = '0'; }, 3000);
 }
 
+// ── 공용 위험 작업 확인 모달 ──────────────────────────────────────
+let _confirmResolve = null;
+
+function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입니다', items = [], resultNote = '', confirmText = '삭제', cancelText = '취소' }) {
+  return new Promise(resolve => {
+    if (_confirmResolve) _confirmResolve(false);
+    _confirmResolve = resolve;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'modal-confirm-danger';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+
+    const itemsHtml = items.map(it => `<li style="margin:4px 0;color:#B91C1C">${esc(it)}</li>`).join('');
+    const noteHtml = resultNote
+      ? `<div style="margin-top:12px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:10px 12px;font-size:13px;color:#1D4ED8">↩️ ${esc(resultNote)}</div>`
+      : '';
+
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:12px;width:100%;max-width:400px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="background:#FEF2F2;padding:20px 20px 16px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:40px;height:40px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚠️</div>
+            <div>
+              <div style="font-weight:700;font-size:16px;color:#991B1B">${esc(title)}</div>
+              <div style="font-size:13px;color:#DC2626;margin-top:2px">${esc(subtitle)}</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:16px 20px 20px">
+          ${items.length ? `<div style="font-size:13px;color:#374151;margin-bottom:8px">다음이 영구 삭제됩니다</div>
+          <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px 14px">
+            <ul style="margin:0;padding-left:18px;font-size:13px">${itemsHtml}</ul>
+          </div>` : ''}
+          ${noteHtml}
+          <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+            <button id="cdg-cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer">${esc(cancelText)}</button>
+            <button id="cdg-confirm" style="padding:8px 18px;border-radius:8px;border:none;background:#DC2626;color:#fff;font-size:14px;font-weight:600;cursor:pointer">${esc(confirmText)}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const close = (result) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+    };
+    const onKey = e => { if (e.key === 'Escape') close(false); };
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+    overlay.querySelector('#cdg-cancel').addEventListener('click', () => close(false));
+    overlay.querySelector('#cdg-confirm').addEventListener('click', () => close(true));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  });
+}
+
 // ── 농협
 async function addNhfIn() {
   const date = gv('ni-date'), nhf = gv('ni-nhf'), type = gv('ni-type'), qty = n('ni-qty');
@@ -9701,9 +9757,14 @@ async function showSortingHistory(id, btnEl) {
   setTimeout(() => document.addEventListener('click', close), 0);
 }
 
-function confirmCancelSorting(srId, inboundId, seq) {
-  const msg = `${seq}차 선과를 취소합니다.\n\n이 차수의 선과 결과·생성된 재고(정상/파치 포함)가 모두 영구 삭제되고,\n입고가 다시 선과 대기로 돌아갑니다.\n복구할 수 없습니다.\n\n계속하시겠습니까?`;
-  if (!confirm(msg)) return;
+async function confirmCancelSorting(srId, inboundId, seq) {
+  const ok = await showConfirmDanger({
+    title: `${seq}차 선과 취소`,
+    items: [`${seq}차 선과 결과`, '생성된 재고 (정상·파치 포함)'],
+    resultNote: '입고가 다시 선과 대기로 돌아갑니다',
+    confirmText: '삭제하고 취소'
+  });
+  if (!ok) return;
   // 팝업 닫기
   const pop = document.getElementById(`srt-hist-${inboundId}`);
   if (pop) pop.remove();
