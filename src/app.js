@@ -8406,12 +8406,9 @@ function renderInboundList() {
     const remBadge = remaining <= 0
       ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
       : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${fmtN(remaining)}</span>`;
-    const amtLine = r.amount
-      ? `<br><span style="font-size:10px;color:#2563EB;white-space:nowrap">${fmtN(Math.round(r.amount))}원${r.unit_price ? ` <span style="color:#9CA3AF">(${r.weight_kg ? fmtN(r.weight_kg)+'kg·' : ''}×${fmtN(r.unit_price)})</span>` : ''}</span>`
-      : '';
     const qtyDisplay = processed > 0
-      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtBadge}${amtLine}</span>`
-      : `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}${srtBadge}${amtLine}</span>`;
+      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtBadge}</span>`
+      : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}${srtBadge}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
