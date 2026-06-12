@@ -4876,6 +4876,27 @@ function openJuiceBatchEdit(id) {
   const modal = document.getElementById('modal-juice-edit');
   const body  = document.getElementById('juice-edit-body');
   if (!modal || !body) return;
+  const perBox  = b.per_box || 0;
+  const curBox  = perBox > 0 ? Math.floor((b.remaining_bottles || 0) / perBox) : 0;
+  const curLoose = perBox > 0 ? (b.remaining_bottles || 0) - curBox * perBox : (b.remaining_bottles || 0);
+  const remainingSection = perBox > 0
+    ? `<div style="grid-column:1/-1">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 재고 <span style="color:#9CA3AF;font-weight:normal;font-size:11px">(박스당 ${perBox}병)</span></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스</label>
+            <input id="jbe-box" type="number" min="0" step="1" value="${curBox}"
+              oninput="const b=parseFloat(this.value)||0,l=parseFloat(document.getElementById('jbe-loose')?.value)||0;document.getElementById('jbe-total-preview').textContent=(b*${perBox}+l)+'병';"
+              style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">낱개 (병)</label>
+            <input id="jbe-loose" type="number" min="0" step="1" value="${curLoose}"
+              oninput="const b=parseFloat(document.getElementById('jbe-box')?.value)||0,l=parseFloat(this.value)||0;document.getElementById('jbe-total-preview').textContent=(b*${perBox}+l)+'병';"
+              style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
+        </div>
+        <div id="jbe-total-preview" style="font-size:12px;color:#6B7280;text-align:right;margin-top:4px">${b.remaining_bottles || 0}병</div>
+      </div>`
+    : `<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 병수</label>
+        <input id="jbe-remaining" type="number" min="0" value="${b.remaining_bottles || 0}"
+          style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>`;
   body.innerHTML = `
     <div style="padding:16px 20px">
       <div style="margin-bottom:12px">
@@ -4889,14 +4910,13 @@ function openJuiceBatchEdit(id) {
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">소비기한</label>
           <input id="jbe-expiry" type="date" value="${esc(b.expiry_date || '')}"
             style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 병수</label>
-          <input id="jbe-remaining" type="number" min="0" value="${b.remaining_bottles || 0}"
-            style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
+        ${remainingSection}
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">비고</label>
           <input id="jbe-note" type="text" value="${esc(b.note || '')}"
             style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
       </div>
       <input type="hidden" id="jbe-id" value="${b.id}">
+      <input type="hidden" id="jbe-per-box" value="${perBox}">
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn" onclick="document.getElementById('modal-juice-edit').style.display='none'">취소</button>
         <button class="btn pri" onclick="saveJuiceBatchEdit()">저장</button>
@@ -4907,11 +4927,15 @@ function openJuiceBatchEdit(id) {
 
 async function saveJuiceBatchEdit() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const id       = document.getElementById('jbe-id')?.value;
-  const indate   = document.getElementById('jbe-indate')?.value;
-  const expiry   = document.getElementById('jbe-expiry')?.value || null;
-  const remaining = parseFloat(document.getElementById('jbe-remaining')?.value) || 0;
-  const note     = document.getElementById('jbe-note')?.value?.trim() || null;
+  const id     = document.getElementById('jbe-id')?.value;
+  const indate = document.getElementById('jbe-indate')?.value;
+  const expiry = document.getElementById('jbe-expiry')?.value || null;
+  const note   = document.getElementById('jbe-note')?.value?.trim() || null;
+  const perBox = parseFloat(document.getElementById('jbe-per-box')?.value) || 0;
+  const remaining = perBox > 0
+    ? (parseFloat(document.getElementById('jbe-box')?.value) || 0) * perBox +
+      (parseFloat(document.getElementById('jbe-loose')?.value) || 0)
+    : parseFloat(document.getElementById('jbe-remaining')?.value) || 0;
   if (!id || !indate) return alert('입고일은 필수입니다.');
   try {
     await sbUpdate('juice_batches', id, { inbound_date: indate, expiry_date: expiry, remaining_bottles: remaining, note });
