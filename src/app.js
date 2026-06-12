@@ -11487,48 +11487,45 @@ function openSortedInboundDetail(inboundId) {
   const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
   if (!ib) return;
 
-  // 옛 셸 + 이전 ESC 핸들러 제거
-  const old = document.getElementById('modal-sorted-ib-detail');
-  if (old) old.remove();
+  document.getElementById('modal-sorted-ib-detail')?.remove();
   if (_msibEscHandler) { document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; }
 
+  // 데이터 추출
   const sizeRecs = inventoryRecords.filter(r =>
     !r.is_void && r.source_type === 'inbound_sorted' &&
     String(r.inbound_record_id) === String(inboundId)
   );
   const sizeMap = {};
-  sizeRecs.forEach(r => {
-    sizeMap[r.size_code] = (sizeMap[r.size_code] || 0) + (Number(r.quantity) || 0);
-  });
+  sizeRecs.forEach(r => { sizeMap[r.size_code] = (sizeMap[r.size_code] || 0) + (Number(r.quantity) || 0); });
   const totalCt = Object.values(sizeMap).reduce((s, v) => s + v, 0);
 
+  // 사이즈 div 행 (table 없이)
   const groups = getSizeGroupsFor(ib.product);
-  const sizeRowsHtml = groups.map(g => {
-    const groupRows = g.sizes
-      .filter(sz => sizeMap[sz] > 0)
-      .map(sz => `<tr>
-        <td style="padding:5px 12px;font-size:13px;color:#374151">${esc(sz)}</td>
-        <td style="padding:5px 12px;text-align:right;font-weight:700;color:#1565C0;font-size:13px">${fmtCT(sizeMap[sz])} CT</td>
-      </tr>`).join('');
-    if (!groupRows) return '';
-    const groupHeader = groups.length > 1
-      ? `<tr style="background:#F9FAFB"><td colspan="2" style="padding:4px 12px;font-size:11px;font-weight:600;color:#6B7280">${esc(g.group)}</td></tr>`
-      : '';
-    return groupHeader + groupRows;
-  }).join('');
+  const sizeHtml = sizeRecs.length === 0
+    ? `<div style="padding:16px;text-align:center;color:#9CA3AF;font-size:13px">사이즈 기록 없음</div>`
+    : groups.map(g => {
+        const rows = g.sizes.filter(sz => sizeMap[sz] > 0).map(sz =>
+          `<div style="display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #F3F4F6;font-size:13px">
+            <span style="color:#374151">${esc(sz)}</span>
+            <span style="font-weight:700;color:#1565C0">${fmtCT(sizeMap[sz])} CT</span>
+          </div>`
+        ).join('');
+        if (!rows) return '';
+        const hdr = groups.length > 1
+          ? `<div style="padding:5px 12px 3px;font-size:11px;font-weight:600;color:#6B7280;background:#F9FAFB">${esc(g.group)}</div>`
+          : '';
+        return hdr + rows;
+      }).join('');
 
-  const noSizeNote = sizeRecs.length === 0
-    ? `<div style="padding:16px;text-align:center;color:#9CA3AF;font-size:13px">사이즈별 재고 기록 없음</div>`
-    : '';
-
-  const modal = document.createElement('div');
-  modal.id = 'modal-sorted-ib-detail';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  modal.innerHTML = `
-    <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow-y:auto;overflow-x:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+  // 모달 생성
+  const m = document.createElement('div');
+  m.id = 'modal-sorted-ib-detail';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
         <div style="font-size:14px;font-weight:700;color:#1565C0">📦 ${esc(ib.farm_name)} · ${esc(ib.product)}</div>
-        <button id="msib-close" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:16px 18px">
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px">
@@ -11538,38 +11535,28 @@ function openSortedInboundDetail(inboundId) {
           </div>
           <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
             <div style="font-size:11px;color:#6B7280;margin-bottom:2px">위치</div>
-            <div style="font-size:12px;font-weight:600;color:#111827">${esc(ib.location || '-')}</div>
+            <div style="font-size:12px;font-weight:600;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ib.location || '-')}</div>
           </div>
           <div style="background:#EFF6FF;border-radius:8px;padding:8px 10px;text-align:center">
             <div style="font-size:11px;color:#1D4ED8;margin-bottom:2px">총 CT</div>
             <div style="font-size:15px;font-weight:800;color:#1565C0">${fmtCT(totalCt || ib.quantity)}</div>
           </div>
         </div>
-        ${sizeRecs.length > 0 ? `
         <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
-          <table style="width:100%;border-collapse:collapse;table-layout:fixed">
-            <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
-            <thead><tr style="background:#F3F4F6">
-              <th style="padding:6px 12px;text-align:left;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">사이즈</th>
-              <th style="padding:6px 12px;text-align:right;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">CT</th>
-            </tr></thead>
-            <tbody>${sizeRowsHtml}</tbody>
-          </table>
-        </div>` : noSizeNote}
+          <div style="display:flex;justify-content:space-between;padding:6px 12px;background:#F3F4F6;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">
+            <span>사이즈</span><span>CT</span>
+          </div>
+          ${sizeHtml}
+        </div>
         ${ib.note ? `<div style="margin-top:12px;background:#FFFBEB;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400E">📝 ${esc(ib.note)}</div>` : ''}
       </div>
     </div>`;
 
-  const close = () => {
-    modal.remove();
-    document.removeEventListener('keydown', _msibEscHandler);
-    _msibEscHandler = null;
-  };
+  const close = () => { m.remove(); document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; };
   _msibEscHandler = e => { if (e.key === 'Escape') close(); };
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
-  modal.querySelector('#msib-close').addEventListener('click', close);
+  m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close !== undefined) close(); });
   document.addEventListener('keydown', _msibEscHandler);
-  document.body.appendChild(modal);
+  document.body.appendChild(m);
 }
 
 // ── 설정 탭 — 비밀번호 변경 모달
