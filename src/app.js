@@ -10922,7 +10922,14 @@ function renderJuiceSection() {
         <button onclick="toggleJuiceHistory('${productKey}')"
           style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
       </div>
-      <table style="width:100%;border-collapse:collapse"><tbody>${batchRows}</tbody></table>
+      <table style="width:100%;border-collapse:collapse"><thead><tr>
+        <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB;white-space:nowrap">입고일</th>
+        <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB;white-space:nowrap">소비기한</th>
+        <th style="padding:5px 10px;text-align:right;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB">잔량</th>
+        <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB">박스</th>
+        <th style="padding:5px 10px;border-bottom:1px solid #E5E7EB"></th>
+        ${isAdm ? '<th style="border-bottom:1px solid #E5E7EB"></th>' : ''}
+      </tr></thead><tbody>${batchRows}</tbody></table>
       <div id="juice-history-${productKey}" style="display:none;padding:10px 14px;background:#FAFAFA;border-top:1px solid #F3F4F6">
         <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px">입출고 이력</div>
         ${histRows || '<div style="font-size:12px;color:#9CA3AF">이력 없음</div>'}
