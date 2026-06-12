@@ -95,6 +95,7 @@ let stockEd = { 노랑: false, 초록: false, 헌콘: false };
 let _msgTxt = '', _msgDrvTel = '';
 let _editFarmId = null, _editDrvId = null, _editPickId = null, _editPartnerId = null;
 let _obEditId = null;
+let _txEditKind = null, _txEditId = null;
 let _XT = null, _XI = null;
 let _dt = 'w', _dt2 = 'w', _ft = 'n';
 let _dp = 1, _d2p = 1, _rp = 1;
@@ -5889,9 +5890,12 @@ function renderOutboundHistory() {
           : `<span style="font-weight:600;color:#DC2626">+${fmtN(Math.round(t.amount))}원</span>${r.unit_price?`<br><span style="font-size:10px;color:#9CA3AF">${r.weight_kg?fmtN(r.weight_kg)+'kg·':''}×${fmtN(r.unit_price)}</span>`:''}`)
       : '<span style="color:#D1D5DB">-</span>';
     let actionCell = '';
+    if (isAdmin) {
+      actionCell += `<button onclick="openTxPriceEdit('${t.kind}','${r.id}')" style="background:none;border:1px solid #C7D2FE;color:#4F46E5;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">단가</button>`;
+    }
     if (t.kind==='out' && isAdmin) {
       const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0;
-      actionCell = `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>`
+      actionCell += `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>`
         + (cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : '');
     }
     return `<tr style="border-bottom:1px solid #F3F4F6">
@@ -6127,6 +6131,99 @@ async function saveOutboundEdit() {
   } catch(e) {
     alert('수정 중 오류가 발생했습니다.\n\n' + e.message);
   }
+}
+
+function openTxPriceEdit(kind, id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const rec = kind === 'out'
+    ? invOutbounds.find(x => String(x.id) === String(id))
+    : inboundRecords.find(x => String(x.id) === String(id));
+  if (!rec) return;
+  _txEditKind = kind;
+  _txEditId   = id;
+
+  const prev = document.getElementById('modal-tpe');
+  if (prev) prev.remove();
+
+  const isJuice = rec.unit === '병';
+  const qtyLabel = isJuice ? `${fmtN(Number(rec.quantity)||0)} 병` : `${fmtN(Number(rec.quantity)||0)} CT`;
+  const wVal  = (!isJuice && rec.weight_kg) ? rec.weight_kg : '';
+  const pVal  = rec.unit_price ? rec.unit_price : '';
+  const inp   = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
+
+  const div = document.createElement('div');
+  div.id = 'modal-tpe';
+  div.className = 'modal-bg';
+  div.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:9999';
+  div.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:340px;max-width:94vw;box-shadow:0 8px 32px #0002">
+      <h3 style="margin:0 0 16px;font-size:16px">단가 수정</h3>
+      <div style="background:#F9FAFB;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:13px;color:#6B7280;line-height:1.8">
+        <div>품목: <b style="color:#111">${esc(rec.product||'')}</b></div>
+        <div>수량: <b style="color:#111">${qtyLabel}</b></div>
+        <div style="font-size:11px;color:#9CA3AF;margin-top:2px">수량·재고는 변경되지 않습니다</div>
+      </div>
+      ${!isJuice ? `
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">실측 중량 (kg)</label>
+        <input type="number" id="tpe-weight" min="0" step="0.1" value="${wVal}" placeholder="0" oninput="calcTpeAmount()" style="${inp}">
+      </div>` : ''}
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">${isJuice ? '병당 단가 (원)' : 'kg당 단가 (원)'}</label>
+        <input type="number" id="tpe-price" min="0" step="1" value="${pVal}" placeholder="0" oninput="calcTpeAmount()" style="${inp}">
+      </div>
+      <div id="tpe-amount" style="text-align:right;margin-bottom:16px;font-size:13px;color:#6B7280"></div>
+      <div style="display:flex;gap:8px">
+        <button onclick="saveTxPriceEdit()" style="flex:1;background:#4F46E5;color:#fff;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;font-weight:600">저장</button>
+        <button onclick="document.getElementById('modal-tpe').remove()" style="flex:1;background:#F3F4F6;color:#374151;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer">취소</button>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+  calcTpeAmount();
+}
+
+function calcTpeAmount() {
+  const kind = _txEditKind;
+  const rec  = kind === 'out'
+    ? invOutbounds.find(x => String(x.id) === String(_txEditId))
+    : inboundRecords.find(x => String(x.id) === String(_txEditId));
+  if (!rec) return;
+  const isJuice = rec.unit === '병';
+  const w   = isJuice ? Number(rec.quantity)||0 : parseFloat(document.getElementById('tpe-weight')?.value)||0;
+  const p   = parseFloat(document.getElementById('tpe-price')?.value) || 0;
+  const el  = document.getElementById('tpe-amount');
+  if (el) el.innerHTML = (w > 0 && p > 0)
+    ? `금액 <b style="color:#4F46E5">${fmtN(Math.round(w * p))}</b> 원`
+    : '';
+}
+
+async function saveTxPriceEdit() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_txEditKind || !_txEditId) return;
+  const rec = _txEditKind === 'out'
+    ? invOutbounds.find(x => String(x.id) === String(_txEditId))
+    : inboundRecords.find(x => String(x.id) === String(_txEditId));
+  if (!rec) return;
+  const isJuice = rec.unit === '병';
+  const price  = parseFloat(document.getElementById('tpe-price')?.value) || null;
+  const weight = isJuice ? null : (parseFloat(document.getElementById('tpe-weight')?.value) || null);
+  const qty    = Number(rec.quantity) || 0;
+  const amount = isJuice
+    ? (price && qty ? price * qty : null)
+    : (price && weight ? price * weight : null);
+  const table  = _txEditKind === 'out' ? 'outbound_records' : 'inbound_records';
+  try {
+    await sbUpdate(table, _txEditId, { weight_kg: weight, unit_price: price, amount });
+    rec.weight_kg  = weight;
+    rec.unit_price = price;
+    rec.amount     = amount;
+    const wasIn = _txEditKind === 'in';
+    document.getElementById('modal-tpe')?.remove();
+    _txEditKind = null; _txEditId = null;
+    showToast('단가 수정 완료');
+    renderOutboundHistory();
+    if (wasIn) renderInboundList();
+  } catch(e) { alert('수정 오류: ' + e.message); }
 }
 
 function toggleSumDetail(id) {
