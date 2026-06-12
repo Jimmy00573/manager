@@ -10356,6 +10356,10 @@ async function saveInboundSorted(keepOpen) {
 }
 
 async function _addInboundCore(keepOpen) {
+  const _ibBtn = document.getElementById(keepOpen ? 'ib-save-cont-btn' : 'ib-save-btn');
+  const _ibBtnOrig = _ibBtn ? _ibBtn.textContent : '';
+  if (_ibBtn) { _ibBtn.disabled = true; _ibBtn.textContent = '등록 중...'; }
+  try {
   if (_ibKind === 'sorted') return await saveInboundSorted(keepOpen);
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
@@ -10491,6 +10495,9 @@ async function _addInboundCore(keepOpen) {
   }
 
   await doInsert();
+  } finally {
+    if (_ibBtn) { _ibBtn.disabled = false; _ibBtn.textContent = _ibBtnOrig; }
+  }
 }
 
 
