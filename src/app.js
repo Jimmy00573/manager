@@ -5052,15 +5052,15 @@ async function saveJuiceBatchEdit() {
   const expiry = document.getElementById('jbe-expiry')?.value || null;
   const note   = document.getElementById('jbe-note')?.value?.trim() || null;
   const perBox = parseFloat(document.getElementById('jbe-per-box')?.value) || 0;
+  const boxCount = perBox > 0 ? (parseFloat(document.getElementById('jbe-box')?.value) || 0) : 0;
   const remaining = perBox > 0
-    ? (parseFloat(document.getElementById('jbe-box')?.value) || 0) * perBox +
-      (parseFloat(document.getElementById('jbe-loose')?.value) || 0)
+    ? boxCount * perBox + (parseFloat(document.getElementById('jbe-loose')?.value) || 0)
     : parseFloat(document.getElementById('jbe-remaining')?.value) || 0;
   if (!id || !indate) return alert('입고일은 필수입니다.');
   try {
-    await sbUpdate('juice_batches', id, { inbound_date: indate, expiry_date: expiry, remaining_bottles: remaining, note });
+    await sbUpdate('juice_batches', id, { inbound_date: indate, expiry_date: expiry, remaining_bottles: remaining, note, per_box: perBox || null, box_count: boxCount || null });
     const rec = invJuiceBatches.find(x => x.id === id);
-    if (rec) { rec.inbound_date = indate; rec.expiry_date = expiry; rec.remaining_bottles = remaining; rec.note = note; }
+    if (rec) { rec.inbound_date = indate; rec.expiry_date = expiry; rec.remaining_bottles = remaining; rec.note = note; rec.per_box = perBox || null; rec.box_count = boxCount || null; }
     document.getElementById('modal-juice-edit').style.display = 'none';
     showToast('수정 완료');
     renderJuiceSection(); renderInvSummary();
