@@ -11522,12 +11522,13 @@ function openSortedInboundDetail(inboundId) {
     modal.innerHTML = `
       <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
         <div id="msib-header" style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
-          <div id="msib-title" style="font-size:14px;font-weight:700;color:#374151">📦 선과품 입고 내역</div>
+          <div id="msib-title" style="font-size:14px;font-weight:700;color:#1565C0">📦 선과품 입고 내역</div>
           <button onclick="document.getElementById('modal-sorted-ib-detail').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
         </div>
         <div id="msib-body" style="padding:16px 18px"></div>
       </div>`;
     modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display !== 'none') modal.style.display = 'none'; });
     document.body.appendChild(modal);
   }
 
@@ -11536,11 +11537,11 @@ function openSortedInboundDetail(inboundId) {
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px">
       <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
         <div style="font-size:11px;color:#6B7280;margin-bottom:2px">입고일</div>
-        <div style="font-size:13px;font-weight:600">${esc(ib.date)}</div>
+        <div style="font-size:13px;font-weight:600;color:#111827">${esc(ib.date)}</div>
       </div>
       <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
         <div style="font-size:11px;color:#6B7280;margin-bottom:2px">품목</div>
-        <div style="font-size:13px;font-weight:600">${esc(ib.product)}</div>
+        <div style="font-size:13px;font-weight:600;color:#111827">${esc(ib.product)}</div>
       </div>
       <div style="background:#EFF6FF;border-radius:8px;padding:8px 10px;text-align:center">
         <div style="font-size:11px;color:#1D4ED8;margin-bottom:2px">총 CT</div>
@@ -11549,10 +11550,11 @@ function openSortedInboundDetail(inboundId) {
     </div>
     ${sizeRecs.length > 0 ? `
     <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:#F9FAFB">
-          <th style="padding:6px 12px;text-align:left;font-size:12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB">사이즈</th>
-          <th style="padding:6px 12px;text-align:right;font-size:12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB">CT</th>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
+        <thead><tr style="background:#F3F4F6">
+          <th style="padding:6px 12px;text-align:left;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">사이즈</th>
+          <th style="padding:6px 12px;text-align:right;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">CT</th>
         </tr></thead>
         <tbody>${sizeRowsHtml}</tbody>
       </table>
