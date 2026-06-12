@@ -11178,7 +11178,11 @@ function renderJuiceSection() {
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
         <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> 병</span></td>
-        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">박스 ${fmtN(b.box_count)}×${b.per_box || 0}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">${
+          b.box_count && b.per_box
+            ? `입고 ${fmtN(b.box_count)}박스 (박스당 ${fmtN(b.per_box)}${b.unit || '병'})`
+            : b.box_count ? `입고 ${fmtN(b.box_count)}박스` : '-'
+        }</td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF">${esc(b.note || '')}</td>
         ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px;position:sticky;right:0;background:${stickyBg};z-index:1">
           <button class="juice-batch-kebab" onclick="toggleJuiceBatchMenu('${b.id}',this)"
