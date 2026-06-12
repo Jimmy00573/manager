@@ -8617,7 +8617,7 @@ function renderInboundList() {
     const isGrayed = isDone || isSorted;
     const grayStyle = isGrayed ? 'background:#F3F4F6;opacity:0.75;' : '';
     const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
-    const sortedBadge = isSorted ? `<span style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">선과품</span>` : '';
+    const sortedBadge = isSorted ? `<span onclick="event.stopPropagation();openSortedInboundDetail('${r.id}')" style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과품 입고 내역">선과품 🔍</span>` : '';
     const qInline = qualityInline(r);
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     let driverCell;
@@ -11478,6 +11478,88 @@ async function openSortingDetailModal(inboundId) {
     </div>
     ${sessionHtml}
     ${cumHtml}`;
+}
+
+// ── 선과품 입고 내역 모달 ─────────────────────────────────────────
+function openSortedInboundDetail(inboundId) {
+  const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
+  if (!ib) return;
+
+  const sizeRecs = inventoryRecords.filter(r =>
+    !r.is_void && r.source_type === 'inbound_sorted' &&
+    String(r.inbound_record_id) === String(inboundId)
+  );
+  const sizeMap = {};
+  sizeRecs.forEach(r => {
+    sizeMap[r.size_code] = (sizeMap[r.size_code] || 0) + (Number(r.quantity) || 0);
+  });
+  const totalCt = Object.values(sizeMap).reduce((s, v) => s + v, 0);
+
+  const groups = getSizeGroupsFor(ib.product);
+  const sizeRowsHtml = groups.map(g => {
+    const groupRows = g.sizes
+      .filter(sz => sizeMap[sz] > 0)
+      .map(sz => `<tr>
+        <td style="padding:5px 12px;font-size:13px;color:#374151">${esc(sz)}</td>
+        <td style="padding:5px 12px;text-align:right;font-weight:700;color:#1565C0;font-size:13px">${fmtCT(sizeMap[sz])} CT</td>
+      </tr>`).join('');
+    if (!groupRows) return '';
+    const groupHeader = groups.length > 1
+      ? `<tr style="background:#F9FAFB"><td colspan="2" style="padding:4px 12px;font-size:11px;font-weight:600;color:#6B7280">${esc(g.group)}</td></tr>`
+      : '';
+    return groupHeader + groupRows;
+  }).join('');
+
+  const noSizeNote = sizeRecs.length === 0
+    ? `<div style="padding:16px;text-align:center;color:#9CA3AF;font-size:13px">사이즈별 재고 기록 없음</div>`
+    : '';
+
+  let modal = document.getElementById('modal-sorted-ib-detail');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-sorted-ib-detail';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:14px;max-width:400px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div id="msib-header" style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
+          <div id="msib-title" style="font-size:14px;font-weight:700;color:#374151">📦 선과품 입고 내역</div>
+          <button onclick="document.getElementById('modal-sorted-ib-detail').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+        </div>
+        <div id="msib-body" style="padding:16px 18px"></div>
+      </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('msib-title').textContent = `📦 ${ib.farm_name} · ${ib.product}`;
+  document.getElementById('msib-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px">
+      <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;margin-bottom:2px">입고일</div>
+        <div style="font-size:13px;font-weight:600">${esc(ib.date)}</div>
+      </div>
+      <div style="background:#F9FAFB;border-radius:8px;padding:8px 10px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;margin-bottom:2px">품목</div>
+        <div style="font-size:13px;font-weight:600">${esc(ib.product)}</div>
+      </div>
+      <div style="background:#EFF6FF;border-radius:8px;padding:8px 10px;text-align:center">
+        <div style="font-size:11px;color:#1D4ED8;margin-bottom:2px">총 CT</div>
+        <div style="font-size:15px;font-weight:800;color:#1565C0">${fmtCT(totalCt || ib.quantity)}</div>
+      </div>
+    </div>
+    ${sizeRecs.length > 0 ? `
+    <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:#F9FAFB">
+          <th style="padding:6px 12px;text-align:left;font-size:12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB">사이즈</th>
+          <th style="padding:6px 12px;text-align:right;font-size:12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB">CT</th>
+        </tr></thead>
+        <tbody>${sizeRowsHtml}</tbody>
+      </table>
+    </div>` : noSizeNote}
+    ${ib.note ? `<div style="margin-top:12px;background:#FFFBEB;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400E">📝 ${esc(ib.note)}</div>` : ''}`;
+
+  modal.style.display = 'flex';
 }
 
 // ── 설정 탭 — 비밀번호 변경 모달
