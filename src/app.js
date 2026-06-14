@@ -7346,8 +7346,8 @@ function getAuditTableLabel(t) {
   return ({ inbound_records: '미선과 입고', processing_records: '선과 처리',
     inventory_sorted: '선과 재고', inventory_waste: '파치', inventory_juice: '주스',
     inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업',
-    juice_batches: '주스 배치', outbound_records: '출고',
-    inventory_records: '재고', sorting_results: '선과 차수' })[t] || t;
+    juice_batches: '주스·청', outbound_records: '출고',
+    inventory_records: '재고 현황', sorting_results: '선과 차수' })[t] || t;
 }
 
 const AUDIT_ACTION_STYLE = {
