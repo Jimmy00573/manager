@@ -8871,7 +8871,7 @@ function renderInboundList() {
         ? '<span style="padding:6px 12px;font-size:12px;color:#bbb;display:block">마이그레이션 필요</span>'
         : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
     const actionCell = `<div style="position:relative;text-align:center">
-      <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event)">⋮</button>
+      <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event,this)">⋮</button>
       <div id="row-menu-${r.id}" class="row-menu" style="display:none">${menuItems}</div>
     </div>`;
     const locCell = r.distribution_group_id
