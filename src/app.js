@@ -4773,11 +4773,18 @@ function _renderInvMatrixV2(product, recs) {
     ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtCT(gt.ct)}`).join(' · ')})</span>`
     : '';
 
+  const gradeBadge = _invV2Grade === '고당'
+    ? '<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">고당</span>'
+    : _invV2Grade === '일반'
+      ? '<span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">일반</span>'
+      : '';
+
   return `
     <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
       <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
+        ${gradeBadge}
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtCT(grandTotal)} CT</strong>${groupTotalsStr}</span>
       </div>
       <div style="overflow-x:auto">
