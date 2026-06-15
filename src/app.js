@@ -6730,11 +6730,11 @@ function renderInvSummary() {
       priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns')}
     ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
       (manGamItems ? kpiSub(`${manGamItems}개 품목`) : '') +
-      `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}</span></div>`,
+      `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}kg</span></div>`,
       false, 'srt')}
     ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
       (citrusItems ? kpiSub(`${citrusItems}개 품목`) : '') +
-      `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(citrusHighKg))}</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(citrusNormalKg))}</span></div>`,
+      `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(citrusHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(citrusNormalKg))}kg</span></div>`,
       false, 'srt')}
     ${kpiCard('파치',
       pachiTotalKg ? fmtN(Math.round(pachiTotalKg)) : '—', pachiTotalKg ? 'kg' : '',
