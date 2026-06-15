@@ -9887,21 +9887,49 @@ function srtParseExcel(input) {
         console.log(`[집계 합산]  고당 ${excelHighKg.toFixed(1)}kg / 일반 ${excelNormalKg.toFixed(1)}kg`);
       }
 
-      // 화면 표시
-      const lines = results.map(r =>
-        `${r.size}  고당 ${fmtCT(r.highCT)}CT(${r.highKg.toFixed(1)}kg) / 일반 ${fmtCT(r.normalCT)}CT(${r.normalKg.toFixed(1)}kg)`
-      );
       const sumLine = `합계  고당 ${fmtCT(excelHighKg / kgPerCt)}CT / 일반 ${fmtCT(excelNormalKg / kgPerCt)}CT`;
       const totalLine = foundTotal
         ? `엑셀 일합계: 고당 ${excelTotalHighKg}kg / 일반 ${excelTotalNormalKg}kg`
         : '';
 
+      // ── 자동 채우기 ──────────────────────────────────────────────
+      const unmatched = [];
+      let filledCount = 0;
+
+      for (const item of results) {
+        const sz = item.size;
+        if (_srtGradeOn) {
+          // 토글 ON: 일반/고당 칸 따로
+          const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
+          const highEl   = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="고당"]`);
+          if (!normalEl && !highEl) { unmatched.push(sz); continue; }
+          if (normalEl) normalEl.value = item.normalCT > 0 ? parseFloat(item.normalCT.toFixed(2)) : 0;
+          if (highEl)   highEl.value   = item.highCT   > 0 ? parseFloat(item.highCT.toFixed(2))   : 0;
+        } else {
+          // 토글 OFF: 고당+일반 합산해서 일반 칸 하나에
+          const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
+          if (!normalEl) { unmatched.push(sz); continue; }
+          const totalCT = item.highCT + item.normalCT;
+          normalEl.value = totalCT > 0 ? parseFloat(totalCT.toFixed(2)) : 0;
+        }
+        filledCount++;
+      }
+
+      srtUpdateTotals();
+
+      // ── 결과 영역 업데이트 ───────────────────────────────────────
+      const modeLabel = _srtGradeOn
+        ? `✅ 고당/일반 분리 입력: ${filledCount}개 사이즈`
+        : `✅ 전부 일반으로 입력: ${filledCount}개 사이즈 (고당 분리 안 함)`;
+      const unmatchedLine = unmatched.length
+        ? `<br><span style="color:#92400E">⚠️ 앱에 없는 사이즈 건너뜀: ${unmatched.join(', ')} — 수동 확인 필요</span>`
+        : '';
+
       const resultEl = document.getElementById('srt-excel-result');
       if (resultEl) {
         resultEl.style.display = '';
-        resultEl.innerHTML = `<strong>📊 파싱 결과 (${results.length}사이즈, 기준 ${kgPerCt}kg/CT)</strong><br>`
-          + lines.join('<br>')
-          + `<br><strong>${sumLine}</strong>`
+        resultEl.innerHTML = `<strong>${modeLabel}</strong>${unmatchedLine}`
+          + `<br><span style="color:#374151">${sumLine}</span>`
           + (totalLine ? `<br><span style="color:#6B7280">${totalLine}</span>` : '');
       }
 
