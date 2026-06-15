@@ -9932,7 +9932,7 @@ function srtRenderSizeGrid(productType) {
 
   if (!_srtGradeOn) {
     const el = document.getElementById('srt-size-grid');
-    el.style.display = '';
+    el.style.display = 'grid';
     el.innerHTML = sizes.map(sz => `
       <div>
         <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
