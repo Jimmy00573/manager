@@ -9807,6 +9807,7 @@ function srtParseExcel(input) {
   const product = r ? r.product : null;
   const kgPerCt = (productWeights && product && productWeights[product] != null)
     ? Number(productWeights[product]) : 17;
+  const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
 
   const reader = new FileReader();
   reader.onload = function(e) {
@@ -9871,8 +9872,8 @@ function srtParseExcel(input) {
         excelHighKg   += highKg;
         excelNormalKg += normalKg;
 
-        const highCT   = highKg   / kgPerCt;
-        const normalCT = normalKg / kgPerCt;
+        const highCT   = toCT(highKg);
+        const normalCT = toCT(normalKg);
 
         results.push({ size: gradeVal, highKg, normalKg, highCT, normalCT });
       }
@@ -9907,14 +9908,14 @@ function srtParseExcel(input) {
           const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
           const highEl   = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="고당"]`);
           if (!normalEl && !highEl) { unmatched.push(sz); continue; }
-          if (normalEl) normalEl.value = item.normalCT > 0 ? parseFloat(item.normalCT.toFixed(2)) : 0;
-          if (highEl)   highEl.value   = item.highCT   > 0 ? parseFloat(item.highCT.toFixed(2))   : 0;
+          if (normalEl) normalEl.value = item.normalCT > 0 ? item.normalCT : 0;
+          if (highEl)   highEl.value   = item.highCT   > 0 ? item.highCT   : 0;
         } else {
-          // 토글 OFF: 고당+일반 합산해서 일반 칸 하나에
+          // 토글 OFF: raw kg 합산 후 단일 반올림
           const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
           if (!normalEl) { unmatched.push(sz); continue; }
-          const totalCT = item.highCT + item.normalCT;
-          normalEl.value = totalCT > 0 ? parseFloat(totalCT.toFixed(2)) : 0;
+          const totalCT = toCT(item.highKg + item.normalKg);
+          normalEl.value = totalCT > 0 ? totalCT : 0;
         }
         filledCount++;
       }
