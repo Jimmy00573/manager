@@ -10145,6 +10145,7 @@ async function saveSortingResult() {
     showToast(`${_sortingSeq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
     await loadAndRenderInv();
     renderInboundList();
+    renderProcessingTab();
   } catch (e) {
     alert('선과 처리 저장 오류: ' + e.message);
   } finally {
