@@ -1727,6 +1727,8 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
     overlay.querySelector('#cdg-confirm').addEventListener('click', () => close(true));
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+    if (document.activeElement) document.activeElement.blur();
+    overlay.querySelector('#cdg-confirm').focus();
   });
 }
 
@@ -1769,6 +1771,8 @@ function showConfirmEdit(title, msg = '') {
     overlay.querySelector('#ced-confirm').addEventListener('click', () => close(true));
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+    if (document.activeElement) document.activeElement.blur();
+    overlay.querySelector('#ced-confirm').focus();
   });
 }
 
@@ -8179,7 +8183,7 @@ function renderIbFarmView() {
              <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
           : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
         const farmMenu = `<div style="position:relative;display:inline-block">
-          <button class="menu-trigger" data-menu-id="${r.id}" style="font-size:13px;width:24px;height:24px">⋮</button>
+          <button class="menu-trigger" data-menu-id="${r.id}" onclick="toggleRowMenu('${r.id}',event,this)" style="font-size:13px;width:24px;height:24px">⋮</button>
           <div id="row-menu-${r.id}" class="row-menu" style="display:none">${farmMenuItems}</div>
         </div>`;
         const memoDiv = r.note
