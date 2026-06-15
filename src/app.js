@@ -4370,6 +4370,9 @@ function _renderInvDateCtrl() {
     </div>`;
 }
 
+let _invGrade = 'all'; // 'all' | '고당' | '일반'
+function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
+
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
   const matrixEl = document.getElementById('inv-matrix-wrap');
@@ -4382,12 +4385,31 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
+  // 등급 토글 툴바
+  const gradeToolbarEl = document.getElementById('inv-grade-toolbar');
+  if (gradeToolbarEl) {
+    const grades = [{ key: 'all', label: '전체' }, { key: '고당', label: '고당' }, { key: '일반', label: '일반' }];
+    gradeToolbarEl.innerHTML = `
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
+        <span style="font-size:12px;font-weight:600;color:#374151;margin-right:4px">등급 보기:</span>
+        ${grades.map(g => {
+          const active = _invGrade === g.key;
+          return `<button onclick="setInvGrade('${g.key}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${g.label}</button>`;
+        }).join('')}
+      </div>`;
+  }
+
   const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny'];
   const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
 
-  // 품목별 합계 (필터 무관, 전체 기준)
+  // 등급 필터
+  const recs0 = _invGrade !== 'all'
+    ? activeRecs.filter(r => (r.quality_grade || '일반') === _invGrade)
+    : activeRecs;
+
+  // 품목별 합계 (현재 등급 기준)
   const productTotals = {};
-  activeRecs.forEach(r => {
+  recs0.forEach(r => {
     productTotals[r.product] = (productTotals[r.product] || 0) + (Number(r.quantity) || 0);
   });
   const allProducts = Object.keys(productTotals).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -4405,8 +4427,8 @@ function renderInventoryStatus() {
       ${_invFilter.product ? `<div onclick="invSetFilter('product','')" style="padding:10px 12px;background:#fff;border:2px dashed #D1D5DB;border-radius:8px;cursor:pointer;text-align:center;color:#9CA3AF;font-size:12px;display:flex;align-items:center;justify-content:center">전체 보기</div>` : ''}
     </div>` : '<div style="padding:4px 0 12px;font-size:12px;color:#9CA3AF">재고 데이터 없음 — DB 마이그레이션 후 표시됩니다</div>';
 
-  // 필터 적용
-  let recs = activeRecs;
+  // 필터 적용 (등급필터 recs0 위에 product/farm 필터 추가)
+  let recs = recs0;
   if (_invFilter.product) recs = recs.filter(r => r.product === _invFilter.product);
   if (_invFilter.farm)    recs = recs.filter(r => r.farm_name && r.farm_name.includes(_invFilter.farm));
 
@@ -4569,11 +4591,18 @@ function _renderInvMatrix(product, recs) {
     ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtCT(gt.ct)}`).join(' · ')})</span>`
     : '';
 
+  const gradeBadge = _invGrade === '고당'
+    ? '<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">고당</span>'
+    : _invGrade === '일반'
+      ? '<span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">일반</span>'
+      : '';
+
   return `
     <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
       <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
         ${esc(product)}
         <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
+        ${gradeBadge}
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtCT(grandTotal)} CT</strong>${groupTotalsStr}</span>
       </div>
       <div style="overflow-x:auto">
