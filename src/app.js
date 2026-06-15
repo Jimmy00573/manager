@@ -4586,7 +4586,7 @@ function _renderInvMatrix(product, recs) {
 }
 
 // ── V2 재고현황 (테스트 탭 전용 — 격리) ─────────────────────────
-let _invV2Grade = 'all'; // 'all' | '고급' | '일반'
+let _invV2Grade = 'all'; // 'all' | '고당' | '일반'
 
 function setInvV2Grade(g) {
   _invV2Grade = g;
@@ -4602,9 +4602,9 @@ function renderInventoryStatusV2() {
 
   // 등급 토글 툴바
   const grades = [
-    { key: 'all', label: '고급 + 일반' },
-    { key: '고급', label: '고급만' },
-    { key: '일반', label: '일반만' },
+    { key: 'all', label: '전체' },
+    { key: '고당', label: '고당' },
+    { key: '일반', label: '일반' },
   ];
   toolbarEl.innerHTML = `
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
