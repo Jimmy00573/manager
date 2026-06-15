@@ -6613,6 +6613,7 @@ function renderInvSummary() {
 
   // ── 섹션 2 & 3: 선과 재고
   const manGamMap = {}, citrusMap = {}, sortDetail = {};
+  let manGamHighKg=0, manGamNormalKg=0, citrusHighKg=0, citrusNormalKg=0;
   inventoryRecords.filter(r => !r.is_void && ['sorting','manual','adjustment','inbound_sorted'].includes(r.source_type)).forEach(r => {
     if (!r.size_code) return;
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
@@ -6627,6 +6628,9 @@ function renderInvSummary() {
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
+    const isHigh = (r.quality_grade || '일반') === '고당';
+    if (ptype === '감귤류') { if(isHigh) citrusHighKg+=kg; else citrusNormalKg+=kg; }
+    else { if(isHigh) manGamHighKg+=kg; else manGamNormalKg+=kg; }
     // 수별 상세
     sortDetail[r.product] = sortDetail[r.product] || {};
     sortDetail[r.product][r.size_code] = sortDetail[r.product][r.size_code] || {ct:0, kg:0};
@@ -6640,6 +6644,9 @@ function renderInvSummary() {
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
+    const isHighS = (r.quality_grade || '일반') === '고당';
+    if (ptype === '감귤류') { if(isHighS) citrusHighKg+=kg; else citrusNormalKg+=kg; }
+    else { if(isHighS) manGamHighKg+=kg; else manGamNormalKg+=kg; }
     // 수별 상세
     sortDetail[r.product] = sortDetail[r.product] || {};
     sortDetail[r.product][r.count_num] = sortDetail[r.product][r.count_num] || {ct:0, kg:0};
@@ -6722,9 +6729,13 @@ function renderInvSummary() {
     ${kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
       priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns')}
     ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
-      manGamItems ? kpiSub(`${manGamItems}개 품목`) : '', false, 'srt')}
+      (manGamItems ? kpiSub(`${manGamItems}개 품목`) : '') +
+      `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}</span></div>`,
+      false, 'srt')}
     ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
-      citrusItems ? kpiSub(`${citrusItems}개 품목`) : '', false, 'srt')}
+      (citrusItems ? kpiSub(`${citrusItems}개 품목`) : '') +
+      `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(citrusHighKg))}</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(citrusNormalKg))}</span></div>`,
+      false, 'srt')}
     ${kpiCard('파치',
       pachiTotalKg ? fmtN(Math.round(pachiTotalKg)) : '—', pachiTotalKg ? 'kg' : '',
       '', true, 'pachi')}
