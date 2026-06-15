@@ -9793,9 +9793,131 @@ function srtToggleGrade() {
   srtRenderSizeGrid();
 }
 
+function srtParseExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  // 파일 input 초기화 (같은 파일 재선택 가능하게)
+  input.value = '';
+
+  const r = inboundRecords.find(x => x.id === _sortingInboundId);
+  const product = r ? r.product : null;
+  const kgPerCt = (productWeights && product && productWeights[product] != null)
+    ? Number(productWeights[product]) : 17;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      if (rows.length < 2) { alert('엑셀 데이터가 없습니다.'); return; }
+
+      // 헤더 행에서 열 인덱스 결정
+      const hdr = rows[0].map(v => String(v).trim());
+      const ci = name => hdr.findIndex(h => h === name);
+      const iGrade  = ci('등급');
+      const iGubun  = ci('구분');
+      const iTe1    = ci('특1');
+      const iTe2    = ci('특2');
+      const iTe3    = ci('특3');
+      const iSang   = ci('상');
+      const iIlban  = ci('일반');
+      const iTotal  = ci('합계');
+
+      if ([iGrade, iGubun, iTe1, iTe2, iTe3, iSang, iIlban].some(i => i < 0)) {
+        const missing = ['등급','구분','특1','특2','특3','상','일반']
+          .filter((n,i) => [iGrade,iGubun,iTe1,iTe2,iTe3,iSang,iIlban][i] < 0);
+        alert(`엑셀 헤더를 찾을 수 없습니다: ${missing.join(', ')}\n실제 헤더: ${hdr.join(' | ')}`);
+        return;
+      }
+
+      const results = [];
+      let excelHighKg = 0, excelNormalKg = 0;
+      let excelTotalHighKg = 0, excelTotalNormalKg = 0;
+      let foundTotal = false;
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const gradeVal = String(row[iGrade] ?? '').trim();
+        const gubun    = String(row[iGubun]  ?? '').trim();
+
+        // 일합계 행 — 숫자 뽑아 검증용으로 저장 후 건너뜀
+        const rowStr = row.slice(0, 6).map(v => String(v ?? '')).join('');
+        if (gradeVal.includes('일합계') || rowStr.includes('일합계')) {
+          if (gubun === '중량') {
+            excelTotalHighKg   = Number(row[iTe1])   || 0;
+            excelTotalNormalKg = (Number(row[iTe2]) || 0) + (Number(row[iTe3]) || 0)
+                               + (Number(row[iSang]) || 0) + (Number(row[iIlban]) || 0);
+            foundTotal = true;
+          }
+          continue;
+        }
+
+        // 중량 행만 처리
+        if (gubun !== '중량') continue;
+
+        // 사이즈 형식 검증 (수 단위 or g단위)
+        if (!gradeVal || (!gradeVal.match(/\d+수/) && !gradeVal.match(/\d+g/))) continue;
+
+        const highKg   = Number(row[iTe1])   || 0;
+        const normalKg = (Number(row[iTe2])  || 0) + (Number(row[iTe3])  || 0)
+                       + (Number(row[iSang]) || 0) + (Number(row[iIlban]) || 0);
+
+        excelHighKg   += highKg;
+        excelNormalKg += normalKg;
+
+        const highCT   = highKg   / kgPerCt;
+        const normalCT = normalKg / kgPerCt;
+
+        results.push({ size: gradeVal, highKg, normalKg, highCT, normalCT });
+      }
+
+      // console 출력
+      console.log('[엑셀 파싱] 품목:', product, '/ kg→CT 기준:', kgPerCt, 'kg/CT');
+      console.table(results.map(r => ({
+        사이즈: r.size,
+        '고당kg': r.highKg.toFixed(1),
+        '일반kg': r.normalKg.toFixed(1),
+        '고당CT': fmtCT(r.highCT),
+        '일반CT': fmtCT(r.normalCT),
+      })));
+      if (foundTotal) {
+        console.log(`[엑셀 일합계] 고당 ${excelTotalHighKg}kg / 일반 ${excelTotalNormalKg}kg`);
+        console.log(`[집계 합산]  고당 ${excelHighKg.toFixed(1)}kg / 일반 ${excelNormalKg.toFixed(1)}kg`);
+      }
+
+      // 화면 표시
+      const lines = results.map(r =>
+        `${r.size}  고당 ${fmtCT(r.highCT)}CT(${r.highKg.toFixed(1)}kg) / 일반 ${fmtCT(r.normalCT)}CT(${r.normalKg.toFixed(1)}kg)`
+      );
+      const sumLine = `합계  고당 ${fmtCT(excelHighKg / kgPerCt)}CT / 일반 ${fmtCT(excelNormalKg / kgPerCt)}CT`;
+      const totalLine = foundTotal
+        ? `엑셀 일합계: 고당 ${excelTotalHighKg}kg / 일반 ${excelTotalNormalKg}kg`
+        : '';
+
+      const resultEl = document.getElementById('srt-excel-result');
+      if (resultEl) {
+        resultEl.style.display = '';
+        resultEl.innerHTML = `<strong>📊 파싱 결과 (${results.length}사이즈, 기준 ${kgPerCt}kg/CT)</strong><br>`
+          + lines.join('<br>')
+          + `<br><strong>${sumLine}</strong>`
+          + (totalLine ? `<br><span style="color:#6B7280">${totalLine}</span>` : '');
+      }
+
+    } catch (err) {
+      console.error('[엑셀 파싱 오류]', err);
+      alert('엑셀 파싱 오류: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function closeSortingModal() {
   document.getElementById('modal-sorting').style.display = 'none';
   _sortingInboundId = null;
+  const re = document.getElementById('srt-excel-result');
+  if (re) { re.style.display = 'none'; re.innerHTML = ''; }
 }
 
 function srtUpdateTotals() {
