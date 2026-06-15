@@ -5573,6 +5573,20 @@ function obOutboundTotal() {
   if (el) el.textContent = fmtCT(total) + ' CT';
 }
 
+let _obGrade = '일반';
+function setObGrade(g) {
+  _obGrade = g;
+  const ctx = window._outboundCtx;
+  if (!ctx) return;
+  const savedDate    = document.getElementById('ob-date')?.value;
+  const savedPartner = document.getElementById('ob-partner')?.value;
+  const savedNote    = document.getElementById('ob-note')?.value;
+  openOutboundModal(ctx.regId);
+  if (savedDate)    { const el = document.getElementById('ob-date');    if (el) el.value = savedDate; }
+  if (savedPartner) { const el = document.getElementById('ob-partner'); if (el) el.value = savedPartner; }
+  if (savedNote)    { const el = document.getElementById('ob-note');    if (el) el.value = savedNote; }
+}
+
 function openOutboundModal(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const info = _matrixBatchRegistry[regId];
@@ -5595,9 +5609,10 @@ function openOutboundModal(regId) {
   const groups = getSizeGroupsFor(info.product);
   const allSizes = groups.flatMap(g => g.sizes);
 
+  const gradeRecs = batchRecs.filter(r => (r.quality_grade || '일반') === _obGrade);
   const curQty = {};
   allSizes.forEach(sz => curQty[sz] = 0);
-  batchRecs.forEach(r => { if (r.size_code) curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+  gradeRecs.forEach(r => { if (r.size_code) curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
 
   if (allSizes.every(sz => curQty[sz] === 0)) { alert('출고 가능한 재고가 없습니다.'); return; }
 
@@ -5636,6 +5651,14 @@ function openOutboundModal(regId) {
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
         <input type="text" id="ob-note" placeholder="(선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
       </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:6px">출고 등급</label>
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <button onclick="setObGrade('일반')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_obGrade==='일반'?'#1565C0':'#D1D5DB'};background:${_obGrade==='일반'?'#1565C0':'#fff'};color:${_obGrade==='일반'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">일반</button>
+          <button onclick="setObGrade('고당')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_obGrade==='고당'?'#1565C0':'#D1D5DB'};background:${_obGrade==='고당'?'#1565C0':'#fff'};color:${_obGrade==='고당'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">고당</button>
+        </div>
+        <div style="font-size:11px;color:#6B7280">${_obGrade} 재고만 표시. 다른 등급은 등급 바꿔 한 번 더 출고.</div>
+      </div>
       <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 출고량 (현재고 / CT)</div>
       ${sizeRows}
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #E5E7EB;margin-top:8px;margin-bottom:4px">
@@ -5655,7 +5678,7 @@ function openOutboundModal(regId) {
       </div>
     </div>`;
 
-  window._outboundCtx = { regId, batchRecs, allSizes, curQty, info };
+  window._outboundCtx = { regId, batchRecs, gradeRecs, grade: _obGrade, allSizes, curQty, info };
   popOutboundPartners();
   document.getElementById('modal-outbound').style.display = 'flex';
 }
@@ -5664,7 +5687,7 @@ async function saveOutbound(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const ctx = window._outboundCtx;
   if (!ctx || ctx.regId !== regId) return;
-  const { batchRecs, allSizes, curQty, info } = ctx;
+  const { batchRecs, gradeRecs, grade, allSizes, curQty, info } = ctx;
 
   const date    = document.getElementById('ob-date')?.value;
   const partner = document.getElementById('ob-partner')?.value;
@@ -5689,7 +5712,7 @@ async function saveOutbound(regId) {
   try {
     for (const sz of outSizes) {
       let remaining = outQty[sz];
-      const sizeRecs = batchRecs.filter(r => r.size_code === sz && !r.is_void);
+      const sizeRecs = (gradeRecs || batchRecs).filter(r => r.size_code === sz && !r.is_void);
       const detail = [];
       for (const rec of sizeRecs) {
         if (remaining <= 0) break;
@@ -5713,7 +5736,8 @@ async function saveOutbound(regId) {
         farm_name: info.farm, note, is_void: false,
         created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
         ref_detail: detail,
-        weight_kg: w, unit_price: p, amount: amt
+        weight_kg: w, unit_price: p, amount: amt,
+        quality_grade: grade || '일반'
       });
       if (ob) invOutbounds.unshift(ob);
     }
