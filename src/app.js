@@ -3358,15 +3358,12 @@ function setBack() { setTab('menu'); }
 
 function invTab(t) {
   if ((t === 'log' || t === 'out') && sessionStorage.getItem('citrus_role') === 'staff') t = 'sum';
-  if (t === 'test' && sessionStorage.getItem('citrus_role') !== 'admin') t = 'sum';
-  ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log', 'test'].forEach(s => {
+  ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
     if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
   });
-  const testBtn = document.getElementById('it-test');
-  if (testBtn) testBtn.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
   if (t === 'srt') renderInventoryStatus();
   if (t === 'log') loadAuditLogs();
   if (t === 'sum') renderInvSummary();
@@ -3379,7 +3376,6 @@ function invTab(t) {
   }
   if (t === 'juice') { renderJuiceSection(); }
   if (t === 'out') { renderOutboundHistory(); }
-  if (t === 'test') renderInventoryStatusV2();
 }
 
 function ibTab(t) {
@@ -4611,216 +4607,6 @@ function _renderInvMatrix(product, recs) {
         </div>
       </div>
       <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '⋮ 메뉴 → 수정 / 삭제' : ''}</div>
-    </div>`;
-}
-
-// ── V2 재고현황 (테스트 탭 전용 — 격리) ─────────────────────────
-let _invV2Grade = 'all'; // 'all' | '고당' | '일반'
-
-function setInvV2Grade(g) {
-  _invV2Grade = g;
-  renderInventoryStatusV2();
-}
-
-function renderInventoryStatusV2() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const toolbarEl = document.getElementById('invv2-toolbar');
-  const statusEl  = document.getElementById('invv2-stat-cards');
-  const matrixEl  = document.getElementById('invv2-matrix-wrap');
-  if (!toolbarEl || !statusEl || !matrixEl) return;
-
-  // 등급 토글 툴바
-  const grades = [
-    { key: 'all', label: '전체' },
-    { key: '고당', label: '고당' },
-    { key: '일반', label: '일반' },
-  ];
-  toolbarEl.innerHTML = `
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
-      <span style="font-size:12px;font-weight:600;color:#374151;margin-right:4px">등급 보기:</span>
-      ${grades.map(g => {
-        const active = _invV2Grade === g.key;
-        return `<button onclick="setInvV2Grade('${g.key}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${g.label}</button>`;
-      }).join('')}
-      <span style="font-size:12px;color:#9CA3AF;margin-left:8px">🧪 테스트 뷰 (읽기 전용)</span>
-    </div>`;
-
-  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny'];
-  let activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
-  if (_invV2Grade !== 'all') {
-    activeRecs = activeRecs.filter(r => (r.quality_grade || '일반') === _invV2Grade);
-  }
-
-  // 품목별 합계 (현재 등급 기준)
-  const productTotals = {};
-  activeRecs.forEach(r => {
-    productTotals[r.product] = (productTotals[r.product] || 0) + (Number(r.quantity) || 0);
-  });
-  const allProducts = Object.keys(productTotals).sort((a, b) => a.localeCompare(b, 'ko'));
-
-  statusEl.innerHTML = allProducts.length ? `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:4px">
-      ${allProducts.map(p => `
-        <div style="padding:10px 12px;background:#fff;border:2px solid #E5E7EB;border-radius:8px;text-align:center">
-          <div style="font-size:11px;color:#6B7280;margin-bottom:3px">${esc(p)}</div>
-          <div style="font-size:16px;font-weight:700;color:#111827">${fmtN(productTotals[p])}</div>
-          <div style="font-size:10px;color:#9CA3AF">CT</div>
-        </div>`).join('')}
-    </div>` : '<div style="padding:4px 0 12px;font-size:12px;color:#9CA3AF">해당 등급 재고 없음</div>';
-
-  if (!activeRecs.length) {
-    matrixEl.innerHTML = `<div style="padding:48px;text-align:center;color:#9CA3AF;font-size:14px">📦 표시할 재고가 없습니다</div>`;
-    return;
-  }
-
-  const byProduct = {};
-  activeRecs.forEach(r => {
-    if (!byProduct[r.product]) byProduct[r.product] = [];
-    byProduct[r.product].push(r);
-  });
-
-  matrixEl.innerHTML = Object.entries(byProduct)
-    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    .map(([product, productRecs]) => _renderInvMatrixV2(product, productRecs))
-    .join('');
-}
-
-function _renderInvMatrixV2(product, recs) {
-  const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups   = getSizeGroupsFor(product);
-  const allSizes = groups.flatMap(g => g.sizes);
-
-  const GC = [
-    { h: '#FDE68A', c: '#FFFBEB' },
-    { h: '#93C5FD', c: '#EFF6FF' },
-    { h: '#6EE7B7', c: '#F0FDF4' },
-    { h: '#FBCFE8', c: '#FDF2F8' },
-    { h: '#DDD6FE', c: '#F5F3FF' },
-  ];
-  const szGI = {};
-  groups.forEach((g, gi) => g.sizes.forEach(sz => { szGI[sz] = gi; }));
-
-  const batchMap = {};
-  recs.forEach(r => {
-    const farm = r.farm_name || '(농가미상)';
-    const sz   = r.size_code;
-    if (!sz) return;
-    const groupId = (r.source_type === 'sorting' && r.sorting_result_id)
-      ? r.sorting_result_id : `manual_${r.date || ''}`;
-    const key = `${farm}__${groupId}`;
-    const { sortingDate, inboundDate } = _getInvRecordDates(r);
-    if (!batchMap[key]) batchMap[key] = { farm, groupId, sortingDate, inboundDate, sizes: {} };
-    batchMap[key].sizes[sz] = (batchMap[key].sizes[sz] || 0) + (Number(r.quantity) || 0);
-    if (sortingDate && sortingDate < (batchMap[key].sortingDate || '9')) batchMap[key].sortingDate = sortingDate;
-    if (inboundDate && inboundDate < (batchMap[key].inboundDate || '9')) batchMap[key].inboundDate = inboundDate;
-  });
-
-  const batches = Object.values(batchMap).sort((a, b) => {
-    const fc = a.farm.localeCompare(b.farm, 'ko');
-    if (fc !== 0) return fc;
-    const da = (_invDateMode === 'inbound' ? a.inboundDate : a.sortingDate) || '';
-    const db = (_invDateMode === 'inbound' ? b.inboundDate : b.sortingDate) || '';
-    return da.localeCompare(db);
-  });
-
-  const colTotals = {};
-  allSizes.forEach(sz => { colTotals[sz] = 0; });
-  batches.forEach(b => allSizes.forEach(sz => { colTotals[sz] += (b.sizes[sz] || 0); }));
-  const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
-
-  const visibleSizes = allSizes.filter(sz => (colTotals[sz] || 0) > 0);
-  const displaySizes = visibleSizes.length > 0 ? visibleSizes : allSizes;
-
-  const N = displaySizes.length;
-  const FARM_W = 120, SZ_W = 46, TOT_W = 70;
-  const minW  = FARM_W + N * SZ_W + TOT_W;
-  const gCols = `${FARM_W}px repeat(${N}, ${SZ_W}px) ${TOT_W}px`;
-
-  const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
-  const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
-  const C  = 'display:flex;align-items:center;justify-content:center;font-size:13px;border-right:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding:5px 2px;';
-  const F  = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border-right:1px solid #D1D5DB;border-top:2px solid #CBD5E1;background:#EFF6FF;padding:5px 2px;';
-
-  let h = '';
-
-  // 헤더 row1
-  h += `<div style="${HD}justify-content:flex-start;padding:6px 10px;border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4">농가</div>`;
-  groups.forEach((g, gi) => {
-    const visCount = g.sizes.filter(sz => displaySizes.includes(sz)).length;
-    if (visCount === 0) return;
-    h += `<div style="${H}background:${GC[gi].h};color:#374151;padding:6px 4px;grid-column:span ${visCount}">${esc(g.group)}</div>`;
-  });
-  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4">합계</div>`;
-
-  // 헤더 row2
-  h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
-  displaySizes.forEach(sz => {
-    const gi = szGI[sz];
-    h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
-  });
-  h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
-
-  // 데이터 rows (읽기 전용 — ⋮ 메뉴 없음)
-  batches.forEach((batch, i) => {
-    const rowBg = i % 2 === 1 ? '#FAFAFA' : '#fff';
-    const displayDate = _invDateMode === 'inbound' ? batch.inboundDate : batch.sortingDate;
-    const daysAgo = _invDaysAgo(displayDate);
-    let firstBg = rowBg;
-    if (daysAgo >= _invAgeDays * 2) firstBg = '#FEE2E2';
-    else if (daysAgo >= _invAgeDays) firstBg = '#FEF3C7';
-    const dateLabel = _fmtInvDate(displayDate) || '-';
-    const batchTotal = allSizes.reduce((s, sz) => s + (batch.sizes[sz] || 0), 0);
-    const dateColor = daysAgo >= _invAgeDays * 2 ? '#B91C1C' : '#6B7280';
-
-    h += `<div style="${C}background:${firstBg};flex-direction:column;align-items:flex-start;justify-content:center;padding:4px 8px;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(batch.farm)}">
-      <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
-      <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
-    </div>`;
-    displaySizes.forEach(sz => {
-      const val = batch.sizes[sz] || 0;
-      const inner = val === 0
-        ? `<span style="color:#9CA3AF">-</span>`
-        : `<strong style="color:#111827">${fmtCT(val)}</strong>`;
-      h += `<div style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
-    });
-    h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtCT(batchTotal)}</div>`;
-  });
-
-  // 합계 row
-  h += `<div style="${F}justify-content:flex-start;padding:5px 10px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">합계</div>`;
-  displaySizes.forEach(sz => {
-    const v = colTotals[sz] || 0;
-    h += `<div style="${F}color:${v ? '#1565C0' : '#D1D5DB'}">${v ? fmtCT(v) : '-'}</div>`;
-  });
-  h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:none;position:sticky;right:0;z-index:2">${fmtCT(grandTotal)}</div>`;
-
-  const groupTotals = groups.map(g => ({
-    name: g.group,
-    ct: g.sizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0)
-  })).filter(gt => gt.ct > 0);
-  const groupTotalsStr = groupTotals.length > 1
-    ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtCT(gt.ct)}`).join(' · ')})</span>`
-    : '';
-
-  const gradeBadge = _invV2Grade === '고당'
-    ? '<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">고당</span>'
-    : _invV2Grade === '일반'
-      ? '<span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">일반</span>'
-      : '';
-
-  return `
-    <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
-      <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
-        ${esc(product)}
-        <span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">${ptype}</span>
-        ${gradeBadge}
-        <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtCT(grandTotal)} CT</strong>${groupTotalsStr}</span>
-      </div>
-      <div style="overflow-x:auto">
-        <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;border-left:1px solid #D1D5DB">
-          ${h}
-        </div>
-      </div>
     </div>`;
 }
 
