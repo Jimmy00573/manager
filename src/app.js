@@ -7738,6 +7738,7 @@ function getSizeGroupsFor(product) {
 let _sortingInboundId = null;
 let _sortingSeq = 1;
 let _sortingSaving = false;
+let _srtGradeOn = false;
 
 let _scSort = 'date-asc';
 let _scSearch = '';
@@ -9901,21 +9902,58 @@ async function openSortingModal(id) {
   document.getElementById('srt-tiny').value = 0;
   document.getElementById('srt-loss').value = 0;
 
-  // 사이즈 그리드
+  // 사이즈 그리드 (토글 초기화 후 렌더)
+  _srtGradeOn = false;
+  const _toggleEl = document.getElementById('srt-grade-toggle');
+  if (_toggleEl) _toggleEl.checked = false;
   const productType = PRODUCT_TYPE_MAP[r.product] || '만감류';
-  const sizes = productType === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
-  document.getElementById('srt-size-grid').innerHTML = sizes.map(sz => `
-    <div>
-      <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
-      <input type="number" data-size="${sz}" class="srt-size-input" min="0" value="0"
-        style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
-        oninput="srtUpdateTotals()">
-    </div>`).join('');
+  srtRenderSizeGrid(productType);
 
   srtUpdateTotals();
   document.getElementById('modal-sorting').style.display = 'flex';
   document.getElementById('srt-input-ct').focus();
   document.getElementById('srt-input-ct').select();
+}
+
+function srtRenderSizeGrid(productType) {
+  const sizes = productType ? (productType === '감귤류' ? SIZES_감귤류 : SIZES_만감류)
+    : (() => {
+        const r = inboundRecords.find(x => x.id === _sortingInboundId);
+        const pt = r ? (PRODUCT_TYPE_MAP[r.product] || '만감류') : '만감류';
+        return pt === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
+      })();
+
+  if (!_srtGradeOn) {
+    document.getElementById('srt-size-grid').innerHTML = sizes.map(sz => `
+      <div>
+        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
+        <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
+          style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
+          oninput="srtUpdateTotals()">
+      </div>`).join('');
+  } else {
+    document.getElementById('srt-size-grid').innerHTML = sizes.map(sz => `
+      <div style="display:contents">
+        <div>
+          <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
+          <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
+            style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
+            oninput="srtUpdateTotals()">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#1D4ED8;display:block;margin-bottom:2px">${sz} 고당</label>
+          <input type="number" data-size="${sz}" data-grade="고당" class="srt-size-input" min="0" value="0"
+            style="width:100%;padding:4px 6px;border:1px solid #BFDBFE;border-radius:5px;font-size:13px;text-align:right;background:#EFF6FF"
+            oninput="srtUpdateTotals()">
+        </div>
+      </div>`).join('');
+  }
+  srtUpdateTotals();
+}
+
+function srtToggleGrade() {
+  _srtGradeOn = document.getElementById('srt-grade-toggle').checked;
+  srtRenderSizeGrid();
 }
 
 function closeSortingModal() {
@@ -9987,7 +10025,7 @@ async function saveSortingResult() {
   document.querySelectorAll('.srt-size-input').forEach(inp => {
     const v = parseFloat(inp.value) || 0;
     normalTotal += v;
-    sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상' });
+    sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상', quality_grade: inp.dataset.grade || '일반' });
   });
 
   const abnormalTotal = waste + highacid + tiny + loss;
@@ -10021,7 +10059,7 @@ async function saveSortingResult() {
 
     // 2. 상세 (사이즈별 + 비정상품)
     const allDetails = [
-      ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', note: null })),
+      ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', quality_grade: d.quality_grade, note: null })),
       { sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null },
       { sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null },
       { sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null },
@@ -10047,7 +10085,7 @@ async function saveSortingResult() {
         date: sortingDate, farm_name: r.farm_name, product: r.product,
         size_code: d.size_code, quantity: d.ct, location: r.location || null,
         source_type: 'sorting', sorting_result_id: headerId, is_void: false,
-        note: null, created_by: 'admin'
+        quality_grade: d.quality_grade, note: null, created_by: 'admin'
       };
       console.log('[6단계] INSERT 시도:', JSON.stringify(insertData));
       try {
