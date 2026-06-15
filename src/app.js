@@ -9931,7 +9931,9 @@ function srtRenderSizeGrid(productType) {
       })();
 
   if (!_srtGradeOn) {
-    document.getElementById('srt-size-grid').innerHTML = sizes.map(sz => `
+    const el = document.getElementById('srt-size-grid');
+    el.style.display = '';
+    el.innerHTML = sizes.map(sz => `
       <div>
         <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
         <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
@@ -9939,21 +9941,34 @@ function srtRenderSizeGrid(productType) {
           oninput="srtUpdateTotals()">
       </div>`).join('');
   } else {
-    document.getElementById('srt-size-grid').innerHTML = sizes.map(sz => `
-      <div style="display:contents">
-        <div>
-          <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
-          <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
-            style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
-            oninput="srtUpdateTotals()">
-        </div>
-        <div>
-          <label style="font-size:11px;color:#1D4ED8;display:block;margin-bottom:2px">${sz} 고당</label>
-          <input type="number" data-size="${sz}" data-grade="고당" class="srt-size-input" min="0" value="0"
-            style="width:100%;padding:4px 6px;border:1px solid #BFDBFE;border-radius:5px;font-size:13px;text-align:right;background:#EFF6FF"
-            oninput="srtUpdateTotals()">
-        </div>
+    const innerGrid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px';
+    const normalCells = sizes.map(sz => `
+      <div>
+        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
+        <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
+          style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
+          oninput="srtUpdateTotals()">
       </div>`).join('');
+    const gradeCells = sizes.map(sz => `
+      <div>
+        <label style="font-size:11px;color:#1D4ED8;display:block;margin-bottom:2px">${sz}</label>
+        <input type="number" data-size="${sz}" data-grade="고당" class="srt-size-input" min="0" value="0"
+          style="width:100%;padding:4px 6px;border:1px solid #BFDBFE;border-radius:5px;font-size:13px;text-align:right;background:#fff"
+          oninput="srtUpdateTotals()">
+      </div>`).join('');
+    const el = document.getElementById('srt-size-grid');
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:#6B7280;margin-bottom:6px"><span style="color:#9CA3AF">●</span> 일반</div>
+        <div style="${innerGrid}">${normalCells}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#1565C0;margin-bottom:6px"><span>●</span> 고당</div>
+        <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:8px">
+          <div style="${innerGrid}">${gradeCells}</div>
+        </div>
+      </div>`;
   }
   srtUpdateTotals();
 }
