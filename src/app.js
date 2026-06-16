@@ -12365,6 +12365,199 @@ async function saveUrgencyThresholds() {
   }
 }
 
+// ── 농가별 선과 비율 모달
+let _fsrEntries = [];
+let _fsrGroups  = [];
+
+async function openSortingRatioModal(farmName, product) {
+  const ibs = (inboundRecords || []).filter(r =>
+    !r.is_void && r.farm_name === farmName && (!product || r.product === product)
+  );
+  const ibsWithSrt = ibs
+    .filter(ib => (sortingResults || []).some(sr => sr.inbound_record_id === ib.id))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!ibsWithSrt.length) {
+    await showConfirmEdit('선과 이력 없음',
+      `${farmName}${product ? ' · ' + product : ''}의 선과 완료 입고가 없습니다.`);
+    return;
+  }
+
+  const srIds = (sortingResults || [])
+    .filter(sr => ibsWithSrt.some(ib => ib.id === sr.inbound_record_id))
+    .map(sr => sr.id);
+
+  let allDetails = [];
+  if (srIds.length) {
+    try {
+      allDetails = await sbGet('sorting_details',
+        `sorting_result_id=in.(${srIds.join(',')})&select=*`);
+    } catch (e) {
+      alert('선과 상세 데이터 로드 실패: ' + e.message);
+      return;
+    }
+  }
+
+  const firstProduct = ibsWithSrt[0].product || product || '';
+  const groups = getSizeGroupsFor(firstProduct);
+  _fsrGroups = groups.map(g => g.group);
+
+  function sizeToGroup(sc) {
+    const g = groups.find(grp => grp.sizes.includes(sc));
+    return g ? g.group : null;
+  }
+
+  _fsrEntries = ibsWithSrt.map(ib => {
+    const srIdSet = new Set(
+      (sortingResults || []).filter(sr => sr.inbound_record_id === ib.id).map(sr => sr.id)
+    );
+    const details = allDetails.filter(d => srIdSet.has(d.sorting_result_id));
+
+    const normalDtls = details.filter(d => d.category === '정상');
+    const normalTotalCt = normalDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const sizeRaw = {};
+    _fsrGroups.forEach(g => { sizeRaw[g] = 0; });
+    normalDtls.forEach(d => {
+      const g = sizeToGroup(d.size_code);
+      if (g) sizeRaw[g] += Number(d.ct) || 0;
+    });
+    const sizeRatios = {};
+    _fsrGroups.forEach(g => {
+      sizeRatios[g] = normalTotalCt > 0 ? Math.round(sizeRaw[g] / normalTotalCt * 100) : 0;
+    });
+
+    const outDtls = details.filter(d => d.category !== '손실');
+    const totalCt = outDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const highCt    = normalDtls.filter(d => (d.quality_grade || '일반') === '고당').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const normalQCt = normalDtls.filter(d => (d.quality_grade || '일반') === '일반').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const pachiCt   = outDtls.filter(d => d.category === '파치').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const acidCt    = outDtls.filter(d => d.category === '고산도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const tinyCt    = outDtls.filter(d => d.category === '극소과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const qualRatios = {
+      '고당':  totalCt > 0 ? Math.round(highCt    / totalCt * 100) : 0,
+      '일반':  totalCt > 0 ? Math.round(normalQCt / totalCt * 100) : 0,
+      '파치':  totalCt > 0 ? Math.round(pachiCt   / totalCt * 100) : 0,
+      '고산도': totalCt > 0 ? Math.round(acidCt   / totalCt * 100) : 0,
+      '극소과': totalCt > 0 ? Math.round(tinyCt   / totalCt * 100) : 0,
+    };
+
+    return { ibId: ib.id, date: ib.date, product: ib.product, inputCt: ib.quantity, totalCt, sizeRatios, qualRatios };
+  });
+
+  const pname = product || firstProduct;
+
+  function cardHtml(entry, idx) {
+    const sizeStr = _fsrGroups
+      .map(g => entry.sizeRatios[g] > 0
+        ? `<span>${g} <b>${entry.sizeRatios[g]}%</b></span>` : '')
+      .filter(Boolean).join('<span class="fsr-sep">·</span>');
+    const QUAL_STYLES = [
+      { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
+      { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706' },
+      { k: '극소과', color: '#7C3AED' },
+    ];
+    const qualStr = QUAL_STYLES
+      .map(({ k, color }) => entry.qualRatios[k] > 0
+        ? `<span style="color:${color}">${k} <b>${entry.qualRatios[k]}%</b></span>` : '')
+      .filter(Boolean).join('<span class="fsr-sep">·</span>');
+    return `
+      <label class="fsr-card" for="fsr-chk-${idx}">
+        <input type="checkbox" id="fsr-chk-${idx}" data-idx="${idx}" checked onchange="_fsrRecalc()">
+        <div class="fsr-card-body">
+          <div class="fsr-card-head">
+            <span class="fsr-date">${entry.date}${entry.product !== pname ? ' · ' + esc(entry.product) : ''}</span>
+            <span class="fsr-ct">투입 ${fmtCT(entry.inputCt)}CT · 결과 ${fmtCT(entry.totalCt)}CT</span>
+          </div>
+          <div class="fsr-ratios">
+            <div class="fsr-row"><span class="fsr-label">사이즈</span><div class="fsr-vals">${sizeStr || '<span style="color:#9CA3AF">—</span>'}</div></div>
+            <div class="fsr-row"><span class="fsr-label">품질</span><div class="fsr-vals">${qualStr || '<span style="color:#9CA3AF">—</span>'}</div></div>
+          </div>
+        </div>
+      </label>`;
+  }
+
+  const modalHtml = `
+    <div id="modal-srt-ratio" class="modal-overlay" onclick="if(event.target===this)closeSortingRatioModal()" style="z-index:4500">
+      <div class="modal" style="max-width:640px;padding:0">
+        <div class="modal-header">
+          <div class="modal-title">${esc(farmName)} · ${esc(pname)} 선과 비율</div>
+          <button class="modal-close" onclick="closeSortingRatioModal()">✕</button>
+        </div>
+        <div id="fsr-avg-box" class="fsr-avg-box"></div>
+        <div class="fsr-toolbar">
+          <button class="btn" onclick="_fsrSelectAll(true)">전체 선택</button>
+          <button class="btn" onclick="_fsrSelectAll(false)">전체 해제</button>
+        </div>
+        <div class="fsr-cards">
+          ${_fsrEntries.map((e, i) => cardHtml(e, i)).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  _fsrRecalc();
+}
+
+function closeSortingRatioModal() {
+  const el = document.getElementById('modal-srt-ratio');
+  if (el) el.remove();
+}
+
+function _fsrSelectAll(checked) {
+  document.querySelectorAll('#modal-srt-ratio input[data-idx]')
+    .forEach(cb => { cb.checked = checked; });
+  _fsrRecalc();
+}
+
+function _fsrRecalc() {
+  const checked = Array.from(
+    document.querySelectorAll('#modal-srt-ratio input[data-idx]')
+  ).filter(cb => cb.checked).map(cb => _fsrEntries[Number(cb.dataset.idx)]).filter(Boolean);
+
+  const box = document.getElementById('fsr-avg-box');
+  if (!box) return;
+
+  if (!checked.length) {
+    box.innerHTML = '<p style="color:#9CA3AF;font-size:13px;padding:4px 0">선택된 항목 없음</p>';
+    return;
+  }
+
+  const totalWeight = checked.reduce((s, e) => s + (e.totalCt || 0), 0);
+  const avgSize = {};
+  _fsrGroups.forEach(g => { avgSize[g] = 0; });
+  const avgQual = { '고당': 0, '일반': 0, '파치': 0, '고산도': 0, '극소과': 0 };
+
+  checked.forEach(e => {
+    const w = totalWeight > 0 ? (e.totalCt || 0) / totalWeight : 1 / checked.length;
+    _fsrGroups.forEach(g => { avgSize[g] += (e.sizeRatios[g] || 0) * w; });
+    Object.keys(avgQual).forEach(k => { avgQual[k] += (e.qualRatios[k] || 0) * w; });
+  });
+  _fsrGroups.forEach(g => { avgSize[g] = Math.round(avgSize[g]); });
+  Object.keys(avgQual).forEach(k => { avgQual[k] = Math.round(avgQual[k]); });
+
+  const sizeStr = _fsrGroups
+    .map(g => avgSize[g] > 0 ? `<span>${g} <b>${avgSize[g]}%</b></span>` : '')
+    .filter(Boolean).join('<span class="fsr-sep">·</span>');
+  const QUAL_STYLES = [
+    { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
+    { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706' },
+    { k: '극소과', color: '#7C3AED' },
+  ];
+  const qualStr = QUAL_STYLES
+    .map(({ k, color }) => avgQual[k] > 0
+      ? `<span style="color:${color}">${k} <b>${avgQual[k]}%</b></span>` : '')
+    .filter(Boolean).join('<span class="fsr-sep">·</span>');
+
+  box.innerHTML = `
+    <div class="fsr-avg-inner">
+      <div class="fsr-avg-title">가중 평균 <span class="fsr-avg-count">(${checked.length}건 선택)</span></div>
+      <div class="fsr-row"><span class="fsr-label">사이즈</span><div class="fsr-vals">${sizeStr || '<span style="color:#9CA3AF">—</span>'}</div></div>
+      <div class="fsr-row"><span class="fsr-label">품질</span><div class="fsr-vals">${qualStr || '<span style="color:#9CA3AF">—</span>'}</div></div>
+    </div>`;
+}
+
+window.openSortingRatioModal = openSortingRatioModal;
+
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);
 document.addEventListener('click', e => {
