@@ -12477,7 +12477,7 @@ async function openSortingRatioModal(farmName, product) {
   }
 
   const modalHtml = `
-    <div id="modal-srt-ratio" class="modal-overlay" onclick="if(event.target===this)closeSortingRatioModal()" style="z-index:4500">
+    <div id="modal-srt-ratio" class="modal-bg" onclick="if(event.target===this)closeSortingRatioModal()" style="z-index:4500">
       <div class="modal" style="max-width:640px;padding:0">
         <div class="modal-header">
           <div class="modal-title">${esc(farmName)} · ${esc(pname)} 선과 비율</div>
