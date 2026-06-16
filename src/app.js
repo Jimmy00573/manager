@@ -9965,13 +9965,13 @@ function srtParseExcel(input) {
           // 토글 ON: 일반/고당 칸 따로
           const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
           const highEl   = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="고당"]`);
-          if (!normalEl && !highEl) { unmatched.push(sz); continue; }
+          if (!normalEl && !highEl) { unmatched.push({ size: sz, normalCT: item.normalCT, highCT: item.highCT, normalKg: item.normalKg, highKg: item.highKg }); continue; }
           if (normalEl) normalEl.value = item.normalCT > 0 ? item.normalCT : 0;
           if (highEl)   highEl.value   = item.highCT   > 0 ? item.highCT   : 0;
         } else {
           // 토글 OFF: raw kg 합산 후 단일 반올림
           const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
-          if (!normalEl) { unmatched.push(sz); continue; }
+          if (!normalEl) { unmatched.push({ size: sz, normalCT: item.normalCT, highCT: item.highCT, normalKg: item.normalKg, highKg: item.highKg }); continue; }
           const totalCT = toCT(item.highKg + item.normalKg);
           normalEl.value = totalCT > 0 ? totalCT : 0;
         }
@@ -9984,17 +9984,9 @@ function srtParseExcel(input) {
       const modeLabel = _srtGradeOn
         ? `✅ 고당/일반 분리 입력: ${filledCount}개 사이즈`
         : `✅ 전부 일반으로 입력: ${filledCount}개 사이즈 (고당 분리 안 함)`;
-      const unmatchedLine = unmatched.length
-        ? `<br><span style="color:#92400E">⚠️ 앱에 없는 사이즈 건너뜀: ${unmatched.join(', ')} — 수동 확인 필요</span>`
-        : '';
-
-      const resultEl = document.getElementById('srt-excel-result');
-      if (resultEl) {
-        resultEl.style.display = '';
-        resultEl.innerHTML = `<strong>${modeLabel}</strong>${unmatchedLine}`
-          + `<br><span style="color:#374151">${sumLine}</span>`
-          + (totalLine ? `<br><span style="color:#6B7280">${totalLine}</span>` : '');
-      }
+      window._srtUnmatched = unmatched;
+      window._srtResultMeta = { modeLabel, sumLine, totalLine, product };
+      _srtRenderExcelResult();
 
     } catch (err) {
       console.error('[엑셀 파싱 오류]', err);
@@ -10007,8 +9999,59 @@ function srtParseExcel(input) {
 function closeSortingModal() {
   document.getElementById('modal-sorting').style.display = 'none';
   _sortingInboundId = null;
+  window._srtUnmatched = [];
+  window._srtResultMeta = null;
   const re = document.getElementById('srt-excel-result');
   if (re) { re.style.display = 'none'; re.innerHTML = ''; }
+}
+
+function _srtRenderExcelResult() {
+  const meta = window._srtResultMeta;
+  const unmatched = window._srtUnmatched || [];
+  if (!meta) return;
+  const { modeLabel, sumLine, totalLine, product } = meta;
+  const ptForSizes = PRODUCT_TYPE_MAP[product] || '만감류';
+  const sizesForDrop = ptForSizes === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
+  const sizeOptions = `<option value="">→ 어느 사이즈로?</option>`
+    + sizesForDrop.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')
+    + `<option value="__ignore__">무시</option>`;
+  const unmatchedLines = unmatched.map(u =>
+    `<br><span style="color:#92400E">⚠️ ${esc(u.size)} (고당 ${fmtCT(u.highCT)} · 일반 ${fmtCT(u.normalCT)} CT)</span>`
+    + ` <select onchange="srtMatchUnmatched('${esc(u.size)}',this.value)" style="font-size:12px;padding:2px 4px;border:1px solid #D1D5DB;border-radius:4px">${sizeOptions}</select>`
+  ).join('');
+  const resultEl = document.getElementById('srt-excel-result');
+  if (resultEl) {
+    resultEl.style.display = '';
+    resultEl.innerHTML = `<strong>${modeLabel}</strong>${unmatchedLines}`
+      + `<br><span style="color:#374151">${sumLine}</span>`
+      + (totalLine ? `<br><span style="color:#6B7280">${totalLine}</span>` : '');
+  }
+}
+
+function srtMatchUnmatched(origSize, targetSize) {
+  if (!window._srtUnmatched) return;
+  const idx = window._srtUnmatched.findIndex(u => u.size === origSize);
+  if (idx < 0) return;
+  const u = window._srtUnmatched[idx];
+  if (targetSize && targetSize !== '__ignore__') {
+    const r = inboundRecords.find(x => x.id === _sortingInboundId);
+    const prod = r ? r.product : null;
+    const kgPerCt = (productWeights && prod && productWeights[prod] != null) ? Number(productWeights[prod]) : 17;
+    const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
+    if (_srtGradeOn) {
+      const normalEl = document.querySelector(`.srt-size-input[data-size="${targetSize}"][data-grade="일반"]`);
+      const highEl   = document.querySelector(`.srt-size-input[data-size="${targetSize}"][data-grade="고당"]`);
+      if (normalEl) normalEl.value = Math.round(((parseFloat(normalEl.value)||0) + u.normalCT) * 10) / 10;
+      if (highEl)   highEl.value   = Math.round(((parseFloat(highEl.value)||0)   + u.highCT)   * 10) / 10;
+    } else {
+      const normalEl = document.querySelector(`.srt-size-input[data-size="${targetSize}"][data-grade="일반"]`);
+      const addCT = toCT(u.highKg + u.normalKg);
+      if (normalEl) normalEl.value = Math.round(((parseFloat(normalEl.value)||0) + addCT) * 10) / 10;
+    }
+    srtUpdateTotals();
+  }
+  window._srtUnmatched.splice(idx, 1);
+  _srtRenderExcelResult();
 }
 
 function srtUpdateTotals() {
