@@ -9115,16 +9115,92 @@ function _renderScStats() {
   statsEl.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
       ${[
-        ['📦 미선과 잔여', fmtN(totalRem) + ' CT', '#EFF6FF', '#1565C0'],
-        ['⏳ 선과 대기',   allW.length + '건',       '#FFF7ED', '#C2410C'],
-        ['⚠️ 긴급/우선',  urgCnt + '건',             '#FEF2F2', '#DC2626'],
-        ['✅ 오늘 완료',  fmtN(todayDone) + ' CT',   '#F0FDF4', '#15803D'],
-      ].map(([lbl, val, bg, col]) => `
-        <div style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center">
+        ['📦 미선과 잔여', fmtN(totalRem) + ' CT', '#EFF6FF', '#1565C0', ''],
+        ['⏳ 선과 대기',   allW.length + '건',       '#FFF7ED', '#C2410C', ''],
+        ['⚠️ 긴급/우선',  urgCnt + '건',             '#FEF2F2', '#DC2626', ''],
+        ['✅ 오늘 완료',  fmtN(todayDone) + ' CT',   '#F0FDF4', '#15803D', 'openTodaySortingModal()'],
+      ].map(([lbl, val, bg, col, fn]) => `
+        <div onclick="${fn}" style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center${fn ? ';cursor:pointer' : ''}">
           <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
           <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
         </div>`).join('')}
     </div>`;
+}
+
+function openTodaySortingModal() {
+  const today = td();
+  const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today);
+  const pm = _ibProcessedMap();
+
+  const byInbound = {};
+  todayRecs.forEach(p => {
+    const ib = inboundRecords.find(x => x.id === p.inbound_id);
+    if (!ib) return;
+    if (!byInbound[ib.id]) byInbound[ib.id] = { ib, todayCt: 0 };
+    byInbound[ib.id].todayCt += Number(p.quantity) || 0;
+  });
+
+  const byProduct = {};
+  todayRecs.forEach(p => {
+    const ib = inboundRecords.find(x => x.id === p.inbound_id);
+    if (!ib) return;
+    const prod = ib.product || '미지정';
+    byProduct[prod] = (byProduct[prod] || 0) + (Number(p.quantity) || 0);
+  });
+
+  const todayTotal = todayRecs.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
+  const entries = Object.values(byInbound).sort((a, b) => a.ib.date.localeCompare(b.ib.date));
+
+  const prodSummary = Object.entries(byProduct)
+    .sort((a, b) => b[1] - a[1])
+    .map(([p, ct]) => `${esc(p)} ${fmtCT(ct)} CT`)
+    .join(' · ');
+
+  const cardHtml = entries.length === 0
+    ? '<div style="text-align:center;color:#9CA3AF;padding:24px">오늘 선과 내역 없음</div>'
+    : entries.map(({ ib, todayCt }) => {
+        const remaining = ib.quantity - (pm[ib.id] || 0);
+        const done = remaining <= 0;
+        const statusHtml = done
+          ? `<span style="color:#15803D;font-weight:700;font-size:12px">완료 ✓</span>`
+          : `<span style="color:#9CA3AF;font-size:12px">잔여 ${fmtCT(remaining)} CT</span>`;
+        return `
+          <div style="border:1px solid #E5E7EB;border-radius:8px;padding:12px 14px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:#1F2937">${esc(ib.farm_name)}</div>
+                <div style="font-size:12px;color:#6B7280;margin-top:2px">${esc(ib.product || '')} · 입고 ${ib.date}</div>
+              </div>
+              ${statusHtml}
+            </div>
+            <div style="margin-top:8px;font-size:13px;color:#374151">
+              총 <strong>${fmtCT(ib.quantity)} CT</strong> 중 오늘 <strong style="color:#15803D">${fmtCT(todayCt)} CT</strong> 선과
+            </div>
+          </div>`;
+      }).join('');
+
+  const existing = document.getElementById('today-sorting-modal-bg');
+  if (existing) existing.remove();
+
+  const bg = document.createElement('div');
+  bg.id = 'today-sorting-modal-bg';
+  bg.className = 'modal-bg';
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  bg.innerHTML = `
+    <div class="modal" style="max-width:460px;padding:0">
+      <div style="padding:16px 20px 14px;border-bottom:1px solid #F0F0F0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:16px;font-weight:800;color:#1F2937">오늘 선과 내역</div>
+          <div style="font-size:12px;color:#6B7280;margin-top:2px">${today} · 총 ${fmtCT(todayTotal)} CT · ${entries.length}건</div>
+        </div>
+        <button onclick="document.getElementById('today-sorting-modal-bg').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#9CA3AF;padding:0;line-height:1">✕</button>
+      </div>
+      ${prodSummary ? `<div style="padding:10px 20px;background:#F9FAFB;border-bottom:1px solid #F0F0F0;font-size:12px;color:#374151"><span style="font-weight:600;color:#6B7280">품목별</span>&nbsp;${prodSummary}</div>` : ''}
+      <div style="padding:16px 20px;max-height:60vh;overflow-y:auto">
+        ${cardHtml}
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
 }
 
 function _renderScProductOptions() {
