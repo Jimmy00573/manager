@@ -7629,6 +7629,7 @@ let _sortingSaving = false;
 let _srtGradeOn = false;
 
 let _scSort = 'date-asc';
+let _scSortMode = 'date'; // 'date' | 'doing'
 let _scSearch = '';
 let _scPriOnly = false;
 let _scProduct = '';
@@ -8969,6 +8970,7 @@ function renderInboundList() {
 function scSetSort(col) {
   const [sc, sd] = _scSort.split('-');
   _scSort = (sc === col && sd === 'asc') ? col + '-desc' : col + '-asc';
+  _scSortMode = 'date'; // 헤더 클릭 시 date 모드로 전환
   _renderScTable();
 }
 
@@ -9008,6 +9010,7 @@ function renderProcessingTab() {
             <option value="">전체 품목</option>
           </select>
           <div id="sc-cat-btns" style="display:flex;gap:4px"></div>
+          <div id="sc-sort-btns" style="display:flex;gap:4px"></div>
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
             <input type="checkbox" id="sc-pri-only"> ⭐ 우선/긴급만
           </label>
@@ -9394,16 +9397,37 @@ function _renderScTable() {
     }).join('');
   }
 
-  const [sortCol, sortDir] = _scSort.split('-');
-  rows.sort((a, b) => {
-    let cmp;
-    if (sortCol === 'farm')         cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
-    else if (sortCol === 'date')    cmp = a.date.localeCompare(b.date);
-    else if (sortCol === 'elapsed') cmp = b.date.localeCompare(a.date);
-    else if (sortCol === 'remaining') cmp = a.remaining - b.remaining;
-    else cmp = a.date.localeCompare(b.date);
-    return sortDir === 'asc' ? cmp : -cmp;
-  });
+  // 정렬 토글 버튼 렌더
+  const sortBtnEl = document.getElementById('sc-sort-btns');
+  if (sortBtnEl) {
+    sortBtnEl.innerHTML = [['date','📅 입고일순'],['doing','🔄 진행중 먼저']].map(([mode, label]) => {
+      const active = _scSortMode === mode;
+      const st = active ? 'background:#1565C0;color:#fff;border:1px solid #1565C0'
+                        : 'background:#fff;color:#374151;border:1px solid #D1D5DB';
+      return `<button onclick="_scSortMode='${mode}';_renderScTable()"
+        style="${st};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">${label}</button>`;
+    }).join('');
+  }
+
+  if (_scSortMode === 'doing') {
+    rows.sort((a, b) => {
+      const ad = (srtCntMap[a.id] || 0) >= 1 ? 0 : 1;
+      const bd = (srtCntMap[b.id] || 0) >= 1 ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      return a.date.localeCompare(b.date);
+    });
+  } else {
+    const [sortCol, sortDir] = _scSort.split('-');
+    rows.sort((a, b) => {
+      let cmp;
+      if (sortCol === 'farm')           cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
+      else if (sortCol === 'date')      cmp = a.date.localeCompare(b.date);
+      else if (sortCol === 'elapsed')   cmp = b.date.localeCompare(a.date);
+      else if (sortCol === 'remaining') cmp = a.remaining - b.remaining;
+      else                              cmp = a.date.localeCompare(b.date);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }
 
   const countEl = document.getElementById('sc-row-count');
   if (countEl) {
