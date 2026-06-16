@@ -12496,7 +12496,7 @@ async function openSortingRatioModal(farmName, product) {
 
   const modalHtml = `
     <div id="modal-srt-ratio" class="modal-bg" onclick="if(event.target===this)closeSortingRatioModal()" style="z-index:4500">
-      <div class="modal" style="max-width:640px;padding:0">
+      <div class="modal" style="max-width:480px;padding:0">
         <div class="modal-header">
           <div class="modal-title" style="line-height:1.3">${esc(farmName)}<div style="font-size:12px;font-weight:400;color:#6B7280;margin-top:2px">${esc(pname)} · 선과 비율</div></div>
           <button class="modal-close" onclick="closeSortingRatioModal()">✕</button>
