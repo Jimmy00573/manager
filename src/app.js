@@ -9366,7 +9366,7 @@ function _renderScTable() {
               const sorted = r.quantity - r.remaining;
               const pct = r.quantity > 0 ? Math.round(sorted / r.quantity * 100) : 0;
               const progressCell = isDoing
-                ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                ? `<div onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" title="클릭하여 선과 결과 상세 보기" style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer">
                      <span style="font-size:11px;font-weight:600;color:#C2410C">${fmtN(sorted)} / ${fmtN(r.quantity)} CT</span>
                      <div style="width:80px;height:6px;background:#FED7AA;border-radius:3px;overflow:hidden">
                        <div style="width:${pct}%;height:100%;background:#C2410C;border-radius:3px"></div>
