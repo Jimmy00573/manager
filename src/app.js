@@ -12461,9 +12461,9 @@ async function openSortingRatioModal(farmName, product) {
     const _szMax   = _szItems.length ? _szItems.reduce((a, b) => entry.sizeRatios[a] >= entry.sizeRatios[b] ? a : b) : null;
     const sizeStr  = _szItems.length
       ? _szItems.map(g => g === _szMax
-          ? `<span><b style="color:#0F6E56">${g} ${entry.sizeRatios[g]}</b></span>`
-          : `<span>${g} ${entry.sizeRatios[g]}</span>`)
-        .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+          ? `<span><b style="color:#0F6E56">${g} ${entry.sizeRatios[g]}%</b></span>`
+          : `<span>${g} ${entry.sizeRatios[g]}%</span>`)
+        .join('<span class="fsr-sep">·</span>')
       : '';
     const QUAL_STYLES = [
       { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
@@ -12474,9 +12474,9 @@ async function openSortingRatioModal(farmName, product) {
     const _qlMaxK  = _qlItems.length ? _qlItems.reduce((a, b) => entry.qualRatios[a.k] >= entry.qualRatios[b.k] ? a : b).k : null;
     const qualStr  = _qlItems.length
       ? _qlItems.map(({ k, color }) => k === _qlMaxK
-          ? `<span style="color:${color}"><b>${k} ${entry.qualRatios[k]}</b></span>`
-          : `<span style="color:${color}">${k} ${entry.qualRatios[k]}</span>`)
-        .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+          ? `<span style="color:${color}"><b>${k} ${entry.qualRatios[k]}%</b></span>`
+          : `<span style="color:${color}">${k} ${entry.qualRatios[k]}%</span>`)
+        .join('<span class="fsr-sep">·</span>')
       : '';
     return `
       <label class="fsr-card" for="fsr-chk-${idx}">
@@ -12557,9 +12557,9 @@ function _fsrRecalc() {
   const _szMax2   = _szItems2.length ? _szItems2.reduce((a, b) => avgSize[a] >= avgSize[b] ? a : b) : null;
   const sizeStr   = _szItems2.length
     ? _szItems2.map(g => g === _szMax2
-        ? `<span><b style="color:#0F6E56">${g} ${avgSize[g]}</b></span>`
-        : `<span>${g} ${avgSize[g]}</span>`)
-      .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+        ? `<span><b style="color:#0F6E56">${g} ${avgSize[g]}%</b></span>`
+        : `<span>${g} ${avgSize[g]}%</span>`)
+      .join('<span class="fsr-sep">·</span>')
     : '';
   const QUAL_STYLES = [
     { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
@@ -12570,9 +12570,9 @@ function _fsrRecalc() {
   const _qlMaxK2  = _qlItems2.length ? _qlItems2.reduce((a, b) => avgQual[a.k] >= avgQual[b.k] ? a : b).k : null;
   const qualStr   = _qlItems2.length
     ? _qlItems2.map(({ k, color }) => k === _qlMaxK2
-        ? `<span style="color:${color}"><b>${k} ${avgQual[k]}</b></span>`
-        : `<span style="color:${color}">${k} ${avgQual[k]}</span>`)
-      .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+        ? `<span style="color:${color}"><b>${k} ${avgQual[k]}%</b></span>`
+        : `<span style="color:${color}">${k} ${avgQual[k]}%</span>`)
+      .join('<span class="fsr-sep">·</span>')
     : '';
 
   box.innerHTML = `
