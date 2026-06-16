@@ -457,7 +457,7 @@ async function regenPin(id) {
     drivers = drivers.map(d => d.id === id ? { ...d, pin: np } : d);
     _pinHidden[id] = false;
     renderDrivers();
-    alert(`새 PIN이 발급되었습니다!\n\n📌 PIN: ${np}\n\n기사에게 전달해 주세요.`);
+    await showConfirmEdit(`새 PIN: ${np}`, '기사에게 이 PIN을 전달해 주세요.');
   } catch (e) { alert('오류: ' + e.message); }
 }
 
