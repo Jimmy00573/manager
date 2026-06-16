@@ -8941,7 +8941,7 @@ function renderInboundList() {
       : esc(r.location || '-');
     return `<tr id="ib-tr-${r.id}" style="${isGrayed ? grayStyle : priorityStyle}">
       <td>${r.date}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> <span class="fsr-farm-link" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')" style="cursor:pointer;color:#2563EB;text-decoration:underline;text-underline-offset:2px">${esc(r.farm_name)}</span>${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
