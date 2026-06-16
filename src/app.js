@@ -9414,7 +9414,7 @@ function _renderScTable() {
               })();
               return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
-                  ${isPri ? '⭐ ' : ''}<span class="fsr-farm-link" onclick="openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}');event.stopPropagation()" style="cursor:pointer;color:#2563EB;text-decoration:underline;text-underline-offset:2px">${esc(r.farm_name)}</span>
+                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')">비율 ▸</span>`:''}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
                 <td style="padding:6px 4px">${catBadge}</td>
