@@ -8795,6 +8795,15 @@ function togglePriDetail(id) {
   if (btn) btn.textContent = open ? '▲ 접기' : `▼ ${el.querySelectorAll('[style*="border-bottom"]').length}건 모두 보기`;
 }
 
+function ibRatioBadge(r) {
+  const hasHistory = (sortingResults || []).some(sr => {
+    const ib = (inboundRecords || []).find(x => x.id === sr.inbound_record_id);
+    return ib && ib.farm_name === r.farm_name && ib.product === r.product;
+  });
+  if (!hasHistory) return '<span style="color:#9CA3AF;font-size:11px">—</span>';
+  return `<span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')" >비율 ▸</span>`;
+}
+
 function renderInboundList() {
   _expandedMemoId = null;
   renderIbCatSummary();
@@ -8857,7 +8866,7 @@ function renderInboundList() {
 
   if (!visible.length) {
     const hasNewFilter = ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
-    tbody.innerHTML = `<tr><td colspan="10" class="empty" style="padding:20px 10px">
+    tbody.innerHTML = `<tr><td colspan="11" class="empty" style="padding:20px 10px">
       ${hasNewFilter ? '조건에 맞는 입고 내역이 없습니다.' :
         ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
         ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
@@ -8941,8 +8950,9 @@ function renderInboundList() {
       : esc(r.location || '-');
     return `<tr id="ib-tr-${r.id}" style="${isGrayed ? grayStyle : priorityStyle}">
       <td>${r.date}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> <span class="fsr-farm-link" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')" style="cursor:pointer;color:#2563EB;text-decoration:underline;text-underline-offset:2px">${esc(r.farm_name)}</span>${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
+      <td style="text-align:center">${ibRatioBadge(r)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
       <td title="${esc(r.location || '')}">${locCell}</td>
