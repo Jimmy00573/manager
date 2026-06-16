@@ -601,6 +601,11 @@ function _applyEditRestrictions(canEdit) {
 
 function T(id) {
   if (sessionStorage.getItem('citrus_role') === 'staff' && id !== 'inv') return;
+  // transport 그룹 진입 → 하위 탭으로 위임
+  if (id === 'transport') { transportSub('dash'); return; }
+  // 하위 탭 바 숨김 (transport 그룹 밖으로 나갈 때)
+  const _stEl = document.getElementById('transport-subtab');
+  if (_stEl) _stEl.style.display = 'none';
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
   ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
@@ -622,6 +627,28 @@ function T(id) {
     if (ef && !ef.value) ef.value = fd;
     if (et && !et.value) et.value = t;
   }
+}
+
+function transportSub(sub) {
+  // anav: transport 버튼 active
+  document.querySelectorAll('#anav .nbtn').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('data-tab') === 'transport'));
+  // 하위 탭 active 표시
+  const stEl = document.getElementById('transport-subtab');
+  if (stEl) {
+    stEl.style.display = '';
+    stEl.querySelectorAll('.tsub-btn').forEach(b =>
+      b.classList.toggle('active', b.getAttribute('data-sub') === sub));
+  }
+  // 패널 전환 (transport 그룹 5개만)
+  ['dash','disp','ext','cal','dboard'].forEach(p => {
+    const el = document.getElementById('p-' + p);
+    if (el) el.classList.toggle('active', p === sub);
+  });
+  // 렌더 호출 (기존 T() 와 동일)
+  if (sub === 'dash') renderDash();
+  if (sub === 'cal') renderCal();
+  if (sub === 'dboard') { if (typeof _dbView !== 'undefined' && _dbView === 'sched') renderDSchedule(); else renderDBoard(); }
 }
 function DT(id) {
   document.querySelectorAll('#dnav .nbtn').forEach(b =>

@@ -265,6 +265,7 @@
 <!-- 관리자 탭 -->
 <div id="anav" class="nav">
   <button class="nbtn active" onclick="T('inv')" data-tab="inv">📦 재고관리</button>
+  <button class="nbtn" onclick="T('transport')" data-tab="transport">🚜 수확 및 수송 관리</button>
   <button class="nbtn" onclick="T('dash')" data-tab="dash">현황판</button>
   <button class="nbtn" onclick="T('disp')" data-tab="disp">배차·배출</button>
   <button class="nbtn" onclick="T('ext')" data-tab="ext">외부 용기</button>
@@ -278,6 +279,15 @@
 <div id="dnav" class="nav" style="display:none">
   <button class="nbtn active" onclick="DT('dmy')">내 배차</button>
   <button class="nbtn" onclick="DT('drep')">완료 등록</button>
+</div>
+
+<!-- 수확·수송 하위 탭 바 -->
+<div id="transport-subtab" class="nav" style="display:none;background:#F0F4FF;border-bottom:2px solid #BFDBFE">
+  <button class="tsub-btn nbtn" data-sub="dash" onclick="transportSub('dash')">현황판</button>
+  <button class="tsub-btn nbtn" data-sub="disp" onclick="transportSub('disp')">배차·배출</button>
+  <button class="tsub-btn nbtn" data-sub="ext" onclick="transportSub('ext')">외부 용기</button>
+  <button class="tsub-btn nbtn" data-sub="cal" onclick="transportSub('cal')">수확 캘린더</button>
+  <button class="tsub-btn nbtn" data-sub="dboard" onclick="transportSub('dboard')">🚛 기사별 배차</button>
 </div>
 
 <div class="main">
@@ -1790,6 +1800,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=13"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=251"></script>
+<script src="src/app.js?v=252"></script>
 </body>
 </html>
