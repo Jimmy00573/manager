@@ -4592,7 +4592,7 @@ function _renderInvMatrix(product, recs) {
   h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
   displaySizes.forEach(sz => {
     const gi = szGI[sz];
-    h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}</div>`;
+    h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}${fruitNoBadge(sz)}</div>`;
   });
   h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4"></div>`;
   if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
@@ -5369,7 +5369,7 @@ function openInvEditModal(regId) {
         ${g.sizes.map((sz, si) => {
           const idx = allSizes.indexOf(sz);
           return `<div>
-            <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}</label>
+            <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}${fruitNoBadge(sz)}</label>
             <input type="number" min="0" step="0.1" id="inv-edit-${regId}-${idx}" value="${curQty[sz] || 0}" onfocus="setTimeout(()=>this.select(),0)" style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
           </div>`;
         }).join('')}
@@ -5525,7 +5525,7 @@ function buildMobPriceRows() {
   const rows = sizes.map(sz => {
     const ct = parseFloat(document.getElementById(`ob-sz-${sz}`).value) || 0;
     return `<div style="display:grid;grid-template-columns:50px 50px 1fr 1fr 1fr;gap:6px;margin-bottom:6px;align-items:center">
-      <div style="font-size:12px;font-weight:600;color:#111">${esc(sz)}</div>
+      <div style="font-size:12px;font-weight:600;color:#111">${esc(sz)}${fruitNoBadge(sz)}</div>
       <div style="font-size:12px;text-align:right;color:#374151">${fmtCT(ct)}</div>
       <input type="number" id="mob-w-${sz}" min="0" step="0.1" placeholder="0" oninput="calcMobAmount()" style="${inp}">
       <input type="number" id="mob-p-${sz}" min="0" step="1" placeholder="0" oninput="calcMobAmount()" style="${inp}">
@@ -5681,7 +5681,7 @@ function openOutboundModal(regId) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px">
           ${groupSizes.map(sz => `
             <div>
-              <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}<br><span style="color:#059669;font-weight:600">${fmtCT(curQty[sz])}</span></label>
+              <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}${fruitNoBadge(sz)}<br><span style="color:#059669;font-weight:600">${fmtCT(curQty[sz])}</span></label>
               <input type="number" id="ob-sz-${sz}" min="0" max="${curQty[sz]}" step="0.1" value="0"
                 onfocus="setTimeout(()=>this.select(),0)" oninput="obClampQty(this,${curQty[sz]});obOutboundTotal()"
                 style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
@@ -5944,7 +5944,7 @@ function iemOnProductChange() {
           <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.04em;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #E5E7EB;text-align:center">${g.group}</div>
           ${g.sizes.map(sz => `
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-              <label style="font-size:12px;color:#374151;min-width:34px;flex-shrink:0">${esc(sz)}</label>
+              <label style="font-size:12px;color:#374151;min-width:34px;flex-shrink:0">${esc(sz)}${fruitNoBadge(sz)}</label>
               <input type="number" class="iem-size-inp" data-size="${esc(sz)}" min="0" step="0.5" placeholder="0"
                 oninput="iemUpdateTotal()"
                 style="flex:1;min-width:0;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:13px;font-family:inherit;text-align:right">
@@ -6515,7 +6515,7 @@ function openSortedPriceEdit(inboundId) {
       const wVal = d.weight > 0 ? Math.round(d.weight * 10) / 10 : '';
       const pVal = d.price || '';
       return `<div style="display:grid;grid-template-columns:40px 40px 72px 72px 1fr;gap:5px;align-items:center;padding:5px 12px;border-bottom:1px solid #F3F4F6">
-        <span style="color:#374151;font-weight:600;font-size:12px">${esc(sz)}</span>
+        <span style="color:#374151;font-weight:600;font-size:12px">${esc(sz)}${fruitNoBadge(sz)}</span>
         <span style="text-align:right;color:#1565C0;font-weight:700;font-size:12px">${fmtCT(d.ct)}</span>
         <input type="number" id="spe-w-${esc(sz)}" min="0" step="0.1" value="${wVal}" placeholder="kg" oninput="calcSpeAmount()" style="${inpStyle}">
         <input type="number" id="spe-p-${esc(sz)}" min="0" step="1" value="${pVal}" placeholder="단가" oninput="calcSpeAmount()" style="${inpStyle}">
@@ -6976,7 +6976,7 @@ function renderInvSummary() {
             });
             const mkCell = sz =>
               `<div style="text-align:center;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0">` +
-              `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}</div>` +
+              `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
               `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(detail[sz].kg))}</div>` +
               `</div>`;
             const mkLine = (g, szArr) =>
@@ -7636,6 +7636,13 @@ const SIZE_GROUPS_만감류 = [
   { group: '중과', sizes: Array.from({ length: 8  }, (_, i) => `${i + 15}수`) },
   { group: '소과', sizes: Array.from({ length: 5  }, (_, i) => `${i + 23}수`) },
 ];
+
+const CITRUS_FRUIT_NO = {'3S':0,'2S1':1,'2S2':2,'S1':3,'S2':4,'M1':5,'M2':6,'L':7,'2L':8,'3L':9,'왕1':10,'왕2':11};
+function fruitNoBadge(sz) {
+  const n = CITRUS_FRUIT_NO[sz];
+  if (n === undefined) return '';
+  return ` <span style="font-size:10px;background:#E6F1FB;color:#185FA5;padding:0 5px;border-radius:8px;font-weight:600">${n}</span>`;
+}
 
 function getSizeGroupsFor(product) {
   if ((PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류') return SIZE_GROUPS_감귤류;
@@ -9933,7 +9940,7 @@ function srtRenderSizeGrid(productType) {
     el.style.display = 'grid';
     el.innerHTML = sizes.map(sz => `
       <div>
-        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
+        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
         <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
           style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
           oninput="srtUpdateTotals()">
@@ -9942,14 +9949,14 @@ function srtRenderSizeGrid(productType) {
     const innerGrid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px';
     const normalCells = sizes.map(sz => `
       <div>
-        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}</label>
+        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
         <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
           style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
           oninput="srtUpdateTotals()">
       </div>`).join('');
     const gradeCells = sizes.map(sz => `
       <div>
-        <label style="font-size:11px;color:#1D4ED8;display:block;margin-bottom:2px">${sz}</label>
+        <label style="font-size:11px;color:#1D4ED8;display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
         <input type="number" data-size="${sz}" data-grade="고당" class="srt-size-input" min="0" value="0"
           style="width:100%;padding:4px 6px;border:1px solid #BFDBFE;border-radius:5px;font-size:13px;text-align:right;background:#fff"
           oninput="srtUpdateTotals()">
@@ -10664,7 +10671,7 @@ function renderIbSortedSizes() {
     `<div style="display:flex;flex-wrap:wrap;gap:6px">` +
     g.sizes.map(sz =>
       `<div style="display:flex;flex-direction:column;align-items:center;min-width:56px">` +
-      `<label style="font-size:10px;color:#9CA3AF;margin-bottom:2px">${esc(sz)}</label>` +
+      `<label style="font-size:10px;color:#9CA3AF;margin-bottom:2px">${esc(sz)}${fruitNoBadge(sz)}</label>` +
       `<input id="ibs-${esc(sz)}" type="number" step="0.1" min="0" placeholder="0" oninput="ibSortedTotal()" ` +
       `style="width:56px;text-align:center;border:1px solid #D1D5DB;border-radius:6px;padding:4px 6px;font-size:13px">` +
       `</div>`
@@ -10697,7 +10704,7 @@ function buildIspRows() {
     if (ct <= 0) return;
     rows.push(`
       <div style="display:grid;grid-template-columns:50px 50px 1fr 1fr 80px;gap:6px;align-items:center;margin-bottom:6px">
-        <span style="font-size:12px;font-weight:600;color:#374151">${esc(sz)}</span>
+        <span style="font-size:12px;font-weight:600;color:#374151">${esc(sz)}${fruitNoBadge(sz)}</span>
         <span style="font-size:12px;color:#6B7280;text-align:center">${fmtCT(ct)} CT</span>
         <input id="isp-w-${esc(sz)}" type="number" step="0.1" min="0" placeholder="실측kg"
           style="padding:4px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;font-family:inherit"
@@ -12116,7 +12123,7 @@ function _sizeGroupCols(groups, sizeMap, activeColor) {
         const ct = sizeMap[sz] ?? 0;
         const z = ct === 0;
         return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0${z ? ';opacity:0.35' : ''}">
-          <span style="color:${z ? '#9CA3AF' : '#374151'}">${esc(sz)}</span>
+          <span style="color:${z ? '#9CA3AF' : '#374151'}">${esc(sz)}${fruitNoBadge(sz)}</span>
           <span style="color:${z ? '#D1D5DB' : activeColor};font-weight:${z ? '400' : '600'}">${fmtN(ct)}</span>
         </div>`;
       }).join('')}
@@ -12311,7 +12318,7 @@ function openSortedInboundDetail(inboundId, showPrice = false) {
             ? `<span style="font-weight:700;color:#1D4ED8;font-size:12px;min-width:70px;text-align:right">${d.amount ? fmtN(Math.round(d.amount))+'원' : '-'}</span>`
             : '';
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #F3F4F6;font-size:13px;gap:6px">
-            <span style="color:#374151;min-width:40px">${esc(sz)}</span>
+            <span style="color:#374151;min-width:40px">${esc(sz)}${fruitNoBadge(sz)}</span>
             <span style="font-weight:700;color:#1565C0">${fmtCT(d.ct)} CT${priceInfo}</span>
             ${amtCell}
           </div>`;
