@@ -1695,10 +1695,10 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">작업자 *</label>
         <select id="cdg-worker" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
           <option value="">작업자 선택</option>
-          ${drivers.map(d=>`<option value="${esc(d.name)}">${esc(d.name)} (${d.type==='내부'?'직원':'기사'})</option>`).join('')}
+          ${drivers.filter(d=>d.type==='내부').map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}
         </select>
-        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px;margin-top:8px">사유 (선택)</label>
-        <input id="cdg-reason" placeholder="사유 입력 (선택)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px;margin-top:8px">사유 *</label>
+        <input id="cdg-reason" placeholder="사유 입력 (필수)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
       </div>` : '';
 
     overlay.innerHTML = `
@@ -1740,6 +1740,7 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
         const worker = overlay.querySelector('#cdg-worker')?.value || '';
         if (!worker) { alert('작업자를 선택하세요.'); return; }
         const reason = overlay.querySelector('#cdg-reason')?.value?.trim() || '';
+        if (!reason) { alert('사유를 입력하세요.'); return; }
         close({ ok: true, worker, reason });
       } else {
         close(true);
