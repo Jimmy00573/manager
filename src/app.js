@@ -8802,7 +8802,7 @@ function ibRatioBadge(r) {
     return ib && ib.farm_name === r.farm_name && ib.product === r.product;
   });
   if (!hasHistory) return '<span style="color:#9CA3AF;font-size:11px">—</span>';
-  return `<span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')" >비율 ▸</span>`;
+  return `<span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')" >비율 ▸</span>`;
 }
 
 function renderInboundList() {
@@ -9492,7 +9492,7 @@ function _renderScTable() {
                 : '';
               return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
-                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')">비율 ▸</span>`:''}
+                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
                 <td style="padding:6px 4px">${catBadge}</td>
@@ -12473,8 +12473,10 @@ async function saveUrgencyThresholds() {
 // ── 농가별 선과 비율 모달
 let _fsrEntries = [];
 let _fsrGroups  = [];
+let _fsrHighlightId = null;
 
-async function openSortingRatioModal(farmName, product) {
+async function openSortingRatioModal(farmName, product, highlightIbId = null) {
+  _fsrHighlightId = highlightIbId || null;
   const ibs = (inboundRecords || []).filter(r =>
     !r.is_void && r.farm_name === farmName && (!product || r.product === product)
   );
@@ -12573,12 +12575,13 @@ async function openSortingRatioModal(farmName, product) {
           : `<span style="color:${color}">${k} ${entry.qualRatios[k]}%</span>`)
         .join('<span class="fsr-sep">·</span>')
       : '';
+    const isHL = _fsrHighlightId && String(entry.ibId) === String(_fsrHighlightId);
     return `
-      <label class="fsr-card" for="fsr-chk-${idx}">
+      <label class="fsr-card" for="fsr-chk-${idx}" style="${isHL ? 'border:1.5px solid #2563EB;background:#F0F7FF;' : ''}">
         <input type="checkbox" id="fsr-chk-${idx}" data-idx="${idx}" checked onchange="_fsrRecalc()">
         <div class="fsr-card-body">
           <div class="fsr-card-head">
-            <span class="fsr-date">${entry.date}${entry.product !== pname ? ' · ' + esc(entry.product) : ''}</span>
+            <span class="fsr-date">${entry.date}${entry.product !== pname ? ' · ' + esc(entry.product) : ''}${isHL ? ' <span style="font-size:10px;background:#2563EB;color:#fff;padding:1px 6px;border-radius:8px;font-weight:600;vertical-align:middle">이 입고</span>' : ''}</span>
             <span class="fsr-ct">투입 ${fmtCT(entry.inputCt)}CT · 결과 ${fmtCT(entry.totalCt)}CT</span>
           </div>
           <div class="fsr-ratios">
