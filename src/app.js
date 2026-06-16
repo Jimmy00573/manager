@@ -6974,7 +6974,7 @@ function renderInvSummary() {
       </table></div></div>`;
   };
   const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~27수 기준)', manGamMap, ['대과', '중과', '소과'], sortDetail);
-  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과'], sortDetail);
+  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(3L,왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과'], sortDetail);
 
   // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
   const pachiUsageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
@@ -7594,7 +7594,7 @@ const PRODUCT_TYPE_MAP = {
   '노지감귤': '감귤류', '하우스감귤': '감귤류', '타이벡': '감귤류', '비가림': '감귤류'
 };
 const SIZES_만감류 = Array.from({ length: 23 }, (_, i) => `${i + 5}수`);
-const SIZES_감귤류 = ['000', '00', '3S', '2S1', '2S2', 'S1', 'S2', 'M1', 'M2', 'L', '2L', '왕1', '왕2'];
+const SIZES_감귤류 = ['000', '00', '3S', '2S1', '2S2', 'S1', 'S2', 'M1', 'M2', 'L', '2L', '3L', '왕1', '왕2'];
 
 // 사이즈 그룹 (좌→우: 소과→대과)
 const SIZE_GROUPS_감귤류 = [
@@ -7602,7 +7602,7 @@ const SIZE_GROUPS_감귤류 = [
   { group: '소과',   sizes: ['3S', '2S1', '2S2'] },
   { group: '로얄과', sizes: ['S1', 'S2', 'M1', 'M2'] },
   { group: '중과',   sizes: ['L', '2L'] },
-  { group: '대과',   sizes: ['왕1', '왕2'] },
+  { group: '대과',   sizes: ['3L', '왕1', '왕2'] },
 ];
 const SIZE_GROUPS_만감류 = [
   { group: '대과', sizes: Array.from({ length: 10 }, (_, i) => `${i + 5}수`)  },
