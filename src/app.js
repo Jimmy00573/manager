@@ -10127,7 +10127,11 @@ async function saveSortingResult() {
 
   const diffPct = inputCt > 0 ? Math.abs((outputTotal - inputCt) / inputCt) * 100 : 0;
   if (diffPct > 5) {
-    if (!confirm(`투입량과 결과 합계 차이가 ${diffPct.toFixed(1)}%입니다.\n투입 ${fmtN(inputCt)} CT / 결과 ${fmtN(outputTotal)} CT\n그래도 저장하시겠습니까?`)) return;
+    const ok = await showConfirmEdit(
+      '투입량과 결과 차이 확인',
+      `차이 ${diffPct.toFixed(1)}% · 투입 ${fmtN(inputCt)} CT / 결과 ${fmtN(outputTotal)} CT. 그래도 저장할까요?`
+    );
+    if (!ok) return;
   }
 
   _sortingSaving = true;
