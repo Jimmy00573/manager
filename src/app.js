@@ -805,7 +805,9 @@ function ftm(iso) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 function CM(t) { document.getElementById('modal-' + t).style.display = 'none'; }
-function cDel(m) { return confirm('삭제하시겠습니까?\n\n' + m + '\n\n⚠ 삭제된 데이터는 복구할 수 없습니다.'); }
+async function cDel(m) {
+  return await showConfirmDanger({ title: m, subtitle: '삭제된 데이터는 복구할 수 없습니다', confirmText: '삭제' });
+}
 
 // ── 문자
 function buildMsg(d) {
@@ -1020,7 +1022,7 @@ async function addFarm() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delFarm(id) {
-  if (!cDel('농가 삭제')) return;
+  if (!(await cDel('농가 삭제'))) return;
   try { await dbDeleteFarm(id); farms = farms.filter(f => f.id !== id); popSels(); renderFarm(); }
   catch (e) { alert('오류: ' + e.message); }
 }
@@ -1060,7 +1062,7 @@ async function addDriver() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delDriver(id) {
-  if (!cDel('기사 삭제')) return;
+  if (!(await cDel('기사 삭제'))) return;
   try { await dbDeleteDriver(id); drivers = drivers.filter(d => d.id !== id); popSels(); renderDrivers(); }
   catch (e) { alert('오류: ' + e.message); }
 }
@@ -1294,7 +1296,7 @@ async function saveVehicleEdit() {
 }
 
 async function delVehicle(id) {
-  if (!cDel('차량 삭제')) return;
+  if (!(await cDel('차량 삭제'))) return;
   try { await dbDeleteVehicle(id); vehicles = vehicles.filter(v => v.id !== id); renderVehicles(); }
   catch(e) { alert('오류: ' + e.message); }
 }
@@ -1349,7 +1351,7 @@ async function updDisp(id, s) {
 }
 
 async function delDisp(id) {
-  if (!cDel('배차 기록 삭제')) return;
+  if (!(await cDel('배차 기록 삭제'))) return;
   try {
     const autoPicks = picks.filter(p => p.dispatch_id === id);
     await Promise.all(autoPicks.map(p => dbDeletePick(p.id)));
@@ -1522,7 +1524,7 @@ async function addPick() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delPick(id) {
-  if (!cDel('수거 기록 삭제')) return;
+  if (!(await cDel('수거 기록 삭제'))) return;
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderPick(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
 }
@@ -1591,7 +1593,7 @@ async function addOwnOut() {
   }
 }
 async function delOwn(id, t) {
-  if (!cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제')) return;
+  if (!(await cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제'))) return;
 
   try {
     if (t === 'i') {
@@ -1643,7 +1645,7 @@ async function addBkCol() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delBkCol(id) {
-  if (!cDel('빈콘 회수 삭제')) return;
+  if (!(await cDel('빈콘 회수 삭제'))) return;
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderBkCol(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
 }
@@ -1815,7 +1817,7 @@ async function addNhfOut() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delNhf(id, t) {
-  if (!cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제')) return;
+  if (!(await cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제'))) return;
   try {
     if (t === 'i') { await dbDeleteNhfIn(id); nhfIns = nhfIns.filter(o => o.id !== id); }
     else { await dbDeleteNhfOut(id); nhfOuts = nhfOuts.filter(o => o.id !== id); }
@@ -2648,7 +2650,7 @@ async function setHarvestStatus(id, status) {
   }
 }
 async function delHarvest(id) {
-  if (!cDel('수확일정 삭제')) return;
+  if (!(await cDel('수확일정 삭제'))) return;
   try {
     await dbDeleteHarvest(id);
     harvests = harvests.filter(h => h.id !== id);
