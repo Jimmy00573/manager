@@ -9989,6 +9989,11 @@ function srtParseExcel(input) {
         return;
       }
 
+      const isCitrus = (PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류';
+      // 감귤류 유효 사이즈 집합 (00/000은 '0'으로 나오므로 제외, 별도 매핑)
+      const CITRUS_VALID_SIZES = new Set(SIZES_감귤류.filter(s => s !== '000' && s !== '00'));
+      let zeroCount = 0; // '0' 등장 횟수: 첫=00, 둘=000
+
       const results = [];
       let excelHighKg = 0, excelNormalKg = 0;
       let excelTotalHighKg = 0, excelTotalNormalKg = 0;
@@ -10014,8 +10019,20 @@ function srtParseExcel(input) {
         // 중량 행만 처리
         if (gubun !== '중량') continue;
 
-        // 사이즈 형식 검증 (수 단위 or g단위)
-        if (!gradeVal || (!gradeVal.match(/\d+수/) && !gradeVal.match(/\d+g/))) continue;
+        // 사이즈 형식 검증 — 만감류: N수/Ng, 감귤류: 앱 사이즈명 또는 '0'
+        if (!gradeVal) continue;
+        if (isCitrus) {
+          if (!CITRUS_VALID_SIZES.has(gradeVal) && gradeVal !== '0') continue;
+        } else {
+          if (!gradeVal.match(/\d+수/) && !gradeVal.match(/\d+g/)) continue;
+        }
+
+        // 감귤류 '0' → 순서 기반 매핑 (큰 것부터이므로 첫=00, 둘째=000)
+        let size = gradeVal;
+        if (isCitrus && gradeVal === '0') {
+          zeroCount++;
+          size = zeroCount === 1 ? '00' : '000';
+        }
 
         const highKg   = Number(row[iTe1])   || 0;
         const normalKg = (Number(row[iTe2])  || 0) + (Number(row[iTe3])  || 0)
@@ -10027,7 +10044,7 @@ function srtParseExcel(input) {
         const highCT   = toCT(highKg);
         const normalCT = toCT(normalKg);
 
-        results.push({ size: gradeVal, highKg, normalKg, highCT, normalCT });
+        results.push({ size, highKg, normalKg, highCT, normalCT });
       }
 
       // console 출력
