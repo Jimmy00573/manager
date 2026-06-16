@@ -2678,7 +2678,7 @@ async function addHarvest() {
 }
 
 async function delHarvest(id) {
-  if (!confirm('수확 일정을 삭제할까요?')) return;
+  if (!(await showConfirmDanger({ title: '수확 일정 삭제', subtitle: '삭제된 데이터는 복구할 수 없습니다', confirmText: '삭제' }))) return;
   try {
     await dbDeleteHarvest(id);
     harvests = harvests.filter(h => h.id !== id);
@@ -3187,7 +3187,8 @@ async function saveLocation() {
 
 async function deleteLocation(id) {
   const loc = storageLocations.find(l => l.id === id);
-  if (!loc || !confirm(`"${loc.name}" 위치를 삭제할까요?\n입고 내역의 위치값은 유지됩니다.`)) return;
+  if (!loc) return;
+  if (!(await showConfirmDanger({ title: '위치 삭제', subtitle: '입고 내역의 위치값은 유지됩니다', items: [loc.name], confirmText: '삭제' }))) return;
   try {
     await dbDeleteLocation(id);
     storageLocations = storageLocations.filter(l => l.id !== id);
@@ -3356,7 +3357,8 @@ async function saveQcCriteria() {
 async function deleteQcCriteria() {
   if (!_editQcId) return;
   const qc = qualityCriteria.find(q => q.id === _editQcId);
-  if (!qc || !confirm(`"${qc.product_name}" 품질 기준을 삭제할까요?`)) return;
+  if (!qc) return;
+  if (!(await showConfirmDanger({ title: '품질 기준 삭제', items: [qc.product_name], confirmText: '삭제' }))) return;
   try {
     await dbDeleteQualityCriteria(_editQcId);
     qualityCriteria = qualityCriteria.filter(q => q.id !== _editQcId);
@@ -3682,7 +3684,8 @@ async function editPachiUsage(id) {
 
 async function deletePachiUsage(id) {
   const u = pachiUsages.find(x => x.id === id);
-  if (!u || !confirm(`"${u.name}" 사용처를 삭제할까요?`)) return;
+  if (!u) return;
+  if (!(await showConfirmDanger({ title: '사용처 삭제', items: [u.name], confirmText: '삭제' }))) return;
   try {
     await dbDeletePachiUsage(id);
     pachiUsages = pachiUsages.filter(x => x.id !== id);
@@ -3786,7 +3789,7 @@ async function deleteJuiceMaster(id) {
   if (invJuiceBatches.some(b => !b.is_void && b.product_name === m.product_name)) {
     return alert(`"${m.product_name}" 배치 재고가 있어 삭제할 수 없습니다.\n먼저 해당 배치를 모두 삭제하세요.`);
   }
-  if (!confirm(`"${m.product_name}" 품명을 삭제할까요?`)) return;
+  if (!(await showConfirmDanger({ title: '품명 삭제', items: [m.product_name], confirmText: '삭제' }))) return;
   try {
     await dbDeleteJuiceMaster(id);
     invJuiceMasters = invJuiceMasters.filter(x => x.id !== id);
@@ -3926,7 +3929,8 @@ async function savePartnerEdit() {
 async function deletePartner(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const p = partners.find(x => x.id === id);
-  if (!p || !confirm(`"${p.name}" 거래처를 삭제할까요?`)) return;
+  if (!p) return;
+  if (!(await showConfirmDanger({ title: '거래처 삭제', items: [p.name], confirmText: '삭제' }))) return;
   try {
     await dbDeletePartner(id);
     partners = partners.filter(x => x.id !== id);
@@ -4225,7 +4229,7 @@ async function addCat() {
   } catch(e) { alert('오류: ' + e.message); }
 }
 async function deleteCat(id) {
-  if (!confirm('카테고리를 삭제하면 관련 등급도 모두 삭제됩니다. 계속하시겠습니까?')) return;
+  if (!(await showConfirmDanger({ title: '카테고리 삭제', subtitle: '관련 등급도 모두 삭제됩니다', confirmText: '삭제' }))) return;
   try {
     await dbDeleteCategory(id);
     categories = categories.filter(c => c.id !== id);
@@ -4250,7 +4254,7 @@ async function addSizeGrade(catId) {
   } catch(e) { alert('오류: ' + e.message); }
 }
 async function deleteSizeGrade(id) {
-  if (!confirm('삭제하시겠습니까?')) return;
+  if (!(await showConfirmDanger({ title: '삭제', confirmText: '삭제' }))) return;
   try {
     await dbDeleteSizeGrade(id);
     sizeGrades = sizeGrades.filter(g => g.id !== id);
@@ -4271,7 +4275,7 @@ async function addItem() {
   } catch(e) { alert('오류: ' + e.message); }
 }
 async function deleteItem(id) {
-  if (!confirm('품목과 관련 과수 기준을 모두 삭제합니다. 계속하시겠습니까?')) return;
+  if (!(await showConfirmDanger({ title: '품목 삭제', subtitle: '관련 과수 기준도 모두 삭제됩니다', confirmText: '삭제' }))) return;
   try {
     await dbDeleteItem(id);
     itemDefs = itemDefs.filter(i => i.id !== id);
@@ -4294,7 +4298,7 @@ async function addItemRule(itemId) {
   } catch(e) { alert('오류: ' + e.message); }
 }
 async function deleteItemRule(id) {
-  if (!confirm('삭제하시겠습니까?')) return;
+  if (!(await showConfirmDanger({ title: '삭제', confirmText: '삭제' }))) return;
   try {
     await dbDeleteItemSizeRule(id);
     itemSizeRules = itemSizeRules.filter(r => r.id !== id);
@@ -10397,7 +10401,7 @@ async function permanentDeleteInbound(id) {
   const r = inboundRecords.find(rec => rec.id === id);
   if (!r) return;
   const label = `${r.farm_name}  ${r.product}  ${fmtN(r.quantity)}CT  (${r.date})`;
-  if (!confirm(`⚠️ 영구 삭제\n\n정말로 이 데이터를 영구 삭제하시겠습니까?\n\n${label}\n\n한 번 삭제하면 복구할 수 없습니다.`)) return;
+  if (!(await showConfirmDanger({ title: '영구 삭제', subtitle: '복구할 수 없습니다', items: [label], confirmText: '삭제' }))) return;
   try {
     await dbInsertAuditLog({
       target_table: 'inbound_records', target_id: id,
@@ -11409,7 +11413,7 @@ function renderPachiSection() {
 
 async function deleteSorted(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!confirm('삭제하시겠습니까?')) return;
+  if (!(await showConfirmDanger({ title: '삭제', confirmText: '삭제' }))) return;
   try {
     await dbDeleteSorted(id);
     invSorted = invSorted.filter(r => r.id !== id);
@@ -11443,8 +11447,7 @@ async function addWaste() {
 
 async function deleteWaste(id, label) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const msg = label ? `이 파치 기록을 삭제하시겠습니까?\n${label}` : '삭제하시겠습니까?';
-  if (!confirm(msg)) return;
+  if (!(await showConfirmDanger({ title: '파치 기록 삭제', items: label ? [label] : [], confirmText: '삭제' }))) return;
   try {
     await dbDeleteWaste(id);
     invWaste = invWaste.filter(r => r.id !== id);
@@ -11454,8 +11457,7 @@ async function deleteWaste(id, label) {
 
 async function deleteManualPachi(idsStr, label) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const msg = label ? `이 파치 기록을 삭제하시겠습니까?\n${label}` : '삭제하시겠습니까?';
-  if (!confirm(msg)) return;
+  if (!(await showConfirmDanger({ title: '파치 기록 삭제', items: label ? [label] : [], confirmText: '삭제' }))) return;
   const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
   try {
     for (const id of ids) await sbUpdate('inventory_records', id, { is_void: true });
