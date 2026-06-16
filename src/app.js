@@ -450,7 +450,7 @@ function adminLogout() {
 function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
 
 async function regenPin(id) {
-  if (!confirm('PIN을 새로 발급할까요?\n기사에게 새 PIN을 전달해야 합니다.')) return;
+  if (!(await showConfirmEdit('PIN 재발급', '기사에게 새 PIN을 전달해야 합니다.'))) return;
   const np = genPin();
   try {
     await dbUpdateDriver(id, { pin: np });
@@ -467,7 +467,7 @@ async function togglePinActive(id) {
   const drv = drivers.find(d => d.id === id);
   if (!drv) return;
   const newState = !drv.pin_active;
-  if (!newState && !confirm(`${drv.name} 기사의 접속을 차단할까요?\n차단하면 즉시 로그인 불가 상태가 됩니다.`)) return;
+  if (!newState && !(await showConfirmEdit('기사 접속 차단', `${drv.name} 기사를 차단하면 즉시 로그인 불가합니다.`))) return;
   try {
     await dbUpdateDriver(id, { pin_active: newState });
     drivers = drivers.map(d => d.id === id ? { ...d, pin_active: newState } : d);
@@ -3814,7 +3814,7 @@ async function editJuiceMaster(id) {
 
   const nameChanged = newName !== m.product_name;
   const affected = nameChanged ? invJuiceBatches.filter(b => !b.is_void && b.product_name === m.product_name) : [];
-  if (nameChanged && affected.length > 0 && !confirm(`이 품명으로 등록된 배치 ${affected.length}건의 이름도 함께 변경됩니다. 진행할까요?`)) return;
+  if (nameChanged && affected.length > 0 && !(await showConfirmEdit('품명 변경', `등록된 배치 ${affected.length}건의 이름도 함께 변경됩니다.`))) return;
 
   try {
     const updatePayload = { product_name: newName, default_unit: newUnit, default_per_box: newPerBox };
@@ -4108,7 +4108,7 @@ async function saveCatEdit(id) {
   const prev = categories.find(c => c.id === id);
   if (prev && prev.classification_type !== type) {
     const n = itemDefs.filter(i => i.category_id === id).length;
-    if (n > 0 && !confirm(`분류 방식 변경은 기존 ${n}개 품목에 영향을 줍니다. 계속할까요?`)) return;
+    if (n > 0 && !(await showConfirmEdit('분류 방식 변경', `기존 ${n}개 품목에 영향을 줍니다.`))) return;
   }
   try {
     await dbUpdateCategory(id, { name, classification_type: type });
@@ -4206,7 +4206,7 @@ async function saveRuleEdit(id) {
   if (!min || !max) return alert('최소수와 최대수를 입력하세요.');
   if (min > max) return alert('최소수가 최대수보다 클 수 없습니다.');
   const overlap = itemSizeRules.find(o => o.item_id === r.item_id && o.id !== id && min <= o.max_su && max >= o.min_su);
-  if (overlap && !confirm(`'${overlap.group_name}' 그룹(${overlap.min_su}~${overlap.max_su}수)과 수 범위가 겹칩니다. 계속할까요?`)) return;
+  if (overlap && !(await showConfirmEdit('수 범위 겹침', `'${overlap.group_name}' 그룹(${overlap.min_su}~${overlap.max_su}수)과 겹칩니다. 계속할까요?`))) return;
   try {
     await dbUpdateItemSizeRule(id, { group_name: grp, min_su: min, max_su: max });
     const idx = itemSizeRules.findIndex(o => o.id === id);
@@ -7953,7 +7953,7 @@ async function migrateDistributedStorage() {
   );
   if (!toMigrate.length) return alert('마이그레이션할 분산 저장 데이터가 없습니다.');
   const preview = toMigrate.slice(0, 5).map(r => `  ${r.date} ${r.product}(${r.farm_name}): ${r.location}`).join('\n');
-  if (!confirm(`${toMigrate.length}건의 분산 저장 기록을 개별 row로 분리합니다.\n\n미리보기 (최대 5건):\n${preview}\n\n원본 row는 무효 처리됩니다. 계속할까요?`)) return;
+  if (!(await showConfirmEdit('기록 분리', `${toMigrate.length}건을 개별 row로 분리합니다. 원본은 무효 처리됩니다.`))) return;
   let ok = 0, fail = 0;
   for (const r of toMigrate) {
     try {
@@ -9591,7 +9591,7 @@ function editInboundRow(id) {
   document.getElementById('modal-edit-inbound').style.display = 'flex';
 }
 
-function closeEditInboundModal() {
+async function closeEditInboundModal() {
   const reason = document.getElementById('eib-m-reason')?.value || '';
   const r = inboundRecords.find(x => x.id === _editInboundId);
   if (r) {
@@ -9615,7 +9615,7 @@ function closeEditInboundModal() {
       (() => { const v = document.getElementById('eib-driver-sel')?.value || '';
         const did = v ? Number(v) : null;
         return did !== (r.driver_id || null); })();
-    if (changed && !confirm('변경사항이 있습니다. 취소할까요?')) return;
+    if (changed && !(await showConfirmEdit('편집 취소', '변경사항이 있습니다. 취소할까요?'))) return;
   }
   document.getElementById('modal-edit-inbound').style.display = 'none';
   _editInboundId = null;
