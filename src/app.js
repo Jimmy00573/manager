@@ -9127,10 +9127,21 @@ function _renderScStats() {
     </div>`;
 }
 
-function openTodaySortingModal() {
+async function openTodaySortingModal() {
   const today = td();
   const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today);
   const pm = _ibProcessedMap();
+
+  // 오늘 sorting_results 에서 operator_name 조회 (격리 — 전역 sortingResults 미사용)
+  const srRows = todayRecs.length > 0
+    ? (await sbGet('sorting_results', `sorting_date=eq.${today}&select=inbound_record_id,operator_name`).catch(() => []) || [])
+    : [];
+  const operatorMap = {}; // inbound_id → 작업자 중복제거 Set
+  srRows.forEach(sr => {
+    if (!sr.operator_name) return;
+    if (!operatorMap[sr.inbound_record_id]) operatorMap[sr.inbound_record_id] = new Set();
+    operatorMap[sr.inbound_record_id].add(sr.operator_name);
+  });
 
   const byInbound = {};
   todayRecs.forEach(p => {
@@ -9164,11 +9175,13 @@ function openTodaySortingModal() {
         const statusHtml = done
           ? `<span style="color:#15803D;font-weight:700;font-size:12px">완료 ✓</span>`
           : `<span style="color:#9CA3AF;font-size:12px">잔여 ${fmtCT(remaining)} CT</span>`;
+        const operators = operatorMap[ib.id] ? [...operatorMap[ib.id]].join(', ') : '';
+        const operatorHtml = operators ? ` <span style="font-size:11px;color:#6B7280;font-weight:400">· ${esc(operators)}</span>` : '';
         return `
           <div style="border:1px solid #E5E7EB;border-radius:8px;padding:12px 14px;margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
               <div>
-                <div style="font-size:13px;font-weight:700;color:#1F2937">${esc(ib.farm_name)}</div>
+                <div style="font-size:13px;font-weight:700;color:#1F2937">${esc(ib.farm_name)}${operatorHtml}</div>
                 <div style="font-size:12px;color:#6B7280;margin-top:2px">${esc(ib.product || '')} · 입고 ${ib.date}</div>
               </div>
               ${statusHtml}
