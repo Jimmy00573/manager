@@ -271,11 +271,6 @@
   <button class="nbtn" onclick="T('cal')" data-tab="cal">수확 캘린더</button>
   <button class="nbtn" onclick="T('dboard')" data-tab="dboard">🚛 기사별 배차</button>
   <div style="flex:1"></div>
-  <button class="nbtn" onclick="T('farm')" data-tab="farm" style="border-left:1px solid var(--border)">농가 관리</button>
-  <button class="nbtn" onclick="T('drv')" data-tab="drv">직원·기사 관리</button>
-  <button class="nbtn" onclick="T('vehicle')" data-tab="vehicle">🚛 차량 관리</button>
-  <button class="nbtn" onclick="T('stats')" data-tab="stats" style="border-left:1px solid var(--border)">📊 실적 현황</button>
-  <button class="nbtn" onclick="T('export')" data-tab="export">📥 내보내기</button>
   <button class="nbtn" onclick="T('set')" data-tab="set" style="border-left:1px solid var(--border)">⚙ 설정</button>
 </div>
 
@@ -665,6 +660,45 @@
             <div class="set-item-desc">선과품 입고처(농협·도매 등) 관리</div>
           </div>
           <button class="set-item-btn" onclick="setTab('partner')">열기</button>
+        </div>
+        <div class="set-item" style="margin-left:16px;border-left:3px solid #E5E7EB;padding-left:12px">
+          <div class="set-item-info">
+            <div class="set-item-title">🍊 농가 관리</div>
+            <div class="set-item-desc">입고 농가 등록·관리</div>
+          </div>
+          <button class="set-item-btn" onclick="T('farm')">열기</button>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-section-title">🗂 관리</div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">👷 직원·기사 관리</div>
+            <div class="set-item-desc">내부 직원 및 기사 등록·관리</div>
+          </div>
+          <button class="set-item-btn" onclick="T('drv')">열기</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">🚛 차량 관리</div>
+            <div class="set-item-desc">차량 등록·관리</div>
+          </div>
+          <button class="set-item-btn" onclick="T('vehicle')">열기</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">📊 실적 현황</div>
+            <div class="set-item-desc">배차·수거 실적 통계</div>
+          </div>
+          <button class="set-item-btn" onclick="T('stats')">열기</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
+            <div class="set-item-title">📥 내보내기</div>
+            <div class="set-item-desc">데이터 엑셀 내보내기</div>
+          </div>
+          <button class="set-item-btn" onclick="T('export')">열기</button>
         </div>
       </div>
     </div>
@@ -1756,6 +1790,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=13"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=250"></script>
+<script src="src/app.js?v=251"></script>
 </body>
 </html>
