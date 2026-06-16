@@ -9427,9 +9427,9 @@ function _renderScTable() {
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
-        <col style="width:90px"><col style="width:80px"><col style="width:60px">
-        <col style="width:70px"><col style="width:70px"><col style="width:60px"><col style="width:100px">
-        <col style="width:80px"><col style="width:100px"><col style="width:70px">
+        <col style="width:140px"><col style="width:80px"><col style="width:55px">
+        <col style="width:70px"><col style="width:70px"><col style="width:50px"><col style="width:100px">
+        <col style="width:70px"><col style="width:85px"><col style="width:70px">
       </colgroup>
       <thead><tr>
         ${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
