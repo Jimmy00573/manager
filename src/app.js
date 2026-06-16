@@ -8973,6 +8973,7 @@ function scSetSort(col) {
 }
 
 function scSetTab(tab) {
+  if (tab === 'doing') tab = 'pending';
   _scTab = tab;
   renderProcessingTab();
 }
@@ -8984,8 +8985,7 @@ function renderProcessingTab() {
 
   const _tabBar = () => `
     <div id="sc-tab-bar" style="display:flex;gap:0;margin-bottom:14px;border-bottom:2px solid #E5E7EB">
-      <button onclick="scSetTab('pending')" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit;transition:background 0.15s;${_scTab==='pending'?'background:#1565C0;color:#fff':'background:transparent;color:#6B7280'}">📦 대기</button>
-      <button onclick="scSetTab('doing')" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit;transition:background 0.15s;${_scTab==='doing'?'background:#C2410C;color:#fff':'background:transparent;color:#6B7280'}">🔄 선과 중</button>
+      <button onclick="scSetTab('pending')" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit;transition:background 0.15s;${_scTab==='pending'?'background:#1565C0;color:#fff':'background:transparent;color:#6B7280'}">✂️ 선과 대기</button>
       <button onclick="scSetTab('done')" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit;transition:background 0.15s;${_scTab==='done'?'background:#15803D;color:#fff':'background:transparent;color:#6B7280'}">✅ 완료</button>
     </div>`;
 
@@ -9027,37 +9027,6 @@ function renderProcessingTab() {
         _scPriOnly = e.target.checked;
         _renderScTable();
       });
-    } else if (_scTab === 'doing') {
-      el.innerHTML = `
-        <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
-        ${_tabBar()}
-        <div id="sc-stats" style="margin-bottom:14px"></div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-          <input id="sc-doing-search-farm" type="text" placeholder="농가 검색..."
-            style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
-          <select id="sc-doing-product-sel"
-            style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit">
-            <option value="">전체 품목</option>
-          </select>
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
-            <input type="checkbox" id="sc-doing-pri-only"> ⭐ 우선/긴급만
-          </label>
-          <span id="sc-doing-row-count" style="margin-left:auto;font-size:12px;color:#9CA3AF"></span>
-        </div>
-        <div id="sc-doing-table-wrap" style="overflow-x:auto;border:1px solid #E5E7EB;border-radius:8px"></div>`;
-
-      document.getElementById('sc-doing-search-farm').addEventListener('input', e => {
-        _scDoingSearch = e.target.value;
-        _renderScDoingTable();
-      });
-      document.getElementById('sc-doing-product-sel').addEventListener('change', e => {
-        _scDoingProduct = e.target.value;
-        _renderScDoingTable();
-      });
-      document.getElementById('sc-doing-pri-only').addEventListener('change', e => {
-        _scDoingPriOnly = e.target.checked;
-        _renderScDoingTable();
-      });
     } else {
       el.innerHTML = `
         <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
@@ -9089,9 +9058,6 @@ function renderProcessingTab() {
   if (_scTab === 'pending') {
     _renderScProductOptions();
     _renderScTable();
-  } else if (_scTab === 'doing') {
-    _renderScDoingProductOptions();
-    _renderScDoingTable();
   } else {
     _renderScDoneProductOptions();
     _renderScDoneTable();
@@ -9141,30 +9107,8 @@ function _renderScStats() {
     .filter(p => p.process_type === '선과' && p.date === today)
     .reduce((s, p) => s + p.quantity, 0);
 
-  if (_scTab === 'doing') {
-    const doingRows = inboundRecords
-      .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMapSt[r.id] || 0) >= 1)
-      .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
-    const doingRem = doingRows.reduce((s, r) => s + r.remaining, 0);
-    const doingUrgCnt = doingRows.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
-    statsEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
-        ${[
-          ['🔄 선과 중',     doingRows.length + '건',   '#FFF7ED', '#C2410C'],
-          ['📦 잔여 CT',     fmtN(doingRem) + ' CT',   '#FFF7ED', '#C2410C'],
-          ['⚠️ 긴급/우선',  doingUrgCnt + '건',        '#FEF2F2', '#DC2626'],
-          ['✅ 오늘 완료',   fmtN(todayDone) + ' CT',  '#F0FDF4', '#15803D'],
-        ].map(([lbl, val, bg, col]) => `
-          <div style="background:${bg};border-radius:10px;padding:10px 14px;text-align:center">
-            <div style="font-size:11px;color:${col};font-weight:600;margin-bottom:3px">${lbl}</div>
-            <div style="font-size:17px;font-weight:800;color:${col}">${val}</div>
-          </div>`).join('')}
-      </div>`;
-    return;
-  }
-
   const allW = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMapSt[r.id] || 0) === 0)
+    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
   const totalRem = allW.reduce((s, r) => s + r.remaining, 0);
   const urgCnt = allW.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
@@ -9192,7 +9136,7 @@ function _renderScProductOptions() {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
   const prods = [...new Set(
-    inboundRecords.filter(r => !r.is_void && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
+    inboundRecords.filter(r => !r.is_void && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0)
       .map(r => r.product).filter(Boolean)
   )].sort();
   const cur = [...sel.options].slice(1).map(o => o.value);
@@ -10290,7 +10234,6 @@ async function saveSortingResult() {
     if (document.getElementById('sc-tab-bar')) {
       _renderScStats();
       if (_scTab === 'pending')     { _renderScProductOptions();       _renderScTable(); }
-      else if (_scTab === 'doing')  { _renderScDoingProductOptions();  _renderScDoingTable(); }
       else                          { _renderScDoneProductOptions();   _renderScDoneTable(); }
     }
   } catch (e) {
