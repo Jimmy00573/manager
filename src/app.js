@@ -4775,7 +4775,7 @@ async function savePachiOutbound(regId) {
       const rec = inventoryRecords.find(r => String(r.id) === String(id) && !r.is_void);
       if (!rec) continue;
       const take   = Math.min(Number(rec.quantity) || 0, remaining);
-      const newQty = Math.max(0, (Number(rec.quantity) || 0) - take);
+      const newQty = Math.max(0, Math.round(((Number(rec.quantity) || 0) - take) * 10) / 10);
       const voided = newQty <= 0;
       const patch  = voided ? { quantity: 0, is_void: true } : { quantity: newQty };
       await sbUpdate('inventory_records', id, patch);
@@ -5717,7 +5717,7 @@ async function saveOutbound(regId) {
       for (const rec of sizeRecs) {
         if (remaining <= 0) break;
         const take   = Math.min(rec.quantity, remaining);
-        const newQty = Math.max(0, rec.quantity - take);
+        const newQty = Math.max(0, Math.round((rec.quantity - take) * 10) / 10);
         const voided = newQty <= 0;
         const patch  = voided ? { quantity: 0, is_void: true } : { quantity: newQty };
         await sbUpdate('inventory_records', rec.id, patch);
@@ -6219,7 +6219,7 @@ async function cancelOutbound(id) {
       if (d.table === 'inventory_records') {
         const rec = inventoryRecords.find(x => String(x.id) === String(d.id));
         const base = rec ? (Number(rec.quantity) || 0) : 0;
-        const newQty = base + Number(d.amount || 0);
+        const newQty = Math.round((base + Number(d.amount || 0)) * 10) / 10;
         const patch = { quantity: newQty };
         if (d.voided) patch.is_void = false;
         await sbUpdate('inventory_records', d.id, patch);
