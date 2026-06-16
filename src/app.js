@@ -9334,7 +9334,7 @@ function _renderScTable() {
   });
 
   let rows = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) === 0)
+    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
 
   if (_scSearch) {
@@ -9373,7 +9373,13 @@ function _renderScTable() {
   });
 
   const countEl = document.getElementById('sc-row-count');
-  if (countEl) countEl.textContent = rows.length + '건';
+  if (countEl) {
+    const newCnt   = rows.filter(r => (srtCntMap[r.id] || 0) === 0).length;
+    const doingCnt = rows.length - newCnt;
+    countEl.textContent = doingCnt > 0
+      ? `${rows.length}건 (신규 ${newCnt}·선과중 ${doingCnt})`
+      : rows.length + '건';
+  }
 
   const sortInd = col => {
     const [sc, sd] = _scSort.split('-');
@@ -9389,12 +9395,12 @@ function _renderScTable() {
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
         <col style="width:90px"><col style="width:80px"><col style="width:60px">
-        <col style="width:70px"><col style="width:70px"><col style="width:60px"><col style="width:45px">
+        <col style="width:70px"><col style="width:70px"><col style="width:60px"><col style="width:100px">
         <col style="width:80px"><col style="width:100px"><col style="width:70px">
       </colgroup>
       <thead><tr>
         ${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
-        ${thS('date','입고일')}${thS('elapsed','경과')}${thN('이력')}
+        ${thS('date','입고일')}${thS('elapsed','경과')}${thN('진행')}
         ${thN('위치')}${thN('품질')}${thN('액션')}
       </tr></thead>
       <tbody>
@@ -9403,8 +9409,9 @@ function _renderScTable() {
           : rows.map(r => {
               const u = urgency(r.date);
               const srtCnt = srtCntMap[r.id] || 0;
+              const isDoing = srtCnt >= 1;
               const isPri = r.is_priority || u.level === 3;
-              const rowBg = isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : '#fff');
+              const rowBg = isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : (isDoing ? '#FFFBF5' : '#fff'));
               const qiHtml = qualityInline(r);
               const catBadge = (() => {
                 const c = r.inbound_category || '상품';
@@ -9412,23 +9419,37 @@ function _renderScTable() {
                 const [bg, col] = m[c] || ['#F3F4F6','#6B7280'];
                 return `<span style="background:${bg};color:${col};font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">${esc(c)}</span>`;
               })();
+              const sorted = r.quantity - r.remaining;
+              const pct = r.quantity > 0 ? Math.round(sorted / r.quantity * 100) : 0;
+              const progressCell = isDoing
+                ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                     <span style="font-size:11px;font-weight:600;color:#C2410C">${fmtN(sorted)} / ${fmtN(r.quantity)} CT</span>
+                     <div style="width:80px;height:6px;background:#FED7AA;border-radius:3px;overflow:hidden">
+                       <div style="width:${pct}%;height:100%;background:#C2410C;border-radius:3px"></div>
+                     </div>
+                     <span style="font-size:10px;color:#9CA3AF">${pct}%</span>
+                   </div>`
+                : `<span style="color:#9CA3AF;font-size:11px">아직 시작 안 함</span>`;
+              const doingBadge = isDoing
+                ? ` <span style="background:#FEF3C7;color:#B45309;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;white-space:nowrap">${srtCnt}차</span>`
+                : '';
               return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
-                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')">비율 ▸</span>`:''}
+                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}')">비율 ▸</span>`:''}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
                 <td style="padding:6px 4px">${catBadge}</td>
-                <td style="padding:6px 4px;text-align:right;font-weight:700;color:#1565C0">${fmtN(r.remaining)}</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:700;color:${isDoing ? '#C2410C' : '#1565C0'}">${fmtN(r.remaining)}</td>
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px 4px;font-size:12px;font-weight:600;color:${u.color};white-space:nowrap">${u.icon} ${u.label}</td>
-                <td style="padding:6px 4px;text-align:center;font-size:12px;color:${srtCnt > 0 ? '#7C3AED' : '#D1D5DB'}">${srtCnt > 0 ? srtCnt + '차' : '-'}</td>
+                <td style="padding:4px 2px;text-align:center">${progressCell}</td>
                 <td style="padding:6px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#374151" title="${esc(r.location || '')}">
                   ${esc(r.location || '미지정')}
                 </td>
                 <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
                 <td style="padding:4px;text-align:center">
                   <button onclick="openSortingModal('${r.id}')"
-                    style="background:#1565C0;color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
+                    style="background:${isDoing ? '#C2410C' : '#1565C0'};color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
                     ✂️ 입력
                   </button>
                 </td>
