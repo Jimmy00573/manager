@@ -764,7 +764,7 @@ function popOperatorSel() {
   const el = document.getElementById('srt-operator');
   if (!el) return;
   const v = el.value;
-  el.innerHTML = '<option value="">선택 안 함</option>' +
+  el.innerHTML = '<option value="">작업자 선택</option>' +
     drivers.filter(d => d.type === '내부' && d.pin_active !== false)
       .map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
   el.value = v;
@@ -10180,6 +10180,7 @@ async function saveSortingResult() {
   const remaining  = getRemainingCT(r);
 
   if (!sortingDate)         { alert('선과일을 입력하세요.'); return; }
+  if (!operator)            { alert('작업자를 선택하세요.'); return; }
   if (inputCt <= 0)         { alert('투입량을 입력하세요.'); return; }
   if (inputCt > remaining)  { alert(`투입량(${fmtN(inputCt)}CT)이 잔여재고(${fmtN(remaining)}CT)를 초과합니다.`); return; }
 
