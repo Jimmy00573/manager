@@ -497,26 +497,27 @@ textarea {
 .set-back-title { font-size: 16px; font-weight: 600; color: #111827; }
 
 /* ── 농가별 선과 비율 모달 */
-.fsr-avg-box { padding: 14px 20px; background: #EFF6FF; border-bottom: 1px solid #BFDBFE; }
-.fsr-avg-inner { display: flex; flex-direction: column; gap: 5px; }
-.fsr-avg-title { font-size: 13px; font-weight: 600; color: #1E3A8A; margin-bottom: 4px; }
+.fsr-avg-box { padding: 16px 20px; background: #EFF6FF; border-bottom: 1px solid #BFDBFE; }
+.fsr-avg-inner { display: flex; flex-direction: column; gap: 8px; }
+.fsr-avg-title { font-size: 13px; font-weight: 600; color: #1E3A8A; margin-bottom: 2px; }
 .fsr-avg-count { font-weight: 400; color: #3B82F6; margin-left: 4px; }
 .fsr-toolbar { padding: 10px 20px; border-bottom: 1px solid #E5E7EB; display: flex; gap: 8px; }
-.fsr-cards { padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
-.fsr-card { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid #E5E7EB; border-radius: 10px; cursor: pointer; transition: background .1s; }
+.fsr-cards { padding: 14px 20px; display: flex; flex-direction: column; gap: 12px; max-height: 55vh; overflow-y: auto; }
+.fsr-card { display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px; border: 1px solid #E5E7EB; border-radius: 12px; cursor: pointer; transition: background .1s; }
 .fsr-card:hover { background: #F9FAFB; }
 .fsr-card input[type=checkbox] { margin-top: 3px; cursor: pointer; flex-shrink: 0; width: 15px; height: 15px; }
 .fsr-card-body { flex: 1; }
-.fsr-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.fsr-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .fsr-date { font-size: 13px; font-weight: 600; color: #111827; }
 .fsr-ct { font-size: 12px; color: #6B7280; }
-.fsr-ratios { display: flex; flex-direction: column; gap: 4px; }
-.fsr-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
-.fsr-label { color: #9CA3AF; font-size: 11px; width: 30px; flex-shrink: 0; }
+.fsr-ratios { display: flex; flex-direction: column; gap: 8px; }
+.fsr-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 12px; }
+.fsr-label { color: #9CA3AF; font-size: 10px; font-weight: 600; }
 .fsr-vals { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .fsr-vals span { color: #374151; font-size: 12px; }
 .fsr-vals b { font-weight: 600; }
 .fsr-sep { color: #D1D5DB; font-size: 11px; }
+.fsr-pct { color: #9CA3AF; font-size: 11px; margin-left: 2px; }
 
 /* ── 입고 목록 비율 뱃지 */
 .ib-ratio-chip { display:inline-flex; align-items:center; gap:3px; font-size:11px; padding:2px 9px; border-radius:11px; cursor:pointer; font-weight:500; color:#2563EB; background:transparent; border:1px solid #BFD3F0; transition:all .15s; }

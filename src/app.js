@@ -12457,19 +12457,27 @@ async function openSortingRatioModal(farmName, product) {
   const pname = product || firstProduct;
 
   function cardHtml(entry, idx) {
-    const sizeStr = _fsrGroups
-      .map(g => entry.sizeRatios[g] > 0
-        ? `<span>${g} <b>${entry.sizeRatios[g]}%</b></span>` : '')
-      .filter(Boolean).join('<span class="fsr-sep">·</span>');
+    const _szItems = _fsrGroups.filter(g => entry.sizeRatios[g] > 0);
+    const _szMax   = _szItems.length ? _szItems.reduce((a, b) => entry.sizeRatios[a] >= entry.sizeRatios[b] ? a : b) : null;
+    const sizeStr  = _szItems.length
+      ? _szItems.map(g => g === _szMax
+          ? `<span><b style="color:#0F6E56">${g} ${entry.sizeRatios[g]}</b></span>`
+          : `<span>${g} ${entry.sizeRatios[g]}</span>`)
+        .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+      : '';
     const QUAL_STYLES = [
       { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
       { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706' },
       { k: '극소과', color: '#7C3AED' },
     ];
-    const qualStr = QUAL_STYLES
-      .map(({ k, color }) => entry.qualRatios[k] > 0
-        ? `<span style="color:${color}">${k} <b>${entry.qualRatios[k]}%</b></span>` : '')
-      .filter(Boolean).join('<span class="fsr-sep">·</span>');
+    const _qlItems = QUAL_STYLES.filter(({ k }) => entry.qualRatios[k] > 0);
+    const _qlMaxK  = _qlItems.length ? _qlItems.reduce((a, b) => entry.qualRatios[a.k] >= entry.qualRatios[b.k] ? a : b).k : null;
+    const qualStr  = _qlItems.length
+      ? _qlItems.map(({ k, color }) => k === _qlMaxK
+          ? `<span style="color:${color}"><b>${k} ${entry.qualRatios[k]}</b></span>`
+          : `<span style="color:${color}">${k} ${entry.qualRatios[k]}</span>`)
+        .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+      : '';
     return `
       <label class="fsr-card" for="fsr-chk-${idx}">
         <input type="checkbox" id="fsr-chk-${idx}" data-idx="${idx}" checked onchange="_fsrRecalc()">
@@ -12490,7 +12498,7 @@ async function openSortingRatioModal(farmName, product) {
     <div id="modal-srt-ratio" class="modal-bg" onclick="if(event.target===this)closeSortingRatioModal()" style="z-index:4500">
       <div class="modal" style="max-width:640px;padding:0">
         <div class="modal-header">
-          <div class="modal-title">${esc(farmName)} · ${esc(pname)} 선과 비율</div>
+          <div class="modal-title" style="line-height:1.3">${esc(farmName)}<div style="font-size:12px;font-weight:400;color:#6B7280;margin-top:2px">${esc(pname)} · 선과 비율</div></div>
           <button class="modal-close" onclick="closeSortingRatioModal()">✕</button>
         </div>
         <div id="fsr-avg-box" class="fsr-avg-box"></div>
@@ -12545,18 +12553,27 @@ function _fsrRecalc() {
   _fsrGroups.forEach(g => { avgSize[g] = Math.round(avgSize[g]); });
   Object.keys(avgQual).forEach(k => { avgQual[k] = Math.round(avgQual[k]); });
 
-  const sizeStr = _fsrGroups
-    .map(g => avgSize[g] > 0 ? `<span>${g} <b>${avgSize[g]}%</b></span>` : '')
-    .filter(Boolean).join('<span class="fsr-sep">·</span>');
+  const _szItems2 = _fsrGroups.filter(g => avgSize[g] > 0);
+  const _szMax2   = _szItems2.length ? _szItems2.reduce((a, b) => avgSize[a] >= avgSize[b] ? a : b) : null;
+  const sizeStr   = _szItems2.length
+    ? _szItems2.map(g => g === _szMax2
+        ? `<span><b style="color:#0F6E56">${g} ${avgSize[g]}</b></span>`
+        : `<span>${g} ${avgSize[g]}</span>`)
+      .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+    : '';
   const QUAL_STYLES = [
     { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
     { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706' },
     { k: '극소과', color: '#7C3AED' },
   ];
-  const qualStr = QUAL_STYLES
-    .map(({ k, color }) => avgQual[k] > 0
-      ? `<span style="color:${color}">${k} <b>${avgQual[k]}%</b></span>` : '')
-    .filter(Boolean).join('<span class="fsr-sep">·</span>');
+  const _qlItems2 = QUAL_STYLES.filter(({ k }) => avgQual[k] > 0);
+  const _qlMaxK2  = _qlItems2.length ? _qlItems2.reduce((a, b) => avgQual[a.k] >= avgQual[b.k] ? a : b).k : null;
+  const qualStr   = _qlItems2.length
+    ? _qlItems2.map(({ k, color }) => k === _qlMaxK2
+        ? `<span style="color:${color}"><b>${k} ${avgQual[k]}</b></span>`
+        : `<span style="color:${color}">${k} ${avgQual[k]}</span>`)
+      .join('<span class="fsr-sep">·</span>') + '<span class="fsr-pct">%</span>'
+    : '';
 
   box.innerHTML = `
     <div class="fsr-avg-inner">
