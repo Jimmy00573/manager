@@ -7533,8 +7533,8 @@ function renderAuditLogs(resetPage = false) {
         <span style="font-size:11px;color:#aaa;margin-left:auto;white-space:nowrap">${dtStr}</span>
       </div>
       ${ctxParts.length ? `<div style="font-size:13px;font-weight:600;color:#222;margin-bottom:${diff.length || log.reason ? '5' : '0'}px;padding-left:32px">${ctxParts.join(' · ')}</div>` : ''}
-      ${diff.length ? `<div style="font-size:12px;color:#555;margin-bottom:${log.reason ? '5' : '0'}px;display:flex;flex-wrap:wrap;gap:4px;padding-left:32px">${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px">${esc(d)}</span>`).join('')}</div>` : ''}
-      ${log.reason ? `<div style="font-size:12px;color:#888;padding-left:32px">사유: <em>"${esc(log.reason)}"</em></div>` : ''}
+      ${diff.length ? `<div style="font-size:12px;color:#555;margin-bottom:${log.reason || log.staff ? '5' : '0'}px;display:flex;flex-wrap:wrap;gap:4px;padding-left:32px">${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px">${esc(d)}</span>`).join('')}</div>` : ''}
+      ${(log.staff || log.reason) ? `<div style="font-size:12px;color:#888;padding-left:32px">${log.staff ? `작업자: <strong>${esc(log.staff)}</strong>` : ''}${log.staff && log.reason ? ' · ' : ''}${log.reason ? `사유: <em>"${esc(log.reason)}"</em>` : ''}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -11768,10 +11768,10 @@ function renderRecordHistoryModal(logs, record) {
               <span style="background:${st.bg};color:${st.color};font-size:11px;padding:1px 8px;border-radius:8px;font-weight:700">${st.icon} ${action}</span>
               <span style="font-size:11px;color:#aaa;margin-left:auto">${fmtDt(log.created_at)}</span>
             </div>
-            ${diff.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:${log.reason ? '5' : '0'}px">
+            ${diff.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:${log.reason || log.staff ? '5' : '0'}px">
               ${diff.map(d => `<span style="background:#f9f9f9;border:1px solid #eee;border-radius:4px;padding:1px 6px;font-size:12px;color:#555">${esc(d)}</span>`).join('')}
             </div>` : ''}
-            ${log.reason ? `<div style="font-size:12px;color:#888">사유: <em>"${esc(log.reason)}"</em></div>` : ''}
+            ${(log.staff || log.reason) ? `<div style="font-size:12px;color:#888">${log.staff ? `작업자: <strong>${esc(log.staff)}</strong>` : ''}${log.staff && log.reason ? ' · ' : ''}${log.reason ? `사유: <em>"${esc(log.reason)}"</em>` : ''}</div>` : ''}
           </div>
         </div>`;
     }).join('')}
