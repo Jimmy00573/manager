@@ -640,11 +640,11 @@ function transportSub(sub) {
     stEl.querySelectorAll('.tsub-btn').forEach(b =>
       b.classList.toggle('active', b.getAttribute('data-sub') === sub));
   }
-  // 패널 전환 (transport 그룹 5개만)
-  ['dash','disp','ext','cal','dboard'].forEach(p => {
-    const el = document.getElementById('p-' + p);
-    if (el) el.classList.toggle('active', p === sub);
+  // 전체 패널 먼저 끄고, 해당 sub만 켜기
+  ['dash','disp','ext','cal','dboard','farm','drv','vehicle','stats','export','inv','set'].forEach(p => {
+    const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
+  const cur = document.getElementById('p-' + sub); if (cur) cur.classList.add('active');
   // 렌더 호출 (기존 T() 와 동일)
   if (sub === 'dash') renderDash();
   if (sub === 'cal') renderCal();
