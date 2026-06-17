@@ -3031,7 +3031,7 @@ async function saveMoveLocation() {
   if (!r) return;
   const remaining = getRemainingCT(r);
   const _mvVal = validateDistLoc('mv', remaining);
-  if (!_mvVal.ok) { alert(_mvVal.msg); return; }
+  if (!_mvVal.ok) { await showConfirmEdit('위치 저장 불가', _mvVal.msg); return; }
   const newLoc = getLocValue('mv') || null;
   if (newLoc === (r.location || null)) { closeMoveModal(); return; }
   try {
@@ -9791,7 +9791,7 @@ async function saveInboundModal() {
   const _eibPrevRec = inboundRecords.find(rec => rec.id === id);
   const _eibRem = _eibPrevRec ? getRemainingCT(_eibPrevRec) : qty;
   const _eibVal = validateDistLoc('eib', _eibRem);
-  if (!_eibVal.ok) { alert(_eibVal.msg); return; }
+  if (!_eibVal.ok) { await showConfirmEdit('위치 저장 불가', _eibVal.msg); return; }
   const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
   const driver_id = eibDrvSelVal ? Number(eibDrvSelVal) : null;
 
