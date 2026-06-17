@@ -748,11 +748,8 @@ function popSels() {
   const ibf = document.getElementById('ib-farm');
   if (ibf) {
     const v = ibf.value;
-    let html = '<option value="">선택</option>';
-    if (farms.length) html += '<optgroup label="농가">' + farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('') + '</optgroup>';
-    const actP = partners.filter(p => p.is_active !== false);
-    if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
-    ibf.innerHTML = html; ibf.value = v;
+    ibf.innerHTML = buildSupplierOptHtml();
+    ibf.value = v;
   }
   const soFarm = document.getElementById('so-farm');
   if (soFarm) {
@@ -3603,6 +3600,14 @@ function buildCountSelectOpts(product) {
   return opts;
 }
 
+function buildSupplierOptHtml() {
+  let html = '<option value="">선택</option>';
+  if (farms.length) html += '<optgroup label="농가">' + farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('') + '</optgroup>';
+  const actP = partners.filter(p => p.is_active !== false);
+  if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
+  return html;
+}
+
 function buildProductOptgroupHTML() {
   let html = '<option value="">선택</option>';
   if (!itemDefs.length) return html;
@@ -5922,7 +5927,7 @@ function openInvEntryModal() {
               <input id="iem-date" type="date" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
             </div>
             <div>
-              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">농가 *</label>
+              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">공급처 *</label>
               <select id="iem-farm" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
                 <option value="">선택</option>
               </select>
@@ -5975,8 +5980,7 @@ function openInvEntryModal() {
   const farmEl = document.getElementById('iem-farm');
   if (farmEl) {
     const cur = farmEl.value;
-    farmEl.innerHTML = '<option value="">선택</option>';
-    farms.forEach(f => { farmEl.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`; });
+    farmEl.innerHTML = buildSupplierOptHtml();
     if (cur) farmEl.value = cur;
   }
 
