@@ -3029,7 +3029,8 @@ async function saveMoveLocation() {
   if (!id) return;
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
-  const _mvVal = validateDistLoc('mv', r.quantity);
+  const remaining = getRemainingCT(r);
+  const _mvVal = validateDistLoc('mv', remaining);
   if (!_mvVal.ok) { alert(_mvVal.msg); return; }
   const newLoc = getLocValue('mv') || null;
   if (newLoc === (r.location || null)) { closeMoveModal(); return; }
@@ -9787,7 +9788,9 @@ async function saveInboundModal() {
   const original_work_date = isReclass ? (document.getElementById('eib-reclass-date')?.value || null) : null;
 
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
-  const _eibVal = validateDistLoc('eib', qty);
+  const _eibPrevRec = inboundRecords.find(rec => rec.id === id);
+  const _eibRem = _eibPrevRec ? getRemainingCT(_eibPrevRec) : qty;
+  const _eibVal = validateDistLoc('eib', _eibRem);
   if (!_eibVal.ok) { alert(_eibVal.msg); return; }
   const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
   const driver_id = eibDrvSelVal ? Number(eibDrvSelVal) : null;
