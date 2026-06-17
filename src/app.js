@@ -2949,6 +2949,25 @@ function getLocValue(pfx) {
   return parts.length ? parts.join('/') : null;
 }
 
+function validateDistLoc(pfx, totalQty) {
+  const isMulti = document.getElementById(`${pfx}-loc-multi`)?.checked;
+  if (!isMulti) return { ok: true };
+  const rows = document.querySelectorAll(`#${pfx}-loc-list .loc-dist-row`);
+  const parts = [];
+  for (const row of rows) {
+    const name = row.querySelector('.loc-dist-sel')?.value;
+    if (!name) continue;
+    const q = parseFloat(row.querySelector('.loc-dist-qty')?.value);
+    if (!q || q <= 0) return { ok: false, msg: '모든 위치에 수량을 입력하세요.' };
+    parts.push(q);
+  }
+  if (parts.length === 0) return { ok: true };
+  const sum   = Math.round(parts.reduce((s, v) => s + v, 0) * 10) / 10;
+  const total = Math.round(totalQty * 10) / 10;
+  if (sum !== total) return { ok: false, msg: `위치 수량 합(${sum})이 총량(${total})과 다릅니다.` };
+  return { ok: true };
+}
+
 function setLocValue(pfx, locStr) {
   const parsed = parseLocationStr(locStr);
   const isMulti = parsed.length > 1 || (parsed.length === 1 && parsed[0].qty !== null);
@@ -3010,6 +3029,8 @@ async function saveMoveLocation() {
   if (!id) return;
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
+  const _mvVal = validateDistLoc('mv', r.quantity);
+  if (!_mvVal.ok) { alert(_mvVal.msg); return; }
   const newLoc = getLocValue('mv') || null;
   if (newLoc === (r.location || null)) { closeMoveModal(); return; }
   try {
@@ -9766,6 +9787,8 @@ async function saveInboundModal() {
   const original_work_date = isReclass ? (document.getElementById('eib-reclass-date')?.value || null) : null;
 
   if (!date || !qty) return alert('날짜와 수량은 필수입니다.');
+  const _eibVal = validateDistLoc('eib', qty);
+  if (!_eibVal.ok) { alert(_eibVal.msg); return; }
   const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
   const driver_id = eibDrvSelVal ? Number(eibDrvSelVal) : null;
 
