@@ -71,6 +71,8 @@ let ibSortCol = null;   // 'date' | 'farm' | 'qty' | null
 let ibSortDir = null;   // 'desc' | 'asc' | null
 let ibPage = 1;
 let ibPageSize = 25;
+let _ibAuditMode = false;
+let _ibAuditChecked = new Set();
 let ibSearch = '';
 let ibFilterProduct = '';
 let ibFilterDriver = '';
@@ -8861,6 +8863,22 @@ function ibRatioBadge(r) {
   return `<span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')" >비율 ▸</span>`;
 }
 
+function toggleIbAuditMode() {
+  _ibAuditMode = !_ibAuditMode;
+  if (!_ibAuditMode) _ibAuditChecked = new Set();
+  ibPage = 1;
+  renderInboundList();
+}
+function toggleIbAuditCheck(id) {
+  if (_ibAuditChecked.has(id)) _ibAuditChecked.delete(id);
+  else _ibAuditChecked.add(id);
+  renderInboundList();
+}
+function _ibClearAuditChecks() {
+  _ibAuditChecked = new Set();
+  renderInboundList();
+}
+
 function renderInboundList() {
   _expandedMemoId = null;
   renderIbCatSummary();
@@ -8921,6 +8939,16 @@ function renderInboundList() {
   _updateIbFilterBtns();
   _updateIbSortIcons();
 
+  // 실사 모드 토글 버튼 상태 동기화
+  const _auditBtn = document.getElementById('btn-ib-audit');
+  if (_auditBtn) {
+    _auditBtn.style.cssText = _ibAuditMode
+      ? 'font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:1px solid #1565C0;border-radius:8px;cursor:pointer;font-family:inherit'
+      : 'font-size:11px;padding:3px 10px;background:#fff;color:var(--text-secondary);border:1px solid #ddd;border-radius:8px;cursor:pointer;font-family:inherit';
+  }
+  // 실사 모드: 잔여>0 행만
+  if (_ibAuditMode) visible = visible.filter(r => getRemainingCT(r) > 0);
+
   if (!visible.length) {
     const hasNewFilter = ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
     tbody.innerHTML = `<tr><td colspan="11" class="empty" style="padding:20px 10px">
@@ -8931,6 +8959,8 @@ function renderInboundList() {
       ${hasNewFilter ? '<br><button class="btn" onclick="ibClearNewFilters()" style="font-size:12px;margin-top:8px">필터 초기화</button>' : ''}
     </td></tr>`;
     document.getElementById('ib-pagination') && (document.getElementById('ib-pagination').innerHTML = '');
+    const _abEl0 = document.getElementById('ib-audit-bar');
+    if (_abEl0) { _abEl0.style.display = 'none'; _abEl0.innerHTML = ''; }
     return;
   }
 
@@ -8939,11 +8969,34 @@ function renderInboundList() {
 
   // 페이지네이션 계산
   const totalFiltered = visible.length;
-  const pageSize = ibPageSize === Infinity ? totalFiltered : ibPageSize;
-  const totalPages = Math.ceil(totalFiltered / pageSize);
-  if (ibPage > totalPages) ibPage = totalPages;
-  const startIdx = (ibPage - 1) * pageSize;
-  const pageRows = ibPageSize === Infinity ? visible : visible.slice(startIdx, startIdx + pageSize);
+  let pageRows;
+  if (_ibAuditMode) {
+    pageRows = visible;
+    const _pgEl = document.getElementById('ib-pagination');
+    if (_pgEl) _pgEl.innerHTML = '';
+  } else {
+    const pageSize = ibPageSize === Infinity ? totalFiltered : ibPageSize;
+    const totalPages = Math.ceil(totalFiltered / pageSize);
+    if (ibPage > totalPages) ibPage = totalPages;
+    const startIdx = (ibPage - 1) * pageSize;
+    pageRows = ibPageSize === Infinity ? visible : visible.slice(startIdx, startIdx + pageSize);
+  }
+
+  // 실사 진행률 바
+  const _auditBar = document.getElementById('ib-audit-bar');
+  if (_auditBar) {
+    if (_ibAuditMode) {
+      const _achecked = [..._ibAuditChecked].filter(id => visible.some(r => r.id === id)).length;
+      _auditBar.style.display = '';
+      _auditBar.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;margin-bottom:8px;font-size:13px">
+        <span>📋 <b>실사 중</b> · 전체 <b>${totalFiltered}</b>개 중 ✓<b style="color:#1565C0">${_achecked}</b>개 확인 · 미확인 <b style="color:#C62828">${totalFiltered - _achecked}</b>개</span>
+        <button onclick="_ibClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #93C5FD;border-radius:6px;background:#fff;color:#1565C0;cursor:pointer;font-family:inherit">전체 해제</button>
+      </div>`;
+    } else {
+      _auditBar.style.display = 'none';
+      _auditBar.innerHTML = '';
+    }
+  }
 
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
   const hasLegacy = pageRows.some(r => r._legacy);
@@ -8961,7 +9014,7 @@ function renderInboundList() {
     const qtyTitle = (processed > 0 || outbound > 0) ? _qtyParts.join(' · ') : `입고 ${fmtN(r.quantity)}CT`;
     const srtCount = _sortingCountMap[r.id] || 0;
     const srtBadge = srtCount > 0
-      ? `<button onclick="showSortingHistory('${r.id}',this)" style="background:none;border:none;padding:0;cursor:pointer;font-size:10px;color:#7C3AED;font-weight:700;white-space:nowrap;display:inline-block;margin-left:3px" title="선과 이력 보기">✂️${srtCount}차</button>`
+      ? `<button onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" style="background:none;border:none;padding:0;cursor:pointer;font-size:10px;color:#7C3AED;font-weight:700;white-space:nowrap;display:inline-block;margin-left:3px" title="선과 이력 보기">✂️${srtCount}차</button>`
       : '';
     const remBadge = remaining <= 0
       ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
@@ -8974,6 +9027,11 @@ function renderInboundList() {
     const isSorted = r.inbound_category === '선과품';
     const isGrayed = isDone || isSorted;
     const grayStyle = isGrayed ? 'background:#F3F4F6;color:#9CA3AF;' : '';
+    const _auditChk = _ibAuditMode && _ibAuditChecked.has(r.id);
+    const _trBaseStyle = _auditChk ? 'background:#DBEAFE;' : (isGrayed ? grayStyle : priorityStyle);
+    const _trStyle = _ibAuditMode ? `${_trBaseStyle}cursor:pointer;` : _trBaseStyle;
+    const _trClick = _ibAuditMode ? `onclick="toggleIbAuditCheck('${r.id}')"` : '';
+    const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
     const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
     const sortedBadge = isSorted ? `<span onclick="event.stopPropagation();openSortedInboundDetail('${r.id}')" style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과품 입고 내역">선과품 🔍</span>` : '';
     const qInline = qualityInline(r);
@@ -8985,7 +9043,7 @@ function renderInboundList() {
       driverCell = '<span class="driver-cell-empty">—</span>';
     }
     const memoCell = r.note
-      ? `<button class="memo-icon-btn" onclick="toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>`
+      ? `<button class="memo-icon-btn" onclick="event.stopPropagation();toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>`
       : `<span style="color:#D1D5DB">-</span>`;
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
@@ -8999,14 +9057,14 @@ function renderInboundList() {
         ? '<span style="padding:6px 12px;font-size:12px;color:#bbb;display:block">마이그레이션 필요</span>'
         : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
     const actionCell = `<div style="position:relative;text-align:center">
-      <button class="menu-trigger" onclick="toggleRowMenu('${r.id}',event,this)">⋮</button>
+      <button class="menu-trigger" onclick="event.stopPropagation();toggleRowMenu('${r.id}',event,this)">⋮</button>
       <div id="row-menu-${r.id}" class="row-menu" style="display:none">${menuItems}</div>
     </div>`;
     const locCell = r.distribution_group_id
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
       : esc(r.location || '-');
-    return `<tr id="ib-tr-${r.id}" style="${isGrayed ? grayStyle : priorityStyle}">
-      <td>${r.date}</td>
+    return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}">
+      <td>${_checkMark}${r.date}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
@@ -9019,7 +9077,7 @@ function renderInboundList() {
       <td>${actionCell}</td>
     </tr>`;
   })).join('');
-  _renderIbPagination(totalFiltered);
+  if (!_ibAuditMode) _renderIbPagination(totalFiltered);
 }
 
 // 헤더 클릭 정렬 (테이블만 갱신)
