@@ -4566,13 +4566,13 @@ function _renderInvMatrix(product, recs) {
     if (inboundDate && inboundDate < (batchMap[key].inboundDate || '9')) batchMap[key].inboundDate = inboundDate;
   });
 
-  // 농가 오름차순 → 현재 토글 기준 날짜 오름차순 (오래된 batch 위)
+  // 현재 토글 기준 날짜 오름차순(오래된 것 위) → 같은 날짜면 농가 오름차순
   const batches = Object.values(batchMap).sort((a, b) => {
-    const fc = a.farm.localeCompare(b.farm, 'ko');
-    if (fc !== 0) return fc;
     const da = (_invDateMode === 'inbound' ? a.inboundDate : a.sortingDate) || '';
     const db = (_invDateMode === 'inbound' ? b.inboundDate : b.sortingDate) || '';
-    return da.localeCompare(db);
+    const dc = da.localeCompare(db);
+    if (dc !== 0) return dc;
+    return a.farm.localeCompare(b.farm, 'ko');
   });
 
   const colTotals = {};
