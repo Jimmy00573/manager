@@ -5984,13 +5984,13 @@ function openInvEntryModal() {
   const prodEl = document.getElementById('iem-product');
   if (prodEl) {
     const cur = prodEl.value;
-    prodEl.innerHTML = '<option value="">선택</option>' + buildProductOptgroupHTML();
+    prodEl.innerHTML = buildProductOptgroupHTML();
     if (cur) prodEl.value = cur;
   }
 
   // 위치 드롭다운 갱신
   const iemLocEl = document.getElementById('iem-location');
-  if (iemLocEl) iemLocEl.innerHTML = '<option value="">선택 안 함</option>' + buildLocOptHtml();
+  if (iemLocEl) iemLocEl.innerHTML = buildLocOptHtml();
 
   // 등급 초기화
   setIemGrade('일반');
