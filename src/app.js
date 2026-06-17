@@ -10326,7 +10326,7 @@ async function saveSortingResult() {
     for (const d of invRows) {
       const insertData = {
         date: sortingDate, farm_name: r.farm_name, product: r.product,
-        size_code: d.size_code, quantity: d.ct, location: r.location || null,
+        size_code: d.size_code, quantity: d.ct, location: null,
         source_type: 'sorting', sorting_result_id: headerId, is_void: false,
         quality_grade: d.quality_grade, note: null, created_by: 'admin'
       };
@@ -10358,7 +10358,7 @@ async function saveSortingResult() {
         } catch(e) { console.warn(`[8단계] ${item.sourceType} void 처리 실패 (무시):`, e); }
         await sbInsert('inventory_records', {
           date: sortingDate, farm_name: r.farm_name, product: r.product,
-          size_code: null, quantity: item.value, location: r.location || null,
+          size_code: null, quantity: item.value, location: null,
           source_type: item.sourceType, sorting_result_id: headerId,
           is_void: false, note: null, created_by: 'admin'
         });
@@ -10378,6 +10378,27 @@ async function saveSortingResult() {
       staff: operator || 'admin'
     });
     processingRecords.push(procRow);
+
+    // 3-1. 분산 위치 차감: 수량 명시된 분산 입고(예 "1층(10)/지하(30)/냉장고(60)")만 sort_order 순 차감
+    const _locParts = parseLocationStr(r.location);
+    if (_locParts.some(p => p.qty !== null)) {
+      _locParts.sort((a, b) => {
+        const ao = storageLocations.find(l => l.name === a.name)?.sort_order ?? 9999;
+        const bo = storageLocations.find(l => l.name === b.name)?.sort_order ?? 9999;
+        return ao - bo;
+      });
+      let _rem = inputCt;
+      for (const part of _locParts) {
+        if (_rem <= 0 || part.qty === null) continue;
+        const take = Math.min(part.qty, _rem);
+        part.qty = Math.round((part.qty - take) * 10) / 10;
+        _rem     = Math.round((_rem - take) * 10) / 10;
+      }
+      const newLocParts = _locParts.filter(p => p.qty !== null && p.qty > 0);
+      const newLoc = newLocParts.length ? newLocParts.map(p => `${p.name}(${p.qty})`).join('/') : null;
+      await dbUpdateInbound(r.id, { location: newLoc });
+      r.location = newLoc;
+    }
 
     // 5. audit_log
     const parts = [`정상 ${fmtN(normalTotal)}CT`];
