@@ -4700,28 +4700,76 @@ function _renderInvMatrix(product, recs) {
 
 // ── 매트릭스 배치 삭제 ──────────────────────────────────────────
 
+function _pickDeleteGrade() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:24px;width:280px;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+        <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:8px">삭제할 등급 선택</div>
+        <div style="font-size:13px;color:#6B7280;margin-bottom:18px">이 배치에 일반·고당이 모두 있습니다.</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button id="_pgd-normal" style="padding:10px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;font-size:14px;font-weight:600;cursor:pointer;color:#374151">일반만 삭제</button>
+          <button id="_pgd-high"   style="padding:10px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;font-size:14px;font-weight:600;cursor:pointer;color:#374151">고당만 삭제</button>
+          <button id="_pgd-all"    style="padding:10px;border-radius:8px;border:1px solid #DC2626;background:#FEF2F2;font-size:14px;font-weight:600;cursor:pointer;color:#DC2626">전체 삭제 (일반+고당)</button>
+          <button id="_pgd-cancel" style="padding:8px;border-radius:8px;border:1px solid #E5E7EB;background:#F9FAFB;font-size:13px;cursor:pointer;color:#6B7280">취소</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const pick = g => { document.body.removeChild(overlay); resolve(g); };
+    overlay.querySelector('#_pgd-normal').onclick = () => pick('일반');
+    overlay.querySelector('#_pgd-high').onclick   = () => pick('고당');
+    overlay.querySelector('#_pgd-all').onclick    = () => pick('all');
+    overlay.querySelector('#_pgd-cancel').onclick = () => pick(null);
+  });
+}
+
 async function deleteMatrixBatch(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const info = _matrixBatchRegistry[regId];
   if (!info) return;
-  const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
-  const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}\n총 ${fmtCT(info.batchTotal)} CT`;
+
+  const gid = String(info.groupId);
+  const baseFilter = gid.startsWith('manual_')
+    ? (() => { const date = gid.replace('manual_', ''); return r => r.farm_name === info.farm && r.date === date && r.product === info.product && r.source_type !== 'pachi' && r.source_type !== 'pachi_manual' && !r.is_void; })()
+    : r => String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void;
+
+  // 등급 결정
+  let targetGrade;
+  if (_invGrade === '고당') {
+    targetGrade = '고당';
+  } else if (_invGrade === '일반') {
+    targetGrade = '일반';
+  } else {
+    // 전체 탭 — 배치 내 존재 등급 확인 후 선택
+    const cands = inventoryRecords.filter(baseFilter);
+    const hasNormal = cands.some(r => (r.quality_grade || '일반') === '일반');
+    const hasHigh   = cands.some(r => r.quality_grade === '고당');
+    if (!hasNormal && !hasHigh) return alert('삭제할 데이터가 없습니다.');
+    if (hasNormal && hasHigh) {
+      targetGrade = await _pickDeleteGrade();
+      if (!targetGrade) return;
+    } else {
+      targetGrade = hasHigh ? '고당' : '일반';
+    }
+  }
+
+  const gradeLabel = targetGrade === 'all' ? '전체' : targetGrade;
+  const dateLabel  = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
+  const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}  [${gradeLabel}]`;
   const ok = await showConfirmDanger({ title: '재고 삭제', items: [label], confirmText: '삭제' });
   if (!ok) return;
+
   let toDelete;
-  const gid = String(info.groupId);
-  if (gid.startsWith('manual_')) {
-    const date = gid.replace('manual_', '');
-    toDelete = inventoryRecords.filter(r =>
-      r.farm_name === info.farm && r.date === date && r.product === info.product &&
-      r.source_type !== 'pachi' && r.source_type !== 'pachi_manual' && !r.is_void
-    );
+  if (targetGrade === 'all') {
+    toDelete = inventoryRecords.filter(baseFilter);
+  } else if (targetGrade === '고당') {
+    toDelete = inventoryRecords.filter(r => baseFilter(r) && r.quality_grade === '고당');
   } else {
-    toDelete = inventoryRecords.filter(r =>
-      String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void
-    );
+    toDelete = inventoryRecords.filter(r => baseFilter(r) && (r.quality_grade || '일반') === '일반');
   }
   if (!toDelete.length) return alert('삭제할 데이터가 없습니다.');
+
   try {
     for (const rec of toDelete) {
       await sbUpdate('inventory_records', rec.id, { is_void: true });
@@ -4729,13 +4777,13 @@ async function deleteMatrixBatch(regId) {
     }
     await dbInsertAuditLog({
       target_table: 'inventory_records', target_id: toDelete[0]?.id,
-      before_val: { farm: info.farm, product: info.product, total_ct: info.batchTotal, count: toDelete.length },
-      after_val: null, reason: '재고 삭제',
+      before_val: { farm: info.farm, product: info.product, grade: gradeLabel, count: toDelete.length },
+      after_val: null, reason: `재고 삭제 [${gradeLabel}]`,
       staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     renderInvSummary();
     renderInventoryStatus();
-    showToast(`${toDelete.length}건 삭제 완료`);
+    showToast(`[${gradeLabel}] ${toDelete.length}건 삭제 완료`);
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
