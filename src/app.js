@@ -73,6 +73,7 @@ let ibPage = 1;
 let ibPageSize = 25;
 let _ibAuditMode = false;
 let _ibAuditChecked = new Set();
+let _ibAuditVisible = [];
 let ibSearch = '';
 let ibFilterProduct = '';
 let ibFilterDriver = '';
@@ -8879,6 +8880,50 @@ function _ibClearAuditChecks() {
   renderInboundList();
 }
 
+async function deleteUncheckedAudit() {
+  if (!_ibAuditMode) return;
+  const unchecked = _ibAuditVisible.filter(r => !_ibAuditChecked.has(r.id));
+  if (unchecked.length === 0) {
+    await showConfirmEdit('미확인 없음', '확인되지 않은 항목이 없습니다. 모두 확인 완료되었습니다.');
+    return;
+  }
+  const MAX_SHOW = 10;
+  const itemLabels = unchecked.slice(0, MAX_SHOW).map(r =>
+    `${r.farm_name} · ${r.product} · ${r.date} · 잔여 ${fmtN(getRemainingCT(r))}CT`
+  );
+  if (unchecked.length > MAX_SHOW) itemLabels.push(`...외 ${unchecked.length - MAX_SHOW}건`);
+  const res = await showConfirmDanger({
+    title: '미확인 재고 일괄 삭제',
+    subtitle: `확인되지 않은 ${unchecked.length}건 삭제 · 선과 이력이 있으면 함께 삭제됩니다`,
+    items: itemLabels,
+    confirmText: '일괄 삭제',
+    needWorker: true
+  });
+  if (!res || !res.ok) return;
+  let successCount = 0;
+  let failMsg = '';
+  for (const r of unchecked) {
+    try {
+      await cascadeDeleteInbound(r.id);
+      await dbInsertAuditLog({
+        target_table: 'inbound_records', target_id: r.id,
+        before_val: { product: r.product, farm_name: r.farm_name, quantity: r.quantity, date: r.date },
+        after_val: null,
+        reason: `재고 실사 일괄 삭제: ${res.reason}`,
+        staff: res.worker
+      });
+      successCount++;
+    } catch(e) {
+      failMsg = `${successCount}건 삭제 후 오류: ${r.farm_name} · ${r.product} — ${e.message}`;
+      break;
+    }
+  }
+  _ibAuditChecked = new Set([..._ibAuditChecked].filter(id => inboundRecords.some(r => r.id === id)));
+  await loadAndRenderInv();
+  if (failMsg) alert(failMsg);
+  else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
+}
+
 function renderInboundList() {
   _expandedMemoId = null;
   renderIbCatSummary();
@@ -8948,6 +8993,7 @@ function renderInboundList() {
   }
   // 실사 모드: 잔여>0 행만
   if (_ibAuditMode) visible = visible.filter(r => getRemainingCT(r) > 0);
+  _ibAuditVisible = _ibAuditMode ? [...visible] : [];
 
   if (!visible.length) {
     const hasNewFilter = ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
@@ -8987,10 +9033,14 @@ function renderInboundList() {
   if (_auditBar) {
     if (_ibAuditMode) {
       const _achecked = [..._ibAuditChecked].filter(id => visible.some(r => r.id === id)).length;
+      const _aunchecked = totalFiltered - _achecked;
       _auditBar.style.display = '';
       _auditBar.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;margin-bottom:8px;font-size:13px">
-        <span>📋 <b>실사 중</b> · 전체 <b>${totalFiltered}</b>개 중 ✓<b style="color:#1565C0">${_achecked}</b>개 확인 · 미확인 <b style="color:#C62828">${totalFiltered - _achecked}</b>개</span>
-        <button onclick="_ibClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #93C5FD;border-radius:6px;background:#fff;color:#1565C0;cursor:pointer;font-family:inherit">전체 해제</button>
+        <span>📋 <b>실사 중</b> · 전체 <b>${totalFiltered}</b>개 중 ✓<b style="color:#1565C0">${_achecked}</b>개 확인 · 미확인 <b style="color:#C62828">${_aunchecked}</b>개</span>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
+          <button onclick="_ibClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #93C5FD;border-radius:6px;background:#fff;color:#1565C0;cursor:pointer;font-family:inherit">전체 해제</button>
+          <button onclick="deleteUncheckedAudit()" ${_aunchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;cursor:pointer;font-family:inherit;${_aunchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${_aunchecked}건 삭제</button>
+        </div>
       </div>`;
     } else {
       _auditBar.style.display = 'none';
