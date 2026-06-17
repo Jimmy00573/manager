@@ -5392,7 +5392,7 @@ function openInvEditModal(regId) {
           const idx = allSizes.indexOf(sz);
           return `<div>
             <label style="font-size:10px;color:#9CA3AF;display:block;margin-bottom:2px;text-align:center">${esc(sz)}${fruitNoBadge(sz)}</label>
-            <input type="number" min="0" step="0.1" id="inv-edit-${regId}-${idx}" value="${curQty[sz] || 0}" onfocus="setTimeout(()=>this.select(),0)" style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
+            <input type="number" min="0" step="0.1" id="inv-edit-${regId}-${idx}" value="${Math.round((curQty[sz] || 0) * 10) / 10}" onfocus="setTimeout(()=>this.select(),0)" style="width:100%;padding:5px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;text-align:right;box-sizing:border-box">
           </div>`;
         }).join('')}
       </div>
@@ -8965,7 +8965,7 @@ function renderInboundList() {
       : '';
     const remBadge = remaining <= 0
       ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
-      : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔 ${fmtN(remaining)}</span>`;
+      : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔여 ${fmtN(remaining)}</span>`;
     const qtyDisplay = processed > 0
       ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtBadge}</span>`
       : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}${srtBadge}</span>`;
