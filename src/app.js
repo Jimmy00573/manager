@@ -5428,6 +5428,16 @@ function openInvEditModal(regId) {
   document.getElementById('modal-inv-edit').style.display = 'flex';
 }
 
+function setIemGrade(g) {
+  _iemGrade = g;
+  ['일반', '고당'].forEach(grade => {
+    const btn = document.getElementById(`iem-grade-${grade}`);
+    if (!btn) return;
+    const active = grade === _iemGrade;
+    btn.style.cssText = `flex:1;padding:7px;border-radius:6px;border:1px solid ${active?'#1565C0':'#D1D5DB'};background:${active?'#1565C0':'#fff'};color:${active?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer`;
+  });
+}
+
 function setInvEditGrade(g) {
   _invEditGrade = g;
   ['일반', '고당'].forEach(grade => {
@@ -5683,6 +5693,7 @@ function obOutboundTotal() {
 }
 
 let _invEditGrade = '일반';
+let _iemGrade = '일반';
 let _obGrade = '일반';
 function setObGrade(g) {
   _obGrade = g;
@@ -5924,8 +5935,14 @@ function openInvEntryModal() {
             </div>
             <div>
               <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">위치</label>
-              <input id="iem-location" type="text" placeholder="선택사항" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+              <select id="iem-location" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
+                <option value="">선택 안 함</option>
+              </select>
             </div>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:6px">
+            <button id="iem-grade-일반" onclick="setIemGrade('일반')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #1565C0;background:#1565C0;color:#fff;font-size:13px;font-weight:600;cursor:pointer">일반</button>
+            <button id="iem-grade-고당" onclick="setIemGrade('고당')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">고당</button>
           </div>
           <div id="iem-size-area">
             <div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">품목을 먼저 선택하세요</div>
@@ -5970,6 +5987,13 @@ function openInvEntryModal() {
     prodEl.innerHTML = '<option value="">선택</option>' + buildProductOptgroupHTML();
     if (cur) prodEl.value = cur;
   }
+
+  // 위치 드롭다운 갱신
+  const iemLocEl = document.getElementById('iem-location');
+  if (iemLocEl) iemLocEl.innerHTML = '<option value="">선택 안 함</option>' + buildLocOptHtml();
+
+  // 등급 초기화
+  setIemGrade('일반');
 
   // 사이즈 영역 초기화
   iemOnProductChange();
@@ -6040,7 +6064,7 @@ async function saveInvEntry() {
   const date     = document.getElementById('iem-date')?.value;
   const farm     = document.getElementById('iem-farm')?.value;
   const product  = document.getElementById('iem-product')?.value;
-  const location = document.getElementById('iem-location')?.value?.trim() || null;
+  const location = document.getElementById('iem-location')?.value || null;
   const note     = document.getElementById('iem-note')?.value?.trim() || null;
 
   if (!date)    return alert('날짜를 선택해주세요.');
@@ -6058,7 +6082,7 @@ async function saveInvEntry() {
   if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
 
   try {
-    const base = { date, farm_name: farm, product, location, source_type: 'manual', note };
+    const base = { date, farm_name: farm, product, location, source_type: 'manual', note, quality_grade: _iemGrade };
     await Promise.all(toSave.map(r => dbInsertInventoryRecord({ ...base, size_code: r.size_code, quantity: r.quantity })));
 
     inventoryRecords = await dbGetInventoryRecords();
