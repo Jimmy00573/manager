@@ -5362,6 +5362,7 @@ function openInvEditModal(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const info = _matrixBatchRegistry[regId];
   if (!info) return;
+  _invEditGrade = '일반';
 
   const gid = String(info.groupId);
   let batchRecs;
@@ -5385,7 +5386,8 @@ function openInvEditModal(regId) {
 
   const curQty = {};
   allSizes.forEach(sz => curQty[sz] = 0);
-  batchRecs.forEach(r => { if (r.size_code) curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+  batchRecs.filter(r => r.size_code && (r.quality_grade || '일반') === _invEditGrade)
+    .forEach(r => { curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
 
   const sizeRows = groups.map(g => `
     <div style="margin-bottom:12px">
@@ -5410,7 +5412,11 @@ function openInvEditModal(regId) {
         <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">품목</div><div style="font-weight:600;color:#374151">${esc(info.product)}</div></div>
         <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">위치</div><div style="font-weight:600;color:#374151">${esc(location)}</div></div>
       </div>
-      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 수량 수정</div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:6px">
+        <button id="inv-edit-grade-일반" onclick="setInvEditGrade('일반')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_invEditGrade==='일반'?'#1565C0':'#D1D5DB'};background:${_invEditGrade==='일반'?'#1565C0':'#fff'};color:${_invEditGrade==='일반'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">일반</button>
+        <button id="inv-edit-grade-고당" onclick="setInvEditGrade('고당')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_invEditGrade==='고당'?'#1565C0':'#D1D5DB'};background:${_invEditGrade==='고당'?'#1565C0':'#fff'};color:${_invEditGrade==='고당'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">고당</button>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 수량 수정 — ${_invEditGrade}</div>
       ${sizeRows}
       <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid #E5E7EB">
         <button id="inv-edit-save-btn" class="btn pri" onclick="saveInvEdit()" style="flex:1;padding:10px;font-size:14px">💾 저장</button>
@@ -5422,6 +5428,27 @@ function openInvEditModal(regId) {
   document.getElementById('modal-inv-edit').style.display = 'flex';
 }
 
+function setInvEditGrade(g) {
+  _invEditGrade = g;
+  ['일반', '고당'].forEach(grade => {
+    const btn = document.getElementById(`inv-edit-grade-${grade}`);
+    if (!btn) return;
+    const active = grade === _invEditGrade;
+    btn.style.cssText = `flex:1;padding:7px;border-radius:6px;border:1px solid ${active?'#1565C0':'#D1D5DB'};background:${active?'#1565C0':'#fff'};color:${active?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer`;
+  });
+  const ctx = window._invEditCtx;
+  if (!ctx) return;
+  const { regId, batchRecs, allSizes } = ctx;
+  const curQty = {};
+  allSizes.forEach(sz => curQty[sz] = 0);
+  batchRecs.filter(r => r.size_code && !r.is_void && (r.quality_grade || '일반') === _invEditGrade)
+    .forEach(r => { curQty[r.size_code] = (curQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+  allSizes.forEach((sz, i) => {
+    const el = document.getElementById(`inv-edit-${regId}-${i}`);
+    if (el) el.value = Math.round((curQty[sz] || 0) * 10) / 10;
+  });
+}
+
 async function saveInvEdit() {
   const ctx = window._invEditCtx;
   if (!ctx) return;
@@ -5429,7 +5456,8 @@ async function saveInvEdit() {
 
   const oldQty = {};
   allSizes.forEach(sz => oldQty[sz] = 0);
-  batchRecs.forEach(r => { if (r.size_code) oldQty[r.size_code] = (oldQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
+  batchRecs.filter(r => (r.quality_grade || '일반') === _invEditGrade)
+    .forEach(r => { if (r.size_code) oldQty[r.size_code] = (oldQty[r.size_code] || 0) + (Number(r.quantity) || 0); });
 
   const newQty = {};
   allSizes.forEach((sz, i) => {
@@ -5446,8 +5474,9 @@ async function saveInvEdit() {
   if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
 
   try {
-    const ref = batchRecs[0];
-    for (const rec of batchRecs) {
+    const gradeRecs = batchRecs.filter(r => (r.quality_grade || '일반') === _invEditGrade);
+    const ref = gradeRecs[0] || batchRecs[0];
+    for (const rec of gradeRecs) {
       await sbUpdate('inventory_records', rec.id, { is_void: true });
       rec.is_void = true;
     }
@@ -5458,7 +5487,8 @@ async function saveInvEdit() {
           size_code: sz, quantity: newQty[sz], location,
           source_type: ref.source_type || 'adjustment',
           sorting_result_id: ref.sorting_result_id || null,
-          note: `재고 수정 (${sz}: ${oldQty[sz]} → ${newQty[sz]})`,
+          quality_grade: _invEditGrade,
+          note: `재고 수정 [${_invEditGrade}] (${sz}: ${oldQty[sz]} → ${newQty[sz]})`,
           is_void: false, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
         };
         const r = await dbInsertInventoryRecord(data);
@@ -5468,7 +5498,7 @@ async function saveInvEdit() {
     await dbInsertAuditLog({
       target_table: 'inventory_records', target_id: ref?.id,
       before_val: oldQty, after_val: newQty,
-      reason: '재고 현황 [수정] 버튼',
+      reason: `재고 현황 [수정] 버튼 [${_invEditGrade}]`,
       staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     document.getElementById('modal-inv-edit').style.display = 'none';
@@ -5652,6 +5682,7 @@ function obOutboundTotal() {
   if (el) el.textContent = fmtCT(total) + ' CT';
 }
 
+let _invEditGrade = '일반';
 let _obGrade = '일반';
 function setObGrade(g) {
   _obGrade = g;
