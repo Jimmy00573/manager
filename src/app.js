@@ -4731,15 +4731,26 @@ function _renderInvAuditList(recs) {
     return progressBar + `<div style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">실사할 재고가 없습니다</div>`;
   }
 
-  // 품목 → 농가 → 등급 그룹핑
+  // 품목 → 농가 → 배치(farm+groupId) → 등급 그룹핑 (매트릭스 배치 키와 동일 로직)
   const byProd = {};
   items.forEach(r => {
-    const prod  = r.product    || '(품목없음)';
-    const farm  = r.farm_name  || '(농가없음)';
-    const grade = (r.quality_grade || '일반') === '고당' ? '고당' : '일반';
+    const prod     = r.product   || '(품목없음)';
+    const farm     = r.farm_name || '(농가없음)';
+    const grade    = (r.quality_grade || '일반') === '고당' ? '고당' : '일반';
+    const isManual = !(r.source_type === 'sorting' && r.sorting_result_id);
+    const groupId  = isManual ? `manual_${r.date || ''}` : r.sorting_result_id;
+    const batchKey = `${farm}__${groupId}`;
+    const { sortingDate, inboundDate } = _getInvRecordDates(r);
+
     if (!byProd[prod]) byProd[prod] = {};
-    if (!byProd[prod][farm]) byProd[prod][farm] = { '일반': [], '고당': [] };
-    byProd[prod][farm][grade].push(r);
+    if (!byProd[prod][farm]) byProd[prod][farm] = {};
+    if (!byProd[prod][farm][batchKey]) {
+      byProd[prod][farm][batchKey] = { isManual, sortingDate, inboundDate, '일반': [], '고당': [] };
+    }
+    const b = byProd[prod][farm][batchKey];
+    if (sortingDate && (!b.sortingDate || sortingDate < b.sortingDate)) b.sortingDate = sortingDate;
+    if (inboundDate && (!b.inboundDate || inboundDate < b.inboundDate)) b.inboundDate = inboundDate;
+    b[grade].push(r);
   });
 
   let html = progressBar;
@@ -4748,7 +4759,6 @@ function _renderInvAuditList(recs) {
     .sort((a, b) => a.localeCompare(b, 'ko'))
     .forEach(prod => {
       const farmMap = byProd[prod];
-      // getSizeGroupsFor 순서로 사이즈 랭크 맵 생성 (작은→큰)
       const sizeRank = {};
       getSizeGroupsFor(prod).flatMap(g => g.sizes).forEach((sz, i) => { sizeRank[sz] = i; });
       const sortBySize = arr => arr.slice().sort((a, b) =>
@@ -4772,24 +4782,40 @@ function _renderInvAuditList(recs) {
       html += `<div style="margin-bottom:12px;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden">
         <div style="font-size:13px;font-weight:700;color:#374151;padding:5px 10px;background:#F3F4F6;border-bottom:1px solid #E5E7EB">${esc(prod)}</div>
         ${farmNames.map(farm => {
-          const normalChips = sortBySize(farmMap[farm]['일반']);
-          const highChips   = sortBySize(farmMap[farm]['고당']);
-          const isLast      = farm === lastFarm;
+          // 배치 정렬: 선과일 오름차순 (오래된 것 위)
+          const batches = Object.values(farmMap[farm]).sort((a, b) => {
+            const da = a.sortingDate || a.inboundDate || '';
+            const db = b.sortingDate || b.inboundDate || '';
+            return da.localeCompare(db);
+          });
+          const isLast = farm === lastFarm;
 
-          const gradeRows = [
-            normalChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">
-              <span style="font-size:10px;color:#6B7280;flex-shrink:0;min-width:24px">일반</span>
-              <div style="display:flex;gap:4px;flex-wrap:wrap">${normalChips.map(renderChip).join('')}</div>
-            </div>` : '',
-            highChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">
-              <span style="font-size:10px;color:#1565C0;font-weight:600;flex-shrink:0;min-width:24px">고당</span>
-              <div style="display:flex;gap:4px;flex-wrap:wrap">${highChips.map(renderChip).join('')}</div>
-            </div>` : ''
-          ].filter(Boolean).join('');
+          const batchHtml = batches.map(batch => {
+            const dateStr   = batch.sortingDate || batch.inboundDate || '';
+            const dateLabel = (batch.isManual ? '직접입력' : '선과') + (dateStr ? ' ' + _fmtInvDate(dateStr) : '');
+            const normalChips = sortBySize(batch['일반']);
+            const highChips   = sortBySize(batch['고당']);
+
+            const gradeRows = [
+              normalChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
+                <span style="font-size:10px;color:#6B7280;flex-shrink:0;min-width:24px">일반</span>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">${normalChips.map(renderChip).join('')}</div>
+              </div>` : '',
+              highChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
+                <span style="font-size:10px;color:#1565C0;font-weight:600;flex-shrink:0;min-width:24px">고당</span>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">${highChips.map(renderChip).join('')}</div>
+              </div>` : ''
+            ].filter(Boolean).join('');
+
+            return `<div style="margin-top:4px">
+              <span style="font-size:10px;color:#9CA3AF;font-style:italic">${esc(dateLabel)}</span>
+              ${gradeRows}
+            </div>`;
+          }).join('');
 
           return `<div style="padding:5px 10px;${isLast ? '' : 'border-bottom:1px solid #F0F0F0'}">
             <span style="font-size:12px;font-weight:600;color:#374151">${esc(farm)}</span>
-            ${gradeRows}
+            ${batchHtml}
           </div>`;
         }).join('')}
       </div>`;
