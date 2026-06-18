@@ -4457,6 +4457,9 @@ function _renderInvDateCtrl() {
 let _invGrade = 'all'; // 'all' | '고당' | '일반'
 function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 
+let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
+let _summaryKind = 'in'; // 'in' | 'out'
+
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
   const matrixEl = document.getElementById('inv-matrix-wrap');
@@ -6952,33 +6955,36 @@ function renderInvSummary() {
       '', true, 'juice') : ''}
   </div>`;
 
-  // ── 오늘 입고 (탭 카드: 목록 / 기사별 / 품목별)
-  const todayStr = td();
-  const todayInbounds = inboundRecords.filter(r => !r.is_void && r.date === todayStr);
-  let todayHtml = '';
-  if (todayInbounds.length > 0) {
-    const totalQty = todayInbounds.reduce((s, r) => s + r.quantity, 0);
-    const totalCount = todayInbounds.length;
+  // ── 입출고 요약 (날짜 조회, 입고/출고 탭)
+  if (!_summaryDate) _summaryDate = td();
+  const summaryDate = _summaryDate;
+  const [sy, smo, sd] = summaryDate.split('-');
+  const _sdow = ['일','월','화','수','목','금','토'][new Date(`${sy}-${smo}-${sd}`).getDay()];
+  const summaryInbounds = inboundRecords.filter(r => !r.is_void && r.date === summaryDate);
+  const totalQty = summaryInbounds.reduce((s, r) => s + r.quantity, 0);
+  const totalCount = summaryInbounds.length;
 
-    const getDrv = r => {
-      if (r.driver_id && r.driver?.name)
-        return { key: `reg:${r.driver_id}`, display: r.driver.name, dotColor: r.driver.type === '내부' ? '#6B7280' : '#D97706' };
-      return { key: 'none', display: null, dotColor: null };
-    };
-    const drvHtml = drv => drv.display
-      ? `<span class="driver-cell"><span class="driver-dot" style="background:${drv.dotColor}"></span><span class="driver-name">${esc(drv.display)}</span></span>`
-      : '<span style="color:#9CA3AF">—</span>';
+  const getDrv = r => {
+    if (r.driver_id && r.driver?.name)
+      return { key: `reg:${r.driver_id}`, display: r.driver.name, dotColor: r.driver.type === '내부' ? '#6B7280' : '#D97706' };
+    return { key: 'none', display: null, dotColor: null };
+  };
+  const drvHtml = drv => drv.display
+    ? `<span class="driver-cell"><span class="driver-dot" style="background:${drv.dotColor}"></span><span class="driver-name">${esc(drv.display)}</span></span>`
+    : '<span style="color:#9CA3AF">—</span>';
 
-    const TH_T = 'text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
-    const TH_R = 'text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
-    const TD_L = 'padding:4px 8px;color:#374151;font-size:12px';
-    const TD_R = 'padding:4px 8px;text-align:right;font-weight:600;color:#111827;font-size:12px';
-    const TD_TL = 'padding:6px 8px;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
-    const TD_TR = 'padding:6px 8px;text-align:right;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
+  const TH_T = 'text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
+  const TH_R = 'text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
+  const TD_L = 'padding:4px 8px;color:#374151;font-size:12px';
+  const TD_R = 'padding:4px 8px;text-align:right;font-weight:600;color:#111827;font-size:12px';
+  const TD_TL = 'padding:6px 8px;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
+  const TD_TR = 'padding:6px 8px;text-align:right;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
 
+  let inTabContent;
+  if (summaryInbounds.length > 0) {
     // 목록 탭: group by (farm + product + driverKey)
     const listMap = {};
-    todayInbounds.forEach(r => {
+    summaryInbounds.forEach(r => {
       const drv = getDrv(r);
       const key = `${r.farm_name}|${r.product}|${drv.key}`;
       if (!listMap[key]) listMap[key] = { farm: r.farm_name, product: r.product, drv, qty: 0, cnt: 0 };
@@ -6993,7 +6999,7 @@ function renderInvSummary() {
 
     // 기사별 탭: group by driverKey
     const drvMap = {};
-    todayInbounds.forEach(r => {
+    summaryInbounds.forEach(r => {
       const drv = getDrv(r);
       if (!drvMap[drv.key]) drvMap[drv.key] = { drv, qty: 0, cnt: 0 };
       drvMap[drv.key].qty += r.quantity; drvMap[drv.key].cnt++;
@@ -7009,7 +7015,7 @@ function renderInvSummary() {
 
     // 품목별 탭: group by product
     const prodMap = {};
-    todayInbounds.forEach(r => {
+    summaryInbounds.forEach(r => {
       if (!prodMap[r.product]) prodMap[r.product] = { qty: 0, cnt: 0 };
       prodMap[r.product].qty += r.quantity; prodMap[r.product].cnt++;
     });
@@ -7022,27 +7028,39 @@ function renderInvSummary() {
       </tbody>
     </table>`;
 
-    todayHtml = `<div style="${CARD}">
-      <div style="padding:12px 16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid #F3F4F6;cursor:pointer" onclick="invTab('uns')" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
-        <span style="font-size:13px;font-weight:600;color:#374151">📅 오늘 입고 (${parseInt(mo)}/${parseInt(d)} ${_dow})</span>
-        <span style="color:#D1D5DB">·</span>
-        <span style="font-size:12px;color:#6B7280">${totalCount}건</span>
-        <span style="color:#D1D5DB">·</span>
-        <span style="font-size:12px;color:#6B7280">합계 ${fmtN(totalQty)} CT</span>
-        <span style="font-size:11px;color:#9CA3AF;margin-left:4px">→ 미선과 탭 바로가기</span>
+    inTabContent = `<div style="padding:0 16px 12px">
+      <div class="today-tabs">
+        <span id="today-tab-btn-list" class="today-tab active" onclick="todayTabSwitch('list')">목록</span>
+        <span id="today-tab-btn-driver" class="today-tab" onclick="todayTabSwitch('driver')">기사별</span>
+        <span id="today-tab-btn-product" class="today-tab" onclick="todayTabSwitch('product')">품목별</span>
       </div>
-      <div style="padding:0 16px 12px">
-        <div class="today-tabs">
-          <span id="today-tab-btn-list" class="today-tab active" onclick="todayTabSwitch('list')">목록</span>
-          <span id="today-tab-btn-driver" class="today-tab" onclick="todayTabSwitch('driver')">기사별</span>
-          <span id="today-tab-btn-product" class="today-tab" onclick="todayTabSwitch('product')">품목별</span>
-        </div>
-        <div id="today-tab-list">${listTabHtml}</div>
-        <div id="today-tab-driver" style="display:none">${driverTabHtml}</div>
-        <div id="today-tab-product" style="display:none">${productTabHtml}</div>
-      </div>
+      <div id="today-tab-list">${listTabHtml}</div>
+      <div id="today-tab-driver" style="display:none">${driverTabHtml}</div>
+      <div id="today-tab-product" style="display:none">${productTabHtml}</div>
     </div>`;
+  } else {
+    inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
   }
+
+  const outTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">출고 요약 준비 중</div>`;
+
+  const btnBase = 'padding:5px 12px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit';
+  const todayHtml = `<div style="${CARD}">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #F3F4F6">
+      <div style="display:flex;gap:4px">
+        <button onclick="setSummaryKind('in')" style="${btnBase};border:1px solid ${_summaryKind==='in'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='in'?'#1565C0':'#fff'};color:${_summaryKind==='in'?'#fff':'#374151'}">📥 입고</button>
+        <button onclick="setSummaryKind('out')" style="${btnBase};border:1px solid ${_summaryKind==='out'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='out'?'#1565C0':'#fff'};color:${_summaryKind==='out'?'#fff':'#374151'}">📤 출고</button>
+      </div>
+      ${_summaryKind==='in' && totalCount > 0 ? `<span style="font-size:12px;color:#6B7280">${totalCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
+      <div style="display:flex;align-items:center;gap:4px;margin-left:auto">
+        <button onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit">‹</button>
+        <input type="date" value="${summaryDate}" onchange="setSummaryDate(this.value)" style="border:1px solid #E5E7EB;border-radius:5px;padding:4px 8px;font-size:13px;font-family:inherit;color:#111827">
+        <button onclick="moveSummaryDate(1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit">›</button>
+        <button onclick="setSummaryDate(td())" style="padding:4px 8px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:12px;color:#6B7280;font-family:inherit">오늘</button>
+      </div>
+    </div>
+    ${_summaryKind === 'in' ? inTabContent : outTabContent}
+  </div>`;
 
   // ── 비중 막대 (미선과 섹션용)
   const unsEntries = Object.entries(unsMap).filter(([, v]) => v.raw + v.small > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
@@ -7211,6 +7229,15 @@ function todayTabSwitch(tab) {
     if (btn) btn.className = `today-tab${t === tab ? ' active' : ''}`;
     if (content) content.style.display = t === tab ? '' : 'none';
   });
+}
+
+function setSummaryDate(d) { if (d) { _summaryDate = d; renderInvSummary(); } }
+function setSummaryKind(k) { _summaryKind = k; renderInvSummary(); }
+function moveSummaryDate(n) {
+  const base = _summaryDate || td();
+  const dt = new Date(base + 'T00:00:00');
+  dt.setDate(dt.getDate() + n);
+  setSummaryDate(dt.toISOString().slice(0, 10));
 }
 
 function getProcessedForInbound(id) {
