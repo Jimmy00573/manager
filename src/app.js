@@ -7052,11 +7052,11 @@ function renderInvSummary() {
         <button onclick="setSummaryKind('out')" style="${btnBase};border:1px solid ${_summaryKind==='out'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='out'?'#1565C0':'#fff'};color:${_summaryKind==='out'?'#fff':'#374151'}">📤 출고</button>
       </div>
       ${_summaryKind==='in' && totalCount > 0 ? `<span style="font-size:12px;color:#6B7280">${totalCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
-      <div style="display:flex;align-items:center;gap:4px;margin-left:auto">
-        <button onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit">‹</button>
-        <input type="date" value="${summaryDate}" onchange="setSummaryDate(this.value)" style="border:1px solid #E5E7EB;border-radius:5px;padding:4px 8px;font-size:13px;font-family:inherit;color:#111827">
-        <button onclick="moveSummaryDate(1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit">›</button>
-        <button onclick="setSummaryDate(td())" style="padding:4px 8px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:12px;color:#6B7280;font-family:inherit">오늘</button>
+      <div style="display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:wrap">
+        <button onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0">‹</button>
+        <input type="date" value="${summaryDate}" onchange="setSummaryDate(this.value)" style="width:140px;flex-shrink:0;box-sizing:border-box;border:1px solid #E5E7EB;border-radius:5px;padding:4px 8px;font-size:13px;font-family:inherit;color:#111827">
+        <button onclick="moveSummaryDate(1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0">›</button>
+        <button onclick="setSummaryDate(td())" style="padding:4px 8px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:12px;color:#6B7280;font-family:inherit;flex-shrink:0">오늘</button>
       </div>
     </div>
     ${_summaryKind === 'in' ? inTabContent : outTabContent}
