@@ -7237,7 +7237,7 @@ function moveSummaryDate(n) {
   const base = _summaryDate || td();
   const dt = new Date(base + 'T00:00:00');
   dt.setDate(dt.getDate() + n);
-  setSummaryDate(dt.toISOString().slice(0, 10));
+  setSummaryDate(ymd(dt));
 }
 
 function getProcessedForInbound(id) {
