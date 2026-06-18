@@ -6936,22 +6936,20 @@ function renderInvSummary() {
   const kpiSub  = txt => `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${txt}</div>`;
   const kpiChip = txt => `<div style="display:inline-block;background:#FCEBEB;color:#A32D2D;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px">${txt}</div>`;
   const kpiHtml = `<div class="sum-kpi-grid">
-    ${kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
-      priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns')}
-    ${kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
+    ${unsTotalCt > 0 ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
+      priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns') : ''}
+    ${manGamTotalKg > 0 ? kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
       (manGamItems ? kpiSub(`${manGamItems}개 품목`) : '') +
       `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}kg</span></div>`,
-      false, 'srt')}
-    ${kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
+      false, 'srt') : ''}
+    ${citrusTotalKg > 0 ? kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
       (citrusItems ? kpiSub(`${citrusItems}개 품목`) : '') +
       `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(citrusHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(citrusNormalKg))}kg</span></div>`,
-      false, 'srt')}
-    ${kpiCard('파치',
-      pachiTotalKg ? fmtN(Math.round(pachiTotalKg)) : '—', pachiTotalKg ? 'kg' : '',
-      '', true, 'pachi')}
-    ${kpiCard('주스/청',
-      juiceTotalNet ? fmtN(Math.round(juiceTotalNet)) : '—', juiceTotalNet ? '병' : '',
-      '', true, 'juice')}
+      false, 'srt') : ''}
+    ${pachiTotalKg > 0 ? kpiCard('파치', fmtN(Math.round(pachiTotalKg)), 'kg',
+      '', true, 'pachi') : ''}
+    ${juiceTotalNet > 0 ? kpiCard('주스/청', fmtN(Math.round(juiceTotalNet)), '병',
+      '', true, 'juice') : ''}
   </div>`;
 
   // ── 오늘 입고 (탭 카드: 목록 / 기사별 / 품목별)
