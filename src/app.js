@@ -5972,23 +5972,23 @@ function openInvEntryModal() {
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
             <div>
               <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">날짜 *</label>
-              <input id="iem-date" type="date" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;min-width:0">
+              <input id="iem-date" type="date" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;min-width:0;-webkit-appearance:none;appearance:none;line-height:normal">
             </div>
             <div>
               <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">공급처 *</label>
-              <select id="iem-farm" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
+              <select id="iem-farm" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
                 <option value="">선택</option>
               </select>
             </div>
             <div>
               <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">품목 *</label>
-              <select id="iem-product" onchange="iemOnProductChange()" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
+              <select id="iem-product" onchange="iemOnProductChange()" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
                 <option value="">선택</option>
               </select>
             </div>
             <div>
               <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">위치</label>
-              <select id="iem-location" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
+              <select id="iem-location" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
                 <option value="">선택 안 함</option>
               </select>
             </div>
