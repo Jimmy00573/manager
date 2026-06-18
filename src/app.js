@@ -7047,7 +7047,9 @@ function renderInvSummary() {
 
   const pachiOutKg = summaryOuts
     .filter(o => o.source_type === 'pachi' || o.source_type === 'pachi_manual')
-    .reduce((s, o) => s + (Number(o.weight_kg) || 0), 0);
+    .reduce((s, o) => s + (o.weight_kg != null && o.weight_kg !== ''
+      ? Number(o.weight_kg)
+      : (Number(o.quantity) || 0) * kgPerCt(o.product)), 0);
   const juiceOutQty = summaryOuts
     .filter(o => o.source_type === 'juice')
     .reduce((s, o) => s + (Number(o.quantity) || 0), 0);
@@ -7062,7 +7064,9 @@ function renderInvSummary() {
     const prod  = o.product || '(품목 없음)';
     const grade = o.quality_grade || '일반';
     const grp   = getGroupForSorted(prod, o.size_code || '') || '기타';
-    const kg    = Number(o.weight_kg) || 0;
+    const kg    = o.weight_kg != null && o.weight_kg !== ''
+      ? Number(o.weight_kg)
+      : (Number(o.quantity) || 0) * kgPerCt(prod);
     if (!sortingByProd[prod]) sortingByProd[prod] = {};
     if (!sortingByProd[prod][grade]) sortingByProd[prod][grade] = {};
     sortingByProd[prod][grade][grp] = (sortingByProd[prod][grade][grp] || 0) + kg;
