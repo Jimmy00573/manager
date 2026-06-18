@@ -74,6 +74,9 @@ let ibPageSize = 25;
 let _ibAuditMode = false;
 let _ibAuditChecked = new Set();
 let _ibAuditVisible = [];
+let _invAuditMode = false;
+let _invAuditChecked = new Set();
+let _invAuditVisible = [];
 let ibSearch = '';
 let ibFilterProduct = '';
 let ibFilterDriver = '';
@@ -4484,6 +4487,8 @@ function renderInventoryStatus() {
           const active = _invGrade === g.key;
           return `<button onclick="setInvGrade('${g.key}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${g.label}</button>`;
         }).join('')}
+        <span style="width:1px;height:20px;background:#D1D5DB;margin:0 4px;flex-shrink:0"></span>
+        <button onclick="toggleInvAuditMode()" style="padding:5px 12px;background:${_invAuditMode ? '#7C3AED' : '#fff'};color:${_invAuditMode ? '#fff' : '#374151'};border:1px solid ${_invAuditMode ? '#7C3AED' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">📋 재고 실사</button>
       </div>`;
   }
 
@@ -4540,10 +4545,14 @@ function renderInventoryStatus() {
     byProduct[r.product].push(r);
   });
 
-  matrixEl.innerHTML = Object.entries(byProduct)
-    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    .map(([product, productRecs]) => _renderInvMatrix(product, productRecs))
-    .join('');
+  if (_invAuditMode) {
+    matrixEl.innerHTML = _renderInvAuditList(recs);
+  } else {
+    matrixEl.innerHTML = Object.entries(byProduct)
+      .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+      .map(([product, productRecs]) => _renderInvMatrix(product, productRecs))
+      .join('');
+  }
 }
 
 function _renderInvMatrix(product, recs) {
@@ -4700,6 +4709,67 @@ function _renderInvMatrix(product, recs) {
       </div>
       <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '⋮ 메뉴 → 수정 / 삭제' : ''}</div>
     </div>`;
+}
+
+// ── 재고 실사 목록 렌더 ─────────────────────────────────────────
+
+function _renderInvAuditList(recs) {
+  const items = recs
+    .filter(r => (Number(r.quantity) || 0) > 0)
+    .slice()
+    .sort((a, b) => {
+      const pc = (a.product || '').localeCompare(b.product || '', 'ko');
+      if (pc !== 0) return pc;
+      const fc = (a.farm_name || '').localeCompare(b.farm_name || '', 'ko');
+      if (fc !== 0) return fc;
+      return (a.size_code || '').localeCompare(b.size_code || '');
+    });
+
+  _invAuditVisible = items;
+
+  const total = items.length;
+  const checked = items.filter(r => _invAuditChecked.has(String(r.id))).length;
+  const unchecked = total - checked;
+
+  const progressBar = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
+    <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건</span>
+    <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit;margin-left:auto;flex-shrink:0">전체 해제</button>
+  </div>`;
+
+  if (!items.length) {
+    return progressBar + `<div style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">실사할 재고가 없습니다</div>`;
+  }
+
+  const byProd = {};
+  items.forEach(r => {
+    if (!byProd[r.product]) byProd[r.product] = [];
+    byProd[r.product].push(r);
+  });
+
+  let html = progressBar;
+  Object.entries(byProd)
+    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    .forEach(([prod, prodItems]) => {
+      html += `<div style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:#374151;padding:6px 10px;background:#F3F4F6;border-radius:6px 6px 0 0;border:1px solid #E5E7EB">${esc(prod)}</div>
+        ${prodItems.map(r => {
+          const key = String(r.id);
+          const isChk = _invAuditChecked.has(key);
+          const grade = r.quality_grade || '일반';
+          const gradeTag = grade === '고당'
+            ? `<span style="font-size:10px;background:#DBEAFE;color:#1565C0;padding:1px 5px;border-radius:4px;font-weight:600;margin-left:4px;flex-shrink:0">고당</span>`
+            : '';
+          return `<div onclick="toggleInvAuditCheck('${key}')" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #E5E7EB;border-top:none;cursor:pointer;background:${isChk ? '#F5F3FF' : '#fff'}">
+            <span style="font-size:18px;color:${isChk ? '#7C3AED' : '#D1D5DB'};flex-shrink:0;line-height:1">${isChk ? '✓' : '○'}</span>
+            <span style="font-size:13px;color:#374151;flex:1;min-width:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${esc(r.farm_name || '(농가없음)')}${gradeTag}</span>
+            <span style="font-size:13px;color:#6B7280;flex-shrink:0;min-width:36px;text-align:center">${esc(r.size_code || '—')}</span>
+            <span style="font-size:13px;font-weight:600;color:#111827;flex-shrink:0;min-width:52px;text-align:right">${fmtN(Number(r.quantity) || 0)} CT</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    });
+
+  return html;
 }
 
 // ── 매트릭스 배치 삭제 ──────────────────────────────────────────
@@ -9086,6 +9156,21 @@ function ibRatioBadge(r) {
   });
   if (!hasHistory) return '<span style="color:#9CA3AF;font-size:11px">—</span>';
   return `<span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')" >비율 ▸</span>`;
+}
+
+function toggleInvAuditMode() {
+  _invAuditMode = !_invAuditMode;
+  if (!_invAuditMode) _invAuditChecked = new Set();
+  renderInventoryStatus();
+}
+function toggleInvAuditCheck(key) {
+  if (_invAuditChecked.has(key)) _invAuditChecked.delete(key);
+  else _invAuditChecked.add(key);
+  renderInventoryStatus();
+}
+function _invClearAuditChecks() {
+  _invAuditChecked = new Set();
+  renderInventoryStatus();
 }
 
 function toggleIbAuditMode() {
