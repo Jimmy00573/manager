@@ -7042,7 +7042,71 @@ function renderInvSummary() {
     inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
   }
 
-  const outTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">출고 요약 준비 중</div>`;
+  // ── 출고 탭 집계
+  const summaryOuts = invOutbounds.filter(o => !o.is_void && o.date === summaryDate);
+
+  const pachiOutKg = summaryOuts
+    .filter(o => o.source_type === 'pachi' || o.source_type === 'pachi_manual')
+    .reduce((s, o) => s + (Number(o.weight_kg) || 0), 0);
+  const juiceOutQty = summaryOuts
+    .filter(o => o.source_type === 'juice')
+    .reduce((s, o) => s + (Number(o.quantity) || 0), 0);
+  const unsortedOutCt = summaryOuts
+    .filter(o => o.source_type === 'unsorted')
+    .reduce((s, o) => s + (Number(o.quantity) || 0), 0);
+
+  // 선과품: product → grade → group → kg
+  const sortingOuts = summaryOuts.filter(o => o.source_type === 'sorting');
+  const sortingByProd = {};
+  sortingOuts.forEach(o => {
+    const prod  = o.product || '(품목 없음)';
+    const grade = o.quality_grade || '일반';
+    const grp   = getGroupForSorted(prod, o.size_code || '') || '기타';
+    const kg    = Number(o.weight_kg) || 0;
+    if (!sortingByProd[prod]) sortingByProd[prod] = {};
+    if (!sortingByProd[prod][grade]) sortingByProd[prod][grade] = {};
+    sortingByProd[prod][grade][grp] = (sortingByProd[prod][grade][grp] || 0) + kg;
+  });
+
+  const summaryCardSt = 'display:inline-flex;flex-direction:column;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px 16px;margin:0 8px 8px 0';
+  let outTopHtml = '';
+  if (pachiOutKg   > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">파치</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(pachiOutKg))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">kg</span></span></div>`;
+  if (juiceOutQty  > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">주스/청</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(juiceOutQty))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">병</span></span></div>`;
+  if (unsortedOutCt > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">미선과 출고</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtCT(unsortedOutCt)}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">CT</span></span></div>`;
+
+  const sortingProds = Object.keys(sortingByProd).sort((a, b) => a.localeCompare(b, 'ko'));
+  let sortingCardsHtml = '';
+  sortingProds.forEach(prod => {
+    const gradeMap = sortingByProd[prod];
+    const totalKg  = Object.values(gradeMap).reduce((s, gm) => s + Object.values(gm).reduce((ss, v) => ss + v, 0), 0);
+    const groupOrder = getSizeGroupsFor(prod).map(g => g.group);
+
+    const gradeRows = ['일반', '고당'].map(grade => {
+      const grpMap = gradeMap[grade];
+      if (!grpMap) return '';
+      const chips = [...groupOrder.filter(g => (grpMap[g] || 0) > 0), ...(grpMap['기타'] > 0 ? ['기타'] : [])]
+        .map(g => `<span style="background:#E5E7EB;border-radius:5px;padding:2px 8px;font-size:12px;color:#374151;margin:2px 4px 2px 0;white-space:nowrap">${g} <b>${fmtN(Math.round(grpMap[g] || 0))}</b>kg</span>`)
+        .join('');
+      if (!chips) return '';
+      const gradeTag = grade === '고당'
+        ? `<span style="color:#1565C0;font-size:11px;font-weight:700;margin-right:4px">[고당]</span>`
+        : `<span style="color:#6B7280;font-size:11px;font-weight:700;margin-right:4px">[일반]</span>`;
+      return `<div style="display:flex;flex-wrap:wrap;align-items:center;margin-bottom:2px">${gradeTag}${chips}</div>`;
+    }).join('');
+
+    sortingCardsHtml += `<div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px 14px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:6px">${productChip(prod)}<span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:6px">합계 ${fmtN(Math.round(totalKg))} kg</span></div>
+      ${gradeRows}
+    </div>`;
+  });
+
+  const hasAnyOut = pachiOutKg > 0 || juiceOutQty > 0 || unsortedOutCt > 0 || sortingProds.length > 0;
+  const outTabContent = hasAnyOut
+    ? `<div style="padding:12px 16px 16px">
+        ${outTopHtml ? `<div style="display:flex;flex-wrap:wrap;margin-bottom:${sortingCardsHtml ? '4px' : '0'}">${outTopHtml}</div>` : ''}
+        ${sortingCardsHtml}
+      </div>`
+    : `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">출고 없음</div>`;
 
   const btnBase = 'padding:5px 12px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit';
   const todayHtml = `<div style="${CARD}">
