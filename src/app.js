@@ -4724,7 +4724,10 @@ function _renderInvAuditList(recs) {
 
   const progressBar = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
     <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건</span>
-    <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit;margin-left:auto;flex-shrink:0">전체 해제</button>
+    <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
+      <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">전체 해제</button>
+      <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>
+    </div>
   </div>`;
 
   if (!items.length) {
@@ -9223,6 +9226,51 @@ function toggleInvAuditCheck(key) {
 function _invClearAuditChecks() {
   _invAuditChecked = new Set();
   renderInventoryStatus();
+}
+
+async function deleteUncheckedInvAudit() {
+  if (!_invAuditMode) return;
+  const unchecked = _invAuditVisible.filter(r => !_invAuditChecked.has(String(r.id)));
+  if (unchecked.length === 0) {
+    await showConfirmEdit('미확인 없음', '확인되지 않은 항목이 없습니다. 모두 확인 완료되었습니다.');
+    return;
+  }
+  const MAX_SHOW = 10;
+  const itemLabels = unchecked.slice(0, MAX_SHOW).map(r =>
+    `${r.farm_name || '(농가없음)'} · ${r.product || ''} · ${r.size_code || ''} · ${r.quality_grade || '일반'} · ${fmtN(Number(r.quantity) || 0)}CT`
+  );
+  if (unchecked.length > MAX_SHOW) itemLabels.push(`...외 ${unchecked.length - MAX_SHOW}건`);
+  const res = await showConfirmDanger({
+    title: '미확인 재고 일괄 삭제',
+    subtitle: `확인되지 않은 ${unchecked.length}건을 삭제합니다`,
+    items: itemLabels,
+    confirmText: '일괄 삭제',
+    needWorker: true
+  });
+  if (!res || !res.ok) return;
+  let successCount = 0;
+  let failMsg = '';
+  for (const r of unchecked) {
+    try {
+      await sbUpdate('inventory_records', r.id, { is_void: true });
+      r.is_void = true;
+      await dbInsertAuditLog({
+        target_table: 'inventory_records', target_id: r.id,
+        before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: r.quantity },
+        after_val: null,
+        reason: `재고현황 실사 일괄삭제: ${res.reason}`,
+        staff: res.worker
+      });
+      successCount++;
+    } catch(e) {
+      failMsg = `${successCount}건 삭제 후 오류: ${r.farm_name || ''} · ${r.product || ''} — ${e.message}`;
+      break;
+    }
+  }
+  _invAuditChecked = new Set([..._invAuditChecked].filter(key => inventoryRecords.some(r => String(r.id) === key && !r.is_void)));
+  await loadAndRenderInv();
+  if (failMsg) alert(failMsg);
+  else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
 }
 
 function toggleIbAuditMode() {
