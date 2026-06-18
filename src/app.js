@@ -4459,6 +4459,7 @@ function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
 let _summaryKind = 'in'; // 'in' | 'out'
+let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
 
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
@@ -7112,22 +7113,40 @@ function renderInvSummary() {
       </div>`
     : `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">출고 없음</div>`;
 
+  // ── 접이식 요약 바 텍스트
+  const sortingTotalKg = sortingProds.reduce((s, p) =>
+    s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0), 0);
+  const _barInPart  = totalCount > 0 ? `입고 ${totalCount}건 ${fmtN(totalQty)}CT` : '입고 없음';
+  const _barOutArr  = [];
+  if (sortingTotalKg > 0) _barOutArr.push(`선과 ${fmtN(Math.round(sortingTotalKg))}kg`);
+  if (pachiOutKg    > 0) _barOutArr.push(`파치 ${fmtN(Math.round(pachiOutKg))}kg`);
+  if (juiceOutQty   > 0) _barOutArr.push(`주스 ${fmtN(Math.round(juiceOutQty))}병`);
+  const _barOutPart = _barOutArr.length ? _barOutArr.join(' · ') : '출고 없음';
+
   const btnBase = 'padding:5px 12px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit';
   const todayHtml = `<div style="${CARD}">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #F3F4F6">
-      <div style="display:flex;gap:4px">
-        <button onclick="setSummaryKind('in')" style="${btnBase};border:1px solid ${_summaryKind==='in'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='in'?'#1565C0':'#fff'};color:${_summaryKind==='in'?'#fff':'#374151'}">📥 입고</button>
-        <button onclick="setSummaryKind('out')" style="${btnBase};border:1px solid ${_summaryKind==='out'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='out'?'#1565C0':'#fff'};color:${_summaryKind==='out'?'#fff':'#374151'}">📤 출고</button>
-      </div>
-      ${_summaryKind==='in' && totalCount > 0 ? `<span style="font-size:12px;color:#6B7280">${totalCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
-      <div style="display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:wrap">
-        <button type="button" onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">‹</button>
-        <button type="button" onclick="moveSummaryDate(1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">›</button>
-        <input type="date" value="${summaryDate}" onchange="setSummaryDate(this.value)" style="width:130px;flex-shrink:0;box-sizing:border-box;border:1px solid #E5E7EB;border-radius:5px;padding:4px 8px;font-size:13px;font-family:inherit;color:#111827">
-        <button type="button" onclick="setSummaryDate(td())" style="padding:4px 8px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:12px;color:#6B7280;font-family:inherit;flex-shrink:0;position:relative;z-index:2">오늘</button>
-      </div>
+    <div style="padding:10px 16px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none"
+         onclick="toggleSummaryOpen()" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
+      <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0">📊 입출고</span>
+      <span style="font-size:12px;color:#9CA3AF;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${_barInPart} / ${_barOutPart}</span>
+      <span style="font-size:12px;color:#6B7280;flex-shrink:0;pointer-events:none">${_summaryOpen ? '접기 ▴' : '펼치기 ▾'}</span>
     </div>
-    ${_summaryKind === 'in' ? inTabContent : outTabContent}
+    ${_summaryOpen ? `<div style="border-top:1px solid #F3F4F6">
+      <div style="padding:12px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;gap:4px">
+          <button onclick="setSummaryKind('in')" style="${btnBase};border:1px solid ${_summaryKind==='in'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='in'?'#1565C0':'#fff'};color:${_summaryKind==='in'?'#fff':'#374151'}">📥 입고</button>
+          <button onclick="setSummaryKind('out')" style="${btnBase};border:1px solid ${_summaryKind==='out'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='out'?'#1565C0':'#fff'};color:${_summaryKind==='out'?'#fff':'#374151'}">📤 출고</button>
+        </div>
+        ${_summaryKind==='in' && totalCount > 0 ? `<span style="font-size:12px;color:#6B7280">${totalCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
+        <div style="display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:wrap">
+          <button type="button" onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">‹</button>
+          <button type="button" onclick="moveSummaryDate(1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">›</button>
+          <input type="date" value="${summaryDate}" onchange="setSummaryDate(this.value)" style="width:130px;flex-shrink:0;box-sizing:border-box;border:1px solid #E5E7EB;border-radius:5px;padding:4px 8px;font-size:13px;font-family:inherit;color:#111827">
+          <button type="button" onclick="setSummaryDate(td())" style="padding:4px 8px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:12px;color:#6B7280;font-family:inherit;flex-shrink:0;position:relative;z-index:2">오늘</button>
+        </div>
+      </div>
+      ${_summaryKind === 'in' ? inTabContent : outTabContent}
+    </div>` : ''}
   </div>`;
 
   // ── 비중 막대 (미선과 섹션용)
@@ -7301,6 +7320,11 @@ function todayTabSwitch(tab) {
 
 function setSummaryDate(d) { if (d) { _summaryDate = d; renderInvSummary(); } }
 function setSummaryKind(k) { _summaryKind = k; renderInvSummary(); }
+function toggleSummaryOpen() {
+  _summaryOpen = !_summaryOpen;
+  localStorage.setItem('summary_open', _summaryOpen ? '1' : '0');
+  renderInvSummary();
+}
 function moveSummaryDate(n) {
   const base = _summaryDate || td();
   const dt = new Date(base + 'T00:00:00');
