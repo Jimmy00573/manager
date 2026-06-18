@@ -4714,16 +4714,7 @@ function _renderInvMatrix(product, recs) {
 // ── 재고 실사 목록 렌더 ─────────────────────────────────────────
 
 function _renderInvAuditList(recs) {
-  const items = recs
-    .filter(r => (Number(r.quantity) || 0) > 0)
-    .slice()
-    .sort((a, b) => {
-      const pc = (a.product || '').localeCompare(b.product || '', 'ko');
-      if (pc !== 0) return pc;
-      const fc = (a.farm_name || '').localeCompare(b.farm_name || '', 'ko');
-      if (fc !== 0) return fc;
-      return (a.size_code || '').localeCompare(b.size_code || '');
-    });
+  const items = recs.filter(r => (Number(r.quantity) || 0) > 0);
 
   _invAuditVisible = items;
 
@@ -4740,30 +4731,65 @@ function _renderInvAuditList(recs) {
     return progressBar + `<div style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">실사할 재고가 없습니다</div>`;
   }
 
+  // 품목 → 농가 → 등급 그룹핑
   const byProd = {};
   items.forEach(r => {
-    if (!byProd[r.product]) byProd[r.product] = [];
-    byProd[r.product].push(r);
+    const prod  = r.product    || '(품목없음)';
+    const farm  = r.farm_name  || '(농가없음)';
+    const grade = (r.quality_grade || '일반') === '고당' ? '고당' : '일반';
+    if (!byProd[prod]) byProd[prod] = {};
+    if (!byProd[prod][farm]) byProd[prod][farm] = { '일반': [], '고당': [] };
+    byProd[prod][farm][grade].push(r);
   });
 
   let html = progressBar;
-  Object.entries(byProd)
-    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    .forEach(([prod, prodItems]) => {
-      html += `<div style="margin-bottom:14px">
-        <div style="font-size:13px;font-weight:700;color:#374151;padding:6px 10px;background:#F3F4F6;border-radius:6px 6px 0 0;border:1px solid #E5E7EB">${esc(prod)}</div>
-        ${prodItems.map(r => {
-          const key = String(r.id);
-          const isChk = _invAuditChecked.has(key);
-          const grade = r.quality_grade || '일반';
-          const gradeTag = grade === '고당'
-            ? `<span style="font-size:10px;background:#DBEAFE;color:#1565C0;padding:1px 5px;border-radius:4px;font-weight:600;margin-left:4px;flex-shrink:0">고당</span>`
-            : '';
-          return `<div onclick="toggleInvAuditCheck('${key}')" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #E5E7EB;border-top:none;cursor:pointer;background:${isChk ? '#F5F3FF' : '#fff'}">
-            <span style="font-size:18px;color:${isChk ? '#7C3AED' : '#D1D5DB'};flex-shrink:0;line-height:1">${isChk ? '✓' : '○'}</span>
-            <span style="font-size:13px;color:#374151;flex:1;min-width:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${esc(r.farm_name || '(농가없음)')}${gradeTag}</span>
-            <span style="font-size:13px;color:#6B7280;flex-shrink:0;min-width:36px;text-align:center">${esc(r.size_code || '—')}</span>
-            <span style="font-size:13px;font-weight:600;color:#111827;flex-shrink:0;min-width:52px;text-align:right">${fmtN(Number(r.quantity) || 0)} CT</span>
+
+  Object.keys(byProd)
+    .sort((a, b) => a.localeCompare(b, 'ko'))
+    .forEach(prod => {
+      const farmMap = byProd[prod];
+      // getSizeGroupsFor 순서로 사이즈 랭크 맵 생성 (작은→큰)
+      const sizeRank = {};
+      getSizeGroupsFor(prod).flatMap(g => g.sizes).forEach((sz, i) => { sizeRank[sz] = i; });
+      const sortBySize = arr => arr.slice().sort((a, b) =>
+        (sizeRank[a.size_code] ?? 999) - (sizeRank[b.size_code] ?? 999)
+      );
+
+      const renderChip = r => {
+        const key    = String(r.id);
+        const isChk  = _invAuditChecked.has(key);
+        const isHigh = (r.quality_grade || '일반') === '고당';
+        const bg     = isChk ? '#F5F3FF' : isHigh ? '#EFF6FF' : '#fff';
+        const border = isChk ? '#7C3AED' : isHigh ? '#BFDBFE' : '#E5E7EB';
+        const color  = isChk ? '#7C3AED' : isHigh ? '#1565C0' : '#374151';
+        const shadow = isChk ? 'box-shadow:inset 0 0 0 1px #7C3AED;' : '';
+        return `<span onclick="toggleInvAuditCheck('${key}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;cursor:pointer;font-size:12px;color:${color};white-space:nowrap;${shadow}">${esc(r.size_code || '—')} <b>${fmtN(Number(r.quantity) || 0)}</b></span>`;
+      };
+
+      const farmNames = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
+      const lastFarm  = farmNames[farmNames.length - 1];
+
+      html += `<div style="margin-bottom:12px;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden">
+        <div style="font-size:13px;font-weight:700;color:#374151;padding:5px 10px;background:#F3F4F6;border-bottom:1px solid #E5E7EB">${esc(prod)}</div>
+        ${farmNames.map(farm => {
+          const normalChips = sortBySize(farmMap[farm]['일반']);
+          const highChips   = sortBySize(farmMap[farm]['고당']);
+          const isLast      = farm === lastFarm;
+
+          const gradeRows = [
+            normalChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">
+              <span style="font-size:10px;color:#6B7280;flex-shrink:0;min-width:24px">일반</span>
+              <div style="display:flex;gap:4px;flex-wrap:wrap">${normalChips.map(renderChip).join('')}</div>
+            </div>` : '',
+            highChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">
+              <span style="font-size:10px;color:#1565C0;font-weight:600;flex-shrink:0;min-width:24px">고당</span>
+              <div style="display:flex;gap:4px;flex-wrap:wrap">${highChips.map(renderChip).join('')}</div>
+            </div>` : ''
+          ].filter(Boolean).join('');
+
+          return `<div style="padding:5px 10px;${isLast ? '' : 'border-bottom:1px solid #F0F0F0'}">
+            <span style="font-size:12px;font-weight:600;color:#374151">${esc(farm)}</span>
+            ${gradeRows}
           </div>`;
         }).join('')}
       </div>`;
