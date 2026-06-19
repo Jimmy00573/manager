@@ -12884,9 +12884,13 @@ async function openSortingDetailModal(inboundId) {
   const detailsByResult = {};
   details.forEach(d => {
     if (!detailsByResult[d.sorting_result_id])
-      detailsByResult[d.sorting_result_id] = { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
+      detailsByResult[d.sorting_result_id] = { normalMap: {}, normalMapN: {}, normalMapH: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
     const rd = detailsByResult[d.sorting_result_id];
-    if (d.category === '정상' && d.size_code) rd.normalMap[d.size_code] = Number(d.ct);
+    if (d.category === '정상' && d.size_code) {
+      rd.normalMap[d.size_code] = (rd.normalMap[d.size_code] || 0) + Number(d.ct);
+      if (d.quality_grade === '고당') rd.normalMapH[d.size_code] = (rd.normalMapH[d.size_code] || 0) + Number(d.ct);
+      else rd.normalMapN[d.size_code] = (rd.normalMapN[d.size_code] || 0) + Number(d.ct);
+    }
     else if (d.category === '파치')   rd.waste    += Number(d.ct);
     else if (d.category === '고산도') rd.highacid += Number(d.ct);
     else if (d.category === '극소과') rd.tiny     += Number(d.ct);
@@ -12910,8 +12914,12 @@ async function openSortingDetailModal(inboundId) {
   const lossRate    = totalInput > 0 ? Math.round(totalLoss / totalInput * 100) : 0;
 
   const cumSizeMap = {};
+  const cumSizeMapN = {};
+  const cumSizeMapH = {};
   details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
     cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
+    if (d.quality_grade === '고당') cumSizeMapH[d.size_code] = (cumSizeMapH[d.size_code] || 0) + Number(d.ct);
+    else cumSizeMapN[d.size_code] = (cumSizeMapN[d.size_code] || 0) + Number(d.ct);
   });
   const cumPachi    = details.filter(d => d.category === '파치').reduce((s,d)   => s + Number(d.ct), 0);
   const cumHighacid = details.filter(d => d.category === '고산도').reduce((s,d) => s + Number(d.ct), 0);
@@ -12926,7 +12934,7 @@ async function openSortingDetailModal(inboundId) {
   const cumAbn = cumPachi + cumHighacid + cumTiny + cumLoss;
 
   const sessionHtml = results.map(r => {
-    const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
+    const rd = detailsByResult[r.id] || { normalMap: {}, normalMapN: {}, normalMapH: {}, waste: 0, highacid: 0, tiny: 0, loss: 0 };
     const normalTotal = allSizes.reduce((s, sz) => s + (rd.normalMap[sz] ?? 0), 0);
     const abnList = [
       { label: '파치',   ct: rd.waste    },
@@ -12945,7 +12953,9 @@ async function openSortingDetailModal(inboundId) {
       </div>
       <div style="padding:8px 12px;border-top:1px solid #F0F0F0">
         <div style="font-size:12px;font-weight:700;color:#059669">🟢 정상품 ${fmtN(normalTotal)} CT</div>
-        ${_sizeGroupCols(allGroups, rd.normalMap, '#059669')}
+        <div style="font-size:10px;font-weight:600;color:#6B7280;margin-top:5px">일반</div>
+        ${_sizeGroupCols(allGroups, rd.normalMapN, '#059669')}
+        ${allSizes.some(sz => (rd.normalMapH[sz] || 0) > 0) ? `<div style="font-size:10px;font-weight:600;color:#1565C0;margin-top:6px">고당</div>${_sizeGroupCols(allGroups, rd.normalMapH, '#1565C0')}` : ''}
       </div>
       <div style="padding:8px 12px;border-top:1px solid #F0F0F0;background:#FEF9FA">
         <div style="font-size:12px;font-weight:700;color:#DC2626">🔴 비정상품 ${fmtN(abnTotal)} CT</div>
@@ -12961,7 +12971,9 @@ async function openSortingDetailModal(inboundId) {
           <div style="font-size:12px;font-weight:700;color:#7C3AED">사이즈별 누적 합계</div>
           <div style="font-size:12px;font-weight:700;color:#059669">🟢 정상품 누적 ${fmtN(totalNormal)} CT</div>
         </div>
-        ${_sizeGroupCols(allGroups, cumSizeMap, '#7C3AED')}
+        <div style="font-size:10px;font-weight:600;color:#6B7280;margin-top:5px">일반</div>
+        ${_sizeGroupCols(allGroups, cumSizeMapN, '#7C3AED')}
+        ${allSizes.some(sz => (cumSizeMapH[sz] || 0) > 0) ? `<div style="font-size:10px;font-weight:600;color:#1565C0;margin-top:6px">고당</div>${_sizeGroupCols(allGroups, cumSizeMapH, '#1565C0')}` : ''}
       </div>
       <div style="padding:8px 12px;border-top:1px solid #DDD6FE;background:#F5F3FF">
         <div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:2px">🔴 비정상품 누계</div>
