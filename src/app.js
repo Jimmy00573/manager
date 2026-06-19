@@ -829,6 +829,7 @@ function fmtCT(n) {
   const str = (rounded % 1 === 0) ? String(rounded) : rounded.toFixed(1);
   return Number(str).toLocaleString('ko-KR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
+function juiceUnitOf(prod) { return (invJuiceMasters.find(m => m.product_name === prod)?.default_unit) || '병'; }
 function emr(c, m) { return `<tr><td colspan="${c}" class="empty">${m}</td></tr>`; }
 function ftm(iso) {
   if (!iso) return '-';
@@ -5329,7 +5330,7 @@ function calcJbeTotal() {
   const pb = parseFloat(document.getElementById('jbe-per-box')?.value) || 0;
   const ls = parseFloat(document.getElementById('jbe-loose')?.value) || 0;
   const el = document.getElementById('jbe-total-preview');
-  if (el) el.textContent = (bx * pb + ls) + '병';
+  if (el) el.textContent = (bx * pb + ls) + (window._jbeUnit || '병');
 }
 
 function openJuiceBatchEdit(id) {
@@ -5338,6 +5339,8 @@ function openJuiceBatchEdit(id) {
   const modal = document.getElementById('modal-juice-edit');
   const body  = document.getElementById('juice-edit-body');
   if (!modal || !body) return;
+  const u = juiceUnitOf(b.product_name);
+  window._jbeUnit = u;
   const perBox  = b.per_box || 0;
   const curBox  = perBox > 0 ? Math.floor((b.remaining_bottles || 0) / perBox) : 0;
   const curLoose = perBox > 0 ? (b.remaining_bottles || 0) - curBox * perBox : (b.remaining_bottles || 0);
@@ -5349,16 +5352,16 @@ function openJuiceBatchEdit(id) {
             <input id="jbe-box" type="number" min="0" step="1" value="${curBox}"
               oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
-          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스당 (병)</label>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스당 (${u})</label>
             <input id="jbe-per-box" type="number" min="0" step="1" value="${perBox}"
               oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
-          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">낱개 (병)</label>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">낱개 (${u})</label>
             <input id="jbe-loose" type="number" min="0" step="1" value="${curLoose}"
               oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
         </div>
-        <div id="jbe-total-preview" style="font-size:12px;color:#6B7280;text-align:right;margin-top:4px">${b.remaining_bottles || 0}병</div>
+        <div id="jbe-total-preview" style="font-size:12px;color:#6B7280;text-align:right;margin-top:4px">${b.remaining_bottles || 0}${u}</div>
       </div>`
     : `<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 병수</label>
         <input id="jbe-remaining" type="number" min="0" value="${b.remaining_bottles || 0}"
@@ -5415,7 +5418,7 @@ async function saveJuiceBatchEdit() {
 async function deleteJuiceBatch(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const b = invJuiceBatches.find(x => x.id === id);
-  const label = b ? `${b.product_name} 입고 ${b.inbound_date} ${fmtN(b.total_bottles)}병` : '';
+  const label = b ? `${b.product_name} 입고 ${b.inbound_date} ${fmtN(b.total_bottles)}${juiceUnitOf(b.product_name)}` : '';
   const ok = await showConfirmDanger({ title: '주스 배치 삭제', items: [label], confirmText: '삭제' });
   if (!ok) return;
   try {
@@ -5440,6 +5443,7 @@ function openJuiceOutboundModal(id) {
 
   const perBox = b.per_box || 0;
   const hasBox = perBox > 0;
+  const u = juiceUnitOf(b.product_name);
   const today = new Date(); today.setHours(0,0,0,0);
   const expiryStr = (() => {
     if (!b.expiry_date) return '';
@@ -5449,7 +5453,7 @@ function openJuiceOutboundModal(id) {
     return ` · <span style="color:${color};font-size:12px">유통 ${b.expiry_date}${suffix}</span>`;
   })();
 
-  document.getElementById('ob-title').innerHTML = `📤 출고 — ${esc(b.product_name)} · 입고 ${b.inbound_date}${expiryStr} · 현재고 <strong>${fmtN(b.remaining_bottles)}병</strong>`;
+  document.getElementById('ob-title').innerHTML = `📤 출고 — ${esc(b.product_name)} · 입고 ${b.inbound_date}${expiryStr} · 현재고 <strong>${fmtN(b.remaining_bottles)}${u}</strong>`;
   document.getElementById('ob-body').innerHTML = `
     <div style="padding:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
@@ -5462,7 +5466,7 @@ function openJuiceOutboundModal(id) {
       </div>
       ${hasBox ? `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">박스 수 <span style="color:#9CA3AF">(×${perBox}병)</span></label>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">박스 수 <span style="color:#9CA3AF">(×${perBox}${u})</span></label>
           <input type="number" id="job-box" min="0" step="1" value="0"
             onfocus="setTimeout(()=>this.select(),0)" oninput="calcJuiceOutbound(${b.remaining_bottles},${perBox})"
             style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
@@ -5474,7 +5478,7 @@ function openJuiceOutboundModal(id) {
         </div>
       </div>` : `
       <div style="margin-bottom:10px">
-        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고 병 수 * <span style="color:#059669">현재고 ${fmtN(b.remaining_bottles)} 병</span></label>
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">출고 ${u} 수 * <span style="color:#059669">현재고 ${fmtN(b.remaining_bottles)} ${u}</span></label>
         <input type="number" id="job-single" min="0" step="1" value="0"
           onfocus="setTimeout(()=>this.select(),0)" oninput="calcJuiceOutbound(${b.remaining_bottles},0)"
           style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right">
@@ -5503,7 +5507,7 @@ function openJuiceOutboundModal(id) {
       </div>
     </div>`;
 
-  window._juiceOutboundCtx = { id, b };
+  window._juiceOutboundCtx = { id, b, unit: u };
   popOutboundPartners();
   document.getElementById('modal-outbound').style.display = 'flex';
 }
@@ -5515,7 +5519,8 @@ function calcJuiceOutbound(remaining, perBox) {
   const disp   = document.getElementById('job-total-display');
   if (!disp) return;
   const over = qty > remaining;
-  disp.textContent = `${fmtN(qty)} 병 출고 · 출고 후 ${fmtN(Math.max(0, remaining - qty))} 병`;
+  const _u = window._juiceOutboundCtx?.unit || '병';
+  disp.textContent = `${fmtN(qty)} ${_u} 출고 · 출고 후 ${fmtN(Math.max(0, remaining - qty))} ${_u}`;
   disp.style.color = over ? '#DC2626' : qty > 0 ? '#059669' : '#374151';
   calcJobAmount();
 }
@@ -5538,7 +5543,7 @@ async function saveJuiceOutbound(id) {
   if (date > td())               return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
   if (!partner)                  return alert('출고처를 선택해주세요.');
   if (qty <= 0)                  return alert('출고량을 입력해주세요.');
-  if (qty > b.remaining_bottles) return alert(`현재고(${fmtN(b.remaining_bottles)}병)를 초과했습니다.`);
+  if (qty > b.remaining_bottles) return alert(`현재고(${fmtN(b.remaining_bottles)}${juiceUnitOf(b.product_name)})를 초과했습니다.`);
 
   const btn = document.getElementById('job-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
@@ -7225,7 +7230,6 @@ function renderInvSummary() {
     .reduce((s, o) => s + (o.weight_kg != null && o.weight_kg !== ''
       ? Number(o.weight_kg)
       : (Number(o.quantity) || 0) * kgPerCt(o.product)), 0);
-  const juiceUnitOf = prod => (invJuiceMasters.find(m => m.product_name === prod)?.default_unit) || '병';
   const juiceOutQty = summaryOuts
     .filter(o => o.source_type === 'juice' && juiceUnitOf(o.product) !== '박스')
     .reduce((s, o) => s + (Number(o.quantity) || 0), 0);
