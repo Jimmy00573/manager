@@ -4779,7 +4779,7 @@ function _renderInvAuditList(recs) {
         const border = isChk ? '#7C3AED' : isHigh ? '#BFDBFE' : '#E5E7EB';
         const color  = isChk ? '#7C3AED' : isHigh ? '#1565C0' : '#374151';
         const shadow = isChk ? 'box-shadow:inset 0 0 0 1px #7C3AED;' : '';
-        return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;font-size:12px;color:${color};white-space:nowrap;${shadow}"><span onclick="toggleInvAuditCheck('${key}')" style="cursor:pointer">${esc(r.size_code || '—')}</span> <b data-chip-key="${key}" onclick="startChipEdit('${key}',event)" style="border-bottom:1px dashed #9CA3AF;cursor:text;padding-bottom:1px">${fmtN(Number(r.quantity) || 0)}</b></span>`;
+        return `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${bg};border:1px solid ${border};border-radius:4px;white-space:nowrap;${shadow}"><span onclick="toggleInvAuditCheck('${key}')" style="font-size:10px;color:#6B7280;cursor:pointer;line-height:1.1">${esc(r.size_code || '—')}</span><b data-chip-key="${key}" onclick="startChipEdit('${key}',event)" style="font-size:13px;line-height:1.2;border-bottom:1px dashed #9CA3AF;cursor:text;color:${color}">${fmtN(Number(r.quantity) || 0)}</b></span>`;
       };
 
       const farmNames = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -4823,7 +4823,7 @@ function _renderInvAuditList(recs) {
                 const border = allChk ? '#7C3AED' : anyChk ? '#C4B5FD' : '#D1D5DB';
                 const color  = allChk ? '#7C3AED' : '#374151';
                 const arrow  = expanded ? '▴' : '▾';
-                chipsHtml += `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;font-size:12px;color:${color};white-space:nowrap;cursor:pointer">${esc(size)} 합 ${fmtN(sum)} ${arrow}${recs.length}건</span>`;
+                chipsHtml += `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${bg};border:1px solid ${border};border-radius:4px;white-space:nowrap;cursor:pointer"><span style="font-size:10px;color:#6B7280;line-height:1.1">${esc(size)}</span><span style="font-size:12px;color:${color};font-weight:600;line-height:1.2">합 ${fmtN(sum)} ${arrow}${recs.length}건</span></span>`;
                 if (expanded) expandedHtml += `<div style="display:flex;align-items:center;gap:5px;padding:5px 7px;background:#F5F3FF;border:1px dashed #C4B5FD;border-radius:5px;margin-top:4px"><span style="font-size:11px;color:#6D28D9;font-weight:600;min-width:34px;flex-shrink:0">${esc(size)}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${recs.map(renderChip).join('')}</div></div>`;
               });
               return { chipsHtml, expandedHtml };
