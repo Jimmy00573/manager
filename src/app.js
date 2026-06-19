@@ -9272,6 +9272,31 @@ async function commitChipEdit(key, rawVal) {
     return;
   }
   const oldQty = rec.quantity;
+  if (newVal === 0) {
+    const ok = await showConfirmEdit('재고 삭제', `${rec.farm_name || ''} ${rec.size_code} ${fmtN(oldQty)}CT 재고를 삭제할까요?`);
+    if (!ok) {
+      const b = document.querySelector(`b[data-chip-key="${key}"]`);
+      if (b) b.textContent = fmtN(Number(oldQty) || 0);
+      return;
+    }
+    try {
+      await sbUpdate('inventory_records', rec.id, { is_void: true });
+      rec.is_void = true;
+      await dbInsertAuditLog({
+        target_table: 'inventory_records', target_id: rec.id,
+        before_val: { quantity: oldQty }, after_val: null,
+        reason: '재고 실사 삭제(0 입력)',
+        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      });
+      renderInventoryStatus();
+      showToast(`🗑️ ${rec.size_code} 삭제`);
+    } catch(e) {
+      showToast(`오류: ${e.message}`);
+      const b = document.querySelector(`b[data-chip-key="${key}"]`);
+      if (b) b.textContent = fmtN(Number(oldQty) || 0);
+    }
+    return;
+  }
   try {
     await sbUpdate('inventory_records', rec.id, { quantity: newVal });
     rec.quantity = newVal;
