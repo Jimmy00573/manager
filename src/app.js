@@ -4776,7 +4776,7 @@ function _renderInvAuditList(recs) {
         const border = isChk ? '#7C3AED' : isHigh ? '#BFDBFE' : '#E5E7EB';
         const color  = isChk ? '#7C3AED' : isHigh ? '#1565C0' : '#374151';
         const shadow = isChk ? 'box-shadow:inset 0 0 0 1px #7C3AED;' : '';
-        return `<span onclick="toggleInvAuditCheck('${key}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;cursor:pointer;font-size:12px;color:${color};white-space:nowrap;${shadow}">${esc(r.size_code || '—')} <b>${fmtN(Number(r.quantity) || 0)}</b></span>`;
+        return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;font-size:12px;color:${color};white-space:nowrap;${shadow}"><span onclick="toggleInvAuditCheck('${key}')" style="cursor:pointer">${esc(r.size_code || '—')}</span> <b data-chip-key="${key}" onclick="startChipEdit('${key}',event)" style="border-bottom:1px dashed #9CA3AF;cursor:text;padding-bottom:1px">${fmtN(Number(r.quantity) || 0)}</b></span>`;
       };
 
       const farmNames = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -9222,6 +9222,73 @@ function toggleInvAuditCheck(key) {
   if (_invAuditChecked.has(key)) _invAuditChecked.delete(key);
   else _invAuditChecked.add(key);
   renderInventoryStatus();
+}
+function startChipEdit(key, event) {
+  event.stopPropagation();
+  const b = document.querySelector(`b[data-chip-key="${key}"]`);
+  if (!b || b.querySelector('input')) return;
+  const rec = inventoryRecords.find(r => String(r.id) === key);
+  if (!rec) return;
+  const curVal = Number(rec.quantity) || 0;
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.value = curVal;
+  inp.min = '0';
+  inp.step = 'any';
+  inp.style.cssText = 'width:44px;font-size:12px;font-weight:700;border:1px solid #7C3AED;border-radius:3px;padding:0 2px;text-align:center;outline:none;';
+  b.textContent = '';
+  b.appendChild(inp);
+  inp.focus();
+  inp.select();
+  let committed = false;
+  const commit = () => {
+    if (committed) return;
+    committed = true;
+    commitChipEdit(key, inp.value);
+  };
+  const cancel = () => {
+    if (committed) return;
+    committed = true;
+    b.textContent = fmtN(curVal);
+  };
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  inp.addEventListener('blur', commit);
+}
+async function commitChipEdit(key, rawVal) {
+  const newVal = parseFloat(rawVal);
+  const rec = inventoryRecords.find(r => String(r.id) === key);
+  if (rawVal === '' || isNaN(newVal) || newVal < 0) {
+    const b = document.querySelector(`b[data-chip-key="${key}"]`);
+    if (b && rec) b.textContent = fmtN(Number(rec.quantity) || 0);
+    return;
+  }
+  if (!rec) return;
+  if (newVal === Number(rec.quantity)) {
+    const b = document.querySelector(`b[data-chip-key="${key}"]`);
+    if (b) b.textContent = fmtN(Number(rec.quantity) || 0);
+    return;
+  }
+  const oldQty = rec.quantity;
+  try {
+    await sbUpdate('inventory_records', rec.id, { quantity: newVal });
+    rec.quantity = newVal;
+    await dbInsertAuditLog({
+      target_table: 'inventory_records', target_id: rec.id,
+      before_val: { quantity: oldQty }, after_val: { quantity: newVal },
+      reason: `재고 실사 수정 ${fmtN(oldQty)}→${fmtN(newVal)}`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
+    _invAuditChecked.add(key);
+    renderInventoryStatus();
+    showToast(`✏️ ${rec.size_code} ${fmtN(oldQty)}→${fmtN(newVal)} 수정`);
+  } catch(e) {
+    showToast(`오류: ${e.message}`);
+    const b = document.querySelector(`b[data-chip-key="${key}"]`);
+    if (b) b.textContent = fmtN(Number(oldQty) || 0);
+  }
 }
 function _invClearAuditChecks() {
   _invAuditChecked = new Set();
