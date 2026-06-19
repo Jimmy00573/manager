@@ -12347,13 +12347,15 @@ function renderJuiceSection() {
   });
 
   const productKeys = Object.keys(productMap).sort((a, b) => {
-    const ca = isCheong(a) ? 1 : 0, cb = isCheong(b) ? 1 : 0;
-    if (ca !== cb) return ca - cb;
+    const ga = juiceUnitOf(a) === '박스' ? 2 : isCheong(a) ? 1 : 0;
+    const gb = juiceUnitOf(b) === '박스' ? 2 : isCheong(b) ? 1 : 0;
+    if (ga !== gb) return ga - gb;
     return a.localeCompare(b, 'ko');
   });
 
-  const juiceEntries  = productKeys.filter(p => !isCheong(p)).map(p => [p, productMap[p]]);
-  const cheongEntries = productKeys.filter(p =>  isCheong(p)).map(p => [p, productMap[p]]);
+  const juiceEntries  = productKeys.filter(p => juiceUnitOf(p) !== '박스' && !isCheong(p)).map(p => [p, productMap[p]]);
+  const cheongEntries = productKeys.filter(p => juiceUnitOf(p) !== '박스' &&  isCheong(p)).map(p => [p, productMap[p]]);
+  const boxEntries    = productKeys.filter(p => juiceUnitOf(p) === '박스').map(p => [p, productMap[p]]);
 
   const expiryDisplay = expiry => {
     if (!expiry) return `<span style="font-size:11px;color:#9CA3AF">기한없음</span>`;
@@ -12369,7 +12371,7 @@ function renderJuiceSection() {
     const total = batches.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
     return `<div style="background:#F0FFF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;min-width:120px">
       <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-      <div style="font-size:18px;font-weight:700;color:#065F46">${fmtN(total)} 병</div>
+      <div style="font-size:18px;font-weight:700;color:#065F46">${fmtN(total)} ${juiceUnitOf(p)}</div>
       <div style="font-size:11px;color:#999;margin-top:2px">${batches.length}배치</div>
     </div>`;
   };
@@ -12380,7 +12382,7 @@ function renderJuiceSection() {
        </div>` : '';
 
   const statsHtml = productKeys.length
-    ? groupBlockOf('🧃 주스', juiceEntries) + groupBlockOf('🍯 청', cheongEntries)
+    ? groupBlockOf('🧃 주스', juiceEntries) + groupBlockOf('🍯 청', cheongEntries) + groupBlockOf('🍫 가공품', boxEntries)
     : `<span style="font-size:13px;color:#aaa">주스·청 재고 없음</span>`;
 
   let _lastJuiceGroup = null;
@@ -12391,11 +12393,12 @@ function renderJuiceSection() {
       return a.expiry_date.localeCompare(b.expiry_date);
     });
     const totalRemaining = sorted.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
-    const thisGroup = isCheong(product) ? 'cheong' : 'juice';
+    const thisGroup = juiceUnitOf(product) === '박스' ? 'box' : isCheong(product) ? 'cheong' : 'juice';
     let grpHdr = '';
     if (thisGroup !== _lastJuiceGroup) {
       _lastJuiceGroup = thisGroup;
-      grpHdr = `<div style="font-size:12px;font-weight:600;color:#374151;padding:6px 0 4px;margin-top:4px">${thisGroup === 'cheong' ? '🍯 청' : '🧃 주스'}</div>`;
+      const grpLabel = thisGroup === 'cheong' ? '🍯 청' : thisGroup === 'box' ? '🍫 가공품' : '🧃 주스';
+      grpHdr = `<div style="font-size:12px;font-weight:600;color:#374151;padding:6px 0 4px;margin-top:4px">${grpLabel}</div>`;
     }
     const productKey = product.replace(/[^a-zA-Z0-9가-힣]/g, '_');
     const batchRows = sorted.map(b => {
@@ -12405,10 +12408,10 @@ function renderJuiceSection() {
       return `<tr style="${trBg}">
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
-        <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> 병</span></td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">${
           b.box_count && b.per_box
-            ? `${fmtN(b.box_count)}박스 (박스당 ${fmtN(b.per_box)}${b.unit || '병'})`
+            ? `${fmtN(b.box_count)}박스 (박스당 ${fmtN(b.per_box)}${juiceUnitOf(product)})`
             : b.box_count ? `${fmtN(b.box_count)}박스` : '-'
         }</td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF">${esc(b.note || '')}</td>
@@ -12429,7 +12432,7 @@ function renderJuiceSection() {
         return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #F3F4F6">
           <span style="color:#9CA3AF;width:70px;flex-shrink:0">${b.inbound_date || '-'}</span>
           <span style="background:#DBEAFE;color:#1D4ED8;border-radius:4px;padding:0 5px;font-size:10px">입고</span>
-          <span style="color:#065F46;font-weight:600">+${fmtN(b.total_bottles)} 병</span>
+          <span style="color:#065F46;font-weight:600">+${fmtN(b.total_bottles)} ${juiceUnitOf(product)}</span>
           ${b.note ? `<span style="color:#9CA3AF">${esc(b.note)}</span>` : ''}
           ${b.remaining_bottles < b.total_bottles ? `<span style="color:#9CA3AF;font-size:10px">(잔여 ${fmtN(b.remaining_bottles)})</span>` : ''}
         </div>`;
@@ -12438,7 +12441,7 @@ function renderJuiceSection() {
         return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #F3F4F6">
           <span style="color:#9CA3AF;width:70px;flex-shrink:0">${o.date || '-'}</span>
           <span style="background:#FEE2E2;color:#DC2626;border-radius:4px;padding:0 5px;font-size:10px">출고</span>
-          <span style="color:#DC2626;font-weight:600">-${fmtN(o.quantity)} 병</span>
+          <span style="color:#DC2626;font-weight:600">-${fmtN(o.quantity)} ${juiceUnitOf(product)}</span>
           <span style="color:#6B7280">${esc(o.partner_name || '')}</span>
           ${o.note ? `<span style="color:#9CA3AF">${esc(o.note)}</span>` : ''}
         </div>`;
@@ -12448,7 +12451,7 @@ function renderJuiceSection() {
     return `${grpHdr}<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:8px">
       <div style="display:flex;align-items:center;padding:10px 14px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;gap:8px">
         <span style="font-size:13px;font-weight:700;color:#111827;flex:1">${esc(product)}</span>
-        <span style="font-size:13px;font-weight:600;color:#065F46">${fmtN(totalRemaining)} 병</span>
+        <span style="font-size:13px;font-weight:600;color:#065F46">${fmtN(totalRemaining)} ${juiceUnitOf(product)}</span>
         <button onclick="toggleJuiceHistory('${productKey}')"
           style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
       </div>
@@ -12514,7 +12517,7 @@ function renderJuiceSection() {
   el.innerHTML = `
     <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB">
-        <div style="font-size:14px;font-weight:700;color:#222">주스·청 재고 현황</div>
+        <div style="font-size:14px;font-weight:700;color:#222">주스·청·가공품 재고 현황</div>
       </div>
       <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
         <div>${statsHtml}</div>
