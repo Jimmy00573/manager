@@ -4824,7 +4824,11 @@ function _renderInvAuditList(recs) {
                 const border = allChk ? '#7C3AED' : anyChk ? '#C4B5FD' : '#D1D5DB';
                 const color  = allChk ? '#7C3AED' : '#374151';
                 const arrow  = expanded ? '▴' : '▾';
-                chipsHtml += `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${bg};border:1px solid ${border};border-radius:4px;white-space:nowrap;cursor:pointer"><span style="font-size:10px;color:#6B7280;line-height:1.1">${esc(size)}</span><span style="font-size:12px;color:${color};font-weight:600;line-height:1.2">합 ${fmtN(sum)} ${arrow}${recs.length}건</span></span>`;
+                const chipBg  = expanded ? '#1E3A5F' : bg;
+                const chipBd  = expanded ? '#1E3A5F' : border;
+                const szColor = expanded ? '#fff' : '#6B7280';
+                const sumColor = expanded ? '#fff' : color;
+                chipsHtml += `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${chipBg};border:1px solid ${chipBd};border-radius:4px;white-space:nowrap;cursor:pointer"><span style="font-size:10px;color:${szColor};line-height:1.1">${esc(size)}</span><span style="font-size:12px;color:${sumColor};font-weight:600;line-height:1.2">합 ${fmtN(sum)} <span style="font-size:13px">${arrow}</span>${recs.length}건</span></span>`;
                 if (expanded) expandedHtml += `<div style="display:flex;align-items:center;gap:5px;padding:5px 7px;background:#F5F3FF;border:1px dashed #C4B5FD;border-radius:5px;margin-top:4px"><span style="font-size:11px;color:#6D28D9;font-weight:600;min-width:34px;flex-shrink:0">${esc(size)}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${recs.map(renderChip).join('')}</div></div>`;
               });
               return { chipsHtml, expandedHtml };
