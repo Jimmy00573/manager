@@ -4488,8 +4488,10 @@ function renderInventoryStatus() {
           const active = _invGrade === g.key;
           return `<button onclick="setInvGrade('${g.key}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${g.label}</button>`;
         }).join('')}
+        ${sessionStorage.getItem('citrus_role') === 'admin' ? `
         <span style="width:1px;height:20px;background:#D1D5DB;margin:0 4px;flex-shrink:0"></span>
         <button onclick="toggleInvAuditMode()" style="padding:5px 12px;background:${_invAuditMode ? '#7C3AED' : '#fff'};color:${_invAuditMode ? '#fff' : '#374151'};border:1px solid ${_invAuditMode ? '#7C3AED' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">📋 재고 실사</button>
+        ` : ''}
       </div>`;
   }
 
@@ -9238,6 +9240,7 @@ function ibRatioBadge(r) {
 }
 
 function toggleInvAuditMode() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invAuditMode = !_invAuditMode;
   if (!_invAuditMode) { _invAuditChecked = new Set(); _invAuditExpanded = new Set(); }
   renderInventoryStatus();
