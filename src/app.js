@@ -7061,6 +7061,12 @@ function renderInvSummary() {
     juiceMap[p].net += Number(b.remaining_bottles) || 0;
     if (!juiceMap[p].perBox && b.per_box) juiceMap[p].perBox = b.per_box;
   });
+  // 표시 단위는 마스터 기준. 배치 unit(병)·isJuice 판별은 v2에서 분리
+  Object.keys(juiceMap).forEach(p => {
+    const master = invJuiceMasters.find(m => m.product_name === p);
+    if (master?.default_unit)    juiceMap[p].unit   = master.default_unit;
+    if (master?.default_per_box) juiceMap[p].perBox = master.default_per_box;
+  });
 
   // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준)
   const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
@@ -7433,11 +7439,12 @@ function renderInvSummary() {
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div>`;
 
-  // 섹션 5: 주스/청 (그룹 분리: 청으로 끝나면 '청', 나머지 '주스')
+  // 섹션 5: 주스/청/가공품 (unit===박스=가공품, 청으로 끝남=청, 나머지=주스)
   const isCheong = name => (name || '').trim().endsWith('청');
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  const juiceGroup  = juiceEntries.filter(([p]) => !isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  const cheongGroup = juiceEntries.filter(([p]) =>  isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const boxGroup    = juiceEntries.filter(([, v]) =>  v.unit === '박스').sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const cheongGroup = juiceEntries.filter(([p, v]) => v.unit !== '박스' &&  isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  const juiceGroup  = juiceEntries.filter(([p, v]) => v.unit !== '박스' && !isCheong(p)).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const juiceRow = ([p, v]) => {
     const isNeg = v.net < 0;
     const noteStr = v.perBox ? `1BOX/${v.perBox}개` : DASH;
@@ -7445,7 +7452,8 @@ function renderInvSummary() {
   };
   const juiceGroupHtml = grp => {
     if (!grp.length) return '';
-    const label = isCheong(grp[0][0]) ? '🍯 청' : '🧃 주스';
+    const isBox = grp[0][1].unit === '박스';
+    const label = isBox ? '🍫 가공품' : isCheong(grp[0][0]) ? '🍯 청' : '🧃 주스';
     const subtotal = grp.reduce((s, [, v]) => s + v.net, 0);
     const unit = grp[0][1].unit || '병';
     return `<tr><td colspan="3" style="background:#F9FAFB;font-weight:600;color:#374151;padding:6px 8px;font-size:12px">${label}</td></tr>`
@@ -7457,7 +7465,7 @@ function renderInvSummary() {
       <colgroup><col style="width:40%"><col style="width:28%"><col style="width:32%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
-        ? juiceGroupHtml(juiceGroup) + juiceGroupHtml(cheongGroup)
+        ? juiceGroupHtml(juiceGroup) + juiceGroupHtml(cheongGroup) + juiceGroupHtml(boxGroup)
         : EMPTY(3, '주스/청 재고 없음')}</tbody>
     </table></div>`;
 
