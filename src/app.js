@@ -7225,8 +7225,12 @@ function renderInvSummary() {
     .reduce((s, o) => s + (o.weight_kg != null && o.weight_kg !== ''
       ? Number(o.weight_kg)
       : (Number(o.quantity) || 0) * kgPerCt(o.product)), 0);
+  const juiceUnitOf = prod => (invJuiceMasters.find(m => m.product_name === prod)?.default_unit) || '병';
   const juiceOutQty = summaryOuts
-    .filter(o => o.source_type === 'juice')
+    .filter(o => o.source_type === 'juice' && juiceUnitOf(o.product) !== '박스')
+    .reduce((s, o) => s + (Number(o.quantity) || 0), 0);
+  const boxOutQty = summaryOuts
+    .filter(o => o.source_type === 'juice' && juiceUnitOf(o.product) === '박스')
     .reduce((s, o) => s + (Number(o.quantity) || 0), 0);
   const unsortedOutCt = summaryOuts
     .filter(o => o.source_type === 'unsorted')
@@ -7251,6 +7255,7 @@ function renderInvSummary() {
   let outTopHtml = '';
   if (pachiOutKg   > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">파치</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(pachiOutKg))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">kg</span></span></div>`;
   if (juiceOutQty  > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">주스/청</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(juiceOutQty))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">병</span></span></div>`;
+  if (boxOutQty    > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">가공품</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(boxOutQty))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">박스</span></span></div>`;
   if (unsortedOutCt > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">미선과 출고</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtCT(unsortedOutCt)}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">CT</span></span></div>`;
 
   const sortingProds = Object.keys(sortingByProd).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -7279,7 +7284,7 @@ function renderInvSummary() {
     </div>`;
   });
 
-  const hasAnyOut = pachiOutKg > 0 || juiceOutQty > 0 || unsortedOutCt > 0 || sortingProds.length > 0;
+  const hasAnyOut = pachiOutKg > 0 || juiceOutQty > 0 || boxOutQty > 0 || unsortedOutCt > 0 || sortingProds.length > 0;
   const outTabContent = hasAnyOut
     ? `<div style="padding:12px 16px 16px">
         ${outTopHtml ? `<div style="display:flex;flex-wrap:wrap;margin-bottom:${sortingCardsHtml ? '4px' : '0'}">${outTopHtml}</div>` : ''}
@@ -7295,6 +7300,7 @@ function renderInvSummary() {
   if (sortingTotalKg > 0) _barOutArr.push(`선과 ${fmtN(Math.round(sortingTotalKg))}kg`);
   if (pachiOutKg    > 0) _barOutArr.push(`파치 ${fmtN(Math.round(pachiOutKg))}kg`);
   if (juiceOutQty   > 0) _barOutArr.push(`주스 ${fmtN(Math.round(juiceOutQty))}병`);
+  if (boxOutQty     > 0) _barOutArr.push(`가공품 ${fmtN(Math.round(boxOutQty))}박스`);
   const _barOutPart = _barOutArr.length ? _barOutArr.join(' · ') : '출고 없음';
 
   const btnBase = 'padding:5px 12px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit';
