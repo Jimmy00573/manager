@@ -7088,7 +7088,8 @@ function renderInvSummary() {
   const citrusTotalKg = Object.values(citrusMap).reduce((s, m) => s + Object.values(m).reduce((a, b) => a + b, 0), 0);
   const citrusItems   = Object.keys(citrusMap).length;
   const pachiTotalKg  = Object.entries(pachiMap).reduce((s, [p, ct]) => s + ct * kgPerCt(p), 0);
-  const juiceTotalNet = Object.values(juiceMap).reduce((s, v) => s + Math.max(0, v.net), 0);
+  const juiceTotalNet = Object.values(juiceMap).filter(v => v.unit !== '박스').reduce((s, v) => s + Math.max(0, v.net), 0);
+  const boxTotalNet   = Object.values(juiceMap).filter(v => v.unit === '박스').reduce((s, v) => s + Math.max(0, v.net), 0);
   const pachiJuiceItems = Object.values(pachiMap).filter(ct => ct > 0).length + Object.values(juiceMap).filter(v => v.net > 0).length;
 
   // ── 미선과 비중 막대 색상
@@ -7124,6 +7125,8 @@ function renderInvSummary() {
     ${pachiTotalKg > 0 ? kpiCard('파치', fmtN(Math.round(pachiTotalKg)), 'kg',
       '', true, 'pachi') : ''}
     ${juiceTotalNet > 0 ? kpiCard('주스/청', fmtN(Math.round(juiceTotalNet)), '병',
+      '', true, 'juice') : ''}
+    ${boxTotalNet > 0 ? kpiCard('가공품', fmtN(Math.round(boxTotalNet)), '박스',
       '', true, 'juice') : ''}
   </div>`;
 
