@@ -9035,6 +9035,7 @@ function renderIbCatSummary() {
   catEl.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:8px">
       ${IB_CATS.map(c => {
+        if (!(catTotals[c.key] > 0)) return '';
         const prods = Object.entries(catProducts[c.key])
           .filter(([, q]) => q > 0)
           .sort(([, a], [, b]) => b - a);
