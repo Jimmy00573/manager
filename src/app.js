@@ -76,6 +76,7 @@ let _ibAuditChecked = new Set();
 let _ibAuditVisible = [];
 let _invAuditMode = false;
 let _invAuditChecked = new Set();
+let _invAuditExpanded = new Set();
 let _invAuditVisible = [];
 let ibSearch = '';
 let ibFilterProduct = '';
@@ -4799,14 +4800,37 @@ function _renderInvAuditList(recs) {
             const normalChips = sortBySize(batch['일반']);
             const highChips   = sortBySize(batch['고당']);
 
+            const renderGroupedChips = (chips, grade) => {
+              const sizeGroups = [];
+              const sizeIdx = {};
+              chips.forEach(r => {
+                const sz = r.size_code || '—';
+                if (sizeIdx[sz] === undefined) { sizeIdx[sz] = sizeGroups.length; sizeGroups.push({ size: sz, recs: [] }); }
+                sizeGroups[sizeIdx[sz]].recs.push(r);
+              });
+              return sizeGroups.map(({ size, recs }) => {
+                if (recs.length === 1) return renderChip(recs[0]);
+                const mk = `${prod}__${farm}__${dateStr}__${grade}__${size}`;
+                const sum = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+                const expanded = _invAuditExpanded.has(mk);
+                const allChk = recs.every(r => _invAuditChecked.has(String(r.id)));
+                const anyChk = recs.some(r => _invAuditChecked.has(String(r.id)));
+                const bg     = allChk ? '#F5F3FF' : anyChk ? '#FAF5FF' : '#F9FAFB';
+                const border = allChk ? '#7C3AED' : anyChk ? '#C4B5FD' : '#D1D5DB';
+                const color  = allChk ? '#7C3AED' : '#374151';
+                const arrow  = expanded ? '▴' : '▾';
+                const subHtml = expanded ? `<span style="display:inline-flex;gap:3px;flex-wrap:wrap;margin-left:4px;padding:2px 4px;background:#F5F3FF;border-radius:4px">${recs.map(renderChip).join('')}</span>` : '';
+                return `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;font-size:12px;color:${color};white-space:nowrap;cursor:pointer">${esc(size)} 합 ${fmtN(sum)} ${arrow}${recs.length}건</span>${subHtml}`;
+              }).join('');
+            };
             const gradeRows = [
               normalChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
                 <span style="font-size:10px;color:#6B7280;flex-shrink:0;min-width:24px">일반</span>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">${normalChips.map(renderChip).join('')}</div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">${renderGroupedChips(normalChips, '일반')}</div>
               </div>` : '',
               highChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
                 <span style="font-size:10px;color:#1565C0;font-weight:600;flex-shrink:0;min-width:24px">고당</span>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">${highChips.map(renderChip).join('')}</div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">${renderGroupedChips(highChips, '고당')}</div>
               </div>` : ''
             ].filter(Boolean).join('');
 
@@ -9215,12 +9239,17 @@ function ibRatioBadge(r) {
 
 function toggleInvAuditMode() {
   _invAuditMode = !_invAuditMode;
-  if (!_invAuditMode) _invAuditChecked = new Set();
+  if (!_invAuditMode) { _invAuditChecked = new Set(); _invAuditExpanded = new Set(); }
   renderInventoryStatus();
 }
 function toggleInvAuditCheck(key) {
   if (_invAuditChecked.has(key)) _invAuditChecked.delete(key);
   else _invAuditChecked.add(key);
+  renderInventoryStatus();
+}
+function toggleChipExpand(mk) {
+  if (_invAuditExpanded.has(mk)) _invAuditExpanded.delete(mk);
+  else _invAuditExpanded.add(mk);
   renderInventoryStatus();
 }
 function startChipEdit(key, event) {
