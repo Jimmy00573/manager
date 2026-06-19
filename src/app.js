@@ -1782,7 +1782,8 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
     if (document.activeElement) document.activeElement.blur();
-    overlay.querySelector('#cdg-confirm').focus();
+    if (needWorker) overlay.querySelector('#cdg-reason')?.focus();
+    else overlay.querySelector('#cdg-cancel').focus();
   });
 }
 
@@ -1826,7 +1827,7 @@ function showConfirmEdit(title, msg = '') {
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
     if (document.activeElement) document.activeElement.blur();
-    overlay.querySelector('#ced-confirm').focus();
+    overlay.querySelector('#ced-cancel').focus();
   });
 }
 
