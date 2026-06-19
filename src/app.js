@@ -4810,8 +4810,10 @@ function _renderInvAuditList(recs) {
                 if (sizeIdx[sz] === undefined) { sizeIdx[sz] = sizeGroups.length; sizeGroups.push({ size: sz, recs: [] }); }
                 sizeGroups[sizeIdx[sz]].recs.push(r);
               });
-              return sizeGroups.map(({ size, recs }) => {
-                if (recs.length === 1) return renderChip(recs[0]);
+              let chipsHtml = '';
+              let expandedHtml = '';
+              sizeGroups.forEach(({ size, recs }) => {
+                if (recs.length === 1) { chipsHtml += renderChip(recs[0]); return; }
                 const mk = `${prod}__${farm}__${dateStr}__${grade}__${size}`;
                 const sum = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
                 const expanded = _invAuditExpanded.has(mk);
@@ -4821,19 +4823,26 @@ function _renderInvAuditList(recs) {
                 const border = allChk ? '#7C3AED' : anyChk ? '#C4B5FD' : '#D1D5DB';
                 const color  = allChk ? '#7C3AED' : '#374151';
                 const arrow  = expanded ? '▴' : '▾';
-                const subHtml = expanded ? `<span style="display:inline-flex;gap:3px;flex-wrap:wrap;margin-left:4px;padding:2px 4px;background:#F5F3FF;border-radius:4px">${recs.map(renderChip).join('')}</span>` : '';
-                return `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;font-size:12px;color:${color};white-space:nowrap;cursor:pointer">${esc(size)} 합 ${fmtN(sum)} ${arrow}${recs.length}건</span>${subHtml}`;
-              }).join('');
+                chipsHtml += `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:${bg};border:1px solid ${border};border-radius:4px;font-size:12px;color:${color};white-space:nowrap;cursor:pointer">${esc(size)} 합 ${fmtN(sum)} ${arrow}${recs.length}건</span>`;
+                if (expanded) expandedHtml += `<div style="display:flex;align-items:center;gap:5px;padding:5px 7px;background:#F5F3FF;border:1px dashed #C4B5FD;border-radius:5px;margin-top:4px"><span style="font-size:11px;color:#6D28D9;font-weight:600;min-width:34px;flex-shrink:0">${esc(size)}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${recs.map(renderChip).join('')}</div></div>`;
+              });
+              return { chipsHtml, expandedHtml };
             };
             const gradeRows = [
-              normalChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
+              normalChips.length ? (() => {
+                const { chipsHtml, expandedHtml } = renderGroupedChips(normalChips, '일반');
+                return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
                 <span style="font-size:10px;color:#6B7280;flex-shrink:0;min-width:24px">일반</span>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">${renderGroupedChips(normalChips, '일반')}</div>
-              </div>` : '',
-              highChips.length ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
+                <div style="display:flex;gap:4px;flex-wrap:wrap">${chipsHtml}</div>
+              </div>${expandedHtml}`;
+              })() : '',
+              highChips.length ? (() => {
+                const { chipsHtml, expandedHtml } = renderGroupedChips(highChips, '고당');
+                return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
                 <span style="font-size:10px;color:#1565C0;font-weight:600;flex-shrink:0;min-width:24px">고당</span>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">${renderGroupedChips(highChips, '고당')}</div>
-              </div>` : ''
+                <div style="display:flex;gap:4px;flex-wrap:wrap">${chipsHtml}</div>
+              </div>${expandedHtml}`;
+              })() : ''
             ].filter(Boolean).join('');
 
             return `<div style="margin-top:4px">
