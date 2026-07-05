@@ -8212,6 +8212,24 @@ function _applyIbSort(arr) {
   });
 }
 
+// 기본 정렬(헤더 클릭 안 했을 때): 상태 우선(미선과0→선과중1→완료2), 같은 상태면 최신 날짜 먼저
+function _applyIbStatusSort(arr, cntMap) {
+  const statusRank = (r) => {
+    const rem = getRemainingCT(r);
+    const cnt = (cntMap && cntMap[r.id]) || 0;
+    if (rem <= 0) return 2;      // 완료
+    return cnt > 0 ? 1 : 0;      // 선과중 / 미선과
+  };
+  return [...arr].sort((a, b) => {
+    const ra = statusRank(a), rb = statusRank(b);
+    if (ra !== rb) return ra - rb;            // 상태 오름차순
+    const da = a.date || '', db = b.date || '';
+    if (da < db) return 1;                    // 날짜 내림차순(최신 먼저)
+    if (da > db) return -1;
+    return 0;
+  });
+}
+
 function ibSetSearch(val) {
   ibSearch = val.trim();
   ibPage = 1;
@@ -9579,8 +9597,8 @@ function renderInboundList() {
     return;
   }
 
-  // 정렬 적용
-  visible = _applyIbSort(visible);
+  // 정렬 적용: 헤더 클릭 시 컬럼 정렬, 기본은 상태 우선 정렬(미선과→선과중→완료)
+  visible = ibSortCol ? _applyIbSort(visible) : _applyIbStatusSort(visible, _sortingCountMap);
 
   // 페이지네이션 계산
   const totalFiltered = visible.length;
