@@ -4785,6 +4785,17 @@ function _renderInvMatrix(product, recs) {
   h += `<div style="${F}justify-content:flex-end;padding:5px 8px;color:#1565C0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtCT(grandTotal)}</div>`;
   if (isAdm) h += `<div style="${F}border-right:none;position:sticky;right:0;z-index:2"></div>`;
 
+  // 중량(kg) row — 사이즈별 합계 CT × 품목 중량. kgPerCt는 이 스코프에 없어 productWeights 인라인.
+  const kgPer = (productWeights && productWeights[product] != null) ? Number(productWeights[product]) : 17;
+  const Fk = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border-right:1px solid #D1D5DB;border-top:1px solid #E5E7EB;background:#F8FAFC;padding:5px 2px;color:#6B7280;';
+  h += `<div style="${Fk}justify-content:flex-start;padding:5px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">중량(kg)</div>`;
+  displaySizes.forEach(sz => {
+    const kg = Math.round((colTotals[sz] || 0) * kgPer);
+    h += `<div style="${Fk}color:${kg ? '#6B7280' : '#D1D5DB'}">${kg ? fmtN(kg) : '-'}</div>`;
+  });
+  h += `<div style="${Fk}justify-content:flex-end;padding:5px 8px;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(Math.round(grandTotal * kgPer))}</div>`;
+  if (isAdm) h += `<div style="${Fk}border-right:none;position:sticky;right:0;z-index:2"></div>`;
+
   const groupTotals = groups.map(g => ({
     name: g.group,
     ct: g.sizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0)
