@@ -4550,7 +4550,7 @@ function _renderInvDateCtrl() {
     </div>`;
 }
 
-let _invGrade = 'all'; // 'all' | '고당' | '일반'
+let _invGrade = 'all'; // 'all' | '일반' | 브릭스 등급 label | (잔존 '고당')
 function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
@@ -4569,16 +4569,29 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
-  // 등급 토글 툴바
+  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny'];
+  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
+
+  // 등급 토글 툴바 — 동적: 전체 + 일반 + 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
   const gradeToolbarEl = document.getElementById('inv-grade-toolbar');
   if (gradeToolbarEl) {
-    const grades = [{ key: 'all', label: '전체' }, { key: '고당', label: '고당' }, { key: '일반', label: '일반' }];
+    const activeBrix = brixGrades
+      .filter(g => g.is_active !== false)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(g => g.label);
+    const existing = new Set(activeRecs.map(r => r.quality_grade || '일반'));
+    // 마스터에 없지만 데이터에 남은 등급(예: 아직 변환 안 된 '고당') — 누락 방지
+    const others = [...existing]
+      .filter(lbl => lbl !== '일반' && !activeBrix.includes(lbl))
+      .sort((a, b) => a.localeCompare(b, 'ko'));
+    const gradeKeys = ['일반', ...activeBrix, ...others];
+    const grades = [{ key: 'all', label: '전체' }, ...gradeKeys.map(k => ({ key: k, label: k }))];
     gradeToolbarEl.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
         <span style="font-size:12px;font-weight:600;color:#374151;margin-right:4px">등급 보기:</span>
         ${grades.map(g => {
           const active = _invGrade === g.key;
-          return `<button onclick="setInvGrade('${g.key}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${g.label}</button>`;
+          return `<button onclick="setInvGrade('${esc(g.key)}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${esc(g.label)}</button>`;
         }).join('')}
         ${sessionStorage.getItem('citrus_role') === 'admin' ? `
         <span style="width:1px;height:20px;background:#D1D5DB;margin:0 4px;flex-shrink:0"></span>
@@ -4586,9 +4599,6 @@ function renderInventoryStatus() {
         ` : ''}
       </div>`;
   }
-
-  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny'];
-  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
 
   // 등급 필터
   const recs0 = _invGrade !== 'all'
@@ -4783,11 +4793,11 @@ function _renderInvMatrix(product, recs) {
     ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtCT(gt.ct)}`).join(' · ')})</span>`
     : '';
 
-  const gradeBadge = _invGrade === '고당'
-    ? '<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">고당</span>'
+  const gradeBadge = _invGrade === 'all'
+    ? ''
     : _invGrade === '일반'
       ? '<span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">일반</span>'
-      : '';
+      : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">${esc(_invGrade)}</span>`;
 
   return `
     <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
@@ -4995,11 +5005,12 @@ async function deleteMatrixBatch(regId) {
     : r => String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void;
 
   // 등급 결정
+  const isGradeTab = _invGrade !== 'all';   // 특정 등급 탭이면 그 등급만 정확히
   let targetGrade;
-  if (_invGrade === '고당') {
-    targetGrade = '고당';
-  } else if (_invGrade === '일반') {
+  if (_invGrade === '일반') {
     targetGrade = '일반';
+  } else if (isGradeTab) {
+    targetGrade = _invGrade;   // 브릭스/고당 등 특정 등급 탭
   } else {
     // 전체 탭 — 배치 내 존재 등급 확인 후 선택
     const cands = inventoryRecords.filter(baseFilter);
@@ -5023,10 +5034,14 @@ async function deleteMatrixBatch(regId) {
   let toDelete;
   if (targetGrade === 'all') {
     toDelete = inventoryRecords.filter(baseFilter);
-  } else if (targetGrade === '고당') {
-    toDelete = inventoryRecords.filter(r => baseFilter(r) && isGraded(r));
-  } else {
+  } else if (targetGrade === '일반') {
     toDelete = inventoryRecords.filter(r => baseFilter(r) && isNormalGrade(r));
+  } else if (isGradeTab) {
+    // 특정 등급 탭 — 그 등급 label만 정확히
+    toDelete = inventoryRecords.filter(r => baseFilter(r) && gradeOf(r) === targetGrade);
+  } else {
+    // 전체 탭에서 '고당'(=등급 있음) 선택 — 등급 있는 것 전부(기존 동작 유지)
+    toDelete = inventoryRecords.filter(r => baseFilter(r) && isGraded(r));
   }
   if (!toDelete.length) return alert('삭제할 데이터가 없습니다.');
 
