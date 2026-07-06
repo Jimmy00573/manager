@@ -46,6 +46,7 @@ let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
+let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
 let productWeights = {};
 let sortingResults = [];
 let _editLocId = null;
@@ -194,7 +195,7 @@ async function initApp() {
 
   try {
     await loadProductWeights();
-    const [data, qcData, locData, , usageData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages()]);
+    const [data, qcData, locData, , usageData, brixData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages(), dbGetBrixGrades()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -210,6 +211,7 @@ async function initApp() {
     qualityCriteria = qcData || [];
     storageLocations = locData || [];
     pachiUsages = usageData || [];
+    brixGrades = brixData || [];
     partners = await dbGetPartners().catch(() => []);
   } catch (e) {
     console.error('데이터 로드 실패:', e);
@@ -3437,7 +3439,7 @@ function setTab(t) {
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
   if (t === 'cfg') renderSizeCfg();
-  if (t === 'usage') renderPachiUsageCfg();
+  if (t === 'usage') { renderPachiUsageCfg(); renderBrixGradeCfg(); }
   if (t === 'weight') renderProductWeightCfg();
   if (t === 'juicemaster') renderJuiceMasterCfg();
   if (t === 'partner') renderPartnerCfg();
@@ -3770,6 +3772,90 @@ async function togglePachiUsageStock(id, checked) {
     renderPachiSection();
     renderInvSummary();
     showToast(checked ? '재고 포함으로 변경' : '재고 미포함으로 변경');
+  } catch(e) { alert('변경 오류: ' + e.message); }
+}
+
+// ── 당도(브릭스) 등급 관리 ──────────────────────────────────────
+// 1단계: 마스터 CRUD만. 아직 재고/선과에서 사용하지 않음.
+
+function renderBrixGradeCfg() {
+  const el = document.getElementById('csp-brix');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const sorted = [...brixGrades].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const rows = sorted.map(g => `<tr>
+    <td style="font-weight:600">${esc(g.label)}</td>
+    <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
+    <td style="text-align:center"><input type="checkbox" onchange="toggleBrixGradeActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
+    ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn edt" onclick="editBrixGrade(${g.id})">수정</button>
+      <button class="btn del" onclick="deleteBrixGrade(${g.id})">삭제</button>
+    </td>` : '<td></td>'}
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">당도 등급 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">재고를 당도(브릭스) 등급으로 나눠 관리합니다. 순서대로 정렬됩니다.</div>
+      </div>
+      ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addBrixGrade()">+ 등급 추가</button>` : ''}
+    </div>
+    ${sorted.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>등급명</th><th>순서</th><th>활성</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 당도 등급 없음</div>`}`;
+}
+
+async function addBrixGrade() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const label = prompt('당도 등급명을 입력하세요. (예: 11브릭스 이상)')?.trim();
+  if (!label) return;
+  if (brixGrades.some(g => g.label === label)) return alert(`"${label}"은 이미 등록된 등급입니다.`);
+  try {
+    const row = await dbInsertBrixGrade({ label, sort_order: brixGrades.length + 1, is_active: true });
+    brixGrades.push(row);
+    renderBrixGradeCfg();
+    showToast(`"${label}" 등급이 추가되었습니다.`);
+  } catch(e) { alert('추가 오류: ' + e.message); }
+}
+
+async function editBrixGrade(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const g = brixGrades.find(x => x.id === id);
+  if (!g) return;
+  const label = prompt('새 등급명을 입력하세요.', g.label)?.trim();
+  if (!label) return;
+  if (brixGrades.some(x => x.label === label && x.id !== id)) return alert(`"${label}"은 이미 등록된 등급입니다.`);
+  try {
+    const updated = await dbUpdateBrixGrade(id, { label });
+    const idx = brixGrades.findIndex(x => x.id === id);
+    if (idx !== -1) brixGrades[idx] = updated;
+    renderBrixGradeCfg();
+    showToast('수정되었습니다.');
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deleteBrixGrade(id) {
+  const g = brixGrades.find(x => x.id === id);
+  if (!g) return;
+  if (!(await showConfirmDanger({ title: '당도 등급 삭제', items: [g.label], confirmText: '삭제' }))) return;
+  try {
+    await dbDeleteBrixGrade(id);
+    brixGrades = brixGrades.filter(x => x.id !== id);
+    renderBrixGradeCfg();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function toggleBrixGradeActive(id, checked) {
+  try {
+    await dbUpdateBrixGrade(id, { is_active: checked });
+    const idx = brixGrades.findIndex(g => g.id === id);
+    if (idx !== -1) brixGrades[idx].is_active = checked;
+    renderBrixGradeCfg();
+    showToast(checked ? '활성으로 변경' : '비활성으로 변경');
   } catch(e) { alert('변경 오류: ' + e.message); }
 }
 

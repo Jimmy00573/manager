@@ -100,6 +100,12 @@ async function dbInsertPachiUsage(data) { const r = await sbInsert('pachi_usages
 async function dbUpdatePachiUsage(id, data) { const r = await sbUpdate('pachi_usages', id, data); return r[0]; }
 async function dbDeletePachiUsage(id) { return sbDelete('pachi_usages', id); }
 
+// ── 당도(브릭스) 등급 마스터
+async function dbGetBrixGrades() { try { return await sbGet('brix_grades', 'order=sort_order'); } catch(e) { return []; } }
+async function dbInsertBrixGrade(data) { const r = await sbInsert('brix_grades', data); return r[0]; }
+async function dbUpdateBrixGrade(id, data) { const r = await sbUpdate('brix_grades', id, data); return r[0]; }
+async function dbDeleteBrixGrade(id) { return sbDelete('brix_grades', id); }
+
 // ── 품질 기준
 async function dbGetQualityCriteria() { try { return await sbGet('quality_criteria', 'order=product_name'); } catch(e) { return []; } }
 async function dbInsertQualityCriteria(data) { const r = await sbInsert('quality_criteria', data); return r[0]; }
