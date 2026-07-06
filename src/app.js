@@ -8212,21 +8212,19 @@ function _applyIbSort(arr) {
   });
 }
 
-// 기본 정렬(헤더 클릭 안 했을 때): 상태 우선(미선과0→선과중1→완료2), 같은 상태면 최신 날짜 먼저
+// 기본 정렬: 진행중(미선과+선과중) 오래된 입고 위 → 완료 최신 입고 위
 function _applyIbStatusSort(arr, cntMap) {
   const statusRank = (r) => {
     const rem = getRemainingCT(r);
-    const cnt = (cntMap && cntMap[r.id]) || 0;
-    if (rem <= 0) return 2;      // 완료
-    return cnt > 0 ? 1 : 0;      // 선과중 / 미선과
+    return rem <= 0 ? 1 : 0;     // 완료=1(아래) / 진행중=0(위)
   };
   return [...arr].sort((a, b) => {
     const ra = statusRank(a), rb = statusRank(b);
-    if (ra !== rb) return ra - rb;            // 상태 오름차순
+    if (ra !== rb) return ra - rb;            // 진행중 위, 완료 아래
     const da = a.date || '', db = b.date || '';
-    if (da < db) return 1;                    // 날짜 내림차순(최신 먼저)
-    if (da > db) return -1;
-    return 0;
+    if (da === db) return 0;
+    if (ra === 0) return da < db ? -1 : 1;    // 진행중: 입고날짜 오름차순(오래된 것 위)
+    return da < db ? 1 : -1;                  // 완료: 입고날짜 내림차순(최신 것 위)
   });
 }
 
