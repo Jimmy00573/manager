@@ -7335,11 +7335,13 @@ function renderInvSummary() {
     const isHigh = isGraded(r);
     if (ptype === '감귤류') { if(isHigh) citrusHighKg+=kg; else citrusNormalKg+=kg; }
     else { if(isHigh) manGamHighKg+=kg; else manGamNormalKg+=kg; }
-    // 수별 상세
+    // 수별 상세 (등급 차원 추가: [품목][등급][사이즈])
+    const gd = gradeOf(r);
     sortDetail[r.product] = sortDetail[r.product] || {};
-    sortDetail[r.product][r.size_code] = sortDetail[r.product][r.size_code] || {ct:0, kg:0};
-    sortDetail[r.product][r.size_code].ct += Number(r.quantity) || 0;
-    sortDetail[r.product][r.size_code].kg += kg;
+    sortDetail[r.product][gd] = sortDetail[r.product][gd] || {};
+    sortDetail[r.product][gd][r.size_code] = sortDetail[r.product][gd][r.size_code] || {ct:0, kg:0};
+    sortDetail[r.product][gd][r.size_code].ct += Number(r.quantity) || 0;
+    sortDetail[r.product][gd][r.size_code].kg += kg;
   });
   invSorted.forEach(r => {
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
@@ -7351,11 +7353,13 @@ function renderInvSummary() {
     const isHighS = isGraded(r);
     if (ptype === '감귤류') { if(isHighS) citrusHighKg+=kg; else citrusNormalKg+=kg; }
     else { if(isHighS) manGamHighKg+=kg; else manGamNormalKg+=kg; }
-    // 수별 상세
+    // 수별 상세 (등급 차원 추가: [품목][등급][사이즈])
+    const gd = gradeOf(r);
     sortDetail[r.product] = sortDetail[r.product] || {};
-    sortDetail[r.product][r.count_num] = sortDetail[r.product][r.count_num] || {ct:0, kg:0};
-    sortDetail[r.product][r.count_num].ct += Number(r.quantity) || 0;
-    sortDetail[r.product][r.count_num].kg += kg;
+    sortDetail[r.product][gd] = sortDetail[r.product][gd] || {};
+    sortDetail[r.product][gd][r.count_num] = sortDetail[r.product][gd][r.count_num] || {ct:0, kg:0};
+    sortDetail[r.product][gd][r.count_num].ct += Number(r.quantity) || 0;
+    sortDetail[r.product][gd][r.count_num].kg += kg;
   });
 
   // ── 섹션 4: 파치 재고
@@ -7708,24 +7712,45 @@ function renderInvSummary() {
           const arrow = detail ? '▸ ' : '';
           const detailHtml = (() => {
             if (!detail) return '';
-            const byGroup = {};
-            Object.keys(detail).forEach(sz => {
-              const g = getGroupForSorted(p, sz) || '기타';
-              (byGroup[g] = byGroup[g] || []).push(sz);
-            });
-            const mkCell = sz =>
+            // 등급 순서: 일반 → 활성 브릭스(sort_order) → 데이터에 남은 기타 등급. 재고 있는 등급만.
+            const activeBrix = brixGrades
+              .filter(g => g.is_active !== false)
+              .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+              .map(g => g.label);
+            const present = Object.keys(detail);
+            const others = present.filter(g => g !== '일반' && !activeBrix.includes(g)).sort((a, b) => a.localeCompare(b, 'ko'));
+            const gradeOrder = ['일반', ...activeBrix, ...others].filter(g => detail[g] && Object.keys(detail[g]).length);
+
+            // mkCell/mkLine: 기존 디자인 그대로, 등급별 사이즈맵(gsz) 기준
+            const mkCell = (gsz, sz) =>
               `<div style="text-align:center;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0">` +
               `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
-              `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(detail[sz].kg))}</div>` +
+              `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(gsz[sz].kg))}</div>` +
               `</div>`;
-            const mkLine = (g, szArr) =>
+            const mkLine = (gsz, g, szArr) =>
               `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0;margin:6px 0">` +
               `<span style="font-weight:500;color:#374151;min-width:42px;font-size:12px;padding-top:6px">${g}</span>` +
-              `<div style="display:flex;flex-wrap:wrap">${sortSizes(szArr).map(mkCell).join('')}</div>` +
+              `<div style="display:flex;flex-wrap:wrap">${sortSizes(szArr).map(sz => mkCell(gsz, sz)).join('')}</div>` +
               `</div>`;
-            const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => mkLine(g, byGroup[g]));
-            if (byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine('기타', byGroup['기타']));
-            return lines.join('');
+
+            const blocks = gradeOrder.map(grade => {
+              const gsz = detail[grade];   // {사이즈:{ct,kg}}
+              const byGroup = {};
+              Object.keys(gsz).forEach(sz => {
+                const g = getGroupForSorted(p, sz) || '기타';
+                (byGroup[g] = byGroup[g] || []).push(sz);
+              });
+              const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => mkLine(gsz, g, byGroup[g]));
+              if (byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine(gsz, '기타', byGroup['기타']));
+              const badge = grade === '일반'
+                ? `<span style="font-size:11px;font-weight:600;color:#6B7280;background:#F3F4F6;padding:2px 9px;border-radius:10px">일반</span>`
+                : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 9px;border-radius:10px;border:1px solid #BFDBFE">${esc(grade)}</span>`;
+              const accent = grade === '일반' ? '#E5E7EB' : '#BFDBFE';
+              return `<div style="flex:1 1 240px;min-width:240px;border-left:3px solid ${accent};padding-left:10px">` +
+                `<div style="margin-bottom:2px">${badge}</div>${lines.join('')}</div>`;
+            });
+            // 반응형: 넓으면 가로 나열, 좁으면 자동 세로 쌓기(flex-wrap + min-width)
+            return `<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start">${blocks.join('')}</div>`;
           })();
           const detailRow = detail
             ? `<tr id="${detailId}" style="display:none"><td colspan="${groups.length + 2}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailHtml}</td></tr>`
