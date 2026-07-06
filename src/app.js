@@ -4572,14 +4572,15 @@ function renderInventoryStatus() {
   const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny'];
   const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
 
-  // 등급 토글 툴바 — 동적: 전체 + 일반 + 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
+  // 등급 토글 툴바 — 동적: 전체 + 일반(항상) + 재고 있는 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
   const gradeToolbarEl = document.getElementById('inv-grade-toolbar');
   if (gradeToolbarEl) {
+    const existing = new Set(activeRecs.map(r => r.quality_grade || '일반'));
+    // 활성 브릭스라도 재고 0이면 탭 미표시 (앱 전체 0건 숨김 원리와 일관)
     const activeBrix = brixGrades
-      .filter(g => g.is_active !== false)
+      .filter(g => g.is_active !== false && existing.has(g.label))
       .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
       .map(g => g.label);
-    const existing = new Set(activeRecs.map(r => r.quality_grade || '일반'));
     // 마스터에 없지만 데이터에 남은 등급(예: 아직 변환 안 된 '고당') — 누락 방지
     const others = [...existing]
       .filter(lbl => lbl !== '일반' && !activeBrix.includes(lbl))
