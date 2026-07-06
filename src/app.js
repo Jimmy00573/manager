@@ -830,6 +830,10 @@ function fmtCT(n) {
   return Number(str).toLocaleString('ko-KR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 function juiceUnitOf(prod) { return (invJuiceMasters.find(m => m.product_name === prod)?.default_unit) || '병'; }
+// 품질등급 판별 헬퍼(브릭스 확장 안전판): 현재 고당/일반 2값. 등급 추가 시 이 헬퍼만 손보면 됨.
+function gradeOf(r) { return (r && r.quality_grade) || '일반'; }
+function isNormalGrade(r) { return gradeOf(r) === '일반'; }
+function isGraded(r) { return !isNormalGrade(r); }   // 등급 있음(현재=고당, 향후=브릭스)
 function emr(c, m) { return `<tr><td colspan="${c}" class="empty">${m}</td></tr>`; }
 function ftm(iso) {
   if (!iso) return '-';
@@ -4744,7 +4748,7 @@ function _renderInvAuditList(recs) {
   items.forEach(r => {
     const prod     = r.product   || '(품목없음)';
     const farm     = r.farm_name || '(농가없음)';
-    const grade    = (r.quality_grade || '일반') === '고당' ? '고당' : '일반';
+    const grade    = isGraded(r) ? gradeOf(r) : '일반';
     const isManual = !(r.source_type === 'sorting' && r.sorting_result_id);
     const groupId  = isManual ? `manual_${r.date || ''}` : r.sorting_result_id;
     const batchKey = `${farm}__${groupId}`;
@@ -4776,7 +4780,7 @@ function _renderInvAuditList(recs) {
       const renderChip = r => {
         const key    = String(r.id);
         const isChk  = _invAuditChecked.has(key);
-        const isHigh = (r.quality_grade || '일반') === '고당';
+        const isHigh = isGraded(r);
         const bg     = isChk ? '#F5F3FF' : isHigh ? '#EFF6FF' : '#fff';
         const border = isChk ? '#7C3AED' : isHigh ? '#BFDBFE' : '#E5E7EB';
         const color  = isChk ? '#7C3AED' : isHigh ? '#1565C0' : '#374151';
@@ -4913,8 +4917,8 @@ async function deleteMatrixBatch(regId) {
   } else {
     // 전체 탭 — 배치 내 존재 등급 확인 후 선택
     const cands = inventoryRecords.filter(baseFilter);
-    const hasNormal = cands.some(r => (r.quality_grade || '일반') === '일반');
-    const hasHigh   = cands.some(r => r.quality_grade === '고당');
+    const hasNormal = cands.some(isNormalGrade);
+    const hasHigh   = cands.some(isGraded);
     if (!hasNormal && !hasHigh) return alert('삭제할 데이터가 없습니다.');
     if (hasNormal && hasHigh) {
       targetGrade = await _pickDeleteGrade();
@@ -4934,9 +4938,9 @@ async function deleteMatrixBatch(regId) {
   if (targetGrade === 'all') {
     toDelete = inventoryRecords.filter(baseFilter);
   } else if (targetGrade === '고당') {
-    toDelete = inventoryRecords.filter(r => baseFilter(r) && r.quality_grade === '고당');
+    toDelete = inventoryRecords.filter(r => baseFilter(r) && isGraded(r));
   } else {
-    toDelete = inventoryRecords.filter(r => baseFilter(r) && (r.quality_grade || '일반') === '일반');
+    toDelete = inventoryRecords.filter(r => baseFilter(r) && isNormalGrade(r));
   }
   if (!toDelete.length) return alert('삭제할 데이터가 없습니다.');
 
@@ -7012,7 +7016,7 @@ function renderInvSummary() {
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
-    const isHigh = (r.quality_grade || '일반') === '고당';
+    const isHigh = isGraded(r);
     if (ptype === '감귤류') { if(isHigh) citrusHighKg+=kg; else citrusNormalKg+=kg; }
     else { if(isHigh) manGamHighKg+=kg; else manGamNormalKg+=kg; }
     // 수별 상세
@@ -7028,7 +7032,7 @@ function renderInvSummary() {
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
-    const isHighS = (r.quality_grade || '일반') === '고당';
+    const isHighS = isGraded(r);
     if (ptype === '감귤류') { if(isHighS) citrusHighKg+=kg; else citrusNormalKg+=kg; }
     else { if(isHighS) manGamHighKg+=kg; else manGamNormalKg+=kg; }
     // 수별 상세
@@ -12928,7 +12932,7 @@ async function openSortingDetailModal(inboundId) {
     const rd = detailsByResult[d.sorting_result_id];
     if (d.category === '정상' && d.size_code) {
       rd.normalMap[d.size_code] = (rd.normalMap[d.size_code] || 0) + Number(d.ct);
-      if (d.quality_grade === '고당') rd.normalMapH[d.size_code] = (rd.normalMapH[d.size_code] || 0) + Number(d.ct);
+      if (isGraded(d)) rd.normalMapH[d.size_code] = (rd.normalMapH[d.size_code] || 0) + Number(d.ct);
       else rd.normalMapN[d.size_code] = (rd.normalMapN[d.size_code] || 0) + Number(d.ct);
     }
     else if (d.category === '파치')   rd.waste    += Number(d.ct);
@@ -12958,7 +12962,7 @@ async function openSortingDetailModal(inboundId) {
   const cumSizeMapH = {};
   details.filter(d => d.category === '정상' && d.size_code).forEach(d => {
     cumSizeMap[d.size_code] = (cumSizeMap[d.size_code] || 0) + Number(d.ct);
-    if (d.quality_grade === '고당') cumSizeMapH[d.size_code] = (cumSizeMapH[d.size_code] || 0) + Number(d.ct);
+    if (isGraded(d)) cumSizeMapH[d.size_code] = (cumSizeMapH[d.size_code] || 0) + Number(d.ct);
     else cumSizeMapN[d.size_code] = (cumSizeMapN[d.size_code] || 0) + Number(d.ct);
   });
   const cumPachi    = details.filter(d => d.category === '파치').reduce((s,d)   => s + Number(d.ct), 0);
@@ -13324,8 +13328,8 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
 
     const outDtls = details.filter(d => d.category !== '손실');
     const totalCt = outDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const highCt    = normalDtls.filter(d => (d.quality_grade || '일반') === '고당').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const normalQCt = normalDtls.filter(d => (d.quality_grade || '일반') === '일반').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const highCt    = normalDtls.filter(isGraded).reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const normalQCt = normalDtls.filter(isNormalGrade).reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const pachiCt   = outDtls.filter(d => d.category === '파치').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const acidCt    = outDtls.filter(d => d.category === '고산도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const tinyCt    = outDtls.filter(d => d.category === '극소과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
