@@ -6445,6 +6445,203 @@ async function saveInvEntry() {
   }
 }
 
+// ── 선과기 엑셀 → 등급별 재고 등록 (재고 쪽 독립 입력, 선과 처리 앞단 미변경) ──
+// 배출구(특1/특2/특3/상/일반) × 사이즈별 중량(kg) → CT 변환 → 각 배출구를 당도 등급에 매핑해 재고 등록.
+let _invSgExcel = null;                     // { farm, dateISO, posKg:{배출구:{사이즈:kg}} }
+const _SG_POS = ['특1', '특2', '특3', '상', '일반'];   // 선과기 배출구(당산도 분류)
+
+function openInvSgExcelModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 입력할 수 있습니다.');
+  _invSgExcel = null;
+  const old = document.getElementById('modal-sg-excel');
+  if (old) old.remove();   // 매번 재생성(옛 상태 잔존 방지)
+  const modal = document.createElement('div');
+  modal.id = 'modal-sg-excel';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:14px 14px 0 0">
+        <div style="font-size:15px;font-weight:700;color:#111827">📄 선과기 엑셀 → 등급별 재고 등록</div>
+        <button onclick="document.getElementById('modal-sg-excel').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px">
+        <div style="font-size:12px;color:#6B7280;margin-bottom:10px;line-height:1.55">선과기 엑셀을 올리면 배출구(특1/특2/특3/상/일반)별 중량을 파싱해 CT로 변환합니다. 각 배출구를 당도 등급에 매핑해 재고로 등록합니다. <b>선과 처리와 무관한 독립 재고 입력</b>입니다.</div>
+        <label style="display:inline-block;padding:9px 16px;background:#1565C0;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          📂 엑셀 파일 선택
+          <input type="file" accept=".xls,.xlsx" style="display:none" onchange="invSgExcelParse(this)">
+        </label>
+        <div id="sg-excel-body" style="margin-top:16px"></div>
+      </div>
+    </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+  document.body.appendChild(modal);
+}
+
+function invSgExcelParse(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';   // 같은 파일 재선택 가능하게
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (rows.length < 2) { alert('엑셀 데이터가 없습니다.'); return; }
+
+      const hdr = rows[0].map(v => String(v).trim());
+      const ci  = name => hdr.findIndex(h => h === name);
+      const iGrade = ci('등급'), iGubun = ci('구분');
+      const iDate  = ci('일자'), iFarm  = ci('생산자');
+      const posCol = { '특1': ci('특1'), '특2': ci('특2'), '특3': ci('특3'), '상': ci('상'), '일반': ci('일반') };
+      if (iGrade < 0 || iGubun < 0 || _SG_POS.some(p => posCol[p] < 0)) {
+        alert('엑셀 헤더를 찾을 수 없습니다.\n실제 헤더: ' + hdr.join(' | '));
+        return;
+      }
+
+      // 감귤류 유효 사이즈 (00/000은 엑셀에서 '0'으로 나오므로 순서로 별도 매핑)
+      const CITRUS_VALID = new Set(SIZES_감귤류.filter(s => s !== '000' && s !== '00'));
+      let zeroCount = 0;   // '0' 등장 순서: 첫=00, 둘째=000
+      const posKg = { '특1': {}, '특2': {}, '특3': {}, '상': {}, '일반': {} };
+      let farmRaw = '', dateRaw = '';
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const gradeVal = String(row[iGrade] ?? '').trim();
+        const gubun    = String(row[iGubun] ?? '').trim();
+        // 농가/날짜 — 첫 등장값 채택(병합셀 대응)
+        if (!farmRaw && iFarm >= 0 && String(row[iFarm] ?? '').trim()) farmRaw = String(row[iFarm]).trim();
+        if (!dateRaw && iDate >= 0 && String(row[iDate] ?? '').trim()) dateRaw = String(row[iDate]).trim();
+        // 일합계 행 제외
+        const rowStr = row.slice(0, 6).map(v => String(v ?? '')).join('');
+        if (gradeVal.includes('합계') || rowStr.includes('일합계')) continue;
+        // 중량 행만 사용
+        if (gubun !== '중량') continue;
+        if (!gradeVal) continue;
+        if (!CITRUS_VALID.has(gradeVal) && gradeVal !== '0') continue;
+        let size = gradeVal;
+        if (gradeVal === '0') { zeroCount++; size = zeroCount === 1 ? '00' : '000'; }
+        _SG_POS.forEach(p => {
+          const kg = Number(row[posCol[p]]) || 0;
+          if (kg > 0) posKg[p][size] = (posKg[p][size] || 0) + kg;
+        });
+      }
+
+      // 날짜 '[7-04]' → 올해 기준 YYYY-MM-DD
+      let dateISO = td();
+      const m = dateRaw.replace(/[^\d-]/g, '').match(/(\d{1,2})-(\d{1,2})/);
+      if (m) dateISO = `${new Date().getFullYear()}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+
+      _invSgExcel = { farm: farmRaw, dateISO, posKg };
+      invSgExcelRenderBody();
+    } catch (err) {
+      alert('엑셀 파싱 오류: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function invSgExcelRenderBody() {
+  const el = document.getElementById('sg-excel-body');
+  if (!el || !_invSgExcel) return;
+  const citrusProducts = Object.keys(PRODUCT_TYPE_MAP).filter(p => PRODUCT_TYPE_MAP[p] === '감귤류');
+  const defProd = citrusProducts.includes('하우스감귤') ? '하우스감귤' : (citrusProducts[0] || '');
+  const brixLabels = brixGrades
+    .filter(g => g.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
+  const gradeOpts = ['', '일반', ...brixLabels];   // '' = 제외
+  const gradeOptHtml = gradeOpts.map(v => `<option value="${esc(v)}">${v === '' ? '제외' : esc(v)}</option>`).join('');
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
+      <div>
+        <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">품목 *</label>
+        <select id="sg-product" onchange="invSgExcelRecalc()" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
+          ${citrusProducts.map(p => `<option${p === defProd ? ' selected' : ''}>${esc(p)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">농가</label>
+        <input id="sg-farm" type="text" value="${esc(_invSgExcel.farm)}" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">날짜</label>
+        <input id="sg-date" type="date" value="${esc(_invSgExcel.dateISO)}" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+      </div>
+    </div>
+    <div style="font-size:12px;color:#374151;font-weight:600;margin-bottom:6px">배출구 → 당도 등급 매핑 <span style="color:#9CA3AF;font-weight:400">(제외는 등록 안 함)</span></div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+      ${_SG_POS.map((pos, idx) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
+          <span style="font-size:13px;font-weight:700;color:#111827;width:34px;flex-shrink:0">${pos}</span>
+          <span id="sg-pos-total-${idx}" style="font-size:12px;color:#6B7280;flex:1;min-width:0">-</span>
+          <select id="sg-map-${idx}" style="height:34px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;flex-shrink:0">
+            ${gradeOptHtml}
+          </select>
+        </div>`).join('')}
+    </div>
+    <button id="sg-register-btn" onclick="invSgExcelRegister()" style="width:100%;padding:11px;background:#1565C0;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">✅ 등록</button>`;
+
+  invSgExcelRecalc();
+}
+
+function invSgExcelRecalc() {
+  if (!_invSgExcel) return;
+  const product = document.getElementById('sg-product')?.value;
+  const kgPer = (productWeights && product && productWeights[product] != null) ? Number(productWeights[product]) : 17;
+  _SG_POS.forEach((pos, idx) => {
+    const sizes = _invSgExcel.posKg[pos] || {};
+    let totalCT = 0; const parts = [];
+    Object.keys(sizes).forEach(sz => {
+      const ct = Math.round((sizes[sz] / kgPer) * 10) / 10;
+      if (ct > 0) { totalCT += ct; parts.push(`${sz} ${fmtCT(ct)}`); }
+    });
+    totalCT = Math.round(totalCT * 10) / 10;
+    const el = document.getElementById('sg-pos-total-' + idx);
+    if (el) el.textContent = totalCT > 0 ? `총 ${fmtCT(totalCT)}CT · ${parts.join(', ')}` : '재고 없음';
+  });
+}
+
+async function invSgExcelRegister() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_invSgExcel) return;
+  const product = document.getElementById('sg-product')?.value;
+  const farm    = document.getElementById('sg-farm')?.value?.trim();
+  const date    = document.getElementById('sg-date')?.value;
+  if (!product) return alert('품목을 선택해주세요.');
+  if (!farm)    return alert('농가를 입력해주세요.');
+  if (!date)    return alert('날짜를 선택해주세요.');
+
+  const kgPer = (productWeights && productWeights[product] != null) ? Number(productWeights[product]) : 17;
+  const recs = [];
+  _SG_POS.forEach((pos, idx) => {
+    const grade = document.getElementById('sg-map-' + idx)?.value;
+    if (!grade) return;   // '' = 제외
+    const sizes = _invSgExcel.posKg[pos] || {};
+    Object.keys(sizes).forEach(sz => {
+      const ct = Math.round((sizes[sz] / kgPer) * 10) / 10;
+      if (ct > 0) recs.push({ date, farm_name: farm, product, location: null, source_type: 'manual', note: '선과기 엑셀', quality_grade: grade, size_code: sz, quantity: ct });
+    });
+  });
+  if (!recs.length) return alert('등록할 데이터가 없습니다. (등급 매핑을 확인하세요)');
+
+  const btn = document.getElementById('sg-register-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '등록 중...'; }
+  try {
+    await Promise.all(recs.map(r => dbInsertInventoryRecord(r)));   // 2단계 수동추가와 동일 저장 헬퍼
+    inventoryRecords = await dbGetInventoryRecords();
+    const modal = document.getElementById('modal-sg-excel');
+    if (modal) modal.style.display = 'none';
+    renderInventoryStatus();
+    showToast(`${recs.length}건 재고 등록 완료 (${product} · ${farm})`);
+  } catch (e) {
+    alert('등록 오류: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✅ 등록'; }
+  }
+}
+
 function renderInvAll() {
   renderInvSummary();
   renderInboundList();
