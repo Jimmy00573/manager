@@ -5747,12 +5747,8 @@ function openInvEditModal(regId) {
 
 function setIemGrade(g) {
   _iemGrade = g;
-  ['일반', '고당'].forEach(grade => {
-    const btn = document.getElementById(`iem-grade-${grade}`);
-    if (!btn) return;
-    const active = grade === _iemGrade;
-    btn.style.cssText = `flex:1;padding:7px;border-radius:6px;border:1px solid ${active?'#1565C0':'#D1D5DB'};background:${active?'#1565C0':'#fff'};color:${active?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer`;
-  });
+  const el = document.getElementById('iem-grade');
+  if (el && el.value !== g) el.value = g;
 }
 
 function setInvEditGrade(g) {
@@ -6257,9 +6253,11 @@ function openInvEntryModal() {
               </select>
             </div>
           </div>
-          <div style="display:flex;gap:6px;margin-bottom:12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:6px">
-            <button id="iem-grade-일반" onclick="setIemGrade('일반')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #1565C0;background:#1565C0;color:#fff;font-size:13px;font-weight:600;cursor:pointer">일반</button>
-            <button id="iem-grade-고당" onclick="setIemGrade('고당')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">고당</button>
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">당도 등급</label>
+            <select id="iem-grade" onchange="setIemGrade(this.value)" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
+              <option>일반</option>
+            </select>
           </div>
           <div id="iem-size-area">
             <div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">품목을 먼저 선택하세요</div>
@@ -6308,7 +6306,15 @@ function openInvEntryModal() {
   const iemLocEl = document.getElementById('iem-location');
   if (iemLocEl) iemLocEl.innerHTML = buildLocOptHtml();
 
-  // 등급 초기화
+  // 당도 등급 드롭다운 채우기 (일반 + 활성 브릭스 등급, sort_order 순) + 초기화
+  const iemGradeEl = document.getElementById('iem-grade');
+  if (iemGradeEl) {
+    const gradeLabels = ['일반', ...brixGrades
+      .filter(g => g.is_active !== false)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(g => g.label)];
+    iemGradeEl.innerHTML = gradeLabels.map(lbl => `<option>${esc(lbl)}</option>`).join('');
+  }
   setIemGrade('일반');
 
   // 사이즈 영역 초기화
