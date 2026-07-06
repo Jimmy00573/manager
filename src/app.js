@@ -7721,36 +7721,49 @@ function renderInvSummary() {
             const others = present.filter(g => g !== '일반' && !activeBrix.includes(g)).sort((a, b) => a.localeCompare(b, 'ko'));
             const gradeOrder = ['일반', ...activeBrix, ...others].filter(g => detail[g] && Object.keys(detail[g]).length);
 
-            // mkCell/mkLine: 기존 디자인 그대로, 등급별 사이즈맵(gsz) 기준
+            // mkCell(값 칸): 기존 디자인 그대로. mkEmptyCell(빈 자리): 흐린 점선.
             const mkCell = (gsz, sz) =>
               `<div style="text-align:center;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0">` +
               `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
               `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(gsz[sz].kg))}</div>` +
               `</div>`;
+            const mkEmptyCell = sz =>
+              `<div style="text-align:center;border:1px dashed #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0;opacity:0.45">` +
+              `<div style="background:#F9FAFB;color:#9CA3AF;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
+              `<div style="color:#D1D5DB;font-weight:500;font-size:13px;padding:3px 10px">&nbsp;</div>` +
+              `</div>`;
+            // szArr는 렌더할 사이즈(감귤=그룹 정의 전체 자리, 만감=있는 것만). 값 없으면 빈 자리.
             const mkLine = (gsz, g, szArr) =>
-              `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0;margin:6px 0">` +
+              `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0;margin:5px 0">` +
               `<span style="font-weight:500;color:#374151;min-width:42px;font-size:12px;padding-top:6px">${g}</span>` +
-              `<div style="display:flex;flex-wrap:wrap">${sortSizes(szArr).map(sz => mkCell(gsz, sz)).join('')}</div>` +
+              `<div style="display:flex;flex-wrap:wrap">${szArr.map(sz => (gsz[sz] ? mkCell(gsz, sz) : mkEmptyCell(sz))).join('')}</div>` +
               `</div>`;
 
-            const blocks = gradeOrder.map(grade => {
+            const blocks = gradeOrder.map((grade, bi) => {
               const gsz = detail[grade];   // {사이즈:{ct,kg}}
               const byGroup = {};
               Object.keys(gsz).forEach(sz => {
                 const g = getGroupForSorted(p, sz) || '기타';
                 (byGroup[g] = byGroup[g] || []).push(sz);
               });
-              const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => mkLine(gsz, g, byGroup[g]));
-              if (byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine(gsz, '기타', byGroup['기타']));
+              // 그룹에 사이즈가 하나라도 있으면 줄 표시. 감귤은 그룹 정의 전체 자리, 만감은 있는 것만.
+              const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => {
+                let szArr;
+                if (isMangam) szArr = sortSizes(byGroup[g]);
+                else { const def = SIZE_GROUPS_감귤류.find(x => x.group === g); szArr = def ? def.sizes : sortSizes(byGroup[g]); }
+                return mkLine(gsz, g, szArr);
+              });
+              if (byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine(gsz, '기타', sortSizes(byGroup['기타'])));
               const badge = grade === '일반'
                 ? `<span style="font-size:11px;font-weight:600;color:#6B7280;background:#F3F4F6;padding:2px 9px;border-radius:10px">일반</span>`
                 : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 9px;border-radius:10px;border:1px solid #BFDBFE">${esc(grade)}</span>`;
               const accent = grade === '일반' ? '#E5E7EB' : '#BFDBFE';
-              return `<div style="flex:1 1 240px;min-width:240px;border-left:3px solid ${accent};padding-left:10px">` +
+              const topSep = bi > 0 ? 'border-top:1px solid #E5E7EB;padding-top:8px;' : '';
+              return `<div style="flex:1 1 240px;min-width:240px;border-left:3px solid ${accent};padding-left:10px;${topSep}">` +
                 `<div style="margin-bottom:2px">${badge}</div>${lines.join('')}</div>`;
             });
             // 반응형: 넓으면 가로 나열, 좁으면 자동 세로 쌓기(flex-wrap + min-width)
-            return `<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start">${blocks.join('')}</div>`;
+            return `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">${blocks.join('')}</div>`;
           })();
           const detailRow = detail
             ? `<tr id="${detailId}" style="display:none"><td colspan="${groups.length + 2}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailHtml}</td></tr>`
