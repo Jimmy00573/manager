@@ -6296,6 +6296,7 @@ function openInvEntryModal() {
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'modal-inv-entry';
+    modal.className = 'modal-bg';   // ESC 공통 닫기 대상에 포함(인라인 style이 z-index/display 우선)
     modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
     modal.innerHTML = `
       <div style="background:#fff;border-radius:14px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
@@ -6504,6 +6505,7 @@ function openInvSgExcelModal() {
   if (old) old.remove();   // 매번 재생성(옛 상태 잔존 방지)
   const modal = document.createElement('div');
   modal.id = 'modal-sg-excel';
+  modal.className = 'modal-bg';   // ESC 공통 닫기 대상에 포함(인라인 style이 z-index/display 우선)
   modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   modal.innerHTML = `
     <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
@@ -13293,6 +13295,7 @@ async function openSortingDetailModal(inboundId) {
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'modal-sort-detail';
+    modal.className = 'modal-bg';   // ESC 공통 닫기 대상에 포함(인라인 style이 z-index/display 우선)
     modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
     modal.innerHTML = `
       <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
