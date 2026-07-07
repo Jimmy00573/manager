@@ -140,7 +140,40 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.pachi-kebab') && !e.target.closest('#pachi-row-menu')) _closePachiMenu();
   if (!e.target.closest('.juice-batch-kebab') && !e.target.closest('#juice-batch-menu')) _closeJuiceBatchMenu();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceBatchMenu(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { _closeInvMenu(); _closePachiMenu(); _closeJuiceBatchMenu(); _escCloseTopModal(); } });
+
+// ── 공통 모달 UX: 배경(바깥) 클릭으로는 안 닫힘(입력 손실 방지), ESC로 최상위 모달 하나 닫기
+//   정리로직(closeXxx)이 있는 모달은 그 함수 호출, 나머지는 display:none. today-sorting은 remove().
+const _MODAL_ESC_CLOSE = {
+  'modal-edit-inbound': 'closeEditInboundModal',
+  'modal-loc': 'closeLocModal',
+  'modal-move-loc': 'closeMoveModal',
+  'modal-quality': 'closeQualityModal',
+  'modal-qc': 'closeQcModal',
+  'modal-sorting': 'closeSortingModal',
+  'modal-dup-warn': 'cancelDupWarn',
+  'modal-urgency': 'closeUrgencyThresholdsModal',
+  'modal-pw-change': 'closePwChangeModal',
+  'modal-srt-ratio': 'closeSortingRatioModal',
+};
+// 자체 ESC/정리를 가진 별도 오버레이(모달-bg 아님) — 열려 있으면 그쪽 ESC가 우선, 공통 핸들러는 양보(중첩 대응)
+const _SELF_ESC_OVERLAYS = ['modal-confirm-danger', 'modal-confirm-edit', 'modal-spe', 'modal-sorted-ib-detail'];
+function _escCloseTopModal() {
+  if (_SELF_ESC_OVERLAYS.some(id => document.getElementById(id))) return;
+  const open = Array.from(document.querySelectorAll('.modal-bg')).filter(m =>
+    m.style.display !== 'none' && getComputedStyle(m).display !== 'none');
+  if (!open.length) return;
+  let top = open[0], topZ = -1;
+  open.forEach(m => {
+    const z = parseInt(getComputedStyle(m).zIndex, 10);
+    const zz = isNaN(z) ? 0 : z;
+    if (zz >= topZ) { topZ = zz; top = m; }   // >= : 동률이면 DOM 뒤쪽(나중 열림) 우선
+  });
+  if (top.id === 'today-sorting-modal-bg') { top.remove(); return; }
+  const fnName = _MODAL_ESC_CLOSE[top.id];
+  if (fnName && typeof window[fnName] === 'function') { window[fnName](); return; }
+  top.style.display = 'none';
+}
 
 // ── 우선처리 기준 로드
 async function loadUrgencySettings() {
@@ -6320,7 +6353,6 @@ function openInvEntryModal() {
           </div>
         </div>
       </div>`;
-    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
     document.body.appendChild(modal);
   }
 
@@ -6488,7 +6520,6 @@ function openInvSgExcelModal() {
         <div id="sg-excel-body" style="margin-top:16px"></div>
       </div>
     </div>`;
-  modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
   document.body.appendChild(modal);
 }
 
@@ -10333,7 +10364,6 @@ async function openTodaySortingModal() {
   const bg = document.createElement('div');
   bg.id = 'today-sorting-modal-bg';
   bg.className = 'modal-bg';
-  bg.onclick = e => { if (e.target === bg) bg.remove(); };
   bg.innerHTML = `
     <div class="modal" style="max-width:460px;padding:0">
       <div style="padding:16px 20px 14px;border-bottom:1px solid #F0F0F0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -13272,7 +13302,6 @@ async function openSortingDetailModal(inboundId) {
         </div>
         <div id="msd-body" style="padding:16px 18px"></div>
       </div>`;
-    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
     document.body.appendChild(modal);
   }
 
@@ -13765,7 +13794,7 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
   }
 
   const modalHtml = `
-    <div id="modal-srt-ratio" class="modal-bg" onclick="if(event.target===this)closeSortingRatioModal()" style="z-index:4500">
+    <div id="modal-srt-ratio" class="modal-bg" style="z-index:4500">
       <div class="modal" style="max-width:480px;padding:0">
         <div class="modal-header" style="padding:16px 20px 14px;border-bottom:1px solid #F0F0F0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
           <div class="modal-title" style="line-height:1.3">${esc(farmName)}<div style="font-size:12px;font-weight:400;color:#6B7280;margin-top:2px">${esc(pname)} · 선과 비율</div></div>
