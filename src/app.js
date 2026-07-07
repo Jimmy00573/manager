@@ -4898,12 +4898,12 @@ function _renderInvAuditList(recs) {
     if (!byProd[prod]) byProd[prod] = {};
     if (!byProd[prod][farm]) byProd[prod][farm] = {};
     if (!byProd[prod][farm][batchKey]) {
-      byProd[prod][farm][batchKey] = { isManual, sortingDate, inboundDate, '일반': [], '고당': [] };
+      byProd[prod][farm][batchKey] = { isManual, sortingDate, inboundDate, grades: {} };
     }
     const b = byProd[prod][farm][batchKey];
     if (sortingDate && (!b.sortingDate || sortingDate < b.sortingDate)) b.sortingDate = sortingDate;
     if (inboundDate && (!b.inboundDate || inboundDate < b.inboundDate)) b.inboundDate = inboundDate;
-    b[grade].push(r);
+    (b.grades[grade] = b.grades[grade] || []).push(r);
   });
 
   let html = progressBar;
@@ -4946,8 +4946,6 @@ function _renderInvAuditList(recs) {
           const batchHtml = batches.map(batch => {
             const dateStr   = batch.sortingDate || batch.inboundDate || '';
             const dateLabel = (batch.isManual ? '직접입력' : '선과') + (dateStr ? ' ' + _fmtInvDate(dateStr) : '');
-            const normalChips = sortBySize(batch['일반']);
-            const highChips   = sortBySize(batch['고당']);
 
             const renderGroupedChips = (chips, grade) => {
               const sizeGroups = [];
@@ -4979,22 +4977,26 @@ function _renderInvAuditList(recs) {
               });
               return { chipsHtml, expandedHtml };
             };
-            const gradeRows = [
-              normalChips.length ? (() => {
-                const { chipsHtml, expandedHtml } = renderGroupedChips(normalChips, '일반');
-                return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
-                <span style="font-size:10px;color:#6B7280;flex-shrink:0;min-width:24px">일반</span>
+            // 배치 등급 순서: 일반 → 활성 브릭스(sort_order) → 기타 잔존등급(옛 '고당' 등)
+            const _activeBrixLabels = brixGrades
+              .filter(g => g.is_active !== false)
+              .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+              .map(g => g.label);
+            const gradeOrder = [];
+            if (batch.grades['일반']) gradeOrder.push('일반');
+            _activeBrixLabels.forEach(lbl => { if (batch.grades[lbl]) gradeOrder.push(lbl); });
+            Object.keys(batch.grades).forEach(g => { if (!gradeOrder.includes(g)) gradeOrder.push(g); });
+
+            const gradeRows = gradeOrder.map(grade => {
+              const chips = sortBySize(batch.grades[grade]);
+              if (!chips.length) return '';
+              const { chipsHtml, expandedHtml } = renderGroupedChips(chips, grade);
+              const labelStyle = grade === '일반' ? 'color:#6B7280' : 'color:#1565C0;font-weight:600';
+              return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
+                <span style="font-size:10px;${labelStyle};flex-shrink:0;min-width:24px">${esc(grade)}</span>
                 <div style="display:flex;gap:4px;flex-wrap:wrap">${chipsHtml}</div>
               </div>${expandedHtml}`;
-              })() : '',
-              highChips.length ? (() => {
-                const { chipsHtml, expandedHtml } = renderGroupedChips(highChips, '고당');
-                return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
-                <span style="font-size:10px;color:#1565C0;font-weight:600;flex-shrink:0;min-width:24px">고당</span>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">${chipsHtml}</div>
-              </div>${expandedHtml}`;
-              })() : ''
-            ].filter(Boolean).join('');
+            }).filter(Boolean).join('');
 
             return `<div style="margin-top:4px">
               <span style="font-size:10px;color:#9CA3AF;font-style:italic">${esc(dateLabel)}</span>
