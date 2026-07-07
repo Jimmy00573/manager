@@ -5706,7 +5706,6 @@ function openInvEditModal(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const info = _matrixBatchRegistry[regId];
   if (!info) return;
-  _invEditGrade = '일반';
 
   const gid = String(info.groupId);
   let batchRecs;
@@ -5721,6 +5720,19 @@ function openInvEditModal(regId) {
       String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void
     );
   }
+
+  // 이 배치에 실제 존재하는 등급 목록(재고 있는 등급만). 순서: 일반 → 활성 브릭스(sort_order) → 기타 잔존등급
+  const _batchGradeSet = new Set(batchRecs.filter(r => r.size_code).map(r => gradeOf(r)));
+  const _activeBrixLabels = brixGrades
+    .filter(g => g.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
+  const editGrades = [];
+  if (_batchGradeSet.has('일반')) editGrades.push('일반');
+  _activeBrixLabels.forEach(lbl => { if (_batchGradeSet.has(lbl)) editGrades.push(lbl); });
+  [..._batchGradeSet].forEach(g => { if (!editGrades.includes(g)) editGrades.push(g); });  // 마스터에 없는 잔존 등급(옛 '고당' 등)
+  if (editGrades.length === 0) editGrades.push('일반');
+  _invEditGrade = editGrades.includes('일반') ? '일반' : editGrades[0];
 
   const location = batchRecs.length ? (batchRecs[0].location || '-') : '-';
   const dateLabel = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
@@ -5757,8 +5769,10 @@ function openInvEditModal(regId) {
         <div><div style="font-size:10px;color:#9CA3AF;margin-bottom:2px">위치</div><div style="font-weight:600;color:#374151">${esc(location)}</div></div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:14px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:6px">
-        <button id="inv-edit-grade-일반" onclick="setInvEditGrade('일반')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_invEditGrade==='일반'?'#1565C0':'#D1D5DB'};background:${_invEditGrade==='일반'?'#1565C0':'#fff'};color:${_invEditGrade==='일반'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">일반</button>
-        <button id="inv-edit-grade-고당" onclick="setInvEditGrade('고당')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_invEditGrade==='고당'?'#1565C0':'#D1D5DB'};background:${_invEditGrade==='고당'?'#1565C0':'#fff'};color:${_invEditGrade==='고당'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">고당</button>
+        ${editGrades.map((grade, gi) => {
+          const active = grade === _invEditGrade;
+          return `<button id="inv-edit-grade-btn-${gi}" onclick="setInvEditGrade(${gi})" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${active?'#1565C0':'#D1D5DB'};background:${active?'#1565C0':'#fff'};color:${active?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">${esc(grade)}</button>`;
+        }).join('')}
       </div>
       <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:10px">사이즈별 수량 수정 — ${_invEditGrade}</div>
       ${sizeRows}
@@ -5768,7 +5782,7 @@ function openInvEditModal(regId) {
       </div>
     </div>`;
 
-  window._invEditCtx = { regId, batchRecs, allSizes, info, location };
+  window._invEditCtx = { regId, batchRecs, allSizes, info, location, editGrades };
   document.getElementById('modal-inv-edit').style.display = 'flex';
 }
 
@@ -5778,17 +5792,18 @@ function setIemGrade(g) {
   if (el && el.value !== g) el.value = g;
 }
 
-function setInvEditGrade(g) {
-  _invEditGrade = g;
-  ['일반', '고당'].forEach(grade => {
-    const btn = document.getElementById(`inv-edit-grade-${grade}`);
-    if (!btn) return;
-    const active = grade === _invEditGrade;
-    btn.style.cssText = `flex:1;padding:7px;border-radius:6px;border:1px solid ${active?'#1565C0':'#D1D5DB'};background:${active?'#1565C0':'#fff'};color:${active?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer`;
-  });
+function setInvEditGrade(gi) {
   const ctx = window._invEditCtx;
   if (!ctx) return;
-  const { regId, batchRecs, allSizes } = ctx;
+  const { regId, batchRecs, allSizes, editGrades } = ctx;
+  const grades = editGrades && editGrades.length ? editGrades : ['일반'];
+  _invEditGrade = grades[gi];
+  grades.forEach((grade, i) => {
+    const btn = document.getElementById(`inv-edit-grade-btn-${i}`);
+    if (!btn) return;
+    const active = i === gi;
+    btn.style.cssText = `flex:1;padding:7px;border-radius:6px;border:1px solid ${active?'#1565C0':'#D1D5DB'};background:${active?'#1565C0':'#fff'};color:${active?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer`;
+  });
   const curQty = {};
   allSizes.forEach(sz => curQty[sz] = 0);
   batchRecs.filter(r => r.size_code && !r.is_void && (r.quality_grade || '일반') === _invEditGrade)
