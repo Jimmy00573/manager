@@ -7608,16 +7608,26 @@ function renderInvSummary() {
     const totalKg  = Object.values(gradeMap).reduce((s, gm) => s + Object.values(gm).reduce((ss, v) => ss + v, 0), 0);
     const groupOrder = getSizeGroupsFor(prod).map(g => g.group);
 
-    const gradeRows = ['일반', '고당'].map(grade => {
+    // 이 품목에 실제 있는 등급을 순서대로: 일반 → 활성 브릭스(sort_order) → 기타 잔존등급(옛 '고당' 등)
+    const _activeBrixLabels = brixGrades
+      .filter(g => g.is_active !== false)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(g => g.label);
+    const gradeOrder = [];
+    if (gradeMap['일반']) gradeOrder.push('일반');
+    _activeBrixLabels.forEach(lbl => { if (gradeMap[lbl]) gradeOrder.push(lbl); });
+    Object.keys(gradeMap).forEach(g => { if (!gradeOrder.includes(g)) gradeOrder.push(g); });
+
+    const gradeRows = gradeOrder.map(grade => {
       const grpMap = gradeMap[grade];
       if (!grpMap) return '';
       const chips = [...groupOrder.filter(g => (grpMap[g] || 0) > 0), ...(grpMap['기타'] > 0 ? ['기타'] : [])]
         .map(g => `<span style="background:#E5E7EB;border-radius:5px;padding:2px 8px;font-size:12px;color:#374151;margin:2px 4px 2px 0;white-space:nowrap">${g} <b>${fmtN(Math.round(grpMap[g] || 0))}</b>kg</span>`)
         .join('');
       if (!chips) return '';
-      const gradeTag = grade === '고당'
-        ? `<span style="color:#1565C0;font-size:11px;font-weight:700;margin-right:4px">[고당]</span>`
-        : `<span style="color:#6B7280;font-size:11px;font-weight:700;margin-right:4px">[일반]</span>`;
+      const gradeTag = grade === '일반'
+        ? `<span style="color:#6B7280;font-size:11px;font-weight:700;margin-right:4px">[일반]</span>`
+        : `<span style="color:#1565C0;font-size:11px;font-weight:700;margin-right:4px">[${esc(grade)}]</span>`;
       return `<div style="display:flex;flex-wrap:wrap;align-items:center;margin-bottom:2px">${gradeTag}${chips}</div>`;
     }).join('');
 
