@@ -44,10 +44,11 @@ let _invFilter   = { product: '', farm: '' };
 let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id }
 let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
-let _pachiViewMode = (['none','size','condition','usage'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'none');  // 파치 하위 분류축: none(품목만)|size|condition|usage (3단계 수정: 품목 항상 최상위)
-let _pachiCollapsed = new Set();       // 접힌 파치 하위그룹 키 (빈 Set = 전부 펼침)
+let _pachiViewMode = (['none','size','condition','usage'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'usage');  // 파치 하위 분류축: none(품목만)|size|condition|usage. 기본 사용처별(판매 단위)
+let _pachiCollapsed = new Set();       // 접힌 파치 키 (품목키 PROD::품목 + 하위그룹키 품목||라벨). 빈 Set = 전부 펼침
 let _pachiGroupKeysNow = [];           // 현재 렌더된 하위그룹 키(인덱스→키, togglePachiGroup용)
-let _pachiViewJustChanged = true;      // 뷰 전환/최초 렌더 직후 = 하위그룹 기본 접힘으로 시작
+let _pachiProdKeysNow = [];            // 현재 렌더된 품목 키(인덱스→키, togglePachiProduct용)
+let _pachiViewJustChanged = true;      // 뷰 전환/최초 렌더 직후 = 품목·하위그룹 기본 접힘으로 시작
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
@@ -12724,9 +12725,18 @@ function setPachiView(mode) {
   renderPachiSection();
 }
 
-// 파치 그룹 접기/펼치기 (인덱스 → _pachiGroupKeysNow 키)
+// 파치 하위그룹 접기/펼치기 (인덱스 → _pachiGroupKeysNow 키)
 function togglePachiGroup(gi) {
   const key = _pachiGroupKeysNow[gi];
+  if (key == null) return;
+  if (_pachiCollapsed.has(key)) _pachiCollapsed.delete(key);
+  else _pachiCollapsed.add(key);
+  renderPachiSection();
+}
+
+// 파치 품목 접기/펼치기 (인덱스 → _pachiProdKeysNow 키)
+function togglePachiProduct(pi) {
+  const key = _pachiProdKeysNow[pi];
   if (key == null) return;
   if (_pachiCollapsed.has(key)) _pachiCollapsed.delete(key);
   else _pachiCollapsed.add(key);
@@ -12903,35 +12913,68 @@ function renderPachiSection() {
 
   const _pachiColspan = isAdm ? 11 : 10;
   const _subGroupKeys = [];   // 접이식 하위그룹 키(렌더 순서 = togglePachiGroup 인덱스)
+  _pachiProdKeysNow = [];     // 품목 키(렌더 순서 = togglePachiProduct 인덱스)
 
-  const groupedHtml = prodOrder.map(product => {
+  // 품목 헤더 요약: 현재 축(_pvMode) 분포 (접혀도 뭐가 얼마인지 보임). 미분류/미지정 빨강.
+  const _axisSummaryParts = pRows => {
+    const keyOf = r =>
+        _pvMode === 'size'      ? (r.sizeGroup || '미지정')
+      : _pvMode === 'condition' ? (r.condition || '미지정')
+      :                           (r.usage || '미분류');   // usage & none
+    const map = {};
+    pRows.forEach(r => { if (!isIncluded(r.usage)) return; const k = keyOf(r); if (!map[k]) map[k] = {ct:0, kg:0}; map[k].ct += r.ct; map[k].kg += r.kg; });
+    let masterOrder;
+    if (_pvMode === 'size')           masterOrder = [...pachiSizes].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(s => s.label);
+    else if (_pvMode === 'condition') masterOrder = [...pachiConditions].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(c => c.label);
+    else                              masterOrder = usageOrder;   // usage & none
+    const present = new Set(Object.keys(map));
+    const ordered = [];
+    masterOrder.forEach(k => { if (present.has(k)) { ordered.push(k); present.delete(k); } });
+    Object.keys(map).forEach(k => { if (present.has(k)) { ordered.push(k); present.delete(k); } });
+    return ordered.filter(k => map[k].ct > 0).map(k => {
+      const txt = `${esc(k)} ${fmtN(map[k].ct)} CT · ${fmtN(map[k].kg)} kg`;
+      return (k === '미분류' || k === '미지정') ? `<span style="color:#C0392B">${txt}</span>` : txt;
+    });
+  };
+
+  // 최초/뷰전환 시: 모든 품목 + 하위그룹 접힘으로 시작 (접힌 품목의 하위까지 미리 접힘)
+  if (_pachiViewJustChanged) {
+    prodOrder.forEach(product => {
+      _pachiCollapsed.add(`PROD::${product}`);
+      if (_pvMode !== 'none') {
+        const seen = new Set();
+        prodGroups[product].forEach(r => { const sk = _subKeyOf(r); if (!seen.has(sk)) { seen.add(sk); _pachiCollapsed.add(`${product}||${sk}`); } });
+      }
+    });
+    _pachiViewJustChanged = false;
+  }
+
+  const groupedHtml = prodOrder.map((product, pi) => {
     const pRows = prodGroups[product];
     const pCt = pRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
     const pKg = pRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
-    // 'none' 모드: 품목 헤더에 사용처 내역 줄(기존 품목별과 동일)
-    let pUsageLine = '';
-    if (_pvMode === 'none') {
-      const gUsage = {};
-      pRows.forEach(r => { if (!isIncluded(r.usage)) return; const u = r.usage || '미분류'; if (!gUsage[u]) gUsage[u] = {ct:0, kg:0}; gUsage[u].ct += r.ct; gUsage[u].kg += r.kg; });
-      const gUsageParts = usageOrder.filter(u => gUsage[u] && gUsage[u].ct > 0).map(u =>
-        u === '미분류'
-          ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg</span>`
-          : `${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg`
-      );
-      if (gUsageParts.length) pUsageLine = `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${gUsageParts.join(' · ')}</div>`;
-    }
-    // 품목 헤더 (최상위, 항상 표시 — 품목 절대 안 섞임)
-    const pHeader = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
+    const sumParts = _axisSummaryParts(pRows);
+    const pSummaryLine = sumParts.length ? `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${sumParts.join(' · ')}</div>` : '';
+
+    const prodKey = `PROD::${product}`;
+    _pachiProdKeysNow.push(prodKey);
+    const pCollapsed = _pachiCollapsed.has(prodKey);
+    const pArrow = pCollapsed ? '▸' : '▾';
+    // 품목 헤더 (최상위, 접이식 — 품목 절대 안 섞임)
+    const pHeader = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB;cursor:pointer" onclick="togglePachiProduct(${pi})">
         <td colspan="${_pachiColspan}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
-          [ ${esc(product)} ] &nbsp;&nbsp;
+          <span style="color:#9CA3AF;margin-right:4px">${pArrow}</span>[ ${esc(product)} ] &nbsp;&nbsp;
           <span style="font-weight:400;color:#888;font-size:12px">${pRows.length}건</span> &nbsp;·&nbsp;
           <span style="color:#E65100">${fmtN(pCt)} CT</span> &nbsp;·&nbsp;
           <span style="color:#555">${fmtN(pKg)} kg</span>
-          ${pUsageLine}
+          ${pSummaryLine}
         </td>
       </tr>`;
 
-    // 'none': 하위 세분화 없이 품목 아래 바로 행들 (기존 품목별과 동일)
+    // 품목 접힘: 헤더+요약만
+    if (pCollapsed) return pHeader;
+
+    // 'none': 하위 세분화 없이 품목 아래 바로 행들
     if (_pvMode === 'none') {
       return pHeader + pRows.map(makeDataRow).join('');
     }
@@ -12955,7 +12998,6 @@ function renderPachiSection() {
       const composite = `${product}||${sk}`;
       const gi = _subGroupKeys.length;
       _subGroupKeys.push(composite);
-      if (_pachiViewJustChanged) _pachiCollapsed.add(composite);   // 뷰 전환/최초 렌더 시 접힘으로 시작
       const collapsed = _pachiCollapsed.has(composite);
       const arrow = collapsed ? '▸' : '▾';
       const subHeader = `<tr style="background:#FAFAFA;border-top:1px solid #EEEEEE;cursor:pointer" onclick="togglePachiGroup(${gi})">
@@ -12972,14 +13014,6 @@ function renderPachiSection() {
     return pHeader + subHtml;
   }).join('');
   _pachiGroupKeysNow = _subGroupKeys;
-  _pachiViewJustChanged = false;   // 초기 접힘 1회 적용 후 해제(이후 재렌더는 사용자 펼침 상태 유지)
-
-  const totalRow = totalCt ? `<tr style="background:#F9FAFB;font-weight:700;border-top:2px solid #E5E7EB">
-    <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
-    <td style="padding:8px 12px;text-align:right;color:#E65100">${fmtN(totalCt)} CT</td>
-    <td style="padding:8px 12px;text-align:right;color:#555">${fmtN(totalKg)} kg</td>
-    <td colspan="${isAdm ? 6 : 5}"></td>
-  </tr>` : '';
 
   // 하위 분류축 전환 탭 (품목 안 분류: 전체/크기별/상태별/사용처별) — 3단계 수정
   const _VB = (active) => `padding:4px 14px;border-radius:14px;border:1.5px solid ${active ? '#1E3A5F' : '#D1D5DB'};background:${active ? '#1E3A5F' : '#fff'};color:${active ? '#fff' : '#374151'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit`;
@@ -13018,7 +13052,7 @@ function renderPachiSection() {
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
             ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 11 : 10}" class="empty">파치 기록 없음</td></tr>`}${totalRow}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 11 : 10}" class="empty">파치 기록 없음</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
