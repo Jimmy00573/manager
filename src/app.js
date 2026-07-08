@@ -12808,46 +12808,13 @@ function renderPachiSection() {
   pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
   const isIncluded = u => { const n = u || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
 
-  // 품목별 통계 (미포함 사용처 제외)
-  const statsMap = {};
-  allRows.forEach(r => {
-    if (!isIncluded(r.usage)) return;
-    if (!statsMap[r.product]) statsMap[r.product] = {};
-    const kind = r.pachiKind || '파치';
-    statsMap[r.product][kind] = (statsMap[r.product][kind] || 0) + r.ct;
-  });
   const totalCt = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
   const totalKg = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
 
-  // 사용처별 통계
-  const usageStats = {};
-  allRows.forEach(r => { const u = r.usage || '미분류'; if (!usageStats[u]) usageStats[u] = {ct:0, kg:0}; usageStats[u].ct += r.ct; usageStats[u].kg += r.kg; });
+  // 사용처 순서(마스터 sort_order + 미분류 + 데이터 잔여) — 그룹핑/요약용
   const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   usageOrder.push('미분류');
-  Object.keys(usageStats).forEach(u => { if (!usageOrder.includes(u)) usageOrder.push(u); });
-  const usageParts = usageOrder.filter(u => usageStats[u] && usageStats[u].ct > 0 && isIncluded(u)).map(u => `${esc(u)} ${fmtN(usageStats[u].ct)} CT`);
-  const usageHtml = usageParts.length
-    ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:8px 14px;font-size:13px;color:#166534">♻️ 사용처별 — ${usageParts.join(' · ')}</div>`
-    : '';
-
-  const kindOrder = ['파치', '고산도', '극소과', '청과'];
-  const statsHtml = Object.keys(statsMap).length
-    ? Object.entries(statsMap).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([p, kinds]) => {
-        const pTotal = Object.values(kinds).reduce((s, v) => s + v, 0);
-        const kindLines = kindOrder.filter(k => kinds[k]).map(k =>
-          `<div style="display:flex;justify-content:space-between;font-size:12px;color:#666;margin-top:2px"><span>${k}</span><span>${fmtN(kinds[k])} CT</span></div>`).join('');
-        return `
-        <div style="background:#FFF8F0;border:1px solid #FFCC80;border-radius:8px;padding:12px 16px;min-width:130px">
-          <div style="font-size:12px;color:#888;margin-bottom:4px">${esc(p)}</div>
-          ${kindLines}
-          <div style="display:flex;justify-content:space-between;margin-top:6px;border-top:1px solid #FFCC80;padding-top:4px">
-            <span style="font-size:12px;color:#888">합계</span>
-            <span style="font-size:16px;font-weight:700;color:#E65100">${fmtN(pTotal)} CT</span>
-          </div>
-          <div style="font-size:12px;color:#666;text-align:right">${fmtN(Math.round(pTotal * kgPerCt(p)))} kg</div>
-        </div>`;
-      }).join('')
-    : `<span style="font-size:13px;color:#aaa">파치 기록 없음</span>`;
+  allRows.forEach(r => { const u = r.usage || '미분류'; if (!usageOrder.includes(u)) usageOrder.push(u); });
 
   // 품목 항상 최상위 고정 + 하위 축(_pachiViewMode)으로 세분화 — 3단계 수정
   const _pvMode = _pachiViewMode;   // 'none'(품목만) | 'size' | 'condition' | 'usage'
@@ -12879,8 +12846,13 @@ function renderPachiSection() {
       : r.isInbound
         ? `<span style="background:#FEF9C3;color:#92400E;border-radius:10px;padding:2px 7px;font-size:11px">입고</span>`
         : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
-    const kindStyleMap = { '파치': 'background:#F5F5F5;color:#757575', '고산도': 'background:#FFF8E1;color:#F57F17', '극소과': 'background:#E8F5E9;color:#2E7D32', '청과': 'background:#DCFCE7;color:#16A34A' };
-    const kindBadge = `<span style="${kindStyleMap[r.pachiKind] || 'background:#F5F5F5;color:#757575'};border-radius:10px;padding:2px 7px;font-size:11px">${esc(r.pachiKind || '파치')}</span>`;
+    // 크기·상태 배지 (옛 항목/pachiKind 대체 — 값 없으면 '-'). 자동매핑은 4-B/5단계.
+    const sizeCell = r.sizeGroup
+      ? `<td style="padding:7px 10px;text-align:center"><span style="background:#F1F5F9;color:#475569;border-radius:10px;padding:2px 7px;font-size:11px">${esc(r.sizeGroup)}</span></td>`
+      : `<td style="padding:7px 10px;text-align:center;color:#ccc">-</td>`;
+    const condCell = r.condition
+      ? `<td style="padding:7px 10px;text-align:center"><span style="background:#FEF3C7;color:#B45309;border-radius:10px;padding:2px 7px;font-size:11px">${esc(r.condition)}</span></td>`
+      : `<td style="padding:7px 10px;text-align:center;color:#ccc">-</td>`;
     const usageLabel = r.usage && r.usage !== '미분류' ? r.usage : '미분류';
     const usageBadge = usageLabel === '미분류'
       ? `<span style="background:#F5F5F5;color:#999;border-radius:10px;padding:2px 7px;font-size:11px">미분류</span>`
@@ -12903,7 +12875,8 @@ function renderPachiSection() {
       ${ctCell}
       <td style="padding:7px 10px;text-align:right;color:#666;font-size:13px">${fmtN(r.kg)}</td>
       <td style="padding:7px 10px;text-align:center">${badge}</td>
-      <td style="padding:7px 10px;text-align:center">${kindBadge}</td>
+      ${sizeCell}
+      ${condCell}
       <td style="padding:7px 10px;text-align:center">${usageBadge}${excludedBadge}</td>
       <td style="padding:7px 10px;font-size:12px;color:#666">${r.location ? esc(r.location) : '<span style="color:#ccc">-</span>'}</td>
       ${memoCell}
@@ -12911,7 +12884,7 @@ function renderPachiSection() {
     </tr>`;
   };
 
-  const _pachiColspan = isAdm ? 11 : 10;
+  const _pachiColspan = isAdm ? 12 : 11;
   const _subGroupKeys = [];   // 접이식 하위그룹 키(렌더 순서 = togglePachiGroup 인덱스)
   _pachiProdKeysNow = [];     // 품목 키(렌더 순서 = togglePachiProduct 인덱스)
 
@@ -13021,9 +12994,9 @@ function renderPachiSection() {
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid #F3F4F6">
       <span style="font-size:12px;color:#6B7280;font-weight:600;margin-right:2px">품목 안 분류</span>
       <button onclick="setPachiView('none')" style="${_VB(_pvMode === 'none')}">전체</button>
+      <button onclick="setPachiView('usage')" style="${_VB(_pvMode === 'usage')}">사용처별</button>
       <button onclick="setPachiView('size')" style="${_VB(_pvMode === 'size')}">크기별</button>
       <button onclick="setPachiView('condition')" style="${_VB(_pvMode === 'condition')}">상태별</button>
-      <button onclick="setPachiView('usage')" style="${_VB(_pvMode === 'usage')}">사용처별</button>
     </div>`;
 
   el.innerHTML = `
@@ -13031,10 +13004,6 @@ function renderPachiSection() {
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="font-size:14px;font-weight:700;color:#222">파치 내역</div>
         <div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>
-      </div>
-      <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
-        <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
-        ${usageHtml ? `<div style="margin-top:10px">${usageHtml}</div>` : ''}
       </div>
       ${viewTabs}
       <div class="tbl-wrap">
@@ -13046,13 +13015,14 @@ function renderPachiSection() {
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">CT</th>
             <th style="text-align:right;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">kg</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">출처</th>
-            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">항목</th>
+            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">크기</th>
+            <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">상태</th>
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">사용처</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">위치</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
             ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 11 : 10}" class="empty">파치 기록 없음</td></tr>`}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 12 : 11}" class="empty">파치 기록 없음</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
