@@ -44,9 +44,9 @@ let _invFilter   = { product: '', farm: '' };
 let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id }
 let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
-let _pachiViewMode = localStorage.getItem('pachi_view_mode') || 'product';  // 파치 뷰: product|size|condition|usage (3단계)
-let _pachiCollapsed = new Set();       // 접힌 파치 그룹 키 (빈 Set = 전부 펼침)
-let _pachiGroupKeysNow = [];           // 현재 렌더된 그룹 키(인덱스→키, togglePachiGroup용)
+let _pachiViewMode = (['none','size','condition','usage'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'none');  // 파치 하위 분류축: none(품목만)|size|condition|usage (3단계 수정: 품목 항상 최상위)
+let _pachiCollapsed = new Set();       // 접힌 파치 하위그룹 키 (빈 Set = 전부 펼침)
+let _pachiGroupKeysNow = [];           // 현재 렌더된 하위그룹 키(인덱스→키, togglePachiGroup용)
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
@@ -12713,9 +12713,9 @@ function renderWasteList() {
   </tr>`).join('');
 }
 
-// 파치 뷰 전환 (품목별/크기별/상태별/사용처별) — 3단계
+// 파치 하위 분류축 전환 (전체/크기별/상태별/사용처별, 품목은 항상 최상위) — 3단계 수정
 function setPachiView(mode) {
-  if (!['product', 'size', 'condition', 'usage'].includes(mode)) return;
+  if (!['none', 'size', 'condition', 'usage'].includes(mode)) return;
   _pachiViewMode = mode;
   localStorage.setItem('pachi_view_mode', mode);
   _pachiCollapsed = new Set();   // 뷰 바뀌면 접힘 상태 초기화(전부 펼침)
@@ -12837,35 +12837,27 @@ function renderPachiSection() {
       }).join('')
     : `<span style="font-size:13px;color:#aaa">파치 기록 없음</span>`;
 
-  // 뷰 모드별 그룹화 (정렬은 이미 allRows에 적용됨) — 3단계
-  const _pvMode = _pachiViewMode;
-  const _groupKeyOf = r =>
+  // 품목 항상 최상위 고정 + 하위 축(_pachiViewMode)으로 세분화 — 3단계 수정
+  const _pvMode = _pachiViewMode;   // 'none'(품목만) | 'size' | 'condition' | 'usage'
+  const _subKeyOf = r =>
       _pvMode === 'size'      ? (r.sizeGroup || '미지정')
     : _pvMode === 'condition' ? (r.condition || '미지정')
     : _pvMode === 'usage'     ? (r.usage || '미분류')
-    :                           (r.product || '기타');
-  const groups = {}, groupOrder = [];
+    :                           null;   // 'none' — 세분화 없음
+
+  // 1차: 항상 품목으로 묶음 (allRows 정렬 순서 = 품목 가나다→날짜 승계)
+  const prodGroups = {}, prodOrder = [];
   allRows.forEach(r => {
-    const gk = _groupKeyOf(r);
-    if (!groups[gk]) { groups[gk] = []; groupOrder.push(gk); }
-    groups[gk].push(r);
+    const p = r.product || '기타';
+    if (!prodGroups[p]) { prodGroups[p] = []; prodOrder.push(p); }
+    prodGroups[p].push(r);
   });
 
-  // 그룹 순서: 마스터(sort_order) 우선, 마스터에 없는 값(미지정/미분류/기타)은 뒤(등장순)
-  let orderedKeys;
-  if (_pvMode === 'product') {
-    orderedKeys = groupOrder;   // 기존: allRows 정렬(품목 가나다→날짜)을 그대로 승계
-  } else {
-    let masterLabels = [];
-    if (_pvMode === 'size')      masterLabels = [...pachiSizes].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(s => s.label);
-    else if (_pvMode === 'condition') masterLabels = [...pachiConditions].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(c => c.label);
-    else if (_pvMode === 'usage') masterLabels = usageOrder;   // 이미 pachiUsages sort_order + 미분류 + 잔여 포함
-    const remaining = new Set(groupOrder);
-    orderedKeys = [];
-    masterLabels.forEach(k => { if (remaining.has(k)) { orderedKeys.push(k); remaining.delete(k); } });
-    groupOrder.forEach(k => { if (remaining.has(k)) { orderedKeys.push(k); remaining.delete(k); } });
-  }
-  _pachiGroupKeysNow = orderedKeys;
+  // 하위 축 순서 라벨(마스터 sort_order). 마스터에 없는 값(미지정/미분류)은 뒤로.
+  let _subMasterLabels = [];
+  if (_pvMode === 'size')           _subMasterLabels = [...pachiSizes].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(s => s.label);
+  else if (_pvMode === 'condition') _subMasterLabels = [...pachiConditions].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(c => c.label);
+  else if (_pvMode === 'usage')     _subMasterLabels = usageOrder;   // 이미 pachiUsages sort_order + 미분류 + 잔여 포함
 
   const makeDataRow = r => {
     const regId = ++_pachiRowRegCounter;
@@ -12907,33 +12899,76 @@ function renderPachiSection() {
     </tr>`;
   };
 
-  const groupedHtml = orderedKeys.map((gk, gi) => {
-    const rows = groups[gk];
-    const gCt = rows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
-    const gKg = rows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
-    const gUsage = {};
-    rows.forEach(r => { if (!isIncluded(r.usage)) return; const u = r.usage || '미분류'; if (!gUsage[u]) gUsage[u] = {ct:0, kg:0}; gUsage[u].ct += r.ct; gUsage[u].kg += r.kg; });
-    const gUsageParts = usageOrder.filter(u => gUsage[u] && gUsage[u].ct > 0).map(u =>
-      u === '미분류'
-        ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg</span>`
-        : `${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg`
-    );
-    // 사용처별 뷰에서는 그룹=사용처라 하위 사용처 줄 생략(중복 방지)
-    const gUsageLine = (_pvMode !== 'usage' && gUsageParts.length)
-      ? `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${gUsageParts.join(' · ')}</div>`
-      : '';
-    const collapsed = _pachiCollapsed.has(gk);
-    const arrow = collapsed ? '▸' : '▾';
-    return `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB;cursor:pointer" onclick="togglePachiGroup(${gi})">
-        <td colspan="${isAdm ? 11 : 10}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
-          <span style="color:#9CA3AF;margin-right:4px">${arrow}</span>[ ${esc(gk)} ] &nbsp;&nbsp;
-          <span style="font-weight:400;color:#888;font-size:12px">${rows.length}건</span> &nbsp;·&nbsp;
-          <span style="color:#E65100">${fmtN(gCt)} CT</span> &nbsp;·&nbsp;
-          <span style="color:#555">${fmtN(gKg)} kg</span>
-          ${gUsageLine}
+  const _pachiColspan = isAdm ? 11 : 10;
+  const _subGroupKeys = [];   // 접이식 하위그룹 키(렌더 순서 = togglePachiGroup 인덱스)
+
+  const groupedHtml = prodOrder.map(product => {
+    const pRows = prodGroups[product];
+    const pCt = pRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
+    const pKg = pRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
+    // 'none' 모드: 품목 헤더에 사용처 내역 줄(기존 품목별과 동일)
+    let pUsageLine = '';
+    if (_pvMode === 'none') {
+      const gUsage = {};
+      pRows.forEach(r => { if (!isIncluded(r.usage)) return; const u = r.usage || '미분류'; if (!gUsage[u]) gUsage[u] = {ct:0, kg:0}; gUsage[u].ct += r.ct; gUsage[u].kg += r.kg; });
+      const gUsageParts = usageOrder.filter(u => gUsage[u] && gUsage[u].ct > 0).map(u =>
+        u === '미분류'
+          ? `<span style="color:#C0392B">${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg</span>`
+          : `${esc(u)} ${fmtN(gUsage[u].ct)} CT · ${fmtN(gUsage[u].kg)} kg`
+      );
+      if (gUsageParts.length) pUsageLine = `<div style="font-weight:400;color:#888;font-size:11px;margin-top:3px">${gUsageParts.join(' · ')}</div>`;
+    }
+    // 품목 헤더 (최상위, 항상 표시 — 품목 절대 안 섞임)
+    const pHeader = `<tr style="background:#F3F4F6;border-top:2px solid #E5E7EB">
+        <td colspan="${_pachiColspan}" style="padding:8px 12px;font-weight:700;font-size:13px;color:#374151">
+          [ ${esc(product)} ] &nbsp;&nbsp;
+          <span style="font-weight:400;color:#888;font-size:12px">${pRows.length}건</span> &nbsp;·&nbsp;
+          <span style="color:#E65100">${fmtN(pCt)} CT</span> &nbsp;·&nbsp;
+          <span style="color:#555">${fmtN(pKg)} kg</span>
+          ${pUsageLine}
         </td>
-      </tr>` + (collapsed ? '' : rows.map(makeDataRow).join(''));
+      </tr>`;
+
+    // 'none': 하위 세분화 없이 품목 아래 바로 행들 (기존 품목별과 동일)
+    if (_pvMode === 'none') {
+      return pHeader + pRows.map(makeDataRow).join('');
+    }
+
+    // 하위 축으로 세분화 (품목 내부)
+    const subGroups = {}, subOrder = [];
+    pRows.forEach(r => {
+      const sk = _subKeyOf(r);
+      if (!subGroups[sk]) { subGroups[sk] = []; subOrder.push(sk); }
+      subGroups[sk].push(r);
+    });
+    const remaining = new Set(subOrder);
+    const orderedSub = [];
+    _subMasterLabels.forEach(k => { if (remaining.has(k)) { orderedSub.push(k); remaining.delete(k); } });
+    subOrder.forEach(k => { if (remaining.has(k)) { orderedSub.push(k); remaining.delete(k); } });
+
+    const subHtml = orderedSub.map(sk => {
+      const sRows = subGroups[sk];
+      const sCt = sRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
+      const sKg = sRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
+      const composite = `${product}||${sk}`;
+      const gi = _subGroupKeys.length;
+      _subGroupKeys.push(composite);
+      const collapsed = _pachiCollapsed.has(composite);
+      const arrow = collapsed ? '▸' : '▾';
+      const subHeader = `<tr style="background:#FAFAFA;border-top:1px solid #EEEEEE;cursor:pointer" onclick="togglePachiGroup(${gi})">
+          <td colspan="${_pachiColspan}" style="padding:6px 12px 6px 30px;font-weight:600;font-size:12px;color:#555">
+            <span style="color:#9CA3AF;margin-right:4px">${arrow}</span>${esc(sk)} &nbsp;·&nbsp;
+            <span style="font-weight:400;color:#888">${sRows.length}건</span> &nbsp;·&nbsp;
+            <span style="color:#E65100">${fmtN(sCt)} CT</span> &nbsp;·&nbsp;
+            <span style="color:#777">${fmtN(sKg)} kg</span>
+          </td>
+        </tr>`;
+      return subHeader + (collapsed ? '' : sRows.map(makeDataRow).join(''));
+    }).join('');
+
+    return pHeader + subHtml;
   }).join('');
+  _pachiGroupKeysNow = _subGroupKeys;
 
   const totalRow = totalCt ? `<tr style="background:#F9FAFB;font-weight:700;border-top:2px solid #E5E7EB">
     <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
@@ -12942,11 +12977,12 @@ function renderPachiSection() {
     <td colspan="${isAdm ? 6 : 5}"></td>
   </tr>` : '';
 
-  // 뷰 전환 탭 (품목별/크기별/상태별/사용처별) — 3단계
+  // 하위 분류축 전환 탭 (품목 안 분류: 전체/크기별/상태별/사용처별) — 3단계 수정
   const _VB = (active) => `padding:4px 14px;border-radius:14px;border:1.5px solid ${active ? '#1E3A5F' : '#D1D5DB'};background:${active ? '#1E3A5F' : '#fff'};color:${active ? '#fff' : '#374151'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit`;
   const viewTabs = `
-    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px;border-bottom:1px solid #F3F4F6">
-      <button onclick="setPachiView('product')" style="${_VB(_pvMode === 'product')}">품목별</button>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid #F3F4F6">
+      <span style="font-size:12px;color:#6B7280;font-weight:600;margin-right:2px">품목 안 분류</span>
+      <button onclick="setPachiView('none')" style="${_VB(_pvMode === 'none')}">전체</button>
       <button onclick="setPachiView('size')" style="${_VB(_pvMode === 'size')}">크기별</button>
       <button onclick="setPachiView('condition')" style="${_VB(_pvMode === 'condition')}">상태별</button>
       <button onclick="setPachiView('usage')" style="${_VB(_pvMode === 'usage')}">사용처별</button>
