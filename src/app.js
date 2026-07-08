@@ -2895,12 +2895,34 @@ function popLocSelects() {
 
 function popUsageSelects() {
   const el = document.getElementById('wa-usage');
-  if (!el || el.tagName !== 'SELECT') return;
-  const cur = el.value;
-  el.innerHTML = '<option value="">(미분류)</option>' +
-    [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-      .map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
-  if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  if (el && el.tagName === 'SELECT') {
+    const cur = el.value;
+    el.innerHTML = '<option value="">(미분류)</option>' +
+      [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        .map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
+    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  }
+  popPachiTagSelects();  // 파치 크기·상태 드롭다운 (2단계) — 존재할 때만 채움
+}
+
+// 파치 등록 폼 크기(wa-size)·상태(wa-condition) 드롭다운 채우기 — popUsageSelects 패턴
+function popPachiTagSelects() {
+  const szEl = document.getElementById('wa-size');
+  if (szEl && szEl.tagName === 'SELECT') {
+    const cur = szEl.value;
+    szEl.innerHTML = '<option value="">선택 안 함</option>' +
+      [...pachiSizes].filter(s => s.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        .map(s => `<option value="${esc(s.label)}">${esc(s.label)}</option>`).join('');
+    if (cur && [...szEl.options].some(o => o.value === cur)) szEl.value = cur;
+  }
+  const cdEl = document.getElementById('wa-condition');
+  if (cdEl && cdEl.tagName === 'SELECT') {
+    const cur = cdEl.value;
+    cdEl.innerHTML = '<option value="">선택 안 함</option>' +
+      [...pachiConditions].filter(c => c.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        .map(c => `<option value="${esc(c.label)}">${esc(c.label)}</option>`).join('');
+    if (cur && [...cdEl.options].some(o => o.value === cur)) cdEl.value = cur;
+  }
 }
 
 function setLocSelectValue(selectId, value) {
@@ -5565,6 +5587,24 @@ function openPachiEditModal(regId) {
           ${[...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
         </select>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">크기</label>
+          <select id="pachi-edit-size" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
+            <option value="">선택 안 함</option>
+            ${[...pachiSizes].filter(s => s.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(s => `<option value="${esc(s.label)}"${row.sizeGroup === s.label ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}
+            ${row.sizeGroup && !pachiSizes.some(s => s.is_active !== false && s.label === row.sizeGroup) ? `<option value="${esc(row.sizeGroup)}" selected>${esc(row.sizeGroup)} (기존값)</option>` : ''}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">상태</label>
+          <select id="pachi-edit-condition" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
+            <option value="">선택 안 함</option>
+            ${[...pachiConditions].filter(c => c.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(c => `<option value="${esc(c.label)}"${row.condition === c.label ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}
+            ${row.condition && !pachiConditions.some(c => c.is_active !== false && c.label === row.condition) ? `<option value="${esc(row.condition)}" selected>${esc(row.condition)} (기존값)</option>` : ''}
+          </select>
+        </div>
+      </div>
       <div style="margin-bottom:20px">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">위치</label>
         <select id="pachi-edit-loc" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
@@ -5613,10 +5653,12 @@ async function savePachiEdit() {
     const newFarm = document.getElementById('pachi-edit-farm')?.value?.trim() || null;
     const newUsage = document.getElementById('pachi-edit-usage')?.value || null;
     const newLoc = document.getElementById('pachi-edit-loc')?.value || null;
+    const newSize = document.getElementById('pachi-edit-size')?.value || null;
+    const newCondition = document.getElementById('pachi-edit-condition')?.value || null;
     for (const id of row.ids) {
-      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage, location: newLoc });
+      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage, location: newLoc, pachi_size_group: newSize, pachi_condition: newCondition });
       const rec = inventoryRecords.find(r => String(r.id) === String(id));
-      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; rec.location = newLoc; }
+      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; rec.location = newLoc; rec.pachi_size_group = newSize; rec.pachi_condition = newCondition; }
     }
     document.getElementById('modal-pachi-edit').style.display = 'none';
     renderInvSummary(); renderPachiSection();
@@ -12687,7 +12729,8 @@ function renderPachiSection() {
       irGrouped[key] = {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
         ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false,
-        pachiKind: pachiKindLabel(r.source_type), usage: r.usage || '미분류', location: r.location || null
+        pachiKind: pachiKindLabel(r.source_type), usage: r.usage || '미분류', location: r.location || null,
+        sizeGroup: r.pachi_size_group || null, condition: r.pachi_condition || null
       };
     }
     irGrouped[key].ct += Number(r.quantity) || 0;
@@ -12704,7 +12747,8 @@ function renderPachiSection() {
     ct: Number(r.quantity) || 0,
     kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
     ids: [r.id], memo: [r.purpose, r.note].filter(Boolean).join(' / '),
-    isSorting: false, isLegacy: true, isInbound: false, pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null
+    isSorting: false, isLegacy: true, isInbound: false, pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null,
+    sizeGroup: null, condition: null
   }));
 
   // Source 3: inbound_records category=파치
@@ -12716,7 +12760,8 @@ function renderPachiSection() {
       kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
       ids: [r.id], memo: r.note || '',
       isSorting: false, isLegacy: false, isInbound: true,
-      pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null
+      pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null,
+      sizeGroup: null, condition: null
     }));
 
   // 통합 정렬: 품목명 가나다 → 날짜 최신순
@@ -12901,6 +12946,7 @@ async function addWaste() {
     date, product, farm_name: gv('wa-farm') || null,
     quantity: qty, location: loc, size_code: null,
     source_type: 'pachi_manual', usage: gv('wa-usage') || null,
+    pachi_size_group: gv('wa-size') || null, pachi_condition: gv('wa-condition') || null,
     note: gv('wa-memo') || null, is_void: false, created_by: 'admin'
   };
   const btn = document.getElementById('wa-save-btn');
@@ -12909,7 +12955,7 @@ async function addWaste() {
     const rows = await sbInsert('inventory_records', data);
     inventoryRecords.unshift(rows[0]);
     renderInvSummary(); renderPachiSection();
-    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-loc', ''); sv('wa-usage', ''); sv('wa-memo', '');
+    sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-loc', ''); sv('wa-usage', ''); sv('wa-size', ''); sv('wa-condition', ''); sv('wa-memo', '');
     showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '등록'; } }
