@@ -11699,11 +11699,12 @@ async function saveSortingResult() {
     console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
 
     // 6-2단계. inventory_records 파치/부산물 등록 (파치·고산도·극소과·청과)
+    // 크기·상태 자동 매핑(4-B): 고산도→상태, 극소과→크기, 청과→상태. source_type은 그대로 유지.
     const pachiItems = [
-      { value: waste,    sourceType: 'pachi' },
-      { value: highacid, sourceType: 'pachi_highacid' },
-      { value: tiny,     sourceType: 'pachi_tiny' },
-      { value: green,    sourceType: 'pachi_green' },
+      { value: waste,    sourceType: 'pachi',          sizeGroup: null,     condition: null },
+      { value: highacid, sourceType: 'pachi_highacid', sizeGroup: null,     condition: '고산도' },
+      { value: tiny,     sourceType: 'pachi_tiny',     sizeGroup: '극소과', condition: null },
+      { value: green,    sourceType: 'pachi_green',    sizeGroup: null,     condition: '청과' },
     ];
     for (const item of pachiItems) {
       if (item.value <= 0) continue;
@@ -11716,6 +11717,7 @@ async function saveSortingResult() {
           date: sortingDate, farm_name: r.farm_name, product: r.product,
           size_code: null, quantity: item.value, location: null,
           source_type: item.sourceType, sorting_result_id: headerId,
+          pachi_size_group: item.sizeGroup, pachi_condition: item.condition,
           is_void: false, note: null, created_by: 'admin'
         });
         console.log(`[8단계] ${item.sourceType} 등록 완료:`, item.value, 'CT');
