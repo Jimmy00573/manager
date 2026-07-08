@@ -47,6 +47,8 @@ let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || 
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
+let pachiSizes = [];        // 파치 크기 마스터 — 1단계: 데이터만
+let pachiConditions = [];   // 파치 상태 마스터 — 1단계: 데이터만
 let productWeights = {};
 let sortingResults = [];
 let _editLocId = null;
@@ -228,7 +230,7 @@ async function initApp() {
 
   try {
     await loadProductWeights();
-    const [data, qcData, locData, , usageData, brixData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages(), dbGetBrixGrades()]);
+    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages(), dbGetBrixGrades(), dbGetPachiSizes(), dbGetPachiConditions()]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -245,6 +247,8 @@ async function initApp() {
     storageLocations = locData || [];
     pachiUsages = usageData || [];
     brixGrades = brixData || [];
+    pachiSizes = pachiSizeData || [];
+    pachiConditions = pachiCondData || [];
     partners = await dbGetPartners().catch(() => []);
   } catch (e) {
     console.error('데이터 로드 실패:', e);
@@ -3472,7 +3476,7 @@ function setTab(t) {
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
   if (t === 'cfg') renderSizeCfg();
-  if (t === 'usage') { renderPachiUsageCfg(); renderBrixGradeCfg(); }
+  if (t === 'usage') { renderPachiUsageCfg(); renderBrixGradeCfg(); renderPachiSizeCfg(); renderPachiConditionCfg(); }
   if (t === 'weight') renderProductWeightCfg();
   if (t === 'juicemaster') renderJuiceMasterCfg();
   if (t === 'partner') renderPartnerCfg();
@@ -3888,6 +3892,170 @@ async function toggleBrixGradeActive(id, checked) {
     const idx = brixGrades.findIndex(g => g.id === id);
     if (idx !== -1) brixGrades[idx].is_active = checked;
     renderBrixGradeCfg();
+    showToast(checked ? '활성으로 변경' : '비활성으로 변경');
+  } catch(e) { alert('변경 오류: ' + e.message); }
+}
+
+// ── 파치 크기 관리 (pachi_sizes) — 브릭스 등급 관리 패턴 복제
+function renderPachiSizeCfg() {
+  const el = document.getElementById('csp-pachi-size');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const sorted = [...pachiSizes].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const rows = sorted.map(g => `<tr>
+    <td style="font-weight:600">${esc(g.label)}</td>
+    <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
+    <td style="text-align:center"><input type="checkbox" onchange="togglePachiSizeActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
+    ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn edt" onclick="editPachiSize(${g.id})">수정</button>
+      <button class="btn del" onclick="deletePachiSize(${g.id})">삭제</button>
+    </td>` : '<td></td>'}
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">파치 크기 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">파치를 크기별로 분류합니다(대과/혼합/극소과 등).</div>
+      </div>
+      ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPachiSize()">+ 크기 추가</button>` : ''}
+    </div>
+    ${sorted.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>크기명</th><th>순서</th><th>활성</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 파치 크기 없음</div>`}`;
+}
+
+async function addPachiSize() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const label = prompt('파치 크기명을 입력하세요. (예: 대과)')?.trim();
+  if (!label) return;
+  if (pachiSizes.some(g => g.label === label)) return alert(`"${label}"은 이미 등록된 크기입니다.`);
+  try {
+    const row = await dbInsertPachiSize({ label, sort_order: pachiSizes.length + 1, is_active: true });
+    pachiSizes.push(row);
+    renderPachiSizeCfg();
+    showToast(`"${label}" 크기가 추가되었습니다.`);
+  } catch(e) { alert('추가 오류: ' + e.message); }
+}
+
+async function editPachiSize(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const g = pachiSizes.find(x => x.id === id);
+  if (!g) return;
+  const label = prompt('새 크기명을 입력하세요.', g.label)?.trim();
+  if (!label) return;
+  if (pachiSizes.some(x => x.label === label && x.id !== id)) return alert(`"${label}"은 이미 등록된 크기입니다.`);
+  try {
+    const updated = await dbUpdatePachiSize(id, { label });
+    const idx = pachiSizes.findIndex(x => x.id === id);
+    if (idx !== -1) pachiSizes[idx] = updated;
+    renderPachiSizeCfg();
+    showToast('수정되었습니다.');
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deletePachiSize(id) {
+  const g = pachiSizes.find(x => x.id === id);
+  if (!g) return;
+  if (!(await showConfirmDanger({ title: '파치 크기 삭제', items: [g.label], confirmText: '삭제' }))) return;
+  try {
+    await dbDeletePachiSize(id);
+    pachiSizes = pachiSizes.filter(x => x.id !== id);
+    renderPachiSizeCfg();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function togglePachiSizeActive(id, checked) {
+  try {
+    await dbUpdatePachiSize(id, { is_active: checked });
+    const idx = pachiSizes.findIndex(g => g.id === id);
+    if (idx !== -1) pachiSizes[idx].is_active = checked;
+    renderPachiSizeCfg();
+    showToast(checked ? '활성으로 변경' : '비활성으로 변경');
+  } catch(e) { alert('변경 오류: ' + e.message); }
+}
+
+// ── 파치 상태 관리 (pachi_conditions) — 브릭스 등급 관리 패턴 복제
+function renderPachiConditionCfg() {
+  const el = document.getElementById('csp-pachi-cond');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const sorted = [...pachiConditions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const rows = sorted.map(g => `<tr>
+    <td style="font-weight:600">${esc(g.label)}</td>
+    <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
+    <td style="text-align:center"><input type="checkbox" onchange="togglePachiConditionActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
+    ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn edt" onclick="editPachiCondition(${g.id})">수정</button>
+      <button class="btn del" onclick="deletePachiCondition(${g.id})">삭제</button>
+    </td>` : '<td></td>'}
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">파치 상태 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">파치 상태를 분류합니다(싸비/약해/청과/고산도 등).</div>
+      </div>
+      ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPachiCondition()">+ 상태 추가</button>` : ''}
+    </div>
+    ${sorted.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>상태명</th><th>순서</th><th>활성</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 파치 상태 없음</div>`}`;
+}
+
+async function addPachiCondition() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const label = prompt('파치 상태명을 입력하세요. (예: 싸비)')?.trim();
+  if (!label) return;
+  if (pachiConditions.some(g => g.label === label)) return alert(`"${label}"은 이미 등록된 상태입니다.`);
+  try {
+    const row = await dbInsertPachiCondition({ label, sort_order: pachiConditions.length + 1, is_active: true });
+    pachiConditions.push(row);
+    renderPachiConditionCfg();
+    showToast(`"${label}" 상태가 추가되었습니다.`);
+  } catch(e) { alert('추가 오류: ' + e.message); }
+}
+
+async function editPachiCondition(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const g = pachiConditions.find(x => x.id === id);
+  if (!g) return;
+  const label = prompt('새 상태명을 입력하세요.', g.label)?.trim();
+  if (!label) return;
+  if (pachiConditions.some(x => x.label === label && x.id !== id)) return alert(`"${label}"은 이미 등록된 상태입니다.`);
+  try {
+    const updated = await dbUpdatePachiCondition(id, { label });
+    const idx = pachiConditions.findIndex(x => x.id === id);
+    if (idx !== -1) pachiConditions[idx] = updated;
+    renderPachiConditionCfg();
+    showToast('수정되었습니다.');
+  } catch(e) { alert('수정 오류: ' + e.message); }
+}
+
+async function deletePachiCondition(id) {
+  const g = pachiConditions.find(x => x.id === id);
+  if (!g) return;
+  if (!(await showConfirmDanger({ title: '파치 상태 삭제', items: [g.label], confirmText: '삭제' }))) return;
+  try {
+    await dbDeletePachiCondition(id);
+    pachiConditions = pachiConditions.filter(x => x.id !== id);
+    renderPachiConditionCfg();
+    showToast('삭제되었습니다.');
+  } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+async function togglePachiConditionActive(id, checked) {
+  try {
+    await dbUpdatePachiCondition(id, { is_active: checked });
+    const idx = pachiConditions.findIndex(g => g.id === id);
+    if (idx !== -1) pachiConditions[idx].is_active = checked;
+    renderPachiConditionCfg();
     showToast(checked ? '활성으로 변경' : '비활성으로 변경');
   } catch(e) { alert('변경 오류: ' + e.message); }
 }

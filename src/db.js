@@ -106,6 +106,18 @@ async function dbInsertBrixGrade(data) { const r = await sbInsert('brix_grades',
 async function dbUpdateBrixGrade(id, data) { const r = await sbUpdate('brix_grades', id, data); return r[0]; }
 async function dbDeleteBrixGrade(id) { return sbDelete('brix_grades', id); }
 
+// 파치 크기 마스터 (pachi_sizes) — 브릭스 등급 패턴 복제
+async function dbGetPachiSizes() { try { return await sbGet('pachi_sizes', 'order=sort_order'); } catch(e) { return []; } }
+async function dbInsertPachiSize(data) { const r = await sbInsert('pachi_sizes', data); return r[0]; }
+async function dbUpdatePachiSize(id, data) { const r = await sbUpdate('pachi_sizes', id, data); return r[0]; }
+async function dbDeletePachiSize(id) { return sbDelete('pachi_sizes', id); }
+
+// 파치 상태 마스터 (pachi_conditions) — 브릭스 등급 패턴 복제
+async function dbGetPachiConditions() { try { return await sbGet('pachi_conditions', 'order=sort_order'); } catch(e) { return []; } }
+async function dbInsertPachiCondition(data) { const r = await sbInsert('pachi_conditions', data); return r[0]; }
+async function dbUpdatePachiCondition(id, data) { const r = await sbUpdate('pachi_conditions', id, data); return r[0]; }
+async function dbDeletePachiCondition(id) { return sbDelete('pachi_conditions', id); }
+
 // ── 품질 기준
 async function dbGetQualityCriteria() { try { return await sbGet('quality_criteria', 'order=product_name'); } catch(e) { return []; } }
 async function dbInsertQualityCriteria(data) { const r = await sbInsert('quality_criteria', data); return r[0]; }
