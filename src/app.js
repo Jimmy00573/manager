@@ -47,6 +47,7 @@ let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || 
 let _pachiViewMode = (['none','size','condition','usage'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'none');  // 파치 하위 분류축: none(품목만)|size|condition|usage (3단계 수정: 품목 항상 최상위)
 let _pachiCollapsed = new Set();       // 접힌 파치 하위그룹 키 (빈 Set = 전부 펼침)
 let _pachiGroupKeysNow = [];           // 현재 렌더된 하위그룹 키(인덱스→키, togglePachiGroup용)
+let _pachiViewJustChanged = true;      // 뷰 전환/최초 렌더 직후 = 하위그룹 기본 접힘으로 시작
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
@@ -12718,7 +12719,8 @@ function setPachiView(mode) {
   if (!['none', 'size', 'condition', 'usage'].includes(mode)) return;
   _pachiViewMode = mode;
   localStorage.setItem('pachi_view_mode', mode);
-  _pachiCollapsed = new Set();   // 뷰 바뀌면 접힘 상태 초기화(전부 펼침)
+  _pachiCollapsed = new Set();   // 뷰 바뀌면 접힘 상태 초기화
+  _pachiViewJustChanged = true;  // 새 뷰는 하위그룹 전부 접힘으로 시작
   renderPachiSection();
 }
 
@@ -12953,6 +12955,7 @@ function renderPachiSection() {
       const composite = `${product}||${sk}`;
       const gi = _subGroupKeys.length;
       _subGroupKeys.push(composite);
+      if (_pachiViewJustChanged) _pachiCollapsed.add(composite);   // 뷰 전환/최초 렌더 시 접힘으로 시작
       const collapsed = _pachiCollapsed.has(composite);
       const arrow = collapsed ? '▸' : '▾';
       const subHeader = `<tr style="background:#FAFAFA;border-top:1px solid #EEEEEE;cursor:pointer" onclick="togglePachiGroup(${gi})">
@@ -12969,6 +12972,7 @@ function renderPachiSection() {
     return pHeader + subHtml;
   }).join('');
   _pachiGroupKeysNow = _subGroupKeys;
+  _pachiViewJustChanged = false;   // 초기 접힘 1회 적용 후 해제(이후 재렌더는 사용자 펼침 상태 유지)
 
   const totalRow = totalCt ? `<tr style="background:#F9FAFB;font-weight:700;border-top:2px solid #E5E7EB">
     <td colspan="3" style="padding:8px 12px;text-align:right;color:#666;font-size:12px">전체 합계</td>
