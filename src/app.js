@@ -10832,7 +10832,7 @@ function _renderScTable() {
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
-        <col style="width:140px"><col style="width:80px"><col style="width:55px">
+        <col style="width:175px"><col style="width:70px"><col style="width:40px">
         <col style="width:70px"><col style="width:70px"><col style="width:50px"><col style="width:100px">
         <col style="width:70px"><col style="width:85px"><col style="width:70px">
       </colgroup>
@@ -10855,7 +10855,7 @@ function _renderScTable() {
                 const c = r.inbound_category || '상품';
                 const m = { '상품': ['#DCFCE7','#15803D'], '대과': ['#FEF3C7','#B45309'], '소과': ['#DBEAFE','#1D4ED8'] };
                 const [bg, col] = m[c] || ['#F3F4F6','#6B7280'];
-                return `<span style="background:${bg};color:${col};font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">${esc(c)}</span>`;
+                return `<span style="background:${bg};color:${col};font-size:10px;padding:1px 5px;border-radius:10px;white-space:nowrap">${esc(c)}</span>`;
               })();
               const sorted = r.quantity - r.remaining;
               const pct = r.quantity > 0 ? Math.round(sorted / r.quantity * 100) : 0;
