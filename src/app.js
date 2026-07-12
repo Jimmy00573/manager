@@ -14116,7 +14116,7 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
     const isHL = _fsrHighlightId && String(entry.ibId) === String(_fsrHighlightId);
     return `
       <label class="fsr-card" for="fsr-chk-${idx}" style="${isHL ? 'border:1.5px solid #2563EB;background:#F0F7FF;' : ''}">
-        <input type="checkbox" id="fsr-chk-${idx}" data-idx="${idx}" checked onchange="_fsrRecalc()">
+        <input type="checkbox" id="fsr-chk-${idx}" data-idx="${idx}" ${(!_fsrHighlightId || isHL) ? 'checked' : ''} onchange="_fsrRecalc()">
         <div class="fsr-card-body">
           <div class="fsr-card-head">
             <span class="fsr-date">${entry.date}${entry.product !== pname ? ' · ' + esc(entry.product) : ''}${isHL ? ' <span style="font-size:10px;background:#2563EB;color:#fff;padding:1px 6px;border-radius:8px;font-weight:600;vertical-align:middle">이 입고</span>' : ''}</span>
