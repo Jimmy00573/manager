@@ -5672,6 +5672,144 @@ async function savePachiEdit() {
   finally { if (btn) { btn.disabled = false; btn.textContent = '저장'; } }
 }
 
+// ===== 파치 목록 일괄 지정 (체크박스 다중 선택) — 선과+수동 행(inventory_records)만 =====
+function _pachiCheckedRegIds() {
+  return Array.from(document.querySelectorAll('.pachi-chk:checked'))
+    .map(b => parseInt(b.dataset.regId)).filter(n => !isNaN(n));
+}
+function onPachiChkChange() {
+  const boxes = Array.from(document.querySelectorAll('.pachi-chk'));
+  const checked = boxes.filter(b => b.checked);
+  const bar = document.getElementById('pachi-bulk-bar');
+  const cnt = document.getElementById('pachi-bulk-count');
+  if (cnt) cnt.textContent = checked.length;
+  if (bar) bar.style.display = checked.length > 0 ? 'flex' : 'none';
+  const all = document.getElementById('pachi-chk-all');
+  if (all) {
+    all.checked = boxes.length > 0 && checked.length === boxes.length;
+    all.indeterminate = checked.length > 0 && checked.length < boxes.length;
+  }
+}
+function togglePachiCheckAll(el) {
+  document.querySelectorAll('.pachi-chk').forEach(b => { b.checked = el.checked; });
+  onPachiChkChange();
+}
+function clearPachiChecks() {
+  document.querySelectorAll('.pachi-chk').forEach(b => { b.checked = false; });
+  const all = document.getElementById('pachi-chk-all');
+  if (all) { all.checked = false; all.indeterminate = false; }
+  onPachiChkChange();
+}
+
+function openPachiBulkModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const rows = _pachiCheckedRegIds().map(id => _pachiRowRegistry[id]).filter(r => r && !r.isLegacy && !r.isInbound);
+  if (!rows.length) { alert('선택된 행이 없습니다.'); return; }
+
+  const old = document.getElementById('modal-pachi-bulk');
+  if (old) old.remove();
+
+  // 실제 값은 'v:라벨'로 인코딩(빈 문자열/센티넬과 구분). '__keep__'=변경 안 함, '__clear__'=null.
+  const sizeOpts  = [...pachiSizes].filter(s => s.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    .map(s => `<option value="v:${esc(s.label)}">${esc(s.label)}</option>`).join('');
+  const condOpts  = [...pachiConditions].filter(c => c.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    .map(c => `<option value="v:${esc(c.label)}">${esc(c.label)}</option>`).join('');
+  const usageOpts = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    .map(u => `<option value="v:${esc(u.name)}">${esc(u.name)}</option>`).join('');
+
+  const selStyle = 'width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box';
+  const overlay = document.createElement('div');
+  overlay.id = 'modal-pachi-bulk';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;width:100%;max-width:400px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="background:#EEF2FF;padding:16px 20px">
+        <div style="font-weight:700;font-size:15px;color:#3730A3">파치 일괄 지정 — ${rows.length}건</div>
+        <div style="font-size:12px;color:#6366F1;margin-top:2px">'변경 안 함'인 항목은 그대로 둡니다.</div>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">크기</label>
+          <select id="pachi-bulk-size" style="${selStyle}">
+            <option value="__keep__" selected>변경 안 함</option>
+            <option value="__clear__">지우기 (비움)</option>
+            ${sizeOpts}
+          </select>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">상태</label>
+          <select id="pachi-bulk-condition" style="${selStyle}">
+            <option value="__keep__" selected>변경 안 함</option>
+            <option value="__clear__">지우기 (비움)</option>
+            ${condOpts}
+          </select>
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">사용처</label>
+          <select id="pachi-bulk-usage" style="${selStyle}">
+            <option value="__keep__" selected>변경 안 함</option>
+            <option value="__clear__">지우기 (비움)</option>
+            ${usageOpts}
+          </select>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn" onclick="document.getElementById('modal-pachi-bulk').remove()">취소</button>
+          <button id="pachi-bulk-apply-btn" class="btn pri" onclick="applyPachiBulk()">적용</button>
+        </div>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+async function applyPachiBulk() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const sizeV  = document.getElementById('pachi-bulk-size')?.value || '__keep__';
+  const condV  = document.getElementById('pachi-bulk-condition')?.value || '__keep__';
+  const usageV = document.getElementById('pachi-bulk-usage')?.value || '__keep__';
+
+  const parseV = v => v === '__clear__' ? null : v.slice(2);   // 'v:라벨' → '라벨', '__clear__' → null
+  const patch = {};
+  if (sizeV  !== '__keep__') patch.pachi_size_group = parseV(sizeV);
+  if (condV  !== '__keep__') patch.pachi_condition  = parseV(condV);
+  if (usageV !== '__keep__') patch.usage            = parseV(usageV);
+  if (Object.keys(patch).length === 0) { alert('변경할 항목을 하나 이상 선택해주세요.'); return; }
+
+  const rows = _pachiCheckedRegIds().map(id => _pachiRowRegistry[id]).filter(r => r && !r.isLegacy && !r.isInbound);
+  if (!rows.length) { alert('선택된 행이 없습니다.'); return; }
+  const ids = [];
+  rows.forEach(r => (r.ids || []).forEach(id => ids.push(id)));
+  if (!ids.length) { alert('적용할 기록이 없습니다.'); return; }
+
+  const fieldNames = [];
+  if ('pachi_size_group' in patch) fieldNames.push('크기');
+  if ('pachi_condition'  in patch) fieldNames.push('상태');
+  if ('usage'            in patch) fieldNames.push('사용처');
+  const ok = await showConfirmEdit(`${rows.length}건에 적용할까요?`, `${fieldNames.join(' · ')} 변경`);
+  if (!ok) return;
+
+  const btn = document.getElementById('pachi-bulk-apply-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '적용 중...'; }
+  try {
+    for (const id of ids) {
+      await sbUpdate('inventory_records', id, patch);
+      const rec = inventoryRecords.find(r => String(r.id) === String(id));
+      if (rec) {
+        if ('pachi_size_group' in patch) rec.pachi_size_group = patch.pachi_size_group;
+        if ('pachi_condition'  in patch) rec.pachi_condition  = patch.pachi_condition;
+        if ('usage'            in patch) rec.usage            = patch.usage;
+      }
+    }
+    const m = document.getElementById('modal-pachi-bulk');
+    if (m) m.remove();
+    renderInvSummary(); renderPachiSection();   // 재렌더 → 체크 초기화
+    showToast(`${rows.length}건 일괄 지정 완료`);
+  } catch(e) {
+    alert('일괄 지정 실패: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '적용'; }
+  }
+}
+
 
 let _juiceBatchMenuId = null;
 function toggleJuiceBatchMenu(id, btn) {
@@ -12870,7 +13008,14 @@ function renderPachiSection() {
             title="메뉴">⋮</button></td>`
       : '';
     const excludedBadge = excluded ? `<span style="font-size:10px;color:#9CA3AF;background:#F3F4F6;padding:1px 5px;border-radius:4px;margin-left:4px">재고제외</span>` : '';
+    // 일괄 지정 체크박스 (admin·선과/수동 행만 — 레거시·입고는 inventory_records 대상 아님 → 빈 칸)
+    const chkCell = isAdm
+      ? `<td style="padding:4px 6px;text-align:center">${(!r.isLegacy && !r.isInbound)
+          ? `<input type="checkbox" class="pachi-chk" data-reg-id="${regId}" onchange="onPachiChkChange()" style="cursor:pointer;width:16px;height:16px;vertical-align:middle">`
+          : ''}</td>`
+      : '';
     return `<tr ${idsAttr} style="${excluded ? 'opacity:0.55;background:#FCFCFC' : ''}">
+      ${chkCell}
       <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
       <td style="padding:7px 10px;font-size:12px;color:#aaa"></td>
@@ -12886,7 +13031,7 @@ function renderPachiSection() {
     </tr>`;
   };
 
-  const _pachiColspan = isAdm ? 12 : 11;
+  const _pachiColspan = isAdm ? 13 : 11;   // +1: 일괄 지정 체크박스 열(admin)
   const _subGroupKeys = [];   // 접이식 하위그룹 키(렌더 순서 = togglePachiGroup 인덱스)
   _pachiProdKeysNow = [];     // 품목 키(렌더 순서 = togglePachiProduct 인덱스)
 
@@ -13001,6 +13146,14 @@ function renderPachiSection() {
       <button onclick="setPachiView('condition')" style="${_VB(_pvMode === 'condition')}">상태별</button>
     </div>`;
 
+  // 일괄 지정 액션 바 (1건 이상 체크 시 JS로 표시) — admin만
+  const bulkBar = isAdm ? `
+    <div id="pachi-bulk-bar" style="display:none;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#EEF2FF;border-bottom:1px solid #E5E7EB">
+      <span style="font-size:13px;font-weight:700;color:#3730A3"><span id="pachi-bulk-count">0</span>건 선택</span>
+      <button class="btn pri" onclick="openPachiBulkModal()" style="padding:6px 14px;font-size:13px">일괄 지정</button>
+      <button class="btn" onclick="clearPachiChecks()" style="padding:6px 14px;font-size:13px">선택 해제</button>
+    </div>` : '';
+
   el.innerHTML = `
     <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
@@ -13008,9 +13161,11 @@ function renderPachiSection() {
         <div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>
       </div>
       ${viewTabs}
+      ${bulkBar}
       <div class="tbl-wrap">
         <table style="min-width:560px;width:100%;border-collapse:collapse">
           <thead><tr style="background:#F9FAFB">
+            ${isAdm ? '<th style="padding:7px 6px;border-bottom:1px solid #E5E7EB;width:34px;text-align:center"><input type="checkbox" id="pachi-chk-all" onchange="togglePachiCheckAll(this)" style="cursor:pointer;width:16px;height:16px;vertical-align:middle" title="전체 선택"></th>' : ''}
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">농가</th>
             <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
@@ -13024,7 +13179,7 @@ function renderPachiSection() {
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
             ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
-          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 12 : 11}" class="empty">파치 기록 없음</td></tr>`}</tbody>
+          <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 13 : 11}" class="empty">파치 기록 없음</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
