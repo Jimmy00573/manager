@@ -8866,7 +8866,8 @@ function getSizeGroupsFor(product) {
 let _sortingInboundId = null;
 let _sortingSeq = 1;
 let _sortingSaving = false;
-let _srtGradeOn = false;
+let _srtGradeOn = false;   // (엑셀 호환용 — 항상 false. 수동 입력은 등급 탭 _srtGrade 사용)
+let _srtGrade = '일반';    // 선과 직접입력: 현재 선택된 브릭스 등급 탭
 
 let _scSort = 'date-asc';
 let _scSortMode = 'date'; // 'date' | 'doing'
@@ -11404,10 +11405,9 @@ async function openSortingModal(id) {
   document.getElementById('srt-green').value = 0;
   document.getElementById('srt-loss').value = 0;
 
-  // 사이즈 그리드 (토글 초기화 후 렌더)
-  _srtGradeOn = false;
-  const _toggleEl = document.getElementById('srt-grade-toggle');
-  if (_toggleEl) _toggleEl.checked = false;
+  // 사이즈 그리드 (등급 탭 초기화 후 렌더)
+  _srtGradeOn = false;      // 엑셀 호환 경로용(항상 false)
+  _srtGrade = '일반';        // 등급 탭 기본값
   const productType = PRODUCT_TYPE_MAP[r.product] || '만감류';
   srtRenderSizeGrid(productType);
 
@@ -11415,6 +11415,15 @@ async function openSortingModal(id) {
   document.getElementById('modal-sorting').style.display = 'flex';
   document.getElementById('srt-input-ct').focus();
   document.getElementById('srt-input-ct').select();
+}
+
+// 선과 직접입력 등급 목록: [일반] + 활성 브릭스 등급(sort_order). 마스터 없으면 [일반] 폴백.
+function _srtGradeLabels() {
+  const brix = [...brixGrades]
+    .filter(g => g.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
+  return ['일반', ...brix];
 }
 
 function srtRenderSizeGrid(productType) {
@@ -11425,52 +11434,53 @@ function srtRenderSizeGrid(productType) {
         return pt === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
       })();
 
-  if (!_srtGradeOn) {
-    const el = document.getElementById('srt-size-grid');
-    el.style.display = 'grid';
-    el.innerHTML = sizes.map(sz => `
+  const grades = _srtGradeLabels();
+  if (!grades.includes(_srtGrade)) _srtGrade = '일반';   // 방어
+
+  const innerGrid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px';
+
+  // 등급 탭 버튼
+  const tabs = grades.map(g => {
+    const on = g === _srtGrade;
+    return `<button type="button" class="srt-grade-tab" data-grade="${esc(g)}" onclick="srtSelectGrade('${esc(g)}')"
+      style="padding:4px 12px;border-radius:14px;border:1.5px solid ${on ? '#1D4ED8' : '#D1D5DB'};background:${on ? '#1D4ED8' : '#fff'};color:${on ? '#fff' : '#374151'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">${esc(g)}</button>`;
+  }).join('');
+
+  // 모든 등급 그리드를 한꺼번에 렌더 → 활성 등급만 보임(display 토글). 탭 전환해도 input이 DOM에 남아 값 유지.
+  const grids = grades.map(g => {
+    const isNormal = g === '일반';
+    const cells = sizes.map(sz => `
       <div>
-        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
-        <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
-          style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
+        <label style="font-size:11px;color:${isNormal ? '#6B7280' : '#1D4ED8'};display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
+        <input type="number" data-size="${sz}" data-grade="${esc(g)}" class="srt-size-input" min="0" value="0"
+          style="width:100%;padding:4px 6px;border:1px solid ${isNormal ? '#E5E7EB' : '#BFDBFE'};border-radius:5px;font-size:13px;text-align:right;background:${isNormal ? '#F9F9F9' : '#fff'}"
           oninput="srtUpdateTotals()">
       </div>`).join('');
-  } else {
-    const innerGrid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px';
-    const normalCells = sizes.map(sz => `
-      <div>
-        <label style="font-size:11px;color:#6B7280;display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
-        <input type="number" data-size="${sz}" data-grade="일반" class="srt-size-input" min="0" value="0"
-          style="width:100%;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:13px;text-align:right;background:#F9F9F9"
-          oninput="srtUpdateTotals()">
-      </div>`).join('');
-    const gradeCells = sizes.map(sz => `
-      <div>
-        <label style="font-size:11px;color:#1D4ED8;display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
-        <input type="number" data-size="${sz}" data-grade="고당" class="srt-size-input" min="0" value="0"
-          style="width:100%;padding:4px 6px;border:1px solid #BFDBFE;border-radius:5px;font-size:13px;text-align:right;background:#fff"
-          oninput="srtUpdateTotals()">
-      </div>`).join('');
-    const el = document.getElementById('srt-size-grid');
-    el.style.display = 'block';
-    el.innerHTML = `
-      <div style="margin-bottom:10px">
-        <div style="font-size:12px;color:#6B7280;margin-bottom:6px"><span style="color:#9CA3AF">●</span> 일반</div>
-        <div style="${innerGrid}">${normalCells}</div>
-      </div>
-      <div>
-        <div style="font-size:12px;color:#1565C0;margin-bottom:6px"><span>●</span> 고당</div>
-        <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:8px">
-          <div style="${innerGrid}">${gradeCells}</div>
-        </div>
-      </div>`;
-  }
+    const show = g === _srtGrade;
+    return `<div class="srt-grade-grid" data-grade="${esc(g)}" style="${innerGrid}${show ? '' : ';display:none'}">${cells}</div>`;
+  }).join('');
+
+  const el = document.getElementById('srt-size-grid');
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${tabs}</div>
+    ${grids}
+    <div id="srt-grade-breakdown" style="margin-top:10px;padding-top:8px;border-top:1px dashed #E5E7EB;font-size:12px;color:#374151"></div>`;
   srtUpdateTotals();
 }
 
-function srtToggleGrade() {
-  _srtGradeOn = document.getElementById('srt-grade-toggle').checked;
-  srtRenderSizeGrid();
+// 등급 탭 전환 — 재렌더 없이 보이는 그리드만 교체(값 유지)
+function srtSelectGrade(label) {
+  _srtGrade = label;
+  document.querySelectorAll('.srt-grade-grid').forEach(g => {
+    g.style.display = (g.dataset.grade === label) ? 'grid' : 'none';
+  });
+  document.querySelectorAll('.srt-grade-tab').forEach(b => {
+    const on = b.dataset.grade === label;
+    b.style.background = on ? '#1D4ED8' : '#fff';
+    b.style.color = on ? '#fff' : '#374151';
+    b.style.borderColor = on ? '#1D4ED8' : '#D1D5DB';
+  });
 }
 
 function srtParseExcel(input) {
@@ -11691,12 +11701,25 @@ function srtMatchUnmatched(origSize, targetSize) {
 
 function srtUpdateTotals() {
   let normalTotal = 0;
+  const gradeTotals = {};   // 등급 라벨 → CT 합 (실시간 합계용)
   document.querySelectorAll('.srt-size-input').forEach(inp => {
     const v = parseFloat(inp.value) || 0;
     normalTotal += v;
+    const g = inp.dataset.grade || '일반';
+    gradeTotals[g] = (gradeTotals[g] || 0) + v;
     inp.style.background = v > 0 ? '#EFF6FF' : '#F9F9F9';
     inp.style.borderColor = v > 0 ? '#93C5FD' : '#E5E7EB';
   });
+
+  // 실시간 합계: 총 선과 + 등급별(값 있는 등급만)
+  const bd = document.getElementById('srt-grade-breakdown');
+  if (bd) {
+    const parts = _srtGradeLabels()
+      .filter(g => (gradeTotals[g] || 0) > 0)
+      .map(g => `${esc(g)} <strong>${fmtN(gradeTotals[g])}</strong>`);
+    bd.innerHTML = `총 선과 <strong style="color:#1565C0">${fmtN(normalTotal)} CT</strong>`
+      + (parts.length ? ` &nbsp;·&nbsp; ${parts.join(' &nbsp;·&nbsp; ')}` : '');
+  }
 
   const waste    = parseFloat(document.getElementById('srt-waste').value)    || 0;
   const highacid = parseFloat(document.getElementById('srt-highacid').value) || 0;
