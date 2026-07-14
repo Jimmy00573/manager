@@ -31,7 +31,7 @@ async function dbInsertFarm(data) { const r = await sbInsert('farms', data); ret
 async function dbUpdateFarm(id, data) { const r = await sbUpdate('farms', id, data); return r[0]; }
 async function dbDeleteFarm(id) { return sbDelete('farms', id); }
 
-async function dbGetDrivers() { return sbGet('drivers', 'order=name'); }
+async function dbGetDrivers() { return sbGet('drivers', 'order=display_order.asc.nullslast,id.asc'); }
 async function dbInsertDriver(data) { const r = await sbInsert('drivers', data); return r[0]; }
 async function dbUpdateDriver(id, data) { const r = await sbUpdate('drivers', id, data); return r[0]; }
 async function dbDeleteDriver(id) { return sbDelete('drivers', id); }

@@ -1132,8 +1132,9 @@ async function addDriver() {
   if (drivers.find(d => d.name === name)) { alert('이미 등록된 기사입니다'); return; }
   const car = type === '내부' ? (document.getElementById('dv-car-sel')?.value || '') : (gv('dv-car') || '');
   const pin = genPin();
+  const nextOrder = drivers.reduce((m, d) => Math.max(m, d.display_order || 0), 0) + 1;   // 맨 뒤
   try {
-    const row = await dbInsertDriver({ name, tel, car, type, note: gv('dv-note'), pin, pin_active: true });
+    const row = await dbInsertDriver({ name, tel, car, type, note: gv('dv-note'), pin, pin_active: true, display_order: nextOrder });
     drivers.push(row);
     clr('dv-name', 'dv-tel', 'dv-car', 'dv-note');
     if (document.getElementById('dv-car-sel')) document.getElementById('dv-car-sel').value = '';
@@ -1145,6 +1146,23 @@ async function delDriver(id) {
   if (!(await cDel('기사 삭제'))) return;
   try { await dbDeleteDriver(id); drivers = drivers.filter(d => d.id !== id); popSels(); renderDrivers(); }
   catch (e) { alert('오류: ' + e.message); }
+}
+// 목록 순서 변경 — 인접 항목과 display_order 스왑 후 재로드(모든 드롭다운·목록에 반영)
+async function moveDriver(id, dir) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 순서를 변경할 수 있습니다.');
+  const i = drivers.findIndex(d => d.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= drivers.length) return;
+  const a = drivers[i], b = drivers[j];
+  const ao = a.display_order ?? (i + 1);   // NULL 방어(정렬 위치값)
+  const bo = b.display_order ?? (j + 1);
+  try {
+    await dbUpdateDriver(a.id, { display_order: bo });
+    await dbUpdateDriver(b.id, { display_order: ao });
+    drivers = await dbGetDrivers();   // 정렬된 순서로 재로드(단일 소스)
+    popSels(); renderDrivers();
+  } catch (e) { alert('순서 변경 오류: ' + e.message); }
 }
 
 // ── 모달: 배차 수정
@@ -1200,10 +1218,11 @@ function renderDrivers() {
   document.getElementById('drv-cnt').textContent = drivers.length;
   const el = document.getElementById('drv-list');
   if (!drivers.length) { el.innerHTML = '<div class="note">등록된 기사가 없습니다</div>'; return; }
-  el.innerHTML = drivers.map(d => {
+  el.innerHTML = drivers.map((d, i) => {
     const hidden = _pinHidden[d.id] === true;
     const pinDisp = hidden ? '••••' : (d.pin || '----');
     const pinColor = hidden ? '#999' : '#C05800';
+    const isFirst = i === 0, isLast = i === drivers.length - 1;
     return `<div class="pin-mgmt">
       <div class="pm-top">
         <div class="pm-info">
@@ -1211,6 +1230,8 @@ function renderDrivers() {
           <div class="pm-sub">📞 ${esc(d.tel)} · 🚛 ${esc(d.car || '차량미등록')}</div>
         </div>
         <div class="pm-acts">
+          <button class="btn" onclick="moveDriver(${d.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
+          <button class="btn" onclick="moveDriver(${d.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
           <button class="btn edt" onclick="openDrvEdit(${d.id})">✏️ 수정</button>
           <button class="btn del" onclick="delDriver(${d.id})">삭제</button>
         </div>
