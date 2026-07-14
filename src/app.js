@@ -11863,7 +11863,8 @@ async function saveSortingResult() {
     });
     const headerId = headerRows[0].id;
 
-    // 2. 상세 (사이즈별 + 비정상품)
+    // 2. 상세 (사이즈별 + 비정상품) — CT=0인 행은 저장 안 함(불필요 레코드 누적 방지)
+    //    집계는 모두 category별 sum/사이즈맵이라 0 행 유무와 결과 동일.
     const allDetails = [
       ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', quality_grade: d.quality_grade, note: null })),
       { sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null },
@@ -11871,7 +11872,7 @@ async function saveSortingResult() {
       { sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null },
       { sorting_result_id: headerId, size_code: null, ct: green,    category: '청과',   note: null },
       { sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null },
-    ];
+    ].filter(d => Number(d.ct) > 0);
     for (const d of allDetails) await sbInsert('sorting_details', d);
 
     // 2-1. inventory_records 자동 등록 (정상품만)
