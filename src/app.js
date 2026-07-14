@@ -83,9 +83,9 @@ let _ibAuditMode = false;
 let _ibAuditChecked = new Set();
 let _ibAuditVisible = [];
 let _invAuditMode = false;
-let _invAuditChecked = new Set();
 let _invAuditExpanded = new Set();
 let _invAuditVisible = [];
+// 재고 실사 체크는 inventory_records.audit_checked_at(TIMESTAMPTZ)에 저장 — 화면 이동·새로고침해도 유지
 let ibSearch = '';
 let ibFilterProduct = '';
 let ibFilterDriver = '';
@@ -5079,19 +5079,28 @@ function _renderInvMatrix(product, recs) {
 
 // ── 재고 실사 목록 렌더 ─────────────────────────────────────────
 
+// 실사 확인 시각 포맷 "MM-DD HH:mm"
+function _fmtAuditTs(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function _renderInvAuditList(recs) {
   const items = recs.filter(r => (Number(r.quantity) || 0) > 0);
 
   _invAuditVisible = items;
 
   const total = items.length;
-  const checked = items.filter(r => _invAuditChecked.has(String(r.id))).length;
+  const checked = items.filter(r => r.audit_checked_at).length;   // DB 기준
   const unchecked = total - checked;
 
   const progressBar = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
     <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건</span>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
-      <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">전체 해제</button>
+      <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
       <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>
     </div>
   </div>`;
@@ -5136,13 +5145,16 @@ function _renderInvAuditList(recs) {
 
       const renderChip = r => {
         const key    = String(r.id);
-        const isChk  = _invAuditChecked.has(key);
+        const isChk  = !!r.audit_checked_at;   // DB 기준
         const isHigh = isGraded(r);
         const bg     = isChk ? '#F5F3FF' : isHigh ? '#EFF6FF' : '#fff';
         const border = isChk ? '#7C3AED' : isHigh ? '#BFDBFE' : '#E5E7EB';
         const color  = isChk ? '#7C3AED' : isHigh ? '#1565C0' : '#374151';
         const shadow = isChk ? 'box-shadow:inset 0 0 0 1px #7C3AED;' : '';
-        return `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${bg};border:1px solid ${border};border-radius:4px;white-space:nowrap;${shadow}"><span onclick="toggleInvAuditCheck('${key}')" style="font-size:10px;color:#6B7280;cursor:pointer;line-height:1.1">${esc(r.size_code || '—')}</span><b data-chip-key="${key}" onclick="startChipEdit('${key}',event)" style="font-size:13px;line-height:1.2;border-bottom:1px dashed #9CA3AF;cursor:text;color:${color}">${fmtN(Number(r.quantity) || 0)}</b></span>`;
+        const chkTitle = isChk ? `${_fmtAuditTs(r.audit_checked_at)} 확인` : '미확인';
+        const szColor  = isChk ? '#7C3AED' : '#6B7280';
+        const szLabel  = `${isChk ? '✓' : ''}${esc(r.size_code || '—')}`;
+        return `<span title="${esc(chkTitle)}" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${bg};border:1px solid ${border};border-radius:4px;white-space:nowrap;${shadow}"><span onclick="toggleInvAuditCheck('${key}')" style="font-size:10px;color:${szColor};cursor:pointer;line-height:1.1">${szLabel}</span><b data-chip-key="${key}" onclick="startChipEdit('${key}',event)" style="font-size:13px;line-height:1.2;border-bottom:1px dashed #9CA3AF;cursor:text;color:${color}">${fmtN(Number(r.quantity) || 0)}</b></span>`;
       };
 
       const farmNames = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -5178,8 +5190,8 @@ function _renderInvAuditList(recs) {
                 const mk = `${prod}__${farm}__${dateStr}__${grade}__${size}`;
                 const sum = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
                 const expanded = _invAuditExpanded.has(mk);
-                const allChk = recs.every(r => _invAuditChecked.has(String(r.id)));
-                const anyChk = recs.some(r => _invAuditChecked.has(String(r.id)));
+                const allChk = recs.every(r => r.audit_checked_at);
+                const anyChk = recs.some(r => r.audit_checked_at);
                 const bg     = allChk ? '#F5F3FF' : anyChk ? '#FAF5FF' : '#F9FAFB';
                 const border = allChk ? '#7C3AED' : anyChk ? '#C4B5FD' : '#D1D5DB';
                 const color  = allChk ? '#7C3AED' : '#374151';
@@ -10087,13 +10099,18 @@ function ibRatioBadge(r) {
 function toggleInvAuditMode() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invAuditMode = !_invAuditMode;
-  if (!_invAuditMode) { _invAuditChecked = new Set(); _invAuditExpanded = new Set(); }
+  if (!_invAuditMode) { _invAuditExpanded = new Set(); }   // 체크(audit_checked_at)는 DB라 유지, 펼침만 초기화
   renderInventoryStatus();
 }
-function toggleInvAuditCheck(key) {
-  if (_invAuditChecked.has(key)) _invAuditChecked.delete(key);
-  else _invAuditChecked.add(key);
-  renderInventoryStatus();
+async function toggleInvAuditCheck(key) {
+  const rec = inventoryRecords.find(r => String(r.id) === key);
+  if (!rec) return;
+  const ts = rec.audit_checked_at ? null : new Date().toISOString();   // 체크→시각, 해제→NULL
+  try {
+    await sbUpdate('inventory_records', rec.id, { audit_checked_at: ts });
+    rec.audit_checked_at = ts;
+    renderInventoryStatus();
+  } catch (e) { showToast('오류: ' + e.message); }
 }
 function toggleChipExpand(mk) {
   if (_invAuditExpanded.has(mk)) _invAuditExpanded.delete(mk);
@@ -10175,15 +10192,16 @@ async function commitChipEdit(key, rawVal) {
     return;
   }
   try {
-    await sbUpdate('inventory_records', rec.id, { quantity: newVal });
+    const nowTs = new Date().toISOString();
+    await sbUpdate('inventory_records', rec.id, { quantity: newVal, audit_checked_at: nowTs });   // 수정=확인 처리
     rec.quantity = newVal;
+    rec.audit_checked_at = nowTs;
     await dbInsertAuditLog({
       target_table: 'inventory_records', target_id: rec.id,
       before_val: { quantity: oldQty }, after_val: { quantity: newVal },
       reason: `재고 실사 수정 ${fmtN(oldQty)}→${fmtN(newVal)}`,
       staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
-    _invAuditChecked.add(key);
     renderInventoryStatus();
     showToast(`✏️ ${rec.size_code} ${fmtN(oldQty)}→${fmtN(newVal)} 수정`);
   } catch(e) {
@@ -10192,28 +10210,44 @@ async function commitChipEdit(key, rawVal) {
     if (b) b.textContent = fmtN(Number(oldQty) || 0);
   }
 }
-function _invClearAuditChecks() {
-  _invAuditChecked = new Set();
-  renderInventoryStatus();
+async function _invClearAuditChecks() {
+  const checked = (_invAuditVisible || []).filter(r => r.audit_checked_at);
+  if (!checked.length) { showToast('확인된 항목이 없습니다.'); return; }
+  const ok = await showConfirmEdit('실사 초기화', `확인 표시된 ${checked.length}건을 모두 미확인으로 되돌립니다.\n(재고 수량은 삭제·변경되지 않습니다)`);
+  if (!ok) return;
+  let done = 0;
+  try {
+    for (const r of checked) {
+      await sbUpdate('inventory_records', r.id, { audit_checked_at: null });
+      r.audit_checked_at = null;
+      done++;
+    }
+    renderInventoryStatus();
+    showToast(`↺ 실사 초기화 ${done}건`);
+  } catch (e) {
+    renderInventoryStatus();
+    showToast(`${done}건 처리 후 오류: ${e.message}`);
+  }
 }
 
 async function deleteUncheckedInvAudit() {
   if (!_invAuditMode) return;
-  const unchecked = _invAuditVisible.filter(r => !_invAuditChecked.has(String(r.id)));
+  const unchecked = _invAuditVisible.filter(r => !r.audit_checked_at);   // DB 기준(미확인)
   if (unchecked.length === 0) {
     await showConfirmEdit('미확인 없음', '확인되지 않은 항목이 없습니다. 모두 확인 완료되었습니다.');
     return;
   }
+  const totalCt = unchecked.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   const MAX_SHOW = 10;
   const itemLabels = unchecked.slice(0, MAX_SHOW).map(r =>
     `${r.farm_name || '(농가없음)'} · ${r.product || ''} · ${r.size_code || ''} · ${r.quality_grade || '일반'} · ${fmtN(Number(r.quantity) || 0)}CT`
   );
   if (unchecked.length > MAX_SHOW) itemLabels.push(`...외 ${unchecked.length - MAX_SHOW}건`);
   const res = await showConfirmDanger({
-    title: '미확인 재고 일괄 삭제',
-    subtitle: `확인되지 않은 ${unchecked.length}건을 삭제합니다`,
+    title: '⚠️ 미확인 재고 일괄 삭제',
+    subtitle: `실사에서 확인(체크)하지 않은 ${unchecked.length}건 · 총 ${fmtN(totalCt)}CT를 삭제합니다. 되돌릴 수 없습니다. 실사를 끝까지 마쳤는지 확인하세요.`,
     items: itemLabels,
-    confirmText: '일괄 삭제',
+    confirmText: `${unchecked.length}건 삭제`,
     needWorker: true
   });
   if (!res || !res.ok) return;
@@ -10236,7 +10270,6 @@ async function deleteUncheckedInvAudit() {
       break;
     }
   }
-  _invAuditChecked = new Set([..._invAuditChecked].filter(key => inventoryRecords.some(r => String(r.id) === key && !r.is_void)));
   await loadAndRenderInv();
   if (failMsg) alert(failMsg);
   else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
