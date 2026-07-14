@@ -11405,6 +11405,11 @@ async function openSortingModal(id) {
   document.getElementById('srt-green').value = 0;
   document.getElementById('srt-loss').value = 0;
 
+  // 엑셀 매핑 상태 초기화(이전 업로드 잔존 방지)
+  _srtExcel = null;
+  const _excelResEl = document.getElementById('srt-excel-result');
+  if (_excelResEl) { _excelResEl.style.display = 'none'; _excelResEl.innerHTML = ''; }
+
   // 사이즈 그리드 (등급 탭 초기화 후 렌더)
   _srtGradeOn = false;      // 엑셀 호환 경로용(항상 false)
   _srtGrade = '일반';        // 등급 탭 기본값
@@ -11483,17 +11488,18 @@ function srtSelectGrade(label) {
   });
 }
 
+const _SRT_POS = ['특1', '특2', '특3', '상', '일반'];   // 선과기 배출구(당산도 분류)
+let _srtExcel = null;   // 선과 엑셀 상태: { posKg, posTotalKg, unmatched, product, kgPerCt, sizes, foundTotal, map }
+
 function srtParseExcel(input) {
   const file = input.files[0];
   if (!file) return;
-  // 파일 input 초기화 (같은 파일 재선택 가능하게)
-  input.value = '';
+  input.value = '';   // 같은 파일 재선택 가능하게
 
   const r = inboundRecords.find(x => x.id === _sortingInboundId);
   const product = r ? r.product : null;
   const kgPerCt = (productWeights && product && productWeights[product] != null)
     ? Number(productWeights[product]) : 17;
-  const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
 
   const reader = new FileReader();
   reader.onload = function(e) {
@@ -11504,47 +11510,42 @@ function srtParseExcel(input) {
 
       if (rows.length < 2) { alert('엑셀 데이터가 없습니다.'); return; }
 
-      // 헤더 행에서 열 인덱스 결정
+      // 헤더 행에서 배출구 열 인덱스 결정
       const hdr = rows[0].map(v => String(v).trim());
       const ci = name => hdr.findIndex(h => h === name);
-      const iGrade  = ci('등급');
-      const iGubun  = ci('구분');
-      const iTe1    = ci('특1');
-      const iTe2    = ci('특2');
-      const iTe3    = ci('특3');
-      const iSang   = ci('상');
-      const iIlban  = ci('일반');
-      const iTotal  = ci('합계');
+      const iGrade = ci('등급'), iGubun = ci('구분');
+      const posCol = { '특1': ci('특1'), '특2': ci('특2'), '특3': ci('특3'), '상': ci('상'), '일반': ci('일반') };
 
-      if ([iGrade, iGubun, iTe1, iTe2, iTe3, iSang, iIlban].some(i => i < 0)) {
-        const missing = ['등급','구분','특1','특2','특3','상','일반']
-          .filter((n,i) => [iGrade,iGubun,iTe1,iTe2,iTe3,iSang,iIlban][i] < 0);
+      if (iGrade < 0 || iGubun < 0 || _SRT_POS.some(p => posCol[p] < 0)) {
+        const missing = ['등급','구분',..._SRT_POS]
+          .filter((n,i) => [iGrade,iGubun,posCol['특1'],posCol['특2'],posCol['특3'],posCol['상'],posCol['일반']][i] < 0);
         alert(`엑셀 헤더를 찾을 수 없습니다: ${missing.join(', ')}\n실제 헤더: ${hdr.join(' | ')}`);
         return;
       }
 
-      const isCitrus = (PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류';
-      // 감귤류 유효 사이즈 집합 (00/000은 '0'으로 나오므로 제외, 별도 매핑)
+      const productType = PRODUCT_TYPE_MAP[product] || '만감류';
+      const isCitrus = productType === '감귤류';
+      const gridSizes = isCitrus ? SIZES_감귤류 : SIZES_만감류;   // 현재 등급 탭 그리드 사이즈
+      const validSizes = new Set(gridSizes);
+      // 감귤류 유효 사이즈 (00/000은 엑셀에서 '0'으로 나오므로 순서로 별도 매핑)
       const CITRUS_VALID_SIZES = new Set(SIZES_감귤류.filter(s => s !== '000' && s !== '00'));
-      let zeroCount = 0; // '0' 등장 횟수: 첫=00, 둘=000
+      let zeroCount = 0; // '0' 등장 순서: 첫=00, 둘째=000
 
-      const results = [];
-      let excelHighKg = 0, excelNormalKg = 0;
-      let excelTotalHighKg = 0, excelTotalNormalKg = 0;
+      const posKg = { '특1': {}, '특2': {}, '특3': {}, '상': {}, '일반': {} };   // 배출구→사이즈→kg (그리드 매칭분)
+      const posTotalKg = { '특1': 0, '특2': 0, '특3': 0, '상': 0, '일반': 0 };   // 엑셀 일합계 행(대조용)
+      const unmatched = {};   // 미매칭 사이즈 origSize → {배출구:kg}
       let foundTotal = false;
 
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         const gradeVal = String(row[iGrade] ?? '').trim();
-        const gubun    = String(row[iGubun]  ?? '').trim();
+        const gubun    = String(row[iGubun] ?? '').trim();
 
-        // 일합계 행 — 숫자 뽑아 검증용으로 저장 후 건너뜀
+        // 일합계 행(중량) — 배출구별 총량 대조용
         const rowStr = row.slice(0, 6).map(v => String(v ?? '')).join('');
         if (gradeVal.includes('일합계') || rowStr.includes('일합계')) {
           if (gubun === '중량') {
-            excelTotalHighKg   = Number(row[iTe1])   || 0;
-            excelTotalNormalKg = (Number(row[iTe2]) || 0) + (Number(row[iTe3]) || 0)
-                               + (Number(row[iSang]) || 0) + (Number(row[iIlban]) || 0);
+            _SRT_POS.forEach(p => { posTotalKg[p] = Number(row[posCol[p]]) || 0; });
             foundTotal = true;
           }
           continue;
@@ -11552,89 +11553,44 @@ function srtParseExcel(input) {
 
         // 중량 행만 처리
         if (gubun !== '중량') continue;
-
-        // 사이즈 형식 검증 — 만감류: N수/Ng, 감귤류: 앱 사이즈명 또는 '0'
         if (!gradeVal) continue;
+
+        // 사이즈 파싱 (기존 로직 유지) — 매칭/미매칭 구분
+        let size = null, matched = false;
         if (isCitrus) {
-          if (!CITRUS_VALID_SIZES.has(gradeVal) && gradeVal !== '0') continue;
+          if (CITRUS_VALID_SIZES.has(gradeVal)) { size = gradeVal; matched = validSizes.has(size); }
+          else if (gradeVal === '0') { zeroCount++; size = zeroCount === 1 ? '00' : '000'; matched = validSizes.has(size); }
+          else continue;   // 감귤류 사이즈 아님
         } else {
           if (!gradeVal.match(/\d+수/) && !gradeVal.match(/\d+g/)) continue;
+          size = gradeVal;
+          matched = validSizes.has(size);
         }
 
-        // 감귤류 '0' → 순서 기반 매핑 (큰 것부터이므로 첫=00, 둘째=000)
-        let size = gradeVal;
-        if (isCitrus && gradeVal === '0') {
-          zeroCount++;
-          size = zeroCount === 1 ? '00' : '000';
-        }
-
-        const highKg   = Number(row[iTe1])   || 0;
-        const normalKg = (Number(row[iTe2])  || 0) + (Number(row[iTe3])  || 0)
-                       + (Number(row[iSang]) || 0) + (Number(row[iIlban]) || 0);
-
-        excelHighKg   += highKg;
-        excelNormalKg += normalKg;
-
-        const highCT   = toCT(highKg);
-        const normalCT = toCT(normalKg);
-
-        results.push({ size, highKg, normalKg, highCT, normalCT });
+        _SRT_POS.forEach(p => {
+          const kg = Number(row[posCol[p]]) || 0;
+          if (kg <= 0) return;
+          if (matched) posKg[p][size] = (posKg[p][size] || 0) + kg;
+          else {
+            unmatched[size] = unmatched[size] || {};
+            unmatched[size][p] = (unmatched[size][p] || 0) + kg;
+          }
+        });
       }
 
-      // console 출력
-      console.log('[엑셀 파싱] 품목:', product, '/ kg→CT 기준:', kgPerCt, 'kg/CT');
-      console.table(results.map(r => ({
-        사이즈: r.size,
-        '고당kg': r.highKg.toFixed(1),
-        '일반kg': r.normalKg.toFixed(1),
-        '고당CT': fmtCT(r.highCT),
-        '일반CT': fmtCT(r.normalCT),
-      })));
-      if (foundTotal) {
-        console.log(`[엑셀 일합계] 고당 ${excelTotalHighKg}kg / 일반 ${excelTotalNormalKg}kg`);
-        console.log(`[집계 합산]  고당 ${excelHighKg.toFixed(1)}kg / 일반 ${excelNormalKg.toFixed(1)}kg`);
-      }
+      console.log('[선과 엑셀] 품목:', product, '/ kg→CT 기준:', kgPerCt, 'kg/CT');
+      console.log('[선과 엑셀] posKg:', JSON.stringify(posKg));
+      if (Object.keys(unmatched).length) console.log('[선과 엑셀] 미매칭:', JSON.stringify(unmatched));
 
-      const sumLine = `합계  고당 ${fmtCT(excelHighKg / kgPerCt)}CT / 일반 ${fmtCT(excelNormalKg / kgPerCt)}CT`;
-      const totalLine = foundTotal
-        ? `엑셀 일합계: 고당 ${excelTotalHighKg}kg / 일반 ${excelTotalNormalKg}kg`
-        : '';
-
-      // ── 자동 채우기 ──────────────────────────────────────────────
-      const unmatched = [];
-      let filledCount = 0;
-
-      for (const item of results) {
-        const sz = item.size;
-        if (_srtGradeOn) {
-          // 토글 ON: 일반/고당 칸 따로
-          const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
-          const highEl   = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="고당"]`);
-          if (!normalEl && !highEl) { unmatched.push({ size: sz, normalCT: item.normalCT, highCT: item.highCT, normalKg: item.normalKg, highKg: item.highKg }); continue; }
-          if (normalEl) normalEl.value = item.normalCT > 0 ? item.normalCT : 0;
-          if (highEl)   highEl.value   = item.highCT   > 0 ? item.highCT   : 0;
-        } else {
-          // 토글 OFF: raw kg 합산 후 단일 반올림
-          const normalEl = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="일반"]`);
-          if (!normalEl) { unmatched.push({ size: sz, normalCT: item.normalCT, highCT: item.highCT, normalKg: item.normalKg, highKg: item.highKg }); continue; }
-          const totalCT = toCT(item.highKg + item.normalKg);
-          normalEl.value = totalCT > 0 ? totalCT : 0;
-        }
-        filledCount++;
-      }
-
-      srtUpdateTotals();
-
-      // ── 결과 영역 업데이트 ───────────────────────────────────────
-      const modeLabel = _srtGradeOn
-        ? `✅ 고당/일반 분리 입력: ${filledCount}개 사이즈`
-        : `✅ 전부 일반으로 입력: ${filledCount}개 사이즈 (고당 분리 안 함)`;
-      window._srtUnmatched = unmatched;
-      window._srtResultMeta = { modeLabel, sumLine, totalLine, product };
-      _srtRenderExcelResult();
+      _srtExcel = {
+        posKg, posTotalKg, unmatched, product, kgPerCt,
+        sizes: gridSizes, foundTotal,
+        map: { '특1': '', '특2': '', '특3': '', '상': '', '일반': '' }   // 배출구→등급(기본 제외)
+      };
+      _srtRenderExcelMap();
 
     } catch (err) {
-      console.error('[엑셀 파싱 오류]', err);
+      console.error('[선과 엑셀 파싱 오류]', err);
       alert('엑셀 파싱 오류: ' + err.message);
     }
   };
@@ -11644,59 +11600,151 @@ function srtParseExcel(input) {
 function closeSortingModal() {
   document.getElementById('modal-sorting').style.display = 'none';
   _sortingInboundId = null;
-  window._srtUnmatched = [];
-  window._srtResultMeta = null;
+  _srtExcel = null;
   const re = document.getElementById('srt-excel-result');
   if (re) { re.style.display = 'none'; re.innerHTML = ''; }
 }
 
-function _srtRenderExcelResult() {
-  const meta = window._srtResultMeta;
-  const unmatched = window._srtUnmatched || [];
-  if (!meta) return;
-  const { modeLabel, sumLine, totalLine, product } = meta;
-  const ptForSizes = PRODUCT_TYPE_MAP[product] || '만감류';
-  const sizesForDrop = ptForSizes === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
-  const sizeOptions = `<option value="">→ 어느 사이즈로?</option>`
-    + sizesForDrop.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')
-    + `<option value="__ignore__">무시</option>`;
-  const unmatchedLines = unmatched.map(u =>
-    `<br><span style="color:#92400E">⚠️ ${esc(u.size)} (고당 ${fmtCT(u.highCT)} · 일반 ${fmtCT(u.normalCT)} CT)</span>`
-    + ` <select onchange="srtMatchUnmatched('${esc(u.size)}',this.value)" style="font-size:12px;padding:2px 4px;border:1px solid #D1D5DB;border-radius:4px">${sizeOptions}</select>`
-  ).join('');
-  const resultEl = document.getElementById('srt-excel-result');
-  if (resultEl) {
-    resultEl.style.display = '';
-    resultEl.innerHTML = `<strong>${modeLabel}</strong>${unmatchedLines}`
-      + `<br><span style="color:#374151">${sumLine}</span>`
-      + (totalLine ? `<br><span style="color:#6B7280">${totalLine}</span>` : '');
-  }
+// 선과 엑셀: 활성 브릭스 등급 라벨(sort_order). invSgExcelRenderBody와 동일 규칙.
+function _srtBrixLabels() {
+  return brixGrades
+    .filter(g => g.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
 }
 
-function srtMatchUnmatched(origSize, targetSize) {
-  if (!window._srtUnmatched) return;
-  const idx = window._srtUnmatched.findIndex(u => u.size === origSize);
-  if (idx < 0) return;
-  const u = window._srtUnmatched[idx];
-  if (targetSize && targetSize !== '__ignore__') {
-    const r = inboundRecords.find(x => x.id === _sortingInboundId);
-    const prod = r ? r.product : null;
-    const kgPerCt = (productWeights && prod && productWeights[prod] != null) ? Number(productWeights[prod]) : 17;
-    const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
-    if (_srtGradeOn) {
-      const normalEl = document.querySelector(`.srt-size-input[data-size="${targetSize}"][data-grade="일반"]`);
-      const highEl   = document.querySelector(`.srt-size-input[data-size="${targetSize}"][data-grade="고당"]`);
-      if (normalEl) normalEl.value = Math.round(((parseFloat(normalEl.value)||0) + u.normalCT) * 10) / 10;
-      if (highEl)   highEl.value   = Math.round(((parseFloat(highEl.value)||0)   + u.highCT)   * 10) / 10;
-    } else {
-      const normalEl = document.querySelector(`.srt-size-input[data-size="${targetSize}"][data-grade="일반"]`);
-      const addCT = toCT(u.highKg + u.normalKg);
-      if (normalEl) normalEl.value = Math.round(((parseFloat(normalEl.value)||0) + addCT) * 10) / 10;
-    }
-    srtUpdateTotals();
+// 배출구 → 등급 매핑 UI (srt-excel-result 영역). 각 배출구에 등급 드롭다운 + 미리보기.
+function _srtRenderExcelMap() {
+  const el = document.getElementById('srt-excel-result');
+  if (!el || !_srtExcel) return;
+  const { posKg, posTotalKg, unmatched, kgPerCt, sizes, foundTotal, map } = _srtExcel;
+  const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
+
+  const gradeOpts = ['', '일반', ..._srtBrixLabels()];   // '' = 제외
+  const gradeOptHtml = pos => gradeOpts.map(v =>
+    `<option value="${esc(v)}"${map[pos] === v ? ' selected' : ''}>${v === '' ? '제외' : esc(v)}</option>`).join('');
+
+  // 배출구 행
+  const posRows = _SRT_POS.map(pos => {
+    const szKg = posKg[pos] || {};
+    let totalCT = 0; const parts = [];
+    sizes.forEach(sz => {
+      const ct = toCT(szKg[sz] || 0);
+      if (ct > 0) { totalCT += ct; parts.push(`${esc(sz)} ${fmtCT(ct)}`); }
+    });
+    totalCT = Math.round(totalCT * 10) / 10;
+    const kgTxt = (foundTotal && posTotalKg[pos] > 0) ? ` <span style="color:#9CA3AF">(엑셀 ${fmtN(posTotalKg[pos])}kg)</span>` : '';
+    const info = totalCT > 0 ? `총 ${fmtCT(totalCT)}CT · ${parts.join(', ')}${kgTxt}` : '재고 없음';
+    const has = totalCT > 0;
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid #E5E7EB;border-radius:6px;${has ? '' : 'opacity:.5'}">
+        <span style="font-size:12px;font-weight:700;color:#111827;width:30px;flex-shrink:0">${esc(pos)}</span>
+        <span style="font-size:11px;color:#6B7280;flex:1;min-width:0;line-height:1.4">${info}</span>
+        <select onchange="srtSetExcelMap('${esc(pos)}',this.value)"${has ? '' : ' disabled'} style="height:30px;padding:3px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;font-family:inherit;background:#fff;flex-shrink:0">${gradeOptHtml(pos)}</select>
+      </div>`;
+  }).join('');
+
+  // 미매칭 사이즈 → 앱 사이즈로 리매핑
+  const umKeys = Object.keys(unmatched);
+  let umHtml = '';
+  if (umKeys.length) {
+    const sizeOpts = `<option value="">→ 어느 사이즈로?</option>`
+      + sizes.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')
+      + `<option value="__ignore__">무시</option>`;
+    umHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #FCD34D">
+      <div style="font-size:11px;color:#92400E;font-weight:600;margin-bottom:4px">⚠️ 그리드에 없는 사이즈 — 어느 사이즈로 넣을지 지정</div>
+      ${umKeys.map(os => {
+        const kgSum = Object.values(unmatched[os]).reduce((a, b) => a + b, 0);
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+          <span style="font-size:11px;color:#92400E">${esc(os)} (${fmtCT(toCT(kgSum))}CT)</span>
+          <select onchange="srtRemapExcelSize('${esc(os)}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid #D1D5DB;border-radius:4px;font-family:inherit">${sizeOpts}</select>
+        </div>`;
+      }).join('')}
+    </div>`;
   }
-  window._srtUnmatched.splice(idx, 1);
-  _srtRenderExcelResult();
+
+  el.style.display = '';
+  el.innerHTML = `
+    <div style="font-weight:700;color:#166534;margin-bottom:6px">📄 배출구 → 당도 등급 매핑 <span style="color:#9CA3AF;font-weight:400">(제외는 안 채움)</span></div>
+    <div style="display:flex;flex-direction:column;gap:5px">${posRows}</div>
+    ${umHtml}
+    <button type="button" onclick="srtApplyExcelMap()" style="margin-top:10px;width:100%;padding:9px;background:#1565C0;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ 등급 탭에 채우기</button>`;
+}
+
+function srtSetExcelMap(pos, grade) {
+  if (!_srtExcel) return;
+  _srtExcel.map[pos] = grade;
+}
+
+// 미매칭 사이즈를 앱 사이즈에 병합(또는 무시) 후 재렌더
+function srtRemapExcelSize(origSize, target) {
+  if (!_srtExcel || !_srtExcel.unmatched[origSize]) return;
+  if (target && target !== '__ignore__') {
+    const um = _srtExcel.unmatched[origSize];
+    _SRT_POS.forEach(p => {
+      const kg = um[p] || 0;
+      if (kg > 0) _srtExcel.posKg[p][target] = (_srtExcel.posKg[p][target] || 0) + kg;
+    });
+  }
+  if (target) delete _srtExcel.unmatched[origSize];   // 사이즈 선택 또는 '무시' 시 목록에서 제거
+  _srtRenderExcelMap();
+}
+
+// 매핑대로 등급 탭 그리드 채우기. 매핑된 등급의 그리드만 리셋 후 세팅(멱등, 다른 등급 수동입력 보존).
+function srtApplyExcelMap() {
+  if (!_srtExcel) return;
+  const { posKg, kgPerCt, map } = _srtExcel;
+  const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
+
+  // 등급별 사이즈별 kg 합산(여러 배출구가 같은 등급이면 kg 합산 후 한 번 반올림)
+  const fill = {};   // 등급 → 사이즈 → kg
+  _SRT_POS.forEach(pos => {
+    const grade = map[pos];
+    if (!grade) return;   // '' = 제외
+    const szKg = posKg[pos] || {};
+    Object.keys(szKg).forEach(sz => {
+      fill[grade] = fill[grade] || {};
+      fill[grade][sz] = (fill[grade][sz] || 0) + szKg[sz];
+    });
+  });
+
+  const grades = Object.keys(fill);
+  if (!grades.length) { alert('채울 등급을 하나 이상 지정하세요. (모두 제외됨)'); return; }
+
+  // 등급 탭에 없는 등급이면 중단(브릭스 마스터 불일치 방어)
+  const known = new Set(_srtGradeLabels());
+  const missing = grades.filter(g => !known.has(g));
+  if (missing.length) { alert(`등급 탭에 없는 등급입니다: ${missing.join(', ')}\n(설정 → 당도 등급을 확인하세요)`); return; }
+
+  // 1) 대상 등급 그리드 리셋 → 2) 매핑대로 세팅
+  grades.forEach(g => {
+    document.querySelectorAll(`.srt-size-input[data-grade="${g}"]`).forEach(inp => { inp.value = 0; });
+  });
+  let filled = 0;
+  grades.forEach(g => {
+    Object.keys(fill[g]).forEach(sz => {
+      const inp = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="${g}"]`);
+      if (!inp) return;
+      const ct = toCT(fill[g][sz]);
+      inp.value = ct > 0 ? ct : 0;
+      if (ct > 0) filled++;
+    });
+  });
+
+  srtUpdateTotals();
+
+  // 완료 요약(매핑 UI 아래에 덧붙임)
+  const summary = _SRT_POS.filter(p => map[p]).map(p => `${p}→${map[p]}`).join(', ');
+  const el = document.getElementById('srt-excel-result');
+  if (el) {
+    const prev = el.querySelector('.srt-excel-done');
+    if (prev) prev.remove();
+    const done = document.createElement('div');
+    done.className = 'srt-excel-done';
+    done.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px solid #BBF7D0;color:#166534;font-weight:600';
+    done.textContent = `✅ ${filled}개 칸 채움 · ${summary}`;
+    el.appendChild(done);
+  }
 }
 
 function srtUpdateTotals() {
