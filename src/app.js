@@ -4956,8 +4956,7 @@ function _renderInvMatrix(product, recs) {
   batches.forEach(b => allSizes.forEach(sz => { colTotals[sz] += (b.sizes[sz] || 0); }));
   const grandTotal = allSizes.reduce((s, sz) => s + (colTotals[sz] || 0), 0);
 
-  const visibleSizes = allSizes.filter(sz => (colTotals[sz] || 0) > 0);
-  const displaySizes = visibleSizes.length > 0 ? visibleSizes : allSizes;
+  const displaySizes = allSizes;   // 전체 사이즈 고정 표시(0은 빈칸) — 열 위치 불변
 
   // ── CSS Grid 기반 재작성 (table sticky 버그 우회) ──
   const N = displaySizes.length;
