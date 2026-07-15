@@ -4900,17 +4900,22 @@ function renderInventoryStatus() {
     byProduct[r.product].push(r);
   });
 
+  const matrixHtml = Object.entries(byProduct)
+    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    .map(([product, productRecs]) => _renderInvMatrix(product, productRecs, _invAuditMode))
+    .join('');
+
   if (_invAuditMode) {
-    matrixEl.innerHTML = _renderInvAuditList(recs);
+    // 실사 대상 = 현재 표시 재고(수량>0). 실사 초기화·미확인삭제가 이 목록을 참조.
+    _invAuditVisible = recs.filter(r => (Number(r.quantity) || 0) > 0);
+    matrixEl.innerHTML = _renderInvAuditBar() + matrixHtml;
   } else {
-    matrixEl.innerHTML = Object.entries(byProduct)
-      .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-      .map(([product, productRecs]) => _renderInvMatrix(product, productRecs))
-      .join('');
+    matrixEl.innerHTML = matrixHtml;
   }
 }
 
-function _renderInvMatrix(product, recs) {
+function _renderInvMatrix(product, recs, auditMode) {
+  const audit    = !!auditMode;
   const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
   const groups   = getSizeGroupsFor(product);
   const allSizes = groups.flatMap(g => g.sizes);
@@ -4936,8 +4941,9 @@ function _renderInvMatrix(product, recs) {
       ? r.sorting_result_id : `manual_${r.date || ''}`;
     const key = `${farm}__${groupId}`;
     const { sortingDate, inboundDate } = _getInvRecordDates(r);
-    if (!batchMap[key]) batchMap[key] = { farm, groupId, sortingDate, inboundDate, sizes: {} };
+    if (!batchMap[key]) batchMap[key] = { farm, groupId, sortingDate, inboundDate, sizes: {}, recsBySize: {} };
     batchMap[key].sizes[sz] = (batchMap[key].sizes[sz] || 0) + (Number(r.quantity) || 0);
+    (batchMap[key].recsBySize[sz] = batchMap[key].recsBySize[sz] || []).push(r);
     if (sortingDate && sortingDate < (batchMap[key].sortingDate || '9')) batchMap[key].sortingDate = sortingDate;
     if (inboundDate && inboundDate < (batchMap[key].inboundDate || '9')) batchMap[key].inboundDate = inboundDate;
   });
@@ -5010,15 +5016,41 @@ function _renderInvMatrix(product, recs) {
       <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
       <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
     </div>`;
-    displaySizes.forEach(sz => {
-      const val = batch.sizes[sz] || 0;
-      const inner = val === 0
-        ? `<span style="color:#9CA3AF">-</span>`
-        : `<strong style="color:#111827">${fmtCT(val)}</strong>`;
-      h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
+    const recIds = {};
+    Object.keys(batch.recsBySize).forEach(sz => {
+      recIds[sz] = batch.recsBySize[sz]
+        .filter(r => (Number(r.quantity) || 0) > 0 && !r.is_void)
+        .map(r => r.id);
     });
     const regId = Object.keys(_matrixBatchRegistry).length;
-    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes } };
+    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes }, recIds };
+    displaySizes.forEach(sz => {
+      const val = batch.sizes[sz] || 0;
+      if (!audit) {
+        const inner = val === 0
+          ? `<span style="color:#9CA3AF">-</span>`
+          : `<strong style="color:#111827">${fmtCT(val)}</strong>`;
+        h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
+        return;
+      }
+      // ── 실사 모드 셀: 값>0이면 확인 토글 대상, 값0은 대상 아님 ──
+      if (val === 0) {
+        h += `<div style="${C}background:${rowBg};padding:5px 2px"><span style="color:#D1D5DB">-</span></div>`;
+        return;
+      }
+      const cellRecs = (batch.recsBySize[sz] || []).filter(r => (Number(r.quantity) || 0) > 0 && !r.is_void);
+      const allChk   = cellRecs.length > 0 && cellRecs.every(r => r.audit_checked_at);
+      const chkTs    = allChk ? cellRecs.map(r => r.audit_checked_at).sort()[0] : null;
+      const title    = allChk ? `${_fmtAuditTs(chkTs)} 확인` : '미확인 · 클릭하여 확인';
+      const cellBg   = allChk ? 'background:#F5F3FF;box-shadow:inset 0 0 0 1.5px #7C3AED;' : 'background:#FEF2F2;box-shadow:inset 0 0 0 1.5px #F87171;';
+      const numColor = allChk ? '#7C3AED' : '#B91C1C';
+      const mark     = allChk ? `<span style="font-size:9px;line-height:1;color:#7C3AED">✓</span>` : '';
+      const single   = cellRecs.length === 1 ? cellRecs[0] : null;
+      const numHtml  = single
+        ? `<b data-chip-key="${single.id}" onclick="startChipEdit('${single.id}',event)" style="font-size:13px;line-height:1.1;color:${numColor};border-bottom:1px dashed ${numColor};cursor:text">${fmtCT(val)}</b>`
+        : `<strong style="font-size:13px;line-height:1.1;color:${numColor}">${fmtCT(val)}</strong>`;
+      h += `<div class="inv-mc" onclick="toggleInvAuditCell(${regId},'${esc(sz)}')" title="${esc(title)}" style="${C}${cellBg}cursor:pointer;flex-direction:column;gap:0;padding:3px 2px">${mark}${numHtml}</div>`;
+    });
     h += `<div style="${C}background:#EFF6FF;justify-content:flex-end;padding:5px 8px;font-weight:700;color:#1565C0;border-right:${isAdm ? '1px solid #E5E7EB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtCT(batchTotal)}</div>`;
     if (isAdm) {
       h += `<div style="${C}background:${rowBg};justify-content:center;padding:0;border-right:none;position:sticky;right:0;z-index:2"><button class="inv-kebab" data-regid="${regId}" onclick="toggleInvRowMenu(${regId},this)" style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit" title="메뉴">⋮</button></div>`;
@@ -5087,159 +5119,19 @@ function _fmtAuditTs(ts) {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function _renderInvAuditList(recs) {
-  const items = recs.filter(r => (Number(r.quantity) || 0) > 0);
-
-  _invAuditVisible = items;
-
+// 실사 진행률 바 (매트릭스 상단). _invAuditVisible 기준(수량>0 레코드).
+function _renderInvAuditBar() {
+  const items = _invAuditVisible || [];
   const total = items.length;
   const checked = items.filter(r => r.audit_checked_at).length;   // DB 기준
   const unchecked = total - checked;
-
-  const progressBar = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
-    <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건</span>
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
+    <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건 <span style="color:#9CA3AF;font-size:11px">— 값 있는 셀 클릭 = 확인/해제</span></span>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
       <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
       <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>
     </div>
   </div>`;
-
-  if (!items.length) {
-    return progressBar + `<div style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">실사할 재고가 없습니다</div>`;
-  }
-
-  // 품목 → 농가 → 배치(farm+groupId) → 등급 그룹핑 (매트릭스 배치 키와 동일 로직)
-  const byProd = {};
-  items.forEach(r => {
-    const prod     = r.product   || '(품목없음)';
-    const farm     = r.farm_name || '(농가없음)';
-    const grade    = isGraded(r) ? gradeOf(r) : '일반';
-    const isManual = !(r.source_type === 'sorting' && r.sorting_result_id);
-    const groupId  = isManual ? `manual_${r.date || ''}` : r.sorting_result_id;
-    const batchKey = `${farm}__${groupId}`;
-    const { sortingDate, inboundDate } = _getInvRecordDates(r);
-
-    if (!byProd[prod]) byProd[prod] = {};
-    if (!byProd[prod][farm]) byProd[prod][farm] = {};
-    if (!byProd[prod][farm][batchKey]) {
-      byProd[prod][farm][batchKey] = { isManual, sortingDate, inboundDate, grades: {} };
-    }
-    const b = byProd[prod][farm][batchKey];
-    if (sortingDate && (!b.sortingDate || sortingDate < b.sortingDate)) b.sortingDate = sortingDate;
-    if (inboundDate && (!b.inboundDate || inboundDate < b.inboundDate)) b.inboundDate = inboundDate;
-    (b.grades[grade] = b.grades[grade] || []).push(r);
-  });
-
-  let html = progressBar;
-
-  Object.keys(byProd)
-    .sort((a, b) => a.localeCompare(b, 'ko'))
-    .forEach(prod => {
-      const farmMap = byProd[prod];
-      const sizeRank = {};
-      getSizeGroupsFor(prod).flatMap(g => g.sizes).forEach((sz, i) => { sizeRank[sz] = i; });
-      const sortBySize = arr => arr.slice().sort((a, b) =>
-        (sizeRank[a.size_code] ?? 999) - (sizeRank[b.size_code] ?? 999)
-      );
-
-      const renderChip = r => {
-        const key    = String(r.id);
-        const isChk  = !!r.audit_checked_at;   // DB 기준
-        const isHigh = isGraded(r);
-        const bg     = isChk ? '#F5F3FF' : isHigh ? '#EFF6FF' : '#fff';
-        const border = isChk ? '#7C3AED' : isHigh ? '#BFDBFE' : '#E5E7EB';
-        const color  = isChk ? '#7C3AED' : isHigh ? '#1565C0' : '#374151';
-        const shadow = isChk ? 'box-shadow:inset 0 0 0 1px #7C3AED;' : '';
-        const chkTitle = isChk ? `${_fmtAuditTs(r.audit_checked_at)} 확인` : '미확인';
-        const szColor  = isChk ? '#7C3AED' : '#6B7280';
-        const szLabel  = `${isChk ? '✓' : ''}${esc(r.size_code || '—')}`;
-        return `<span title="${esc(chkTitle)}" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${bg};border:1px solid ${border};border-radius:4px;white-space:nowrap;${shadow}"><span onclick="toggleInvAuditCheck('${key}')" style="font-size:10px;color:${szColor};cursor:pointer;line-height:1.1">${szLabel}</span><b data-chip-key="${key}" onclick="startChipEdit('${key}',event)" style="font-size:13px;line-height:1.2;border-bottom:1px dashed #9CA3AF;cursor:text;color:${color}">${fmtN(Number(r.quantity) || 0)}</b></span>`;
-      };
-
-      const farmNames = Object.keys(farmMap).sort((a, b) => a.localeCompare(b, 'ko'));
-      const lastFarm  = farmNames[farmNames.length - 1];
-
-      html += `<div style="margin-bottom:12px;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden">
-        <div style="font-size:13px;font-weight:700;color:#374151;padding:5px 10px;background:#F3F4F6;border-bottom:1px solid #E5E7EB">${esc(prod)}</div>
-        ${farmNames.map(farm => {
-          // 배치 정렬: 선과일 오름차순 (오래된 것 위)
-          const batches = Object.values(farmMap[farm]).sort((a, b) => {
-            const da = a.sortingDate || a.inboundDate || '';
-            const db = b.sortingDate || b.inboundDate || '';
-            return da.localeCompare(db);
-          });
-          const isLast = farm === lastFarm;
-
-          const batchHtml = batches.map(batch => {
-            const dateStr   = batch.sortingDate || batch.inboundDate || '';
-            const dateLabel = (batch.isManual ? '직접입력' : '선과') + (dateStr ? ' ' + _fmtInvDate(dateStr) : '');
-
-            const renderGroupedChips = (chips, grade) => {
-              const sizeGroups = [];
-              const sizeIdx = {};
-              chips.forEach(r => {
-                const sz = r.size_code || '—';
-                if (sizeIdx[sz] === undefined) { sizeIdx[sz] = sizeGroups.length; sizeGroups.push({ size: sz, recs: [] }); }
-                sizeGroups[sizeIdx[sz]].recs.push(r);
-              });
-              let chipsHtml = '';
-              let expandedHtml = '';
-              sizeGroups.forEach(({ size, recs }) => {
-                if (recs.length === 1) { chipsHtml += renderChip(recs[0]); return; }
-                const mk = `${prod}__${farm}__${dateStr}__${grade}__${size}`;
-                const sum = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
-                const expanded = _invAuditExpanded.has(mk);
-                const allChk = recs.every(r => r.audit_checked_at);
-                const anyChk = recs.some(r => r.audit_checked_at);
-                const bg     = allChk ? '#F5F3FF' : anyChk ? '#FAF5FF' : '#F9FAFB';
-                const border = allChk ? '#7C3AED' : anyChk ? '#C4B5FD' : '#D1D5DB';
-                const color  = allChk ? '#7C3AED' : '#374151';
-                const arrow  = expanded ? '▴' : '▾';
-                const chipBg  = expanded ? '#1E3A5F' : bg;
-                const chipBd  = expanded ? '#1E3A5F' : border;
-                const szColor = expanded ? '#fff' : '#6B7280';
-                const sumColor = expanded ? '#fff' : color;
-                chipsHtml += `<span onclick="toggleChipExpand('${mk}')" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 9px;background:${chipBg};border:1px solid ${chipBd};border-radius:4px;white-space:nowrap;cursor:pointer"><span style="font-size:10px;color:${szColor};line-height:1.1">${esc(size)}</span><span style="font-size:12px;color:${sumColor};font-weight:600;line-height:1.2">합 ${fmtN(sum)} <span style="font-size:13px">${arrow}</span>${recs.length}건</span></span>`;
-                if (expanded) expandedHtml += `<div style="display:flex;align-items:center;gap:5px;padding:5px 7px;background:#F5F3FF;border:1px dashed #C4B5FD;border-radius:5px;margin-top:4px"><span style="font-size:11px;color:#6D28D9;font-weight:600;min-width:34px;flex-shrink:0">${esc(size)}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${recs.map(renderChip).join('')}</div></div>`;
-              });
-              return { chipsHtml, expandedHtml };
-            };
-            // 배치 등급 순서: 일반 → 활성 브릭스(sort_order) → 기타 잔존등급(옛 '고당' 등)
-            const _activeBrixLabels = brixGrades
-              .filter(g => g.is_active !== false)
-              .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-              .map(g => g.label);
-            const gradeOrder = [];
-            if (batch.grades['일반']) gradeOrder.push('일반');
-            _activeBrixLabels.forEach(lbl => { if (batch.grades[lbl]) gradeOrder.push(lbl); });
-            Object.keys(batch.grades).forEach(g => { if (!gradeOrder.includes(g)) gradeOrder.push(g); });
-
-            const gradeRows = gradeOrder.map(grade => {
-              const chips = sortBySize(batch.grades[grade]);
-              if (!chips.length) return '';
-              const { chipsHtml, expandedHtml } = renderGroupedChips(chips, grade);
-              const labelStyle = grade === '일반' ? 'color:#6B7280' : 'color:#1565C0;font-weight:600';
-              return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">
-                <span style="font-size:10px;${labelStyle};flex-shrink:0;min-width:24px">${esc(grade)}</span>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">${chipsHtml}</div>
-              </div>${expandedHtml}`;
-            }).filter(Boolean).join('');
-
-            return `<div style="margin-top:4px">
-              <span style="font-size:10px;color:#9CA3AF;font-style:italic">${esc(dateLabel)}</span>
-              ${gradeRows}
-            </div>`;
-          }).join('');
-
-          return `<div style="padding:5px 10px;${isLast ? '' : 'border-bottom:1px solid #F0F0F0'}">
-            <span style="font-size:12px;font-weight:600;color:#374151">${esc(farm)}</span>
-            ${batchHtml}
-          </div>`;
-        }).join('')}
-      </div>`;
-    });
-
-  return html;
 }
 
 // ── 매트릭스 배치 삭제 ──────────────────────────────────────────
@@ -10108,6 +10000,28 @@ async function toggleInvAuditCheck(key) {
   try {
     await sbUpdate('inventory_records', rec.id, { audit_checked_at: ts });
     rec.audit_checked_at = ts;
+    renderInventoryStatus();
+  } catch (e) { showToast('오류: ' + e.message); }
+}
+// 매트릭스 셀(배치+사이즈) 실사 토글 — 셀 내 수량>0 레코드 전부 확인/해제
+async function toggleInvAuditCell(regId, sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info || !info.recIds) return;
+  const ids = info.recIds[sz] || [];
+  const recs = ids
+    .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+    .filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0);
+  if (!recs.length) return;
+  const allChk = recs.every(r => r.audit_checked_at);   // 전부확인 상태면 해제, 아니면 전부확인
+  const ts = allChk ? null : new Date().toISOString();
+  try {
+    for (const r of recs) {
+      if (allChk ? !!r.audit_checked_at : !r.audit_checked_at) {   // 바꿀 것만 기록(중복쓰기 방지)
+        await sbUpdate('inventory_records', r.id, { audit_checked_at: ts });
+        r.audit_checked_at = ts;
+      }
+    }
     renderInventoryStatus();
   } catch (e) { showToast('오류: ' + e.message); }
 }
