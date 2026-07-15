@@ -85,6 +85,8 @@ let _ibAuditVisible = [];
 let _invAuditMode = false;
 let _invAuditExpanded = new Set();
 let _invAuditVisible = [];
+let _pachiAuditMode = false;      // 파치 실사 모드(재고/입고 실사와 별개 플래그)
+let _pachiAuditVisible = [];      // 실사 대상 = inventory_records 파치 그룹 행(레거시/입고 제외)
 // 재고 실사 체크는 inventory_records.audit_checked_at(TIMESTAMPTZ)에 저장 — 화면 이동·새로고침해도 유지
 let ibSearch = '';
 let ibFilterProduct = '';
@@ -5584,10 +5586,11 @@ async function savePachiEdit() {
     const newLoc = document.getElementById('pachi-edit-loc')?.value || null;
     const newSize = document.getElementById('pachi-edit-size')?.value || null;
     const newCondition = document.getElementById('pachi-edit-condition')?.value || null;
+    const _auditPatch = _pachiAuditMode ? { audit_checked_at: new Date().toISOString() } : {};   // 실사 중 수정=확인처리
     for (const id of row.ids) {
-      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage, location: newLoc, pachi_size_group: newSize, pachi_condition: newCondition });
+      await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage, location: newLoc, pachi_size_group: newSize, pachi_condition: newCondition, ..._auditPatch });
       const rec = inventoryRecords.find(r => String(r.id) === String(id));
-      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; rec.location = newLoc; rec.pachi_size_group = newSize; rec.pachi_condition = newCondition; }
+      if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; rec.location = newLoc; rec.pachi_size_group = newSize; rec.pachi_condition = newCondition; if (_pachiAuditMode) rec.audit_checked_at = _auditPatch.audit_checked_at; }
     }
     document.getElementById('modal-pachi-edit').style.display = 'none';
     renderInvSummary(); renderPachiSection();
@@ -5623,6 +5626,123 @@ function clearPachiChecks() {
   const all = document.getElementById('pachi-chk-all');
   if (all) { all.checked = false; all.indeterminate = false; }
   onPachiChkChange();
+}
+
+// ===== 파치 실사 (inventory_records.audit_checked_at 재사용, 재고 실사와 동일 컬럼·별개 플래그) =====
+function togglePachiAuditMode() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  _pachiAuditMode = !_pachiAuditMode;
+  renderPachiSection();
+}
+// 파치 행(그룹) 실사 토글 — 그 행 ids 레코드 전부 확인/해제
+async function togglePachiAuditRow(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const row = _pachiRowRegistry[regId];
+  if (!row || row.isLegacy || row.isInbound) return;
+  const recs = (row.ids || [])
+    .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+    .filter(r => r && !r.is_void);
+  if (!recs.length) return;
+  const allChk = recs.every(r => r.audit_checked_at);   // 전부확인→해제, 아니면 전부확인
+  const ts = allChk ? null : new Date().toISOString();
+  try {
+    for (const r of recs) {
+      if (allChk ? !!r.audit_checked_at : !r.audit_checked_at) {
+        await sbUpdate('inventory_records', r.id, { audit_checked_at: ts });
+        r.audit_checked_at = ts;
+      }
+    }
+    renderPachiSection();
+  } catch (e) { showToast('오류: ' + e.message); }
+}
+// 파치 행 확인 여부(ids 전부 확인이면 true)
+function _pachiRowAuditChecked(row) {
+  const recs = (row.ids || [])
+    .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+    .filter(r => r && !r.is_void);
+  return recs.length > 0 && recs.every(r => r.audit_checked_at);
+}
+function _renderPachiAuditBar() {
+  const rows = _pachiAuditVisible || [];
+  const total = rows.length;
+  const checked = rows.filter(_pachiRowAuditChecked).length;
+  const unchecked = total - checked;
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border-bottom:1px solid #DDD6FE;font-size:13px">
+    <span>📋 <b>파치 실사 중</b> · 전체 <b>${total}</b>행 · ✓<b style="color:#7C3AED">${checked}</b> 확인 · 미확인 <b style="color:#C62828">${unchecked}</b> <span style="color:#9CA3AF;font-size:11px">— 행 왼쪽 ✓ 클릭 = 확인/해제</span></span>
+    <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
+      <button onclick="_pachiClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
+      <button onclick="deleteUncheckedPachiAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}행 삭제</button>
+    </div>
+  </div>`;
+}
+// 파치 실사 초기화 — 파치 대상 레코드의 audit_checked_at만 해제(수량 불변)
+async function _pachiClearAuditChecks() {
+  const rows = _pachiAuditVisible || [];
+  const recs = [];
+  rows.forEach(row => (row.ids || []).forEach(id => {
+    const r = inventoryRecords.find(x => String(x.id) === String(id));
+    if (r && !r.is_void && r.audit_checked_at) recs.push(r);
+  }));
+  if (!recs.length) { showToast('확인된 항목이 없습니다.'); return; }
+  const ok = await showConfirmEdit('파치 실사 초기화', `확인 표시된 ${recs.length}건을 모두 미확인으로 되돌립니다.\n(수량은 변경되지 않습니다)`);
+  if (!ok) return;
+  let done = 0;
+  try {
+    for (const r of recs) { await sbUpdate('inventory_records', r.id, { audit_checked_at: null }); r.audit_checked_at = null; done++; }
+    renderPachiSection();
+    showToast(`↺ 파치 실사 초기화 ${done}건`);
+  } catch (e) { renderPachiSection(); showToast(`${done}건 처리 후 오류: ${e.message}`); }
+}
+// 파치 미확인 행 일괄 삭제(파치 소스 레코드만 void, 재고/주스 불변)
+async function deleteUncheckedPachiAudit() {
+  if (!_pachiAuditMode) return;
+  const rows = _pachiAuditVisible || [];
+  const uncheckedRows = rows.filter(row => !_pachiRowAuditChecked(row));
+  const recsToVoid = [];
+  uncheckedRows.forEach(row => (row.ids || []).forEach(id => {
+    const r = inventoryRecords.find(x => String(x.id) === String(id));
+    if (r && !r.is_void) recsToVoid.push(r);
+  }));
+  if (!recsToVoid.length) {
+    await showConfirmEdit('미확인 없음', '확인되지 않은 파치 행이 없습니다. 모두 확인 완료되었습니다.');
+    return;
+  }
+  const totalCt = recsToVoid.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const MAX_SHOW = 10;
+  const itemLabels = uncheckedRows.slice(0, MAX_SHOW).map(row =>
+    `${row.farm || '(농가없음)'} · ${row.product || ''} · ${row.pachiKind || '파치'} · ${fmtN(row.ct)}CT`
+  );
+  if (uncheckedRows.length > MAX_SHOW) itemLabels.push(`...외 ${uncheckedRows.length - MAX_SHOW}행`);
+  const res = await showConfirmDanger({
+    title: '⚠️ 미확인 파치 일괄 삭제',
+    subtitle: `실사에서 확인하지 않은 ${uncheckedRows.length}행(${recsToVoid.length}건) · 총 ${fmtN(totalCt)}CT를 삭제합니다. 되돌릴 수 없습니다. 파치 실사를 끝까지 마쳤는지 확인하세요.`,
+    items: itemLabels,
+    confirmText: `${uncheckedRows.length}행 삭제`,
+    needWorker: true
+  });
+  if (!res || !res.ok) return;
+  let successCount = 0, failMsg = '';
+  for (const r of recsToVoid) {
+    try {
+      await sbUpdate('inventory_records', r.id, { is_void: true });
+      r.is_void = true;
+      await dbInsertAuditLog({
+        target_table: 'inventory_records', target_id: r.id,
+        before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, source_type: r.source_type, quantity: r.quantity },
+        after_val: null,
+        reason: `파치 실사 일괄삭제: ${res.reason}`,
+        staff: res.worker
+      });
+      successCount++;
+    } catch (e) {
+      failMsg = `${successCount}건 삭제 후 오류: ${r.farm_name || ''} · ${r.product || ''} — ${e.message}`;
+      break;
+    }
+  }
+  inventoryRecords = await dbGetInventoryRecords();
+  renderInvSummary(); renderPachiSection();
+  if (failMsg) alert(failMsg);
+  else showToast(`✅ 미확인 파치 ${successCount}건 삭제 완료`);
 }
 
 function openPachiBulkModal() {
@@ -13083,6 +13203,8 @@ function renderPachiSection() {
     irGrouped[key].ids.push(r.id);
   });
   Object.values(irGrouped).forEach(b => { b.kg = Math.round(b.ct * kgPerCt(b.product)); });
+  // 파치 실사 대상 = inventory_records 파치 그룹 행(레거시 invWaste·입고 제외). 진행률·초기화·미확인삭제가 참조.
+  _pachiAuditVisible = Object.values(irGrouped);
 
   // Source 2: invWaste (레거시 수동 데이터)
   const wasteRows = invWaste.map(r => ({
@@ -13178,14 +13300,35 @@ function renderPachiSection() {
             title="메뉴">⋮</button></td>`
       : '';
     const excludedBadge = excluded ? `<span style="font-size:10px;color:#9CA3AF;background:#F3F4F6;padding:1px 5px;border-radius:4px;margin-left:4px">재고제외</span>` : '';
-    // 일괄 지정 체크박스 (admin·선과/수동 행만 — 레거시·입고는 inventory_records 대상 아님 → 빈 칸)
-    const chkCell = isAdm
-      ? `<td style="padding:4px 6px;text-align:center">${(!r.isLegacy && !r.isInbound)
+    const auditable = !r.isLegacy && !r.isInbound;   // inventory_records 파치만 실사 대상
+    // 실사 확인 상태(그 행 ids 전부 audit_checked_at 있으면 확인)
+    let auditChecked = false, auditTitle = '';
+    if (_pachiAuditMode && auditable) {
+      const arecs = r.ids.map(id => inventoryRecords.find(x => String(x.id) === String(id))).filter(x => x && !x.is_void);
+      auditChecked = arecs.length > 0 && arecs.every(x => x.audit_checked_at);
+      const ats = auditChecked ? arecs.map(x => x.audit_checked_at).sort()[0] : null;
+      auditTitle = auditChecked ? `${_fmtAuditTs(ats)} 확인` : '미확인 · 클릭하여 확인';
+    }
+    // 행 배경: 실사 모드에서 확인=연보라 / 미확인=연빨강, 그 외 기존(재고제외 흐림)
+    let trStyle = excluded ? 'opacity:0.55;background:#FCFCFC' : '';
+    if (_pachiAuditMode && auditable) {
+      trStyle = (auditChecked ? 'background:#F5F3FF' : 'background:#FEF2F2') + (excluded ? ';opacity:0.55' : '');
+    }
+    // 리딩 셀(admin): 실사 모드=확인 토글 버튼 / 평소=일괄지정 체크박스
+    let leadCell = '';
+    if (isAdm) {
+      if (_pachiAuditMode) {
+        leadCell = auditable
+          ? `<td style="padding:4px 6px;text-align:center" title="${esc(auditTitle)}"><button onclick="togglePachiAuditRow(${regId})" style="width:20px;height:20px;border-radius:5px;border:1.5px solid ${auditChecked ? '#7C3AED' : '#F87171'};background:${auditChecked ? '#7C3AED' : '#fff'};color:${auditChecked ? '#fff' : '#F87171'};cursor:pointer;font-size:12px;line-height:1;font-family:inherit;padding:0">${auditChecked ? '✓' : ''}</button></td>`
+          : `<td style="padding:4px 6px;text-align:center;color:#D1D5DB" title="실사 대상 아님(레거시/입고)">–</td>`;
+      } else {
+        leadCell = `<td style="padding:4px 6px;text-align:center">${auditable
           ? `<input type="checkbox" class="pachi-chk" data-reg-id="${regId}" onchange="onPachiChkChange()" style="cursor:pointer;width:16px;height:16px;vertical-align:middle">`
-          : ''}</td>`
-      : '';
-    return `<tr ${idsAttr} style="${excluded ? 'opacity:0.55;background:#FCFCFC' : ''}">
-      ${chkCell}
+          : ''}</td>`;
+      }
+    }
+    return `<tr ${idsAttr} style="${trStyle}">
+      ${leadCell}
       <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
       <td style="padding:7px 10px;font-size:12px;color:#aaa"></td>
@@ -13328,14 +13471,20 @@ function renderPachiSection() {
     <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="font-size:14px;font-weight:700;color:#222">파치 내역</div>
-        <div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>
+          ${isAdm ? `<button onclick="togglePachiAuditMode()" style="padding:5px 12px;background:${_pachiAuditMode ? '#7C3AED' : '#fff'};color:${_pachiAuditMode ? '#fff' : '#374151'};border:1px solid ${_pachiAuditMode ? '#7C3AED' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">📋 파치 실사</button>` : ''}
+        </div>
       </div>
       ${viewTabs}
+      ${(isAdm && _pachiAuditMode) ? _renderPachiAuditBar() : ''}
       ${bulkBar}
       <div class="tbl-wrap">
         <table style="min-width:560px;width:100%;border-collapse:collapse">
           <thead><tr style="background:#F9FAFB">
-            ${isAdm ? '<th style="padding:7px 6px;border-bottom:1px solid #E5E7EB;width:34px;text-align:center"><input type="checkbox" id="pachi-chk-all" onchange="togglePachiCheckAll(this)" style="cursor:pointer;width:16px;height:16px;vertical-align:middle" title="전체 선택"></th>' : ''}
+            ${isAdm ? (_pachiAuditMode
+              ? '<th style="padding:7px 6px;border-bottom:1px solid #E5E7EB;width:34px;text-align:center;font-size:11px;color:#7C3AED" title="파치 실사">✓</th>'
+              : '<th style="padding:7px 6px;border-bottom:1px solid #E5E7EB;width:34px;text-align:center"><input type="checkbox" id="pachi-chk-all" onchange="togglePachiCheckAll(this)" style="cursor:pointer;width:16px;height:16px;vertical-align:middle" title="전체 선택"></th>') : ''}
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px;white-space:nowrap">날짜</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">농가</th>
             <th style="padding:7px 10px;border-bottom:1px solid #E5E7EB"></th>
