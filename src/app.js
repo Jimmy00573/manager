@@ -44,7 +44,7 @@ let _invFilter   = { product: '', farm: '' };
 let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id }
 let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
-let _pachiViewMode = (['none','size','condition','usage'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'usage');  // 파치 하위 분류축: none(품목만)|size|condition|usage. 기본 사용처별(판매 단위)
+let _pachiViewMode = (['none','size','condition','usage','location'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'usage');  // 파치 하위 분류축: none(품목만)|size|condition|usage|location. 기본 사용처별(판매 단위)
 let _pachiCollapsed = new Set();       // 접힌 파치 키 (품목키 PROD::품목 + 하위그룹키 품목||라벨). 빈 Set = 전부 펼침
 let _pachiGroupKeysNow = [];           // 현재 렌더된 하위그룹 키(인덱스→키, togglePachiGroup용)
 let _pachiProdKeysNow = [];            // 현재 렌더된 품목 키(인덱스→키, togglePachiProduct용)
@@ -13147,7 +13147,7 @@ function renderWasteList() {
 
 // 파치 하위 분류축 전환 (전체/크기별/상태별/사용처별, 품목은 항상 최상위) — 3단계 수정
 function setPachiView(mode) {
-  if (!['none', 'size', 'condition', 'usage'].includes(mode)) return;
+  if (!['none', 'size', 'condition', 'usage', 'location'].includes(mode)) return;
   _pachiViewMode = mode;
   localStorage.setItem('pachi_view_mode', mode);
   _pachiCollapsed = new Set();   // 뷰 바뀌면 접힘 상태 초기화
@@ -13248,11 +13248,20 @@ function renderPachiSection() {
   usageOrder.push('미분류');
   allRows.forEach(r => { const u = r.usage || '미분류'; if (!usageOrder.includes(u)) usageOrder.push(u); });
 
+  // 위치 축 순서: 마스터 sort_order → 데이터 잔여 위치 → '미지정' 맨 뒤
+  const locOrder = [...storageLocations]
+    .filter(l => l.is_active !== false)
+    .sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || (a.name || '').localeCompare(b.name || '', 'ko'))
+    .map(l => l.name);
+  allRows.forEach(r => { const ln = r.location || '미지정'; if (ln !== '미지정' && !locOrder.includes(ln)) locOrder.push(ln); });
+  locOrder.push('미지정');
+
   // 품목 항상 최상위 고정 + 하위 축(_pachiViewMode)으로 세분화 — 3단계 수정
-  const _pvMode = _pachiViewMode;   // 'none'(품목만) | 'size' | 'condition' | 'usage'
+  const _pvMode = _pachiViewMode;   // 'none'(품목만) | 'size' | 'condition' | 'usage' | 'location'
   const _subKeyOf = r =>
       _pvMode === 'size'      ? (r.sizeGroup || '미지정')
     : _pvMode === 'condition' ? (r.condition || '미지정')
+    : _pvMode === 'location'  ? (r.location || '미지정')
     : _pvMode === 'usage'     ? (r.usage || '미분류')
     :                           null;   // 'none' — 세분화 없음
 
@@ -13268,6 +13277,7 @@ function renderPachiSection() {
   let _subMasterLabels = [];
   if (_pvMode === 'size')           _subMasterLabels = [...pachiSizes].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(s => s.label);
   else if (_pvMode === 'condition') _subMasterLabels = [...pachiConditions].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(c => c.label);
+  else if (_pvMode === 'location')  _subMasterLabels = locOrder;      // 위치 마스터 + 잔여 + 미지정(맨 뒤)
   else if (_pvMode === 'usage')     _subMasterLabels = usageOrder;   // 이미 pachiUsages sort_order + 미분류 + 잔여 포함
 
   const makeDataRow = r => {
@@ -13353,12 +13363,14 @@ function renderPachiSection() {
     const keyOf = r =>
         _pvMode === 'size'      ? (r.sizeGroup || '미지정')
       : _pvMode === 'condition' ? (r.condition || '미지정')
+      : _pvMode === 'location'  ? (r.location || '미지정')
       :                           (r.usage || '미분류');   // usage & none
     const map = {};
     pRows.forEach(r => { if (!isIncluded(r.usage)) return; const k = keyOf(r); if (!map[k]) map[k] = {ct:0, kg:0}; map[k].ct += r.ct; map[k].kg += r.kg; });
     let masterOrder;
     if (_pvMode === 'size')           masterOrder = [...pachiSizes].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(s => s.label);
     else if (_pvMode === 'condition') masterOrder = [...pachiConditions].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(c => c.label);
+    else if (_pvMode === 'location')  masterOrder = locOrder;   // 위치 마스터 + 잔여 + 미지정
     else                              masterOrder = usageOrder;   // usage & none
     const present = new Set(Object.keys(map));
     const ordered = [];
@@ -13457,6 +13469,7 @@ function renderPachiSection() {
       <button onclick="setPachiView('usage')" style="${_VB(_pvMode === 'usage')}">사용처별</button>
       <button onclick="setPachiView('size')" style="${_VB(_pvMode === 'size')}">크기별</button>
       <button onclick="setPachiView('condition')" style="${_VB(_pvMode === 'condition')}">상태별</button>
+      <button onclick="setPachiView('location')" style="${_VB(_pvMode === 'location')}">위치별</button>
     </div>`;
 
   // 일괄 지정 액션 바 (1건 이상 체크 시 JS로 표시) — admin만
