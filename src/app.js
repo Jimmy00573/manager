@@ -5033,9 +5033,9 @@ function _renderInvMatrix(product, recs, auditMode) {
         h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
         return;
       }
-      // ── 실사 모드 셀: 값>0이면 확인 토글 대상, 값0은 대상 아님 ──
+      // ── 실사 모드 셀: 값>0이면 확인 토글 대상, 값0(빈칸)은 누락 사이즈 추가 ──
       if (val === 0) {
-        h += `<div style="${C}background:${rowBg};padding:5px 2px"><span style="color:#D1D5DB">-</span></div>`;
+        h += `<div class="inv-mc" onclick="openInvAuditAddCell(${regId},'${esc(sz)}')" title="${esc(sz)} 누락 사이즈 추가" style="${C}background:${rowBg};padding:5px 2px;cursor:pointer;color:#D1D5DB">＋</div>`;
         return;
       }
       const cellRecs = (batch.recsBySize[sz] || []).filter(r => (Number(r.quantity) || 0) > 0 && !r.is_void);
@@ -10024,6 +10024,137 @@ async function toggleInvAuditCell(regId, sz) {
     }
     renderInventoryStatus();
   } catch (e) { showToast('오류: ' + e.message); }
+}
+// 매트릭스 빈칸(-) 클릭 → 그 기존 배치에 누락 사이즈 신규 추가(등급·수량만 입력, 나머지는 배치 복사)
+async function openInvAuditAddCell(regId, sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info) return;
+
+  // 배치 소속 레코드(현재 표시 등급 기준) 수집 — 구조 필드 복사 + 등급 파악용
+  const allIds = Object.values(info.recIds || {}).flat();
+  const batchRecs = allIds
+    .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+    .filter(Boolean);
+  const tmpl = batchRecs[0] || null;
+  const gid  = String(info.groupId || '');
+  const isManualBatch = gid.startsWith('manual_');
+
+  // 새 레코드 구조 = 기존 배치 레코드 복사(없으면 registry로 복원). 새 배치 만들지 않음.
+  const base = tmpl ? {
+    date: tmpl.date,
+    farm_name: tmpl.farm_name,
+    product: tmpl.product,
+    source_type: tmpl.source_type,
+    sorting_result_id: tmpl.sorting_result_id || null,
+    inbound_record_id: tmpl.inbound_record_id || null,
+    location: tmpl.location || null,
+  } : {
+    date: isManualBatch ? gid.replace('manual_', '') : (info.sortingDate || td()),
+    farm_name: info.farm,
+    product: info.product,
+    source_type: isManualBatch ? 'manual' : 'sorting',
+    sorting_result_id: isManualBatch ? null : info.groupId,
+    inbound_record_id: null,
+    location: null,
+  };
+
+  // 등급 옵션: 특정 등급탭이면 그 등급 고정, 전체탭이면 배치 존재 등급(+필요시 일반)
+  let gradeOptions, fixedGrade = null;
+  if (_invGrade !== 'all') {
+    fixedGrade  = _invGrade;
+    gradeOptions = [_invGrade];
+  } else {
+    const present   = [...new Set(batchRecs.map(r => r.quality_grade || '일반'))];
+    const brixOrder = brixGrades.filter(g => g.is_active !== false)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(g => g.label);
+    const ordered = [];
+    if (present.includes('일반')) ordered.push('일반');
+    brixOrder.forEach(l => { if (present.includes(l)) ordered.push(l); });
+    present.forEach(g => { if (!ordered.includes(g)) ordered.push(g); });
+    if (!ordered.includes('일반')) ordered.push('일반');   // 필요시 일반 추가
+    gradeOptions = ordered;
+    if (gradeOptions.length === 1) fixedGrade = gradeOptions[0];
+  }
+
+  const dateLabel = _fmtInvDate(base.date) || base.date || '-';
+  const old = document.getElementById('modal-inv-audit-add');
+  if (old) old.remove();   // 매번 재생성(옛 레이아웃 잔존 방지)
+  const modal = document.createElement('div');
+  modal.id = 'modal-inv-audit-add';
+  modal.className = 'modal-bg';   // ESC 공통 닫기 대상
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3200;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+
+  const gradeField = fixedGrade
+    ? `<div style="height:38px;display:flex;align-items:center;font-size:14px;font-weight:700;color:${fixedGrade === '일반' ? '#374151' : '#1565C0'}">${esc(fixedGrade)}</div>`
+    : `<select id="iaa-grade" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
+        ${gradeOptions.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
+      </select>`;
+
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:15px;font-weight:700;color:#111827">➕ 누락 사이즈 추가</div>
+        <button id="iaa-close" style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px">
+        <div style="font-size:12px;color:#6B7280;line-height:1.7;margin-bottom:14px">
+          농가 <b style="color:#374151">${esc(base.farm_name || '-')}</b> · 품목 <b style="color:#374151">${esc(base.product || '-')}</b><br>
+          ${isManualBatch ? '직접입력' : '선과'} <b style="color:#374151">${esc(dateLabel)}</b> · 사이즈 <b style="color:#1565C0">${esc(sz)}</b>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+          <div>
+            <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">등급</label>
+            ${gradeField}
+          </div>
+          <div>
+            <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">수량 (CT) *</label>
+            <input id="iaa-qty" type="number" min="0" step="any" placeholder="0" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:right">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="iaa-cancel" style="flex:1;padding:10px;border:1px solid #E5E7EB;border-radius:8px;background:#F9FAFB;font-size:13px;cursor:pointer;color:#6B7280;font-family:inherit">취소</button>
+          <button id="iaa-save" style="flex:2;padding:10px;border:none;border-radius:8px;background:#7C3AED;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">추가 (확인 처리)</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const close  = () => modal.remove();
+  modal.querySelector('#iaa-close').onclick  = close;
+  modal.querySelector('#iaa-cancel').onclick = close;
+  const qtyEl = modal.querySelector('#iaa-qty');
+  qtyEl.focus();
+
+  const doSave = async () => {
+    const gradeSel = modal.querySelector('#iaa-grade');
+    const grade = fixedGrade || (gradeSel ? gradeSel.value : '일반') || '일반';
+    const qty = parseFloat(qtyEl.value);
+    if (isNaN(qty) || qty <= 0) { showToast('수량을 0보다 크게 입력하세요.'); qtyEl.focus(); return; }
+    const saveBtn = modal.querySelector('#iaa-save');
+    saveBtn.disabled = true; saveBtn.textContent = '저장 중...';
+    try {
+      await dbInsertInventoryRecord({
+        ...base,
+        size_code: sz,
+        quality_grade: grade,
+        quantity: qty,
+        is_void: false,
+        audit_checked_at: new Date().toISOString(),   // 실물 확인한 것이므로 자동 확인
+        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+        note: '실사 누락 추가',
+      });
+      inventoryRecords = await dbGetInventoryRecords();
+      close();
+      renderInventoryStatus();
+      showToast(`➕ ${base.farm_name || ''} · ${sz} · ${grade} ${fmtN(qty)}CT 추가 (확인)`);
+    } catch (e) {
+      saveBtn.disabled = false; saveBtn.textContent = '추가 (확인 처리)';
+      alert('추가 오류: ' + e.message);
+    }
+  };
+  modal.querySelector('#iaa-save').onclick = doSave;
+  qtyEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } });
 }
 function toggleChipExpand(mk) {
   if (_invAuditExpanded.has(mk)) _invAuditExpanded.delete(mk);
