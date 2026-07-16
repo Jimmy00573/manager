@@ -10689,7 +10689,7 @@ function renderInboundList() {
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
       : esc(r.location || '-');
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}">
-      <td>${_checkMark}${r.date}</td>
+      <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(5) : ''}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
