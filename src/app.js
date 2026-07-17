@@ -7185,7 +7185,7 @@ function renderOutboundHistory() {
   const txManual = manualTransactions.filter(r => !r.is_void).map(r => ({
     kind: r.direction === 'in' ? 'in' : 'out', date: r.date||'', product: r.product||'', size_code: r.size_code||null,
     qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
-    amount: Number(r.amount)||0, source_type: 'manual_tx', expiry_date: null, category: r.category, manual: true, _raw: r
+    amount: Number(r.amount)||0, source_type: 'manual_tx', expiry_date: null, manual: true, _raw: r
   }));
   const allTx = [...txOut, ...txIn, ...txManual];
 
@@ -7364,8 +7364,6 @@ function openManualTxModal() {
   const gradeOpts = ['일반', ...brixGrades.filter(g => g.is_active !== false)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(g => g.label)]
     .map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
-  const catOpts = categories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
-
   const inp = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
   const lbl = 'font-size:12px;color:#6B7280;display:block;margin-bottom:4px';
 
@@ -7389,12 +7387,11 @@ function openManualTxModal() {
               <button type="button" id="mtx-dir-in" onclick="_mtxSetDir('in')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">입고</button>
             </div>
           </div>
-          <div><label style="${lbl}">거래처</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
+          <div><label style="${lbl}">거래처 <span style="color:#9CA3AF;font-weight:400">(선택)</span></label><select id="mtx-partner" style="${inp}"><option value="">(선택 안 함)</option>${partnerOpts}</select></div>
           <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxUpdateSizes()" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
           <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
-          <div><label style="${lbl}">카테고리</label><select id="mtx-cat" style="${inp}"><option value="">선택</option>${catOpts}</select></div>
           <div><label style="${lbl}">사이즈</label><select id="mtx-size" style="${inp}"><option value="">(품목 먼저 선택)</option></select></div>
-          <div><label style="${lbl}">단위</label><input type="text" id="mtx-unit" value="CT" style="${inp}"></div>
+          <div><label style="${lbl}">단위</label><input type="text" id="mtx-unit" value="kg" style="${inp}"></div>
           <div><label style="${lbl}">수량 *</label><input type="number" id="mtx-qty" step="0.1" min="0" oninput="_mtxCalcAmount()" style="${inp}"></div>
           <div><label style="${lbl}">단가 (원)</label><input type="number" id="mtx-price" step="1" min="0" oninput="_mtxCalcAmount()" placeholder="(선택)" style="${inp}"></div>
           <div style="grid-column:1/3"><label style="${lbl}">금액 (원) <span style="color:#9CA3AF;font-weight:400">— 단가×수량 자동, 직접 수정 가능</span></label><input type="number" id="mtx-amount" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
@@ -7453,7 +7450,6 @@ async function saveManualTx() {
     product: g('mtx-product')?.value || null,
     size_code: g('mtx-size')?.value?.trim() || null,
     quality_grade: g('mtx-grade')?.value || null,
-    category: g('mtx-cat')?.value || null,
     quantity: qty,
     unit: g('mtx-unit')?.value?.trim() || 'CT',
     unit_price: g('mtx-price')?.value ? Number(g('mtx-price').value) : null,
