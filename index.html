@@ -892,7 +892,7 @@
         <div id="ib-raw-block">
         <div class="ib-section-label">수량 정보</div>
         <div class="form-grid">
-          <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1" oninput="calcIbWeightFromCt()"></div>
+          <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="number" placeholder="0" min="1" oninput="calcIbWeightFromCt();_ibcQtyHint()"><div id="ib-qty-hint" style="font-size:11px;color:#9CA3AF;margin-top:2px"></div></div>
           <div class="fg"><label>카테고리</label>
             <select id="ib-category" onchange="onIbCatChange('ib')">
               <option value="상품">상품</option>
@@ -1819,6 +1819,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=362"></script>
+<script src="src/app.js?v=363"></script>
 </body>
 </html>

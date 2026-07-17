@@ -3896,6 +3896,7 @@ function renderIbContainerSection() {
       <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
       <div id="ib-container-rows"></div>
     </div>`;
+  _ibcQtyHint();   // 재빌드 시 힌트 리셋(추가된 줄 없으면 합계 0 → 힌트 비움)
 }
 function _ibcAddRow(id) {
   const t = containerTypes.find(x => String(x.id) === String(id));
@@ -3913,17 +3914,42 @@ function _ibcAddRow(id) {
   div.innerHTML = `
     <span style="flex:0 0 70px;font-size:13px;font-weight:500">${esc(t.name)}</span>
     ${badge}
-    <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" style="flex:0 0 62px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+    <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty()" style="flex:0 0 62px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
     <span style="font-size:12px;color:#6B7280">개</span>
     ${isOthers ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">` : `<span style="flex:1"></span>`}
     <button type="button" onclick="_ibcRemoveRow('${t.id}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
   document.getElementById('ib-container-rows')?.appendChild(div);
+  _ibcSyncQty();
   setTimeout(() => document.getElementById(`ibc-q-${t.id}`)?.focus(), 30);
 }
 function _ibcRemoveRow(id) {
   document.getElementById(`ibc-row-${id}`)?.remove();
   const chip = document.getElementById(`ibc-chip-${id}`);
   if (chip) chip.style.display = '';
+  _ibcSyncQty();
+}
+// 콘테이너 종류별 수량 합계 (우리것+남의것 전체, 추가된 줄만)
+function _ibcContainerSum() {
+  let s = 0;
+  containerTypes.forEach(t => { s += parseInt(document.getElementById(`ibc-q-${t.id}`)?.value, 10) || 0; });
+  return s;
+}
+// ib-qty 옆 힌트: 콘테이너 합계 안내(미선과만). 수량과 다르면 '수량과 다름' 표시.
+function _ibcQtyHint() {
+  const el = document.getElementById('ib-qty-hint');
+  if (!el) return;
+  const sum = _ibcContainerSum();
+  if (_ibKind !== 'raw' || sum <= 0) { el.textContent = ''; return; }
+  const cur = parseInt(document.getElementById('ib-qty')?.value, 10) || 0;
+  el.textContent = `🧺 콘테이너 합계 ${sum}개${cur !== sum ? ' (수량과 다름)' : ''}`;
+}
+// 콘테이너 합계 → 입고 수량 자동 반영 (미선과 raw만). 선과품은 안 건드림.
+function _ibcSyncQty() {
+  if (_ibKind !== 'raw') { _ibcQtyHint(); return; }   // 선과품은 자동합산 없음
+  const sum = _ibcContainerSum();
+  const q = document.getElementById('ib-qty');
+  if (q && sum > 0) { q.value = sum; if (typeof calcIbWeightFromCt === 'function') calcIbWeightFromCt(); }
+  _ibcQtyHint();
 }
 
 // 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 우리것→picks 원물수거(회수), 남의것→own_ins(반납대기).
