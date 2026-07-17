@@ -98,6 +98,7 @@ async function dbDeletePartner(id) { return await sbDelete('partners', id); }
 async function dbGetManualTransactions() { try { return await sbGet('manual_transactions', 'is_void=eq.false&order=date.desc,created_at.desc'); } catch(e) { return []; } }
 async function dbInsertManualTransaction(data) { const r = await sbInsert('manual_transactions', data); return r[0]; }
 async function dbUpdateManualTransaction(id, data) { const r = await sbUpdate('manual_transactions', id, data); return r[0]; }
+async function dbVoidManualTransaction(id) { return sbUpdate('manual_transactions', id, { is_void: true }); }   // soft delete
 
 // ── 파치 사용처
 async function dbGetPachiUsages() { try { return await sbGet('pachi_usages', 'order=sort_order'); } catch(e) { return []; } }
