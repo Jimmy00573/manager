@@ -12235,7 +12235,7 @@ async function saveSortingResult() {
     // 5. audit_log
     const parts = [`정상 ${fmtN(normalTotal)}CT`];
     if (waste    > 0) parts.push(`파치 ${fmtN(waste)}CT`);
-    if (highacid > 0) parts.push(`고산도 ${fmtN(highacid)}CT`);
+    if (highacid > 0) parts.push(`고산/저당 ${fmtN(highacid)}CT`);
     if (tiny     > 0) parts.push(`극소과 ${fmtN(tiny)}CT`);
     if (green    > 0) parts.push(`청과 ${fmtN(green)}CT`);
     if (loss     > 0) parts.push(`손실 ${fmtN(loss)}CT`);
@@ -13230,7 +13230,7 @@ function renderPachiSection() {
   // Source 1: inventory_records (선과 자동 + 수동 등록)
   const irRecs = inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny','pachi_green'].includes(r.source_type));
   const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_tiny','pachi_green'].includes(st);
-  const pachiKindLabel = (st) => ({pachi:'파치', pachi_highacid:'고산도', pachi_tiny:'극소과', pachi_green:'청과', pachi_manual:'파치'}[st] || '파치');
+  const pachiKindLabel = (st) => ({pachi:'파치', pachi_highacid:'고산/저당', pachi_tiny:'극소과', pachi_green:'청과', pachi_manual:'파치'}[st] || '파치');
   const irGrouped = {};
   irRecs.forEach(r => {
     const key = (isSortingPachi(r.source_type) && r.sorting_result_id) ? `srt_${r.sorting_result_id}_${r.source_type}` : `ir_${r.id}`;
@@ -14074,7 +14074,7 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
     const normalTotal = allSzForResult.reduce((s, sz) => s + (rd.normalMap[sz] ?? 0), 0);
     const abnList = [
       { label: '파치',   ct: rd.waste    },
-      { label: '고산도', ct: rd.highacid },
+      { label: '고산/저당', ct: rd.highacid },
       { label: '극소과', ct: rd.tiny     },
       { label: '청과',   ct: rd.green    },
       { label: '손실',   ct: rd.loss     },
@@ -14246,7 +14246,7 @@ async function openSortingDetailModal(inboundId) {
   const cumLoss     = details.filter(d => d.category === '손실').reduce((s,d)   => s + Number(d.ct), 0);
   const cumAbnList  = [
     { label: '파치',   ct: cumPachi    },
-    { label: '고산도', ct: cumHighacid },
+    { label: '고산/저당', ct: cumHighacid },
     { label: '극소과', ct: cumTiny     },
     { label: '청과',   ct: cumGreen    },
     { label: '손실',   ct: cumLoss     },
@@ -14278,7 +14278,7 @@ async function openSortingDetailModal(inboundId) {
     const normalTotal = allSizes.reduce((s, sz) => s + (rd.normalMap[sz] ?? 0), 0);
     const abnList = [
       { label: '파치',   ct: rd.waste    },
-      { label: '고산도', ct: rd.highacid },
+      { label: '고산/저당', ct: rd.highacid },
       { label: '극소과', ct: rd.tiny     },
       { label: '청과',   ct: rd.green    },
       { label: '손실',   ct: rd.loss     },
@@ -14652,15 +14652,15 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
       : '';
     const QUAL_STYLES = [
       { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
-      { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706' },
+      { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706', label: '고산/저당' },
       { k: '극소과', color: '#7C3AED' }, { k: '청과',  color: '#16A34A' },
     ];
     const _qlItems = QUAL_STYLES.filter(({ k }) => entry.qualRatios[k] > 0);
     const _qlMaxK  = _qlItems.length ? _qlItems.reduce((a, b) => entry.qualRatios[a.k] >= entry.qualRatios[b.k] ? a : b).k : null;
     const qualStr  = _qlItems.length
-      ? _qlItems.map(({ k, color }) => k === _qlMaxK
-          ? `<span style="color:${color}"><b>${k} ${entry.qualRatios[k]}%</b></span>`
-          : `<span style="color:${color}">${k} ${entry.qualRatios[k]}%</span>`)
+      ? _qlItems.map(({ k, color, label }) => k === _qlMaxK
+          ? `<span style="color:${color}"><b>${label || k} ${entry.qualRatios[k]}%</b></span>`
+          : `<span style="color:${color}">${label || k} ${entry.qualRatios[k]}%</span>`)
         .join('<span class="fsr-sep">·</span>')
       : '';
     const isHL = _fsrHighlightId && String(entry.ibId) === String(_fsrHighlightId);
@@ -14749,15 +14749,15 @@ function _fsrRecalc() {
     : '';
   const QUAL_STYLES = [
     { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
-    { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706' },
+    { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706', label: '고산/저당' },
     { k: '극소과', color: '#7C3AED' }, { k: '청과',  color: '#16A34A' },
   ];
   const _qlItems2 = QUAL_STYLES.filter(({ k }) => avgQual[k] > 0);
   const _qlMaxK2  = _qlItems2.length ? _qlItems2.reduce((a, b) => avgQual[a.k] >= avgQual[b.k] ? a : b).k : null;
   const qualStr   = _qlItems2.length
-    ? _qlItems2.map(({ k, color }) => k === _qlMaxK2
-        ? `<span style="color:${color}"><b>${k} ${avgQual[k]}%</b></span>`
-        : `<span style="color:${color}">${k} ${avgQual[k]}%</span>`)
+    ? _qlItems2.map(({ k, color, label }) => k === _qlMaxK2
+        ? `<span style="color:${color}"><b>${label || k} ${avgQual[k]}%</b></span>`
+        : `<span style="color:${color}">${label || k} ${avgQual[k]}%</span>`)
       .join('<span class="fsr-sep">·</span>')
     : '';
 
