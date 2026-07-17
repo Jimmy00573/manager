@@ -7359,6 +7359,7 @@ function openManualTxModal() {
 
   const partnerOpts = partners.filter(p => p.is_active !== false)
     .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  const farmOpts = farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
   const prodOpts = [...itemDefs].map(i => i.name).sort((a, b) => a.localeCompare(b, 'ko'))
     .map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   const gradeOpts = ['일반', ...brixGrades.filter(g => g.is_active !== false)
@@ -7387,7 +7388,8 @@ function openManualTxModal() {
               <button type="button" id="mtx-dir-in" onclick="_mtxSetDir('in')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">입고</button>
             </div>
           </div>
-          <div><label style="${lbl}">거래처 <span style="color:#9CA3AF;font-weight:400">(선택)</span></label><select id="mtx-partner" style="${inp}"><option value="">(선택 안 함)</option>${partnerOpts}</select></div>
+          <div><label style="${lbl}"><span id="mtx-partner-label">출고처</span> *</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
+          <div><label style="${lbl}">농가명 <span style="color:#9CA3AF;font-weight:400">(선택)</span></label><select id="mtx-farm" style="${inp}"><option value="">(선택 안 함)</option>${farmOpts}</select></div>
           <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxUpdateSizes()" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
           <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
           <div><label style="${lbl}">사이즈</label><select id="mtx-size" style="${inp}"><option value="">(품목 먼저 선택)</option></select></div>
@@ -7408,6 +7410,8 @@ function openManualTxModal() {
 
 function _mtxSetDir(d) {
   _mtxDir = d;
+  const plbl = document.getElementById('mtx-partner-label');
+  if (plbl) plbl.textContent = d === 'in' ? '입고처' : '출고처';   // 거래처 라벨만 방향별 갱신(값 유지)
   const out = document.getElementById('mtx-dir-out'), inn = document.getElementById('mtx-dir-in');
   if (out) { const on = d === 'out'; out.style.background = on ? '#DC2626' : '#fff'; out.style.color = on ? '#fff' : '#374151'; out.style.borderColor = on ? '#DC2626' : '#D1D5DB'; }
   if (inn) { const on = d === 'in';  inn.style.background = on ? '#1D4ED8' : '#fff'; inn.style.color = on ? '#fff' : '#374151'; inn.style.borderColor = on ? '#1D4ED8' : '#D1D5DB'; }
@@ -7441,12 +7445,15 @@ async function saveManualTx() {
   const g = id => document.getElementById(id);
   const date = g('mtx-date')?.value;
   const qty = parseFloat(g('mtx-qty')?.value);
+  const partner = g('mtx-partner')?.value;
   if (!date) return alert('날짜를 입력해주세요.');
   if (!_mtxDir) return alert('입출 구분을 선택해주세요.');
+  if (!partner) return alert(`${_mtxDir === 'in' ? '입고처' : '출고처'}를 선택해주세요.`);
   if (!qty || qty <= 0) return alert('수량을 입력해주세요.');
   const rec = {
     date, direction: _mtxDir,
-    partner_name: g('mtx-partner')?.value || null,
+    partner_name: partner,
+    farm_name: g('mtx-farm')?.value || null,
     product: g('mtx-product')?.value || null,
     size_code: g('mtx-size')?.value?.trim() || null,
     quality_grade: g('mtx-grade')?.value || null,
