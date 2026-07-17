@@ -3881,25 +3881,49 @@ function popCtypeSels() {
 }
 
 // 입고 모달 콘테이너 입력 섹션 — 활성 종류별 수량(+남의것은 특징). 선택(필수 아님).
+// 칩을 눌러 종류를 추가하는 방식(항상 나열 X). 추가된 줄만 표시. 저장 필드 id(ibc-q/ibc-f-{id}) 유지.
 function renderIbContainerSection() {
   const el = document.getElementById('ib-container-sec');
   if (!el) return;
   const active = [...containerTypes].filter(t => t.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   if (!active.length) { el.innerHTML = ''; return; }
-  const rows = active.map(t => {
-    const isOthers = t.owner === 'others';
-    return `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-      <span style="flex:0 0 78px;font-size:13px">${esc(t.name)} <span style="color:#9CA3AF;font-size:10px">${isOthers ? '남의' : '우리'}</span></span>
-      <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" style="flex:0 0 66px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
-      <span style="font-size:12px;color:#6B7280">개</span>
-      ${isOthers ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">` : `<span style="flex:1"></span>`}
-    </div>`;
-  }).join('');
+  const chips = active.map(t =>
+    `<button type="button" id="ibc-chip-${t.id}" onclick="_ibcAddRow('${t.id}')" style="padding:4px 10px;border:1px solid #D1D5DB;border-radius:16px;background:#fff;font-size:12px;color:#374151;cursor:pointer;font-family:inherit">${esc(t.name)} +</button>`
+  ).join('');
   el.innerHTML = `<div class="ib-section-label">🧺 콘테이너 (선택)</div>
-    <div style="border:1px solid #E5E7EB;border-radius:8px;padding:10px;background:#FAFAFA">
-      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px">우리것=농가 회수 처리 · 남의것=공장 반납대기 등록 (자동). 입력 안 하면 콘테이너 처리 없음.</div>
-      ${rows}
+    <div style="border:1px solid #E5E7EB;border-radius:8px;padding:10px;background:#fff">
+      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px">종류를 눌러 추가 · 우리것=회수, 남의것=반납대기 (자동)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+      <div id="ib-container-rows"></div>
     </div>`;
+}
+function _ibcAddRow(id) {
+  const t = containerTypes.find(x => String(x.id) === String(id));
+  if (!t) return;
+  if (document.getElementById(`ibc-row-${t.id}`)) return;   // 이미 추가됨
+  const chip = document.getElementById(`ibc-chip-${t.id}`);
+  if (chip) chip.style.display = 'none';
+  const isOthers = t.owner === 'others';
+  const badge = isOthers
+    ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">남의·반납</span>`
+    : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#DBEAFE;color:#1D4ED8">우리·회수</span>`;
+  const div = document.createElement('div');
+  div.id = `ibc-row-${t.id}`;
+  div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap';
+  div.innerHTML = `
+    <span style="flex:0 0 70px;font-size:13px;font-weight:500">${esc(t.name)}</span>
+    ${badge}
+    <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" style="flex:0 0 62px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+    <span style="font-size:12px;color:#6B7280">개</span>
+    ${isOthers ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">` : `<span style="flex:1"></span>`}
+    <button type="button" onclick="_ibcRemoveRow('${t.id}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
+  document.getElementById('ib-container-rows')?.appendChild(div);
+  setTimeout(() => document.getElementById(`ibc-q-${t.id}`)?.focus(), 30);
+}
+function _ibcRemoveRow(id) {
+  document.getElementById(`ibc-row-${id}`)?.remove();
+  const chip = document.getElementById(`ibc-chip-${id}`);
+  if (chip) chip.style.display = '';
 }
 
 // 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 우리것→picks 원물수거(회수), 남의것→own_ins(반납대기).
