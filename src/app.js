@@ -14640,6 +14640,26 @@ let _fsrEntries = [];
 let _fsrGroups  = [];
 let _fsrHighlightId = null;
 
+// 비율 모달 품질 범례(동적): 정상품 등급(일반→활성 브릭스 sort_order→잔존 고당 등) + 비정상 카테고리.
+// qualRatios에 존재하는 등급 키만 포함. 색상: 일반=회색, 브릭스/잔존=파랑(재고·출고와 일관). brixGrades(전역) 재사용.
+function _fsrQualStyles(qualRatios) {
+  const ABN = [
+    { k: '파치',  color: '#9CA3AF' },
+    { k: '고산도', color: '#D97706', label: '고산/저당' },
+    { k: '극소과', color: '#7C3AED' },
+    { k: '청과',  color: '#16A34A' },
+  ];
+  const abnKeys = new Set(ABN.map(a => a.k));
+  const gradeKeys = Object.keys(qualRatios).filter(k => !abnKeys.has(k));
+  const activeBrix = brixGrades
+    .filter(g => g.is_active !== false && gradeKeys.includes(g.label))
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
+  const others = gradeKeys.filter(k => k !== '일반' && !activeBrix.includes(k)).sort((a, b) => a.localeCompare(b, 'ko'));
+  const ordered = [...(gradeKeys.includes('일반') ? ['일반'] : []), ...activeBrix, ...others];
+  const gradeStyles = ordered.map(g => ({ k: g, color: g === '일반' ? '#374151' : '#1565C0' }));
+  return [...gradeStyles, ...ABN];
+}
 async function openSortingRatioModal(farmName, product, highlightIbId = null) {
   _fsrHighlightId = highlightIbId || null;
   const ibs = (inboundRecords || []).filter(r =>
@@ -14700,20 +14720,19 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
 
     const outDtls = details.filter(d => d.category !== '손실');
     const totalCt = outDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const highCt    = normalDtls.filter(isGraded).reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const normalQCt = normalDtls.filter(isNormalGrade).reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const pachiCt   = outDtls.filter(d => d.category === '파치').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const acidCt    = outDtls.filter(d => d.category === '고산도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const tinyCt    = outDtls.filter(d => d.category === '극소과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const greenCt   = outDtls.filter(d => d.category === '청과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const qualRatios = {
-      '고당':  totalCt > 0 ? Math.round(highCt    / totalCt * 100) : 0,
-      '일반':  totalCt > 0 ? Math.round(normalQCt / totalCt * 100) : 0,
-      '파치':  totalCt > 0 ? Math.round(pachiCt   / totalCt * 100) : 0,
-      '고산도': totalCt > 0 ? Math.round(acidCt   / totalCt * 100) : 0,
-      '극소과': totalCt > 0 ? Math.round(tinyCt   / totalCt * 100) : 0,
-      '청과':  totalCt > 0 ? Math.round(greenCt   / totalCt * 100) : 0,
-    };
+    // 정상품을 등급(quality_grade)별로 세분화 — '고당' 뭉침 해소(일반/11.5br/12br/잔존 각각). gradeOf 재사용.
+    const gradeCt = {};
+    normalDtls.forEach(d => { const g = gradeOf(d); gradeCt[g] = (gradeCt[g] || 0) + (Number(d.ct) || 0); });
+    const qualRatios = {};
+    Object.keys(gradeCt).forEach(g => { qualRatios[g] = totalCt > 0 ? Math.round(gradeCt[g] / totalCt * 100) : 0; });
+    qualRatios['파치']  = totalCt > 0 ? Math.round(pachiCt / totalCt * 100) : 0;
+    qualRatios['고산도'] = totalCt > 0 ? Math.round(acidCt  / totalCt * 100) : 0;
+    qualRatios['극소과'] = totalCt > 0 ? Math.round(tinyCt  / totalCt * 100) : 0;
+    qualRatios['청과']  = totalCt > 0 ? Math.round(greenCt / totalCt * 100) : 0;
 
     return { ibId: ib.id, date: ib.date, product: ib.product, inputCt: ib.quantity, totalCt, sizeRatios, qualRatios };
   });
@@ -14729,11 +14748,7 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
           : `<span>${g} ${entry.sizeRatios[g]}%</span>`)
         .join('<span class="fsr-sep">·</span>')
       : '';
-    const QUAL_STYLES = [
-      { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
-      { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706', label: '고산/저당' },
-      { k: '극소과', color: '#7C3AED' }, { k: '청과',  color: '#16A34A' },
-    ];
+    const QUAL_STYLES = _fsrQualStyles(entry.qualRatios);
     const _qlItems = QUAL_STYLES.filter(({ k }) => entry.qualRatios[k] > 0);
     const _qlMaxK  = _qlItems.length ? _qlItems.reduce((a, b) => entry.qualRatios[a.k] >= entry.qualRatios[b.k] ? a : b).k : null;
     const qualStr  = _qlItems.length
@@ -14808,12 +14823,12 @@ function _fsrRecalc() {
   const totalWeight = checked.reduce((s, e) => s + (e.totalCt || 0), 0);
   const avgSize = {};
   _fsrGroups.forEach(g => { avgSize[g] = 0; });
-  const avgQual = { '고당': 0, '일반': 0, '파치': 0, '고산도': 0, '극소과': 0, '청과': 0 };
+  const avgQual = {};   // 등급 동적 — 선택 항목들의 등급/카테고리 키 합집합 누적
 
   checked.forEach(e => {
     const w = totalWeight > 0 ? (e.totalCt || 0) / totalWeight : 1 / checked.length;
     _fsrGroups.forEach(g => { avgSize[g] += (e.sizeRatios[g] || 0) * w; });
-    Object.keys(avgQual).forEach(k => { avgQual[k] += (e.qualRatios[k] || 0) * w; });
+    Object.keys(e.qualRatios).forEach(k => { avgQual[k] = (avgQual[k] || 0) + (e.qualRatios[k] || 0) * w; });
   });
   _fsrGroups.forEach(g => { avgSize[g] = Math.round(avgSize[g]); });
   Object.keys(avgQual).forEach(k => { avgQual[k] = Math.round(avgQual[k]); });
@@ -14826,11 +14841,7 @@ function _fsrRecalc() {
         : `<span>${g} ${avgSize[g]}%</span>`)
       .join('<span class="fsr-sep">·</span>')
     : '';
-  const QUAL_STYLES = [
-    { k: '고당',  color: '#1565C0' }, { k: '일반',  color: '#374151' },
-    { k: '파치',  color: '#9CA3AF' }, { k: '고산도', color: '#D97706', label: '고산/저당' },
-    { k: '극소과', color: '#7C3AED' }, { k: '청과',  color: '#16A34A' },
-  ];
+  const QUAL_STYLES = _fsrQualStyles(avgQual);
   const _qlItems2 = QUAL_STYLES.filter(({ k }) => avgQual[k] > 0);
   const _qlMaxK2  = _qlItems2.length ? _qlItems2.reduce((a, b) => avgQual[a.k] >= avgQual[b.k] ? a : b).k : null;
   const qualStr   = _qlItems2.length
