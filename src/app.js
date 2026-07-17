@@ -7945,18 +7945,21 @@ function renderInvSummary() {
 
   let inTabContent;
   if (summaryInbounds.length > 0) {
-    // 목록 탭: group by (farm + product + driverKey)
+    // 목록 탭: group by (farm + product + category + driverKey)
     const listMap = {};
     summaryInbounds.forEach(r => {
       const drv = getDrv(r);
-      const key = `${r.farm_name}|${r.product}|${drv.key}`;
-      if (!listMap[key]) listMap[key] = { farm: r.farm_name, product: r.product, drv, qty: 0, cnt: 0 };
+      const cat = r.inbound_category || '상품';   // null/빈값 = 상품 (categoryBadge와 동일 처리)
+      const key = `${r.farm_name}|${r.product}|${cat}|${drv.key}`;
+      if (!listMap[key]) listMap[key] = { farm: r.farm_name, product: r.product, category: cat, drv, qty: 0, cnt: 0 };
       listMap[key].qty += r.quantity; listMap[key].cnt++;
     });
+    const listRows = Object.values(listMap).sort((a, b) =>
+      a.farm.localeCompare(b.farm, 'ko') || a.product.localeCompare(b.product, 'ko') || a.category.localeCompare(b.category, 'ko'));
     const listTabHtml = `<table style="width:100%;border-collapse:collapse">
-      <thead><tr><th style="${TH_T}">농가</th><th style="${TH_T}">품목</th><th style="${TH_T}">수송기사</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
-      <tbody>${Object.values(listMap).map(g =>
-        `<tr><td style="${TD_L}">${esc(g.farm)}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
+      <thead><tr><th style="${TH_T}">농가</th><th style="${TH_T}">품목</th><th style="${TH_T}">구분</th><th style="${TH_T}">수송기사</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <tbody>${listRows.map(g =>
+        `<tr><td style="${TD_L}">${esc(g.farm)}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${categoryBadge(g.category)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
       ).join('')}</tbody>
     </table>`;
 
