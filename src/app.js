@@ -7708,6 +7708,12 @@ function toggleSumDetail(id) {
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
+// 기사 표시 HTML (전역 — renderInvSummary / _renderInoutCatTable 공용). drv 객체(display/dotColor)만 참조, esc는 전역.
+function drvHtml(drv) {
+  return drv.display
+    ? `<span class="driver-cell"><span class="driver-dot" style="background:${drv.dotColor}"></span><span class="driver-name">${esc(drv.display)}</span></span>`
+    : '<span style="color:#9CA3AF">—</span>';
+}
 function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
   if (!el) return;
@@ -7934,9 +7940,6 @@ function renderInvSummary() {
       return { key: `reg:${r.driver_id}`, display: r.driver.name, dotColor: r.driver.type === '내부' ? '#6B7280' : '#D97706' };
     return { key: 'none', display: null, dotColor: null };
   };
-  const drvHtml = drv => drv.display
-    ? `<span class="driver-cell"><span class="driver-dot" style="background:${drv.dotColor}"></span><span class="driver-name">${esc(drv.display)}</span></span>`
-    : '<span style="color:#9CA3AF">—</span>';
 
   const TH_T = 'text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
   const TH_R = 'text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
