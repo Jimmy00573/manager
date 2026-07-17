@@ -53,6 +53,7 @@ let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
 let manualTransactions = [];   // 수동 거래내역 (정산 참고용, 재고 무관)
+let containerTypes = [], containerMoves = [];   // 콘테이너 종류 마스터 + 이동 기록 (재고 무관)
 let pachiSizes = [];        // 파치 크기 마스터 — 1단계: 데이터만
 let pachiConditions = [];   // 파치 상태 마스터 — 1단계: 데이터만
 let productWeights = {};
@@ -262,6 +263,8 @@ async function initApp() {
     pachiConditions = pachiCondData || [];
     partners = await dbGetPartners().catch(() => []);
     manualTransactions = await dbGetManualTransactions().catch(() => []);
+    containerTypes = await dbGetContainerTypes().catch(() => []);
+    containerMoves = await dbGetContainerMoves().catch(() => []);
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -666,10 +669,11 @@ function T(id) {
   if (_stEl) _stEl.style.display = 'none';
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'cont', 'set'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
+  if (id === 'cont') renderContainers();
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
   if (id === 'vehicle') renderVehicles();
@@ -699,7 +703,7 @@ function transportSub(sub) {
       b.classList.toggle('active', b.getAttribute('data-sub') === sub));
   }
   // 전체 패널 먼저 끄고, 해당 sub만 켜기
-  ['dash','disp','ext','cal','dboard','farm','drv','vehicle','stats','export','inv','set'].forEach(p => {
+  ['dash','disp','ext','cal','dboard','farm','drv','vehicle','stats','export','inv','cont','set'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const cur = document.getElementById('p-' + sub); if (cur) cur.classList.add('active');
@@ -15061,6 +15065,320 @@ function _fsrRecalc() {
 }
 
 window.openSortingRatioModal = openSortingRatioModal;
+
+// ═══════════════════════════════════════════════════════════════════
+//  콘테이너 관리 (단계1) — 이동 기록 + 회수/반납 대기 현황. 재고와 독립.
+// ═══════════════════════════════════════════════════════════════════
+const CT_OWNER_LABEL = { ours: '우리것', farm: '농가것', nhf: '농협것' };
+const _ctInp = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
+const _ctLbl = 'font-size:12px;color:#6B7280;display:block;margin-bottom:4px';
+
+function _ctType(name) { return containerTypes.find(t => t.name === name) || null; }
+function _ctOwnerOf(name) { const t = _ctType(name); return t ? t.owner : 'ours'; }
+
+// 종류·상대처별 순 잔량. ours: Σout−Σin(양수=농가에 우리것=회수대기). farm/nhf: Σin−Σout(양수=공장에 상대것=반납대기).
+function _ctStatus() {
+  const map = {};
+  containerMoves.filter(m => !m.is_void).forEach(m => {
+    const owner = m.owner || _ctOwnerOf(m.container_type);
+    const partner = m.farm_name || '(미지정)';
+    const key = owner + '|' + partner + '|' + (m.container_type || '');
+    if (!map[key]) map[key] = { owner, partner, type: m.container_type || '', feature: '', out: 0, in: 0 };
+    const q = Number(m.qty) || 0;
+    if (m.direction === 'out') map[key].out += q; else map[key].in += q;
+    if (m.feature && !map[key].feature) map[key].feature = m.feature;
+  });
+  return Object.values(map).map(r => ({ ...r, net: r.owner === 'ours' ? (r.out - r.in) : (r.in - r.out) }));
+}
+
+function renderContainers() {
+  const el = document.getElementById('p-cont');
+  if (!el) return;
+  const isAdmin = sessionStorage.getItem('citrus_role') === 'admin';
+  const rows = _ctStatus();
+  const recall  = rows.filter(r => r.owner === 'ours' && r.net > 0);
+  const returnW = rows.filter(r => r.owner !== 'ours' && r.net > 0);
+
+  const byPartner = list => {
+    const g = {};
+    list.forEach(r => { (g[r.partner] = g[r.partner] || []).push(r); });
+    return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  };
+  const statusCard = (title, color, list, showFeature) => {
+    if (!list.length) return `<div class="form-card"><div class="form-title">${title}</div><div style="font-size:13px;color:#aaa;padding:8px 0">없음</div></div>`;
+    const total = list.reduce((s, r) => s + r.net, 0);
+    const body = byPartner(list).map(([partner, rs]) => {
+      const sub = rs.reduce((s, r) => s + r.net, 0);
+      const items = rs.map(r => {
+        const feat = (showFeature && r.feature) ? ` <span style="color:#9CA3AF;font-size:11px">(${esc(r.feature)})</span>` : '';
+        return `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:13px"><span>${esc(r.type)}${feat}</span><span style="font-weight:600">${fmtN(r.net)}개</span></div>`;
+      }).join('');
+      return `<div style="border-top:1px solid #F0F0F0;padding:6px 0"><div style="display:flex;justify-content:space-between;font-weight:600;font-size:13px;margin-bottom:2px"><span>${esc(partner)}</span><span style="color:#1565C0">${fmtN(sub)}개</span></div>${items}</div>`;
+    }).join('');
+    return `<div class="form-card"><div class="form-title" style="display:flex;justify-content:space-between;align-items:center">${title}<span class="badge" style="background:${color}22;color:${color}">총 ${fmtN(total)}개</span></div>${body}</div>`;
+  };
+
+  const moves = containerMoves.filter(m => !m.is_void).slice(0, 100);
+  const moveRows = moves.length ? moves.map(m => {
+    const owner = m.owner || _ctOwnerOf(m.container_type);
+    const dirBadge = m.direction === 'out'
+      ? `<span class="badge" style="background:#FEE2E2;color:#DC2626">나감</span>`
+      : `<span class="badge" style="background:#DBEAFE;color:#1D4ED8">들어옴</span>`;
+    const admin = isAdmin ? `<button onclick="openCtMoveModal('${m.id}')" style="border:1px solid #93C5FD;color:#2563EB;background:none;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button><button onclick="deleteCtMove('${m.id}')" style="border:1px solid #FCA5A5;color:#DC2626;background:none;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">삭제</button>` : '';
+    return `<tr style="border-bottom:1px solid #E5E7EB">
+      <td style="padding:6px 8px;white-space:nowrap;font-size:13px">${m.date ? m.date.slice(5).replace('-','/') : ''}</td>
+      <td style="padding:6px 8px">${dirBadge}</td>
+      <td style="padding:6px 8px;font-size:13px">${esc(m.container_type||'')} <span style="color:#9CA3AF;font-size:11px">${CT_OWNER_LABEL[owner]||''}</span></td>
+      <td style="padding:6px 8px;font-size:13px">${esc(m.farm_name||'-')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:600;font-size:13px">${fmtN(Number(m.qty)||0)}</td>
+      <td style="padding:6px 8px;font-size:12px;color:#6B7280">${esc(m.feature||'')}${m.staff?` · ${esc(m.staff)}`:''}${m.note?`<br>${esc(m.note)}`:''}</td>
+      <td style="padding:6px 8px;text-align:center;white-space:nowrap">${admin}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="7" style="padding:24px;text-align:center;color:#9CA3AF">이동 내역이 없습니다.</td></tr>`;
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:18px;font-weight:700">🧺 콘테이너 관리</div>
+      <div style="display:flex;gap:6px">
+        ${isAdmin ? `<button class="btn pri" onclick="openCtMoveModal()" style="padding:8px 14px">+ 이동 등록</button>` : ''}
+        ${isAdmin ? `<button class="btn" onclick="openCtTypeModal()" style="padding:8px 14px">종류 관리</button>` : ''}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:14px">
+      ${statusCard('🔴 회수 대기 (우리 콘테이너)', '#DC2626', recall, false)}
+      ${statusCard('🔵 반납 대기 (농가·농협 콘테이너)', '#1D4ED8', returnW, true)}
+    </div>
+    <div class="form-card">
+      <div class="form-title">이동 내역 (최근 100건)</div>
+      <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:#F9FAFB;border-bottom:2px solid #E5E7EB">
+          <th style="padding:7px 8px;text-align:left;font-size:12px;color:#6B7280">날짜</th>
+          <th style="padding:7px 8px;text-align:left;font-size:12px;color:#6B7280">구분</th>
+          <th style="padding:7px 8px;text-align:left;font-size:12px;color:#6B7280">종류</th>
+          <th style="padding:7px 8px;text-align:left;font-size:12px;color:#6B7280">농가/농협</th>
+          <th style="padding:7px 8px;text-align:right;font-size:12px;color:#6B7280">수량</th>
+          <th style="padding:7px 8px;text-align:left;font-size:12px;color:#6B7280">특징·담당·비고</th>
+          <th style="padding:7px 8px;text-align:center;font-size:12px;color:#6B7280"></th>
+        </tr></thead>
+        <tbody>${moveRows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+/* ── 이동 등록/수정 모달 ── */
+let _ctDir = 'out', _ctEditId = null;
+function openCtMoveModal(editId = null) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ed = editId ? containerMoves.find(m => String(m.id) === String(editId)) : null;
+  _ctEditId = ed ? ed.id : null;
+  _ctDir = ed ? (ed.direction === 'in' ? 'in' : 'out') : 'out';
+  document.getElementById('modal-ct-move')?.remove();
+
+  const typeOpts = containerTypes.filter(t => t.is_active !== false)
+    .map(t => `<option value="${esc(t.name)}">${esc(t.name)} · ${CT_OWNER_LABEL[t.owner] || t.owner}</option>`).join('');
+  const farmDl = farms.map(f => `<option value="${esc(f.name)}"></option>`).join('');
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-ct-move'; modal.className = 'modal-bg';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:5000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:460px;width:100%;background:#fff;border-radius:12px;padding:0">
+      <div style="padding:16px 20px 12px;border-bottom:1px solid #F0F0F0;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:16px;font-weight:700">🧺 콘테이너 이동 ${ed ? '수정' : '등록'}</div>
+        <button onclick="document.getElementById('modal-ct-move').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9CA3AF">✕</button>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px">
+          <div><label style="${_ctLbl}">날짜 *</label><input type="date" id="ct-date" value="${td()}" style="${_ctInp}"></div>
+          <div><label style="${_ctLbl}">구분 *</label>
+            <div style="display:flex;gap:6px">
+              <button type="button" id="ct-dir-out" onclick="_ctMoveSetDir('out')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #DC2626;background:#DC2626;color:#fff;font-size:13px;font-weight:600;cursor:pointer">나감</button>
+              <button type="button" id="ct-dir-in" onclick="_ctMoveSetDir('in')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">들어옴</button>
+            </div>
+          </div>
+          <div style="grid-column:1/3"><label style="${_ctLbl}">종류 *</label><select id="ct-type" style="${_ctInp}"><option value="">선택</option>${typeOpts}</select></div>
+          <div style="grid-column:1/3"><label style="${_ctLbl}">농가/농협명</label><input type="text" id="ct-farm" list="ct-farm-dl" placeholder="(선택) 농가명 또는 농협명" style="${_ctInp}"><datalist id="ct-farm-dl">${farmDl}</datalist></div>
+          <div><label style="${_ctLbl}">수량 *</label><input type="number" id="ct-qty" min="0" step="1" style="${_ctInp}"></div>
+          <div><label style="${_ctLbl}">특징</label><input type="text" id="ct-feature" placeholder="예) 락카 빨강" style="${_ctInp}"></div>
+          <div><label style="${_ctLbl}">담당직원</label><input type="text" id="ct-staff" placeholder="(선택)" style="${_ctInp}"></div>
+          <div><label style="${_ctLbl}">비고</label><input type="text" id="ct-note" placeholder="(선택)" style="${_ctInp}"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button id="ct-save-btn" onclick="saveCtMove(${ed ? `'${ed.id}'` : ''})" style="flex:1;padding:10px;background:#2563EB;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">${ed ? '수정' : '저장'}</button>
+          <button onclick="document.getElementById('modal-ct-move').remove()" style="padding:10px 20px;background:#fff;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;cursor:pointer">취소</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  _ctMoveSetDir(_ctDir);
+  if (ed) {
+    const g = id => document.getElementById(id);
+    g('ct-date').value = ed.date || td();
+    g('ct-type').value = ed.container_type || '';
+    g('ct-farm').value = ed.farm_name || '';
+    g('ct-qty').value = ed.qty ?? '';
+    g('ct-feature').value = ed.feature || '';
+    g('ct-staff').value = ed.staff || '';
+    g('ct-note').value = ed.note || '';
+  }
+}
+function _ctMoveSetDir(d) {
+  _ctDir = d;
+  const out = document.getElementById('ct-dir-out'), inn = document.getElementById('ct-dir-in');
+  if (out) { const on = d === 'out'; out.style.background = on ? '#DC2626' : '#fff'; out.style.color = on ? '#fff' : '#374151'; out.style.borderColor = on ? '#DC2626' : '#D1D5DB'; }
+  if (inn) { const on = d === 'in';  inn.style.background = on ? '#1D4ED8' : '#fff'; inn.style.color = on ? '#fff' : '#374151'; inn.style.borderColor = on ? '#1D4ED8' : '#D1D5DB'; }
+}
+async function saveCtMove(editId = null) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const g = id => document.getElementById(id);
+  const date = g('ct-date')?.value;
+  const type = g('ct-type')?.value;
+  const qty = parseInt(g('ct-qty')?.value, 10);
+  if (!date) return alert('날짜를 입력해주세요.');
+  if (!type) return alert('콘테이너 종류를 선택해주세요.');
+  if (!qty || qty <= 0) return alert('수량을 입력해주세요.');
+  const rec = {
+    date, direction: _ctDir, container_type: type,
+    owner: _ctOwnerOf(type),   // 종류의 owner 스냅샷(마스터 바뀌어도 기록 보존)
+    farm_name: g('ct-farm')?.value?.trim() || null,
+    qty,
+    feature: g('ct-feature')?.value?.trim() || null,
+    staff: g('ct-staff')?.value?.trim() || null,
+    note: g('ct-note')?.value?.trim() || null,
+  };
+  const btn = g('ct-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = editId ? '수정 중...' : '저장 중...'; }
+  try {
+    if (editId) {
+      const upd = await dbUpdateContainerMove(editId, rec);
+      const i = containerMoves.findIndex(m => String(m.id) === String(editId));
+      if (i >= 0) containerMoves[i] = upd || { ...containerMoves[i], ...rec };
+    } else {
+      const saved = await dbInsertContainerMove(rec);
+      if (saved) containerMoves.unshift(saved);
+    }
+    document.getElementById('modal-ct-move')?.remove();
+    showToast('콘테이너 이동 저장 완료');
+    renderContainers();
+  } catch (e) {
+    alert('저장 실패: ' + (e.message || e));
+    if (btn) { btn.disabled = false; btn.textContent = editId ? '수정' : '저장'; }
+  }
+}
+async function deleteCtMove(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const m = containerMoves.find(x => String(x.id) === String(id));
+  if (!m) return;
+  const ok = await showConfirmDanger({
+    title: '이동 기록 삭제',
+    subtitle: '이 콘테이너 이동 기록이 삭제됩니다',
+    items: [`${m.date} · ${m.direction === 'out' ? '나감' : '들어옴'} · ${m.container_type || ''} · ${fmtN(Number(m.qty) || 0)}개 (${m.farm_name || '-'})`],
+    resultNote: '회수/반납 대기 현황에서 반영됩니다 (되돌릴 수 없음)',
+    confirmText: '삭제'
+  });
+  if (!ok) return;
+  try {
+    await dbVoidContainerMove(id);
+    const i = containerMoves.findIndex(x => String(x.id) === String(id));
+    if (i >= 0) containerMoves.splice(i, 1);
+    showToast('삭제 완료');
+    renderContainers();
+  } catch (e) { alert('삭제 실패: ' + (e.message || e)); }
+}
+
+/* ── 종류 마스터 관리 모달 ── */
+function openCtTypeModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  document.getElementById('modal-ct-type')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'modal-ct-type'; modal.className = 'modal-bg';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:5000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:520px;width:100%;background:#fff;border-radius:12px;padding:0">
+      <div style="padding:16px 20px 12px;border-bottom:1px solid #F0F0F0;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:16px;font-weight:700">콘테이너 종류 관리</div>
+        <button onclick="document.getElementById('modal-ct-type').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9CA3AF">✕</button>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr auto;gap:6px;align-items:end;margin-bottom:12px">
+          <div><label style="${_ctLbl}">이름</label><input type="text" id="ctt-name" placeholder="예) 파랑" style="${_ctInp}"></div>
+          <div><label style="${_ctLbl}">소유</label><select id="ctt-owner" style="${_ctInp}"><option value="ours">우리것</option><option value="farm">농가것</option><option value="nhf">농협것</option></select></div>
+          <div><label style="${_ctLbl}">순서</label><input type="number" id="ctt-order" placeholder="99" style="${_ctInp}"></div>
+          <button onclick="ctTypeAdd()" style="padding:8px 12px;background:#2563EB;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">추가</button>
+        </div>
+        <div id="ct-type-list"></div>
+        <button onclick="document.getElementById('modal-ct-type').remove()" style="width:100%;padding:10px;margin-top:12px;background:#fff;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;cursor:pointer">닫기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  renderCtTypeList();
+}
+function renderCtTypeList() {
+  const box = document.getElementById('ct-type-list');
+  if (!box) return;
+  const list = [...containerTypes].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  if (!list.length) { box.innerHTML = `<div style="color:#aaa;font-size:13px;padding:10px 0">종류가 없습니다.</div>`; return; }
+  box.innerHTML = list.map(t => `
+    <div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr auto auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #F0F0F0">
+      <input type="text" value="${esc(t.name)}" id="ctt-n-${t.id}" style="${_ctInp}">
+      <select id="ctt-o-${t.id}" style="${_ctInp}">
+        <option value="ours"${t.owner === 'ours' ? ' selected' : ''}>우리것</option>
+        <option value="farm"${t.owner === 'farm' ? ' selected' : ''}>농가것</option>
+        <option value="nhf"${t.owner === 'nhf' ? ' selected' : ''}>농협것</option>
+      </select>
+      <input type="number" value="${t.sort_order ?? ''}" id="ctt-s-${t.id}" style="${_ctInp}">
+      <label style="font-size:11px;color:#6B7280;display:flex;align-items:center;gap:3px"><input type="checkbox" ${t.is_active !== false ? 'checked' : ''} onchange="ctTypeToggle('${t.id}', this.checked)">사용</label>
+      <span style="display:flex;gap:4px">
+        <button onclick="ctTypeSave('${t.id}')" style="border:1px solid #93C5FD;color:#2563EB;background:none;font-size:11px;padding:4px 7px;border-radius:5px;cursor:pointer">저장</button>
+        <button onclick="ctTypeDelete('${t.id}')" style="border:1px solid #FCA5A5;color:#DC2626;background:none;font-size:11px;padding:4px 7px;border-radius:5px;cursor:pointer">삭제</button>
+      </span>
+    </div>`).join('');
+}
+async function ctTypeAdd() {
+  const name = document.getElementById('ctt-name')?.value?.trim();
+  if (!name) return alert('이름을 입력하세요.');
+  if (containerTypes.some(t => t.name === name)) return alert('이미 있는 이름입니다.');
+  const owner = document.getElementById('ctt-owner')?.value || 'ours';
+  const order = parseInt(document.getElementById('ctt-order')?.value, 10);
+  try {
+    const row = await dbInsertContainerType({ name, owner, sort_order: isNaN(order) ? (containerTypes.length + 1) : order, is_active: true });
+    if (row) containerTypes.push(row);
+    document.getElementById('ctt-name').value = '';
+    document.getElementById('ctt-order').value = '';
+    renderCtTypeList(); renderContainers();
+  } catch (e) { alert('추가 실패: ' + (e.message || e)); }
+}
+async function ctTypeSave(id) {
+  const name = document.getElementById(`ctt-n-${id}`)?.value?.trim();
+  if (!name) return alert('이름을 입력하세요.');
+  const owner = document.getElementById(`ctt-o-${id}`)?.value || 'ours';
+  const order = parseInt(document.getElementById(`ctt-s-${id}`)?.value, 10);
+  try {
+    const upd = await dbUpdateContainerType(id, { name, owner, sort_order: isNaN(order) ? 99 : order });
+    const i = containerTypes.findIndex(t => String(t.id) === String(id));
+    if (i >= 0) containerTypes[i] = upd || { ...containerTypes[i], name, owner, sort_order: isNaN(order) ? 99 : order };
+    showToast('저장됨');
+    renderCtTypeList(); renderContainers();
+  } catch (e) { alert('저장 실패: ' + (e.message || e)); }
+}
+async function ctTypeToggle(id, active) {
+  try {
+    await dbUpdateContainerType(id, { is_active: active });
+    const i = containerTypes.findIndex(t => String(t.id) === String(id));
+    if (i >= 0) containerTypes[i].is_active = active;
+    renderContainers();
+  } catch (e) { alert('변경 실패: ' + (e.message || e)); }
+}
+async function ctTypeDelete(id) {
+  const t = containerTypes.find(x => String(x.id) === String(id));
+  if (!t) return;
+  if (!confirm(`"${t.name}" 종류를 삭제할까요? (기존 이동 기록은 유지됩니다)`)) return;
+  try {
+    await dbDeleteContainerType(id);
+    containerTypes = containerTypes.filter(x => String(x.id) !== String(id));
+    renderCtTypeList(); renderContainers();
+  } catch (e) { alert('삭제 실패(사용 중이면 비활성 권장): ' + (e.message || e)); }
+}
 
 // ── 시작
 document.addEventListener('DOMContentLoaded', initApp);

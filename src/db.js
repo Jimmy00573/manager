@@ -100,6 +100,16 @@ async function dbInsertManualTransaction(data) { const r = await sbInsert('manua
 async function dbUpdateManualTransaction(id, data) { const r = await sbUpdate('manual_transactions', id, data); return r[0]; }
 async function dbVoidManualTransaction(id) { return sbUpdate('manual_transactions', id, { is_void: true }); }   // soft delete
 
+// ── 콘테이너 관리 (종류 마스터 + 이동 기록). 재고와 독립.
+async function dbGetContainerTypes() { try { return await sbGet('container_types', 'order=sort_order.asc,id.asc'); } catch(e) { return []; } }
+async function dbInsertContainerType(data) { const r = await sbInsert('container_types', data); return r[0]; }
+async function dbUpdateContainerType(id, data) { const r = await sbUpdate('container_types', id, data); return r[0]; }
+async function dbDeleteContainerType(id) { return sbDelete('container_types', id); }
+async function dbGetContainerMoves() { try { return await sbGet('container_moves', 'is_void=eq.false&order=date.desc,created_at.desc'); } catch(e) { return []; } }
+async function dbInsertContainerMove(data) { const r = await sbInsert('container_moves', data); return r[0]; }
+async function dbUpdateContainerMove(id, data) { const r = await sbUpdate('container_moves', id, data); return r[0]; }
+async function dbVoidContainerMove(id) { return sbUpdate('container_moves', id, { is_void: true }); }   // soft delete
+
 // ── 파치 사용처
 async function dbGetPachiUsages() { try { return await sbGet('pachi_usages', 'order=sort_order'); } catch(e) { return []; } }
 async function dbInsertPachiUsage(data) { const r = await sbInsert('pachi_usages', data); return r[0]; }

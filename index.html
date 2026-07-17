@@ -266,6 +266,7 @@
 <div id="anav" class="nav">
   <button class="nbtn active" onclick="T('inv')" data-tab="inv">📦 재고관리</button>
   <button class="nbtn" onclick="T('transport')" data-tab="transport">🚜 수확 및 수송 관리</button>
+  <button class="nbtn" onclick="T('cont')" data-tab="cont">🧺 콘테이너</button>
   <div style="flex:1"></div>
   <button class="nbtn" onclick="T('set')" data-tab="set" style="border-left:1px solid var(--border)">⚙ 설정</button>
 </div>
@@ -576,6 +577,8 @@
 </div>
 
 <!-- 설정 -->
+<div id="p-cont" class="panel"></div>
+
 <div id="p-set" class="panel">
   <!-- 설정 메뉴 -->
   <div id="set-menu-view">
@@ -1799,8 +1802,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="src/supabase-client.js?v=26"></script>
-<script src="src/db.js?v=17"></script>
+<script src="src/db.js?v=18"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=357"></script>
+<script src="src/app.js?v=358"></script>
 </body>
 </html>
