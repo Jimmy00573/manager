@@ -97,6 +97,8 @@ let _farmViewSearch = '';
 let _farmViewSort = 'remaining-desc';
 let _farmExpanded = new Set();
 let _catExpanded = new Set();
+let _inoutCatExpanded = new Set();   // 입출고 요약 '카테고리별' 탭 전용 접힘상태(기본 접힘). _catExpanded와 키 충돌 방지 위해 별도
+let _inoutCatData = null;            // 카테고리별 탭 부분 재렌더용 데이터 { catRows, totalCount, totalQty }
 let _farmSubTab = {};  // farm → 'inbound' | 'sorting'
 let _currentFarmList = [];
 let _currentCatList = [];
@@ -8010,18 +8012,8 @@ function renderInvSummary() {
       const ob = CAT_ORDER.indexOf(b[0]) === -1 ? 99 : CAT_ORDER.indexOf(b[0]);
       return oa - ob || a[0].localeCompare(b[0], 'ko');
     });
-    const categoryTabHtml = `<table style="width:100%;border-collapse:collapse">
-      <thead><tr><th style="${TH_T}">구분 / 기사</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
-      <tbody>
-        ${catRows.map(([cat, g]) => {
-          const subRows = Object.values(g.drvs).sort((a, b) => b.qty - a.qty);
-          const head = `<tr><td style="${TD_TL}">${categoryBadge(cat)}</td><td style="${TD_TR}">${g.cnt}</td><td style="${TD_TR}">${fmtN(g.qty)}</td></tr>`;
-          const subs = subRows.map(d => `<tr><td style="${TD_L};padding-left:24px;color:#6B7280">└ ${drvHtml(d.drv)}</td><td style="${TD_R}">${d.cnt}</td><td style="${TD_R}">${fmtN(d.qty)}</td></tr>`).join('');
-          return head + subs;
-        }).join('')}
-        <tr><td style="${TD_TL}">합계</td><td style="${TD_TR}">${totalCount}</td><td style="${TD_TR}">${fmtN(totalQty)}</td></tr>
-      </tbody>
-    </table>`;
+    _inoutCatData = { catRows, totalCount, totalQty };   // 접기/펼치기 부분 재렌더용
+    const categoryTabHtml = _renderInoutCatTable();
 
     inTabContent = `<div style="padding:0 16px 12px">
       <div class="today-tabs">
@@ -8363,6 +8355,52 @@ function todayTabSwitch(tab) {
     if (btn) btn.className = `today-tab${t === tab ? ' active' : ''}`;
     if (content) content.style.display = t === tab ? '' : 'none';
   });
+}
+
+// 입출고 요약 '카테고리별' 탭: 접기/펼치기(기본 접힘, 헤더 클릭 토글). 전체 재렌더 없이 이 탭 내부만 갱신.
+function _renderInoutCatTable() {
+  if (!_inoutCatData) return '';
+  const { catRows, totalCount, totalQty } = _inoutCatData;
+  const TH_T = 'text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
+  const TH_R = 'text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
+  const TD_L = 'padding:4px 8px;color:#374151;font-size:12px';
+  const TD_R = 'padding:4px 8px;text-align:right;font-weight:600;color:#111827;font-size:12px';
+  const TD_TL = 'padding:6px 8px;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
+  const TD_TR = 'padding:6px 8px;text-align:right;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
+  const allExpanded = catRows.length > 0 && catRows.every(([cat]) => _inoutCatExpanded.has(cat));
+  return `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:2px">
+      <button onclick="_inoutCatToggleAll()" style="font-size:11px;color:#2563EB;background:none;border:none;cursor:pointer;padding:2px 4px">${allExpanded ? '전체 접기' : '전체 펼치기'}</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="${TH_T}">구분 / 기사</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <tbody>
+        ${catRows.map(([cat, g]) => {
+          const isExp = _inoutCatExpanded.has(cat);
+          const head = `<tr onclick="_inoutCatToggle('${esc(cat)}')" style="cursor:pointer"><td style="${TD_TL}"><span style="color:#9CA3AF;margin-right:4px;font-size:11px">${isExp ? '▾' : '▸'}</span>${categoryBadge(cat)}</td><td style="${TD_TR}">${g.cnt}</td><td style="${TD_TR}">${fmtN(g.qty)}</td></tr>`;
+          if (!isExp) return head;
+          const subRows = Object.values(g.drvs).sort((a, b) => b.qty - a.qty);
+          const subs = subRows.map(d => `<tr><td style="${TD_L};padding-left:28px;color:#6B7280">└ ${drvHtml(d.drv)}</td><td style="${TD_R}">${d.cnt}</td><td style="${TD_R}">${fmtN(d.qty)}</td></tr>`).join('');
+          return head + subs;
+        }).join('')}
+        <tr><td style="${TD_TL}">합계</td><td style="${TD_TR}">${totalCount}</td><td style="${TD_TR}">${fmtN(totalQty)}</td></tr>
+      </tbody>
+    </table>`;
+}
+function _inoutCatToggle(cat) {
+  if (_inoutCatExpanded.has(cat)) _inoutCatExpanded.delete(cat);
+  else _inoutCatExpanded.add(cat);
+  const el = document.getElementById('today-tab-category');
+  if (el) el.innerHTML = _renderInoutCatTable();
+}
+function _inoutCatToggleAll() {
+  if (!_inoutCatData) return;
+  const cats = _inoutCatData.catRows.map(([cat]) => cat);
+  const allExpanded = cats.length > 0 && cats.every(c => _inoutCatExpanded.has(c));
+  if (allExpanded) cats.forEach(c => _inoutCatExpanded.delete(c));
+  else             cats.forEach(c => _inoutCatExpanded.add(c));
+  const el = document.getElementById('today-tab-category');
+  if (el) el.innerHTML = _renderInoutCatTable();
 }
 
 function setSummaryDate(d) { if (d) { _summaryDate = d; renderInvSummary(); } }
