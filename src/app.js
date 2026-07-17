@@ -6517,6 +6517,19 @@ function openOutboundModal(regId) {
   const groups = getSizeGroupsFor(info.product);
   const allSizes = groups.flatMap(g => g.sizes);
 
+  // 출고 등급: 이 배치에 실제 존재하는 등급만 (재고현황 등급탭 패턴 재사용 — 일반→활성 브릭스(sort_order)→잔존)
+  const _obExisting = new Set(batchRecs.map(r => r.quality_grade || '일반'));
+  const _obActiveBrix = brixGrades
+    .filter(g => g.is_active !== false && _obExisting.has(g.label))
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
+  const _obOthers = [..._obExisting]
+    .filter(lbl => lbl !== '일반' && !_obActiveBrix.includes(lbl))
+    .sort((a, b) => a.localeCompare(b, 'ko'));
+  const _obGradeKeys = [...(_obExisting.has('일반') ? ['일반'] : []), ..._obActiveBrix, ..._obOthers];
+  // 현재 등급이 이 배치에 없으면 첫 등급으로 초기화(빈 목록 방지)
+  if (!_obGradeKeys.includes(_obGrade)) _obGrade = _obGradeKeys[0] || '일반';
+
   const gradeRecs = batchRecs.filter(r => (r.quality_grade || '일반') === _obGrade);
   const curQty = {};
   allSizes.forEach(sz => curQty[sz] = 0);
@@ -6561,9 +6574,8 @@ function openOutboundModal(regId) {
       </div>
       <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:6px">출고 등급</label>
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <button onclick="setObGrade('일반')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_obGrade==='일반'?'#1565C0':'#D1D5DB'};background:${_obGrade==='일반'?'#1565C0':'#fff'};color:${_obGrade==='일반'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">일반</button>
-          <button onclick="setObGrade('고당')" style="flex:1;padding:7px;border-radius:6px;border:1px solid ${_obGrade==='고당'?'#1565C0':'#D1D5DB'};background:${_obGrade==='고당'?'#1565C0':'#fff'};color:${_obGrade==='고당'?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">고당</button>
+        <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          ${_obGradeKeys.map(g => `<button onclick="setObGrade('${esc(g)}')" style="flex:1;min-width:64px;padding:7px;border-radius:6px;border:1px solid ${_obGrade===g?'#1565C0':'#D1D5DB'};background:${_obGrade===g?'#1565C0':'#fff'};color:${_obGrade===g?'#fff':'#374151'};font-size:13px;font-weight:600;cursor:pointer">${esc(g)}</button>`).join('')}
         </div>
         <div style="font-size:11px;color:#6B7280">${_obGrade} 재고만 표시. 다른 등급은 등급 바꿔 한 번 더 출고.</div>
       </div>
