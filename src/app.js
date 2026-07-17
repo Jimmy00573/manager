@@ -3877,6 +3877,63 @@ function popCtypeSels() {
     const el = document.getElementById(id);
     if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
   });
+  renderIbContainerSection();   // 입고 모달 콘테이너 섹션도 종류 변경 시 갱신
+}
+
+// 입고 모달 콘테이너 입력 섹션 — 활성 종류별 수량(+남의것은 특징). 선택(필수 아님).
+function renderIbContainerSection() {
+  const el = document.getElementById('ib-container-sec');
+  if (!el) return;
+  const active = [...containerTypes].filter(t => t.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  if (!active.length) { el.innerHTML = ''; return; }
+  const rows = active.map(t => {
+    const isOthers = t.owner === 'others';
+    return `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span style="flex:0 0 78px;font-size:13px">${esc(t.name)} <span style="color:#9CA3AF;font-size:10px">${isOthers ? '남의' : '우리'}</span></span>
+      <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" style="flex:0 0 66px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+      <span style="font-size:12px;color:#6B7280">개</span>
+      ${isOthers ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">` : `<span style="flex:1"></span>`}
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div class="ib-section-label">🧺 콘테이너 (선택)</div>
+    <div style="border:1px solid #E5E7EB;border-radius:8px;padding:10px;background:#FAFAFA">
+      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px">우리것=농가 회수 처리 · 남의것=공장 반납대기 등록 (자동). 입력 안 하면 콘테이너 처리 없음.</div>
+      ${rows}
+    </div>`;
+}
+
+// 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 우리것→picks 원물수거(회수), 남의것→own_ins(반납대기).
+async function _saveInboundContainers(date, farm) {
+  const el = document.getElementById('ib-container-sec');
+  if (!el || !farm) return;
+  const active = [...containerTypes].filter(t => t.is_active !== false);
+  const jobs = [];
+  active.forEach(t => {
+    const qty = parseInt(document.getElementById(`ibc-q-${t.id}`)?.value, 10) || 0;
+    if (qty <= 0) return;
+    const feature = document.getElementById(`ibc-f-${t.id}`)?.value?.trim() || null;
+    jobs.push({ t, qty, feature });
+  });
+  if (!jobs.length) return;
+  for (const j of jobs) {
+    try {
+      if (j.t.owner === 'ours') {
+        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, auto: true, note: '입고 회수' });
+        if (row) picks.unshift(row);
+      } else {
+        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin' });
+        if (row) ownIns.unshift(row);
+      }
+    } catch (e) {
+      alert(`콘테이너(${j.t.name}) 저장 실패: ${e.message}\n입고는 저장됨. 콘테이너 화면에서 수동 추가해 주세요.`);
+    }
+  }
+  // 입력칸 리셋 + 관련 현황 재렌더
+  jobs.forEach(j => {
+    const q = document.getElementById(`ibc-q-${j.t.id}`); if (q) q.value = '';
+    const f = document.getElementById(`ibc-f-${j.t.id}`); if (f) f.value = '';
+  });
+  renderOwn(); renderPick(); renderDash();
 }
 
 // ── 파치 사용처 관리 ────────────────────────────────────────────
@@ -13057,6 +13114,7 @@ async function saveInboundSorted(keepOpen) {
       }
     }
     inventoryRecords.push(...inserted);
+    await _saveInboundContainers(date, supplier);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
     renderInvSummary(); renderInboundList();
 
     const clearSorted = () => {
@@ -13196,6 +13254,7 @@ async function _addInboundCore(keepOpen) {
         const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
         inboundRecords.unshift({ ...row, driver: driverObj });
       }
+      await _saveInboundContainers(date, farm_name);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
       renderInvSummary(); renderInboundList();
       if (keepOpen) {
         clearFormPartial();
