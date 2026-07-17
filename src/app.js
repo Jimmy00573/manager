@@ -52,6 +52,7 @@ let _pachiViewJustChanged = true;      // 뷰 전환/최초 렌더 직후 = 품�
 let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
+let manualTransactions = [];   // 수동 거래내역 (정산 참고용, 재고 무관)
 let pachiSizes = [];        // 파치 크기 마스터 — 1단계: 데이터만
 let pachiConditions = [];   // 파치 상태 마스터 — 1단계: 데이터만
 let productWeights = {};
@@ -260,6 +261,7 @@ async function initApp() {
     pachiSizes = pachiSizeData || [];
     pachiConditions = pachiCondData || [];
     partners = await dbGetPartners().catch(() => []);
+    manualTransactions = await dbGetManualTransactions().catch(() => []);
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -7112,7 +7114,7 @@ function renderInvAll() {
 }
 
 function exportOutboundCSV() {
-  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스', inbound: '입고' };
+  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스', inbound: '입고', manual_tx: '수동' };
   const txOut = invOutbounds.filter(r => !r.is_void).map(r => ({
     kind: 'out', date: r.date, product: r.product||'', size_code: r.size_code||'',
     qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
@@ -7125,7 +7127,13 @@ function exportOutboundCSV() {
     amount: Number(r.amount)||0, source_type: 'inbound', expiry_date: '',
     note: r.note||'', unit_price: r.unit_price||null, weight_kg: r.weight_kg||null
   }));
-  const filtered = [...txOut, ...txIn].filter(t => {
+  const txManual = manualTransactions.filter(r => !r.is_void).map(r => ({
+    kind: r.direction === 'in' ? 'in' : 'out', date: r.date||'', product: r.product||'', size_code: r.size_code||'',
+    qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
+    amount: Number(r.amount)||0, source_type: 'manual_tx', expiry_date: '',
+    note: r.note||'', unit_price: r.unit_price||null, weight_kg: null
+  }));
+  const filtered = [...txOut, ...txIn, ...txManual].filter(t => {
     if (_obHistFilter.kind    && t.kind !== _obHistFilter.kind)          return false;
     if (_obHistFilter.from    && t.date < _obHistFilter.from)            return false;
     if (_obHistFilter.to      && t.date > _obHistFilter.to)              return false;
@@ -7174,7 +7182,12 @@ function renderOutboundHistory() {
     qty: Number(r.quantity)||0, unit: 'CT', partner: r.farm_name||'',
     amount: Number(r.amount)||0, source_type: 'inbound', expiry_date: null, category: r.inbound_category, _raw: r
   }));
-  const allTx = [...txOut, ...txIn];
+  const txManual = manualTransactions.filter(r => !r.is_void).map(r => ({
+    kind: r.direction === 'in' ? 'in' : 'out', date: r.date||'', product: r.product||'', size_code: r.size_code||null,
+    qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
+    amount: Number(r.amount)||0, source_type: 'manual_tx', expiry_date: null, category: r.category, manual: true, _raw: r
+  }));
+  const allTx = [...txOut, ...txIn, ...txManual];
 
   const allProds    = [...new Set(allTx.map(t => t.product).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
   const allPartners = [...new Set(allTx.map(t => t.partner).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
@@ -7194,10 +7207,11 @@ function renderOutboundHistory() {
 
   // ── 뱃지
   function kindBadge(t) {
-    if (t.kind === 'in') return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#DBEAFE;color:#1D4ED8;font-weight:600">입고</span>`;
+    const manualTag = t.manual ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:#E5E7EB;color:#6B7280;font-weight:600;margin-right:3px">수동</span>` : '';
+    if (t.kind === 'in') return manualTag + `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#DBEAFE;color:#1D4ED8;font-weight:600">입고</span>`;
     const srcMap = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'] };
     const [label, color] = srcMap[t.source_type] || ['출고','#EF4444'];
-    return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:${color}20;color:${color};font-weight:600">${label}</span>`;
+    return manualTag + `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:${color}20;color:${color};font-weight:600">${label}</span>`;
   }
 
   const isAdmin = sessionStorage.getItem('citrus_role') === 'admin';
@@ -7212,13 +7226,13 @@ function renderOutboundHistory() {
           : `<span style="font-weight:600;color:#DC2626">+${fmtN(Math.round(t.amount))}원</span>${r.unit_price?`<br><span style="font-size:10px;color:#9CA3AF">${r.weight_kg?fmtN(r.weight_kg)+'kg·':''}×${fmtN(r.unit_price)}</span>`:''}`)
       : '<span style="color:#D1D5DB">-</span>';
     let actionCell = '';
-    if (isAdmin) {
+    if (isAdmin && !t.manual) {
       actionCell += `<button onclick="openTxPriceEdit('${t.kind}','${r.id}')" style="background:none;border:1px solid #C7D2FE;color:#4F46E5;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">단가</button>`;
     }
-    if (isAdmin && t.kind === 'in' && t.category === '선과품') {
+    if (isAdmin && !t.manual && t.kind === 'in' && t.category === '선과품') {
       actionCell += `<button onclick="openSortedInboundDetail('${r.id}', true)" style="background:none;border:1px solid #A7F3D0;color:#065F46;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">사이즈별</button>`;
     }
-    if (t.kind==='out' && isAdmin) {
+    if (t.kind==='out' && isAdmin && !t.manual) {
       const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0;
       actionCell += `<button onclick="openOutboundEdit('${r.id}')" style="background:none;border:1px solid #93C5FD;color:#2563EB;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-right:4px">수정</button>`
         + (cancelable ? `<button onclick="confirmCancelOutbound('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">취소</button>` : '');
@@ -7302,13 +7316,15 @@ function renderOutboundHistory() {
             <option value="pachi"${_obHistFilter.src==='pachi'?' selected':''}>파치</option>
             <option value="unsorted"${_obHistFilter.src==='unsorted'?' selected':''}>미선과</option>
             <option value="juice"${_obHistFilter.src==='juice'?' selected':''}>주스</option>
+            <option value="manual_tx"${_obHistFilter.src==='manual_tx'?' selected':''}>수동</option>
           </select></div>`:''}
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">묶음</label>
           <select onchange="_obHistFilter.group=this.value;renderOutboundHistory()" ${sel()}>
             <option value="partner"${(_obHistFilter.group||'partner')==='partner'?' selected':''}>거래처/농가별</option>
             <option value="product"${_obHistFilter.group==='product'?' selected':''}>품목별</option>
           </select></div>
-        <div style="align-self:flex-end">
+        <div style="align-self:flex-end;display:flex;gap:6px">
+          ${isAdmin ? `<button onclick="openManualTxModal()" style="padding:6px 12px;border:1px solid #2563EB;border-radius:6px;font-size:13px;background:#2563EB;color:#fff;cursor:pointer;white-space:nowrap">+ 수동 등록</button>` : ''}
           <button onclick="exportOutboundCSV()" style="padding:6px 12px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;white-space:nowrap">📥 내보내기</button>
         </div>
       </div>
@@ -7333,6 +7349,119 @@ function renderOutboundHistory() {
     </div>`;
 }
 
+// ── 수동 거래 등록 (정산 참고용, 재고 무관) ─────────────────────────
+let _mtxDir = 'out';   // 입출 구분
+
+function openManualTxModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  _mtxDir = 'out';
+  document.getElementById('modal-manual-tx')?.remove();
+
+  const partnerOpts = partners.filter(p => p.is_active !== false)
+    .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  const prodOpts = [...itemDefs].map(i => i.name).sort((a, b) => a.localeCompare(b, 'ko'))
+    .map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  const gradeOpts = ['일반', ...brixGrades.filter(g => g.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(g => g.label)]
+    .map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  const catOpts = categories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+
+  const inp = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
+  const lbl = 'font-size:12px;color:#6B7280;display:block;margin-bottom:4px';
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-manual-tx';
+  modal.className = 'modal-bg';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:5000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:460px;width:100%;background:#fff;border-radius:12px;padding:0">
+      <div style="padding:16px 20px 12px;border-bottom:1px solid #F0F0F0;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:16px;font-weight:700">✍️ 수동 거래 등록</div>
+        <button onclick="document.getElementById('modal-manual-tx').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9CA3AF">✕</button>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="font-size:11px;color:#9CA3AF;margin-bottom:12px">정산·거래처 참고용 기록입니다. 재고에는 영향을 주지 않습니다.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px">
+          <div><label style="${lbl}">날짜 *</label><input type="date" id="mtx-date" value="${td()}" style="${inp}"></div>
+          <div><label style="${lbl}">입출 구분 *</label>
+            <div style="display:flex;gap:6px">
+              <button type="button" id="mtx-dir-out" onclick="_mtxSetDir('out')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #DC2626;background:#DC2626;color:#fff;font-size:13px;font-weight:600;cursor:pointer">출고</button>
+              <button type="button" id="mtx-dir-in" onclick="_mtxSetDir('in')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">입고</button>
+            </div>
+          </div>
+          <div><label style="${lbl}">거래처</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
+          <div><label style="${lbl}">품목</label><select id="mtx-product" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
+          <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
+          <div><label style="${lbl}">카테고리</label><select id="mtx-cat" style="${inp}"><option value="">선택</option>${catOpts}</select></div>
+          <div><label style="${lbl}">사이즈</label><input type="text" id="mtx-size" placeholder="(선택)" style="${inp}"></div>
+          <div><label style="${lbl}">단위</label><input type="text" id="mtx-unit" value="CT" style="${inp}"></div>
+          <div><label style="${lbl}">수량 *</label><input type="number" id="mtx-qty" step="0.1" min="0" oninput="_mtxCalcAmount()" style="${inp}"></div>
+          <div><label style="${lbl}">단가 (원)</label><input type="number" id="mtx-price" step="1" min="0" oninput="_mtxCalcAmount()" placeholder="(선택)" style="${inp}"></div>
+          <div style="grid-column:1/3"><label style="${lbl}">금액 (원) <span style="color:#9CA3AF;font-weight:400">— 단가×수량 자동, 직접 수정 가능</span></label><input type="number" id="mtx-amount" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
+          <div style="grid-column:1/3"><label style="${lbl}">메모</label><input type="text" id="mtx-note" placeholder="(선택)" style="${inp}"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button id="mtx-save-btn" onclick="saveManualTx()" style="flex:1;padding:10px;background:#2563EB;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">저장</button>
+          <button onclick="document.getElementById('modal-manual-tx').remove()" style="padding:10px 20px;background:#fff;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;cursor:pointer">취소</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function _mtxSetDir(d) {
+  _mtxDir = d;
+  const out = document.getElementById('mtx-dir-out'), inn = document.getElementById('mtx-dir-in');
+  if (out) { const on = d === 'out'; out.style.background = on ? '#DC2626' : '#fff'; out.style.color = on ? '#fff' : '#374151'; out.style.borderColor = on ? '#DC2626' : '#D1D5DB'; }
+  if (inn) { const on = d === 'in';  inn.style.background = on ? '#1D4ED8' : '#fff'; inn.style.color = on ? '#fff' : '#374151'; inn.style.borderColor = on ? '#1D4ED8' : '#D1D5DB'; }
+}
+
+// 단가↔금액: 단가가 입력돼 있으면 금액=round(단가×수량) 자동. 단가 비어 있으면 금액은 직접입력값 유지.
+function _mtxCalcAmount() {
+  const qty = parseFloat(document.getElementById('mtx-qty')?.value) || 0;
+  const priceEl = document.getElementById('mtx-price');
+  if (!priceEl || priceEl.value === '') return;
+  const price = parseFloat(priceEl.value);
+  if (isNaN(price)) return;
+  const amt = document.getElementById('mtx-amount');
+  if (amt) amt.value = Math.round(price * qty);
+}
+
+async function saveManualTx() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const g = id => document.getElementById(id);
+  const date = g('mtx-date')?.value;
+  const qty = parseFloat(g('mtx-qty')?.value);
+  if (!date) return alert('날짜를 입력해주세요.');
+  if (!_mtxDir) return alert('입출 구분을 선택해주세요.');
+  if (!qty || qty <= 0) return alert('수량을 입력해주세요.');
+  const rec = {
+    date, direction: _mtxDir,
+    partner_name: g('mtx-partner')?.value || null,
+    product: g('mtx-product')?.value || null,
+    size_code: g('mtx-size')?.value?.trim() || null,
+    quality_grade: g('mtx-grade')?.value || null,
+    category: g('mtx-cat')?.value || null,
+    quantity: qty,
+    unit: g('mtx-unit')?.value?.trim() || 'CT',
+    unit_price: g('mtx-price')?.value ? Number(g('mtx-price').value) : null,
+    amount: g('mtx-amount')?.value ? Number(g('mtx-amount').value) : null,
+    note: g('mtx-note')?.value?.trim() || null,
+    created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+  };
+  const btn = g('mtx-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+  try {
+    const saved = await dbInsertManualTransaction(rec);
+    if (saved) manualTransactions.unshift(saved);
+    document.getElementById('modal-manual-tx')?.remove();
+    showToast('수동 거래 등록 완료');
+    renderOutboundHistory();
+  } catch (e) {
+    alert('저장 실패: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+  }
+}
 
 async function confirmCancelOutbound(id) {
   const r = invOutbounds.find(x => String(x.id) === String(id));

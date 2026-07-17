@@ -94,6 +94,11 @@ async function dbInsertPartner(data) { const r = await sbInsert('partners', data
 async function dbUpdatePartner(id, data) { const r = await sbUpdate('partners', id, data); return r[0]; }
 async function dbDeletePartner(id) { return await sbDelete('partners', id); }
 
+// ── 수동 거래내역 (정산 참고용, 재고 무관 순수 기록)
+async function dbGetManualTransactions() { try { return await sbGet('manual_transactions', 'is_void=eq.false&order=date.desc,created_at.desc'); } catch(e) { return []; } }
+async function dbInsertManualTransaction(data) { const r = await sbInsert('manual_transactions', data); return r[0]; }
+async function dbUpdateManualTransaction(id, data) { const r = await sbUpdate('manual_transactions', id, data); return r[0]; }
+
 // ── 파치 사용처
 async function dbGetPachiUsages() { try { return await sbGet('pachi_usages', 'order=sort_order'); } catch(e) { return []; } }
 async function dbInsertPachiUsage(data) { const r = await sbInsert('pachi_usages', data); return r[0]; }
