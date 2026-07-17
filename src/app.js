@@ -7244,7 +7244,7 @@ function renderOutboundHistory() {
     const rowBg = t.kind === 'in' ? 'background:#F3F4F6;' : '';
     return `<tr style="${rowBg}border-bottom:1px solid #E5E7EB">
       <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${t.date}</td>
-      <td style="padding:7px 10px;font-size:13px">${esc(t.product)}${size}${expiry}</td>
+      <td style="padding:7px 10px;font-size:13px">${esc(t.product)}${size}${expiry}${r.note ? `<br><span style="font-size:10px;color:#9CA3AF">📝 ${esc(r.note)}</span>` : ''}</td>
       <td style="padding:7px 10px">${kindBadge(t)}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(t.partner||'-')}${t.manual && t.farm ? `<br><span style="font-size:10px;color:#9CA3AF">농가: ${esc(t.farm)}</span>` : ''}</td>
       <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(t.qty)} ${esc(t.unit)}</td>
