@@ -7994,15 +7994,46 @@ function renderInvSummary() {
       </tbody>
     </table>`;
 
+    // 카테고리별 탭: 1차 category(||'상품') → 2차 driverKey 소계
+    const catMap = {};
+    summaryInbounds.forEach(r => {
+      const cat = r.inbound_category || '상품';
+      const drv = getDrv(r);
+      if (!catMap[cat]) catMap[cat] = { qty: 0, cnt: 0, drvs: {} };
+      catMap[cat].qty += r.quantity; catMap[cat].cnt++;
+      if (!catMap[cat].drvs[drv.key]) catMap[cat].drvs[drv.key] = { drv, qty: 0, cnt: 0 };
+      catMap[cat].drvs[drv.key].qty += r.quantity; catMap[cat].drvs[drv.key].cnt++;
+    });
+    const CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '파치'];
+    const catRows = Object.entries(catMap).sort((a, b) => {
+      const oa = CAT_ORDER.indexOf(a[0]) === -1 ? 99 : CAT_ORDER.indexOf(a[0]);
+      const ob = CAT_ORDER.indexOf(b[0]) === -1 ? 99 : CAT_ORDER.indexOf(b[0]);
+      return oa - ob || a[0].localeCompare(b[0], 'ko');
+    });
+    const categoryTabHtml = `<table style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="${TH_T}">구분 / 기사</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <tbody>
+        ${catRows.map(([cat, g]) => {
+          const subRows = Object.values(g.drvs).sort((a, b) => b.qty - a.qty);
+          const head = `<tr><td style="${TD_TL}">${categoryBadge(cat)}</td><td style="${TD_TR}">${g.cnt}</td><td style="${TD_TR}">${fmtN(g.qty)}</td></tr>`;
+          const subs = subRows.map(d => `<tr><td style="${TD_L};padding-left:24px;color:#6B7280">└ ${drvHtml(d.drv)}</td><td style="${TD_R}">${d.cnt}</td><td style="${TD_R}">${fmtN(d.qty)}</td></tr>`).join('');
+          return head + subs;
+        }).join('')}
+        <tr><td style="${TD_TL}">합계</td><td style="${TD_TR}">${totalCount}</td><td style="${TD_TR}">${fmtN(totalQty)}</td></tr>
+      </tbody>
+    </table>`;
+
     inTabContent = `<div style="padding:0 16px 12px">
       <div class="today-tabs">
         <span id="today-tab-btn-list" class="today-tab active" onclick="todayTabSwitch('list')">목록</span>
         <span id="today-tab-btn-driver" class="today-tab" onclick="todayTabSwitch('driver')">기사별</span>
         <span id="today-tab-btn-product" class="today-tab" onclick="todayTabSwitch('product')">품목별</span>
+        <span id="today-tab-btn-category" class="today-tab" onclick="todayTabSwitch('category')">카테고리별</span>
       </div>
       <div id="today-tab-list">${listTabHtml}</div>
       <div id="today-tab-driver" style="display:none">${driverTabHtml}</div>
       <div id="today-tab-product" style="display:none">${productTabHtml}</div>
+      <div id="today-tab-category" style="display:none">${categoryTabHtml}</div>
     </div>`;
   } else {
     inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
@@ -8326,7 +8357,7 @@ function renderInvSummary() {
 }
 
 function todayTabSwitch(tab) {
-  ['list', 'driver', 'product'].forEach(t => {
+  ['list', 'driver', 'product', 'category'].forEach(t => {
     const btn = document.getElementById(`today-tab-btn-${t}`);
     const content = document.getElementById(`today-tab-${t}`);
     if (btn) btn.className = `today-tab${t === tab ? ' active' : ''}`;
