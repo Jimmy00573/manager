@@ -100,6 +100,12 @@ async function dbInsertManualTransaction(data) { const r = await sbInsert('manua
 async function dbUpdateManualTransaction(id, data) { const r = await sbUpdate('manual_transactions', id, data); return r[0]; }
 async function dbVoidManualTransaction(id) { return sbUpdate('manual_transactions', id, { is_void: true }); }   // soft delete
 
+// ── 콘테이너 종류 마스터 (owner: ours 우리것 / others 남의것)
+async function dbGetContainerTypes() { try { return await sbGet('container_types', 'order=sort_order.asc,id.asc'); } catch(e) { return []; } }
+async function dbInsertContainerType(data) { const r = await sbInsert('container_types', data); return r[0]; }
+async function dbUpdateContainerType(id, data) { const r = await sbUpdate('container_types', id, data); return r[0]; }
+async function dbDeleteContainerType(id) { return sbDelete('container_types', id); }
+
 // ── 파치 사용처
 async function dbGetPachiUsages() { try { return await sbGet('pachi_usages', 'order=sort_order'); } catch(e) { return []; } }
 async function dbInsertPachiUsage(data) { const r = await sbInsert('pachi_usages', data); return r[0]; }

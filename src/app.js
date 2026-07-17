@@ -53,6 +53,7 @@ let categories = [], sizeGrades = [], itemDefs = [], itemSizeRules = [];
 let inboundRecords = [], processingRecords = [], qualityCriteria = [], storageLocations = [], pachiUsages = [];
 let brixGrades = [];   // 당도(브릭스) 등급 마스터 — 1단계: 데이터만
 let manualTransactions = [];   // 수동 거래내역 (정산 참고용, 재고 무관)
+let containerTypes = [];   // 콘테이너 종류 마스터 (우리것/남의것)
 let pachiSizes = [];        // 파치 크기 마스터 — 1단계: 데이터만
 let pachiConditions = [];   // 파치 상태 마스터 — 1단계: 데이터만
 let productWeights = {};
@@ -262,6 +263,7 @@ async function initApp() {
     pachiConditions = pachiCondData || [];
     partners = await dbGetPartners().catch(() => []);
     manualTransactions = await dbGetManualTransactions().catch(() => []);
+    containerTypes = await dbGetContainerTypes().catch(() => []);
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -1663,7 +1665,7 @@ async function addOwnIn() {
   if (!date || !farm || !qty) { alert('반입일자, 농가명, 수량을 입력하세요'); return; }
   if (!gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; }
   try {
-    const row = await dbInsertOwnIn({ date, farm, qty, feature: gv('oi-feature'), staff: gv('oi-staff') });
+    const row = await dbInsertOwnIn({ date, farm, qty, ctype: gv('oi-ctype') || null, feature: gv('oi-feature'), staff: gv('oi-staff') });
     ownIns.unshift(row); clr('oi-qty', 'oi-feature', 'oi-staff'); renderOwn(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -1687,6 +1689,7 @@ async function addOwnOut() {
       date,
       farm,
       qty,
+      ctype: gv('oo-ctype') || null,
       method: gv('oo-method'),
       feature: gv('oo-feature'),
       staff: gv('oo-staff')
@@ -1722,17 +1725,19 @@ async function delOwn(id, t) {
 function gOwnSt(n) {
   const i = ownIns.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
   const o = ownOuts.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
-  return { inQ: i, outQ: o, left: i - o, feature: ownIns.filter(o => o.farm === n).map(o => o.feature).filter(Boolean).join(', ') };
+  const ctype = [...new Set([...ownIns, ...ownOuts].filter(x => x.farm === n).map(x => x.ctype).filter(Boolean))].join(', ');
+  return { inQ: i, outQ: o, left: i - o, feature: ownIns.filter(o => o.farm === n).map(o => o.feature).filter(Boolean).join(', '), ctype };
 }
 function renderOwn() {
+  popCtypeSels();   // 반입/반납 폼 종류 드롭다운 채우기
   const names = [...new Set([...ownIns.map(o => o.farm), ...ownOuts.map(o => o.farm)])];
   const pend = names.filter(n => gOwnSt(n).left > 0), done = names.filter(n => gOwnSt(n).left <= 0);
   const bg = document.getElementById('own-sum-badge');
   if (bg) { bg.textContent = pend.length > 0 ? `반납필요 ${pend.length}건` : '모두 정산완료'; bg.className = 'badge ' + (pend.length > 0 ? 'b-warn' : 'b-ok'); bg.style.textTransform = 'none'; bg.style.fontSize = '11px'; }
   let rows = '';
-  if (pend.length) rows += pend.map(n => { const st = gOwnSt(n); return `<tr><td class="nm">${esc(n)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-warn">반납필요</span></td></tr>`; }).join('');
-  if (done.length) { rows += `<tr class="ddiv"><td colspan="6">── 정산 완료 ──</td></tr>`; rows += done.map(n => { const st = gOwnSt(n); return `<tr class="dr"><td class="nm">${esc(n)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
-  document.getElementById('own-sum').innerHTML = rows || emr(6, '기록 없음');
+  if (pend.length) rows += pend.map(n => { const st = gOwnSt(n); return `<tr><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-warn">반납필요</span></td></tr>`; }).join('');
+  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(n => { const st = gOwnSt(n); return `<tr class="dr"><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
+  document.getElementById('own-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...ownIns.map(o => ({ ...o, dir: '반입', xt: 'ownIn', meth: '-' })), ...ownOuts.map(o => ({ ...o, dir: '반납', xt: 'ownOut', meth: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('own-tb-badge'); if (tb) tb.textContent = all.length + '건';
   document.getElementById('own-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.farm)}</td><td><span class="badge ${o.dir === '반입' ? 'b-pur' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.meth)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button><button class="btn del" onclick="delOwn(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button></td></tr>`).join('') : emr(8, '기록 없음');
@@ -3524,10 +3529,11 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight', 'juicemaster', 'partner'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight', 'juicemaster', 'partner', 'ctype'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
+  if (t === 'ctype') renderContainerTypeCfg();
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
   if (t === 'cfg') renderSizeCfg();
@@ -3779,6 +3785,97 @@ function cfgSubTab(t) {
     const div = document.getElementById('csp-' + s);
     if (btn) btn.className = 'cfg-stab' + (t === s ? ' af' : '');
     if (div) div.style.display = t === s ? '' : 'none';
+  });
+}
+
+// ── 콘테이너 종류 관리 (우리것 ours / 남의것 others) ────────────────
+function _ctOwnerLabel(o) { return o === 'ours' ? '우리것' : '남의것'; }
+function renderContainerTypeCfg() {
+  const el = document.getElementById('csp-ctype');
+  if (!el) return;
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const list = [...containerTypes].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const inp = 'padding:5px 7px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box;width:100%';
+  const rows = list.map(t => `<tr>
+    <td>${isAdm ? `<input id="ctc-n-${t.id}" value="${esc(t.name)}" style="${inp}">` : esc(t.name)}</td>
+    <td>${isAdm ? `<select id="ctc-o-${t.id}" style="${inp};width:90px"><option value="ours"${t.owner==='ours'?' selected':''}>우리것</option><option value="others"${t.owner!=='ours'?' selected':''}>남의것</option></select>` : _ctOwnerLabel(t.owner)}</td>
+    <td>${isAdm ? `<input id="ctc-s-${t.id}" type="number" value="${t.sort_order ?? ''}" style="${inp};width:60px">` : (t.sort_order ?? '—')}</td>
+    <td style="text-align:center"><input type="checkbox" ${t.is_active !== false ? 'checked' : ''} ${isAdm ? '' : 'disabled'} onchange="toggleContainerTypeActive(${t.id}, this.checked)"></td>
+    ${isAdm ? `<td style="white-space:nowrap"><button class="btn edt" onclick="saveContainerType(${t.id})">저장</button><button class="btn del" onclick="deleteContainerType(${t.id})">삭제</button></td>` : '<td></td>'}
+  </tr>`).join('');
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:14px;font-weight:700">콘테이너 종류 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(노랑·초록·헌콘 등)과 남의것(사각·농가·농협 등)을 구분해 관리합니다. 남의것은 자가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.</div>
+      </div>
+    </div>
+    ${isAdm ? `<div style="display:flex;gap:6px;align-items:end;margin-bottom:12px;flex-wrap:wrap">
+      <input id="ctc-new-name" placeholder="종류 이름" style="${inp};flex:1;min-width:100px">
+      <select id="ctc-new-owner" style="${inp};width:100px"><option value="ours">우리것</option><option value="others">남의것</option></select>
+      <input id="ctc-new-order" type="number" placeholder="순서" style="${inp};width:70px">
+      <button class="btn pri" style="font-size:12px;padding:6px 14px;white-space:nowrap" onclick="addContainerType()">+ 추가</button>
+    </div>` : ''}
+    ${list.length ? `<div class="tbl-wrap"><table>
+      <thead><tr><th>종류명</th><th>소유</th><th>순서</th><th>사용</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : `<div class="empty">등록된 종류가 없습니다.</div>`}`;
+}
+async function addContainerType() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const name = document.getElementById('ctc-new-name')?.value?.trim();
+  if (!name) return alert('종류 이름을 입력하세요.');
+  if (containerTypes.some(t => t.name === name)) return alert(`"${name}"은 이미 있는 종류입니다.`);
+  const owner = document.getElementById('ctc-new-owner')?.value || 'ours';
+  const order = parseInt(document.getElementById('ctc-new-order')?.value, 10);
+  try {
+    const row = await dbInsertContainerType({ name, owner, sort_order: isNaN(order) ? (containerTypes.length + 1) : order, is_active: true });
+    if (row) containerTypes.push(row);
+    renderContainerTypeCfg(); popCtypeSels();
+    showToast(`"${name}" 추가됨`);
+  } catch (e) { alert('추가 오류: ' + e.message); }
+}
+async function saveContainerType(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const name = document.getElementById(`ctc-n-${id}`)?.value?.trim();
+  if (!name) return alert('이름을 입력하세요.');
+  if (containerTypes.some(t => t.name === name && t.id !== id)) return alert(`"${name}"은 이미 있는 종류입니다.`);
+  const owner = document.getElementById(`ctc-o-${id}`)?.value || 'ours';
+  const order = parseInt(document.getElementById(`ctc-s-${id}`)?.value, 10);
+  try {
+    const upd = await dbUpdateContainerType(id, { name, owner, sort_order: isNaN(order) ? 99 : order });
+    const i = containerTypes.findIndex(t => t.id === id);
+    if (i !== -1) containerTypes[i] = upd || { ...containerTypes[i], name, owner, sort_order: isNaN(order) ? 99 : order };
+    renderContainerTypeCfg(); popCtypeSels();
+    showToast('저장됨');
+  } catch (e) { alert('저장 오류: ' + e.message); }
+}
+async function toggleContainerTypeActive(id, checked) {
+  try {
+    await dbUpdateContainerType(id, { is_active: checked });
+    const i = containerTypes.findIndex(t => t.id === id);
+    if (i !== -1) containerTypes[i].is_active = checked;
+    popCtypeSels();
+  } catch (e) { alert('변경 오류: ' + e.message); }
+}
+async function deleteContainerType(id) {
+  const t = containerTypes.find(x => x.id === id);
+  if (!t) return;
+  if (!(await showConfirmDanger({ title: '종류 삭제', subtitle: '기존 반입/반납 기록의 종류값은 유지됩니다', items: [t.name], confirmText: '삭제' }))) return;
+  try {
+    await dbDeleteContainerType(id);
+    containerTypes = containerTypes.filter(x => x.id !== id);
+    renderContainerTypeCfg(); popCtypeSels();
+    showToast('삭제됨');
+  } catch (e) { alert('삭제 오류(사용 중이면 비활성 권장): ' + e.message); }
+}
+// 자가 콘테이너 반입/반납 폼의 종류 드롭다운 채우기 — 남의것(others)만
+function popCtypeSels() {
+  const others = containerTypes.filter(t => t.owner === 'others' && t.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const opts = '<option value="">선택</option>' + others.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+  ['oi-ctype', 'oo-ctype'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
   });
 }
 
