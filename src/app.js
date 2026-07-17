@@ -7390,10 +7390,10 @@ function openManualTxModal() {
             </div>
           </div>
           <div><label style="${lbl}">거래처</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
-          <div><label style="${lbl}">품목</label><select id="mtx-product" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
+          <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxUpdateSizes()" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
           <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
           <div><label style="${lbl}">카테고리</label><select id="mtx-cat" style="${inp}"><option value="">선택</option>${catOpts}</select></div>
-          <div><label style="${lbl}">사이즈</label><input type="text" id="mtx-size" placeholder="(선택)" style="${inp}"></div>
+          <div><label style="${lbl}">사이즈</label><select id="mtx-size" style="${inp}"><option value="">(품목 먼저 선택)</option></select></div>
           <div><label style="${lbl}">단위</label><input type="text" id="mtx-unit" value="CT" style="${inp}"></div>
           <div><label style="${lbl}">수량 *</label><input type="number" id="mtx-qty" step="0.1" min="0" oninput="_mtxCalcAmount()" style="${inp}"></div>
           <div><label style="${lbl}">단가 (원)</label><input type="number" id="mtx-price" step="1" min="0" oninput="_mtxCalcAmount()" placeholder="(선택)" style="${inp}"></div>
@@ -7414,6 +7414,18 @@ function _mtxSetDir(d) {
   const out = document.getElementById('mtx-dir-out'), inn = document.getElementById('mtx-dir-in');
   if (out) { const on = d === 'out'; out.style.background = on ? '#DC2626' : '#fff'; out.style.color = on ? '#fff' : '#374151'; out.style.borderColor = on ? '#DC2626' : '#D1D5DB'; }
   if (inn) { const on = d === 'in';  inn.style.background = on ? '#1D4ED8' : '#fff'; inn.style.color = on ? '#fff' : '#374151'; inn.style.borderColor = on ? '#1D4ED8' : '#D1D5DB'; }
+}
+
+// 사이즈 드롭다운: 선택 품목의 사이즈(감귤류 000~왕2 / 만감류 N수)로 갱신. getSizeGroupsFor 재사용.
+function _mtxUpdateSizes() {
+  const sel = document.getElementById('mtx-size');
+  if (!sel) return;
+  const product = document.getElementById('mtx-product')?.value || '';
+  const prev = sel.value;
+  if (!product) { sel.innerHTML = '<option value="">(품목 먼저 선택)</option>'; sel.value = ''; return; }
+  const sizes = getSizeGroupsFor(product).flatMap(g => g.sizes);
+  sel.innerHTML = '<option value="">(선택 안 함)</option>' + sizes.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  sel.value = (prev && sizes.includes(prev)) ? prev : '';   // 기존 선택값이 새 목록에 없으면 초기화
 }
 
 // 단가↔금액: 단가가 입력돼 있으면 금액=round(단가×수량) 자동. 단가 비어 있으면 금액은 직접입력값 유지.
