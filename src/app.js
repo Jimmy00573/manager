@@ -97,8 +97,9 @@ let _farmViewSearch = '';
 let _farmViewSort = 'remaining-desc';
 let _farmExpanded = new Set();
 let _catExpanded = new Set();
-let _inoutCatExpanded = new Set();   // 입출고 요약 '카테고리별' 탭 전용 접힘상태(기본 접힘). _catExpanded와 키 충돌 방지 위해 별도
-let _inoutCatData = null;            // 카테고리별 탭 부분 재렌더용 데이터 { catRows, totalCount, totalQty }
+let _inoutProdExpanded = new Set();  // 카테고리별 탭 1레벨(품목) 펼침상태(기본 접힘)
+let _inoutCatExpanded = new Set();   // 카테고리별 탭 2레벨 펼침상태. 키='품목|카테고리'(품목별 같은 카테고리명 충돌 방지). _catExpanded와도 별도
+let _inoutCatData = null;            // 카테고리별 탭 부분 재렌더용 데이터 { prodRows, totalCount, totalQty }
 let _farmSubTab = {};  // farm → 'inbound' | 'sorting'
 let _currentFarmList = [];
 let _currentCatList = [];
@@ -7999,25 +8000,25 @@ function renderInvSummary() {
       </tbody>
     </table>`;
 
-    // 카테고리별 탭: 1차 category(||'상품') → 2차 driverKey 소계
-    const catMap = {};
+    // 카테고리별 탭 3단 계층: 품목 → 카테고리 → 농가·기사 (품목별 탭의 prodMap/prodRows와 이름 겹치지 않게 catProd*)
+    const catProdMap = {};
     summaryInbounds.forEach(r => {
+      const product = r.product || '(품목없음)';
       const cat = r.inbound_category || '상품';
       const drv = getDrv(r);
-      if (!catMap[cat]) catMap[cat] = { qty: 0, cnt: 0, subs: {} };
-      catMap[cat].qty += r.quantity; catMap[cat].cnt++;
       const farm = r.farm_name || '(농가없음)';
-      const skey = `${farm}|${drv.key}`;   // 2차 그룹: 농가 + 기사
-      if (!catMap[cat].subs[skey]) catMap[cat].subs[skey] = { farm, drv, qty: 0, cnt: 0 };
-      catMap[cat].subs[skey].qty += r.quantity; catMap[cat].subs[skey].cnt++;
+      if (!catProdMap[product]) catProdMap[product] = { qty: 0, cnt: 0, cats: {} };
+      catProdMap[product].qty += r.quantity; catProdMap[product].cnt++;
+      const pc = catProdMap[product].cats;
+      if (!pc[cat]) pc[cat] = { qty: 0, cnt: 0, subs: {} };
+      pc[cat].qty += r.quantity; pc[cat].cnt++;
+      const skey = `${farm}|${drv.key}`;   // 3차 그룹: 농가 + 기사
+      if (!pc[cat].subs[skey]) pc[cat].subs[skey] = { farm, drv, qty: 0, cnt: 0 };
+      pc[cat].subs[skey].qty += r.quantity; pc[cat].subs[skey].cnt++;
     });
-    const CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '파치'];
-    const catRows = Object.entries(catMap).sort((a, b) => {
-      const oa = CAT_ORDER.indexOf(a[0]) === -1 ? 99 : CAT_ORDER.indexOf(a[0]);
-      const ob = CAT_ORDER.indexOf(b[0]) === -1 ? 99 : CAT_ORDER.indexOf(b[0]);
-      return oa - ob || a[0].localeCompare(b[0], 'ko');
-    });
-    _inoutCatData = { catRows, totalCount, totalQty };   // 접기/펼치기 부분 재렌더용
+    // 품목 정렬: 수량 많은 순(품목별 탭과 동일 기준). 카테고리 정렬은 렌더러에서 CAT_ORDER.
+    const catProdRows = Object.entries(catProdMap).sort((a, b) => b[1].qty - a[1].qty || a[0].localeCompare(b[0], 'ko'));
+    _inoutCatData = { prodRows: catProdRows, totalCount, totalQty };   // 접기/펼치기 부분 재렌더용
     const categoryTabHtml = _renderInoutCatTable();
 
     inTabContent = `<div style="padding:0 16px 12px">
@@ -8362,48 +8363,83 @@ function todayTabSwitch(tab) {
   });
 }
 
-// 입출고 요약 '카테고리별' 탭: 접기/펼치기(기본 접힘, 헤더 클릭 토글). 전체 재렌더 없이 이 탭 내부만 갱신.
+// 입출고 요약 '카테고리별' 탭: 3단 계층(품목→카테고리→농가·기사). 접기/펼치기 2레벨, 전체 재렌더 없이 이 탭 내부만 갱신.
+const _INOUT_CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '파치'];
+// 전체 펼침 여부: 모든 품목 + 모든 (품목|카테고리)가 펼쳐졌는지
+function _inoutAllExpanded(prodRows) {
+  if (!prodRows.length) return false;
+  return prodRows.every(([prod, pg]) =>
+    _inoutProdExpanded.has(prod) &&
+    Object.keys(pg.cats).every(cat => _inoutCatExpanded.has(`${prod}|${cat}`)));
+}
 function _renderInoutCatTable() {
   if (!_inoutCatData) return '';
-  const { catRows, totalCount, totalQty } = _inoutCatData;
+  const { prodRows, totalCount, totalQty } = _inoutCatData;
   const TH_T = 'text-align:left;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
   const TH_R = 'text-align:right;padding:4px 8px;color:#9CA3AF;border-bottom:1px solid #F3F4F6;font-weight:500;font-size:11px';
   const TD_L = 'padding:4px 8px;color:#374151;font-size:12px';
   const TD_R = 'padding:4px 8px;text-align:right;font-weight:600;color:#111827;font-size:12px';
   const TD_TL = 'padding:6px 8px;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
   const TD_TR = 'padding:6px 8px;text-align:right;color:#111827;font-weight:600;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB';
-  const allExpanded = catRows.length > 0 && catRows.every(([cat]) => _inoutCatExpanded.has(cat));
+  const PROD_TL = 'padding:6px 8px;color:#111827;font-weight:700;font-size:12px;background:#F3F4F6;border-top:1px solid #E5E7EB';
+  const PROD_TR = 'padding:6px 8px;text-align:right;color:#111827;font-weight:700;font-size:12px;background:#F3F4F6;border-top:1px solid #E5E7EB';
+  const catOrder = (a, b) => {
+    const oa = _INOUT_CAT_ORDER.indexOf(a) === -1 ? 99 : _INOUT_CAT_ORDER.indexOf(a);
+    const ob = _INOUT_CAT_ORDER.indexOf(b) === -1 ? 99 : _INOUT_CAT_ORDER.indexOf(b);
+    return oa - ob || a.localeCompare(b, 'ko');
+  };
+  const allExpanded = _inoutAllExpanded(prodRows);
+  const rowsHtml = prodRows.map(([prod, pg]) => {
+    const pExp = _inoutProdExpanded.has(prod);
+    const pHead = `<tr onclick="_inoutProdToggle('${esc(prod)}')" style="cursor:pointer"><td style="${PROD_TL}"><span style="color:#9CA3AF;margin-right:4px;font-size:11px">${pExp ? '▾' : '▸'}</span>${esc(prod)}</td><td style="${PROD_TR}">${pg.cnt}</td><td style="${PROD_TR}">${fmtN(pg.qty)}</td></tr>`;
+    if (!pExp) return pHead;
+    const catHtml = Object.keys(pg.cats).sort(catOrder).map(cat => {
+      const cg = pg.cats[cat];
+      const ckey = `${prod}|${cat}`;
+      const cExp = _inoutCatExpanded.has(ckey);
+      const cHead = `<tr onclick="_inoutCatToggle('${esc(ckey)}')" style="cursor:pointer"><td style="${TD_TL};padding-left:16px"><span style="color:#9CA3AF;margin-right:4px;font-size:11px">${cExp ? '▾' : '▸'}</span>${categoryBadge(cat)}</td><td style="${TD_TR}">${cg.cnt}</td><td style="${TD_TR}">${fmtN(cg.qty)}</td></tr>`;
+      if (!cExp) return cHead;
+      const subRows = Object.values(cg.subs).sort((a, b) => a.farm.localeCompare(b.farm, 'ko') || b.qty - a.qty);
+      const subs = subRows.map(d => `<tr><td style="${TD_L};padding-left:32px;color:#6B7280">└ ${esc(d.farm)} · ${drvHtml(d.drv)}</td><td style="${TD_R}">${d.cnt}</td><td style="${TD_R}">${fmtN(d.qty)}</td></tr>`).join('');
+      return cHead + subs;
+    }).join('');
+    return pHead + catHtml;
+  }).join('');
   return `
     <div style="display:flex;justify-content:flex-end;margin-bottom:2px">
       <button onclick="_inoutCatToggleAll()" style="font-size:11px;color:#2563EB;background:none;border:none;cursor:pointer;padding:2px 4px">${allExpanded ? '전체 접기' : '전체 펼치기'}</button>
     </div>
     <table style="width:100%;border-collapse:collapse">
-      <thead><tr><th style="${TH_T}">구분 / 농가 · 기사</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
+      <thead><tr><th style="${TH_T}">품목 / 구분 / 농가 · 기사</th><th style="${TH_R}">건수</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
       <tbody>
-        ${catRows.map(([cat, g]) => {
-          const isExp = _inoutCatExpanded.has(cat);
-          const head = `<tr onclick="_inoutCatToggle('${esc(cat)}')" style="cursor:pointer"><td style="${TD_TL}"><span style="color:#9CA3AF;margin-right:4px;font-size:11px">${isExp ? '▾' : '▸'}</span>${categoryBadge(cat)}</td><td style="${TD_TR}">${g.cnt}</td><td style="${TD_TR}">${fmtN(g.qty)}</td></tr>`;
-          if (!isExp) return head;
-          const subRows = Object.values(g.subs).sort((a, b) => a.farm.localeCompare(b.farm, 'ko') || b.qty - a.qty);
-          const subs = subRows.map(d => `<tr><td style="${TD_L};padding-left:28px;color:#6B7280">└ ${esc(d.farm)} · ${drvHtml(d.drv)}</td><td style="${TD_R}">${d.cnt}</td><td style="${TD_R}">${fmtN(d.qty)}</td></tr>`).join('');
-          return head + subs;
-        }).join('')}
+        ${rowsHtml}
         <tr><td style="${TD_TL}">합계</td><td style="${TD_TR}">${totalCount}</td><td style="${TD_TR}">${fmtN(totalQty)}</td></tr>
       </tbody>
     </table>`;
 }
-function _inoutCatToggle(cat) {
-  if (_inoutCatExpanded.has(cat)) _inoutCatExpanded.delete(cat);
-  else _inoutCatExpanded.add(cat);
+function _inoutProdToggle(prod) {
+  if (_inoutProdExpanded.has(prod)) _inoutProdExpanded.delete(prod);
+  else _inoutProdExpanded.add(prod);
+  const el = document.getElementById('today-tab-category');
+  if (el) el.innerHTML = _renderInoutCatTable();
+}
+function _inoutCatToggle(key) {   // key = '품목|카테고리'
+  if (_inoutCatExpanded.has(key)) _inoutCatExpanded.delete(key);
+  else _inoutCatExpanded.add(key);
   const el = document.getElementById('today-tab-category');
   if (el) el.innerHTML = _renderInoutCatTable();
 }
 function _inoutCatToggleAll() {
   if (!_inoutCatData) return;
-  const cats = _inoutCatData.catRows.map(([cat]) => cat);
-  const allExpanded = cats.length > 0 && cats.every(c => _inoutCatExpanded.has(c));
-  if (allExpanded) cats.forEach(c => _inoutCatExpanded.delete(c));
-  else             cats.forEach(c => _inoutCatExpanded.add(c));
+  const { prodRows } = _inoutCatData;
+  const expand = !_inoutAllExpanded(prodRows);
+  prodRows.forEach(([prod, pg]) => {
+    if (expand) _inoutProdExpanded.add(prod); else _inoutProdExpanded.delete(prod);
+    Object.keys(pg.cats).forEach(cat => {
+      const ckey = `${prod}|${cat}`;
+      if (expand) _inoutCatExpanded.add(ckey); else _inoutCatExpanded.delete(ckey);
+    });
+  });
   const el = document.getElementById('today-tab-category');
   if (el) el.innerHTML = _renderInoutCatTable();
 }
