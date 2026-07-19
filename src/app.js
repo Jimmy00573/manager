@@ -2043,11 +2043,23 @@ function getFCS(name) {
   return { out, pk, ret, hold: out - pk - ret };
 }
 function getFCtypes(fn) {
+  // 배차 종류별 합계(배차엔 ctype 있음)
   const ob = {}; dispatches.filter(d => d.farm === fn).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
-  const rec = picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '잉여회수')).reduce((s, p) => s + p.qty, 0);
   const tot = Object.values(ob).reduce((s, v) => s + v, 0); if (tot <= 0) return '';
-  const ratio = tot > 0 ? (tot - rec) / tot : 0;
-  return Object.entries(ob).map(([t, q]) => { const r = Math.round(q * ratio); if (r <= 0) return ''; const cl = { 노랑: 'cty', 초록: 'ctg', 헌콘: 'cto' }[t] || ''; return `<span class="ct ${cl}">${t === '노랑' ? '🟡' : t === '초록' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
+  // 회수(원물수거+잉여회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백)
+  let recNull = 0; const recByType = {};
+  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '잉여회수')).forEach(p => {
+    if (p.ctype) recByType[p.ctype] = (recByType[p.ctype] || 0) + p.qty; else recNull += p.qty;
+  });
+  // 1단계: 종류별 정확 차감(배차량 − 종류별 회수)
+  const remain = {}; Object.entries(ob).forEach(([t, q]) => { remain[t] = q - (recByType[t] || 0); });
+  // 2단계: 미지정(ctype null) 회수는 남은 양에 비율로 분배(하위호환)
+  if (recNull > 0) {
+    const remTot = Object.values(remain).reduce((s, v) => s + Math.max(0, v), 0);
+    const ratio = remTot > 0 ? Math.max(0, (remTot - recNull) / remTot) : 0;
+    Object.keys(remain).forEach(t => { if (remain[t] > 0) remain[t] *= ratio; });
+  }
+  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r <= 0) return ''; const cl = { 노랑: 'cty', 초록: 'ctg', 헌콘: 'cto' }[t] || ''; return `<span class="ct ${cl}">${t === '노랑' ? '🟡' : t === '초록' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
 }
 function renderFarmTbl() {
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; });
@@ -3968,7 +3980,7 @@ async function _saveInboundContainers(date, farm) {
   for (const j of jobs) {
     try {
       if (j.t.owner === 'ours') {
-        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, auto: true, note: '입고 회수' });
+        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, auto: true, note: '입고 회수' });
         if (row) picks.unshift(row);
       } else {
         const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin' });
