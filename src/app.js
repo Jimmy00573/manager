@@ -2333,6 +2333,29 @@ function calGetAllItems() {
   const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm + h.date));
   return calSortItems([...fromDisp, ...extra]);
 }
+// 수확 일정 관리 버튼(시작/완료/수정/삭제) — 금일 strip·달력 상세·월간 목록 공통 재사용
+const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
+const _hvStBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
+function harvestActBtns(h) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
+  const st = h.status || '수확전';
+  return `
+    ${st !== '수확중'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
+    ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
+    <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
+    <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>`;
+}
+function harvestRow(h, showDate) {
+  const st = h.status || '수확전';
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${_hvStBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
+      ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
+      ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
+      <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
+      ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
+      <span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
+      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${harvestActBtns(h)}</div>
+    </div>`;
+}
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
   const todayStr = td();
@@ -2352,26 +2375,6 @@ function renderCal() {
     <div class="kpi"><div class="kpi-label">배차 없음</div><div class="kpi-val" style="color:#C62828">${dispatches.filter(d=>d.status==='배차없음').length}</div></div>
     <div class="kpi"><div class="kpi-label">이번 달 수확</div><div class="kpi-val kv-bl">${thisM}</div></div>
   `;
-
-  // 공통 헬퍼
-  const stBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
-  const stBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
-  function harvestRow(h, showDate) {
-    const st = h.status || '수확전';
-    const actBtns = canEdit ? `
-      ${st !== '수확중'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
-      ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
-      <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
-      <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>` : '';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${stBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
-      ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
-      ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
-      <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
-      ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
-      <span class="badge ${stBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
-      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${actBtns}</div>
-    </div>`;
-  }
 
   // 금일 수확일정
   // 금일 수확일정: 캘린더와 동일하게 dispatches.harvest + harvests 테이블 통합
@@ -2488,6 +2491,10 @@ function calSelectDay(dStr) {
   document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
   const ctIcon = {노랑:'🟡',초록:'🟢',헌콘:'⬜'};
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
+    // 수확 진행상태(수확전/중/완료) 일정 → harvestRow 재사용(▶시작·✅완료·✏️수정·🗑삭제, 미래 포함)
+    if (e.status === '수확전' || e.status === '수확중' || e.status === '수확완료') {
+      return `<div style="margin-bottom:5px">${harvestRow(e, false)}</div>`;
+    }
     const bg = e.status === '배출완료' ? '#F1F8E9' : e.status === '배차없음' ? '#FFEBEE' : '#FFF3E0';
     const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
     const detailBtns = canEdit && e.status === '배차없음'
@@ -2545,7 +2552,9 @@ function renderCalUpcoming() {
         <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':''}</div>
       </div>
      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-       ${e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button><button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>` : `<span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>`}
+       ${(e.status === '수확전' || e.status === '수확중' || e.status === '수확완료')
+         ? `<span class="badge ${_hvStBadge[e.status]||'b-warn'}" style="white-space:nowrap;font-size:12px">${e.status}</span>${harvestActBtns(e)}`
+         : e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button><button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>` : `<span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>`}
      </div>
     </div>`;
   }).join('');
