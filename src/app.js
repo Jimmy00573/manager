@@ -2045,14 +2045,16 @@ function getFCS(name) {
 function getFCtypes(fn) {
   // 배차 종류별 합계(배차엔 ctype 있음)
   const ob = {}; dispatches.filter(d => d.farm === fn).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
-  const tot = Object.values(ob).reduce((s, v) => s + v, 0); if (tot <= 0) return '';
   // 회수(원물수거+잉여회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백)
   let recNull = 0; const recByType = {};
   picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '잉여회수')).forEach(p => {
     if (p.ctype) recByType[p.ctype] = (recByType[p.ctype] || 0) + p.qty; else recNull += p.qty;
   });
-  // 1단계: 종류별 정확 차감(배차량 − 종류별 회수)
-  const remain = {}; Object.entries(ob).forEach(([t, q]) => { remain[t] = q - (recByType[t] || 0); });
+  // 배차·회수 종류 합집합 — 배차만/회수만/둘다 모든 케이스 종류별 표시
+  const allTypes = [...new Set([...Object.keys(ob), ...Object.keys(recByType)])];
+  if (!allTypes.length && recNull === 0) return '';   // 배차·회수 아무것도 없으면 표시 없음
+  // 1단계: 종류별 정확 차감(배차량 − 종류별 회수) — 배차 없으면 음수(과회수)로 표시
+  const remain = {}; allTypes.forEach(t => { remain[t] = (ob[t] || 0) - (recByType[t] || 0); });
   // 2단계: 미지정(ctype null) 회수는 남은 양에 비율로 분배(하위호환)
   if (recNull > 0) {
     const remTot = Object.values(remain).reduce((s, v) => s + Math.max(0, v), 0);
