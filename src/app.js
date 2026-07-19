@@ -3967,7 +3967,7 @@ function _ibcSyncQty() {
 }
 
 // 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 우리것→picks 원물수거(회수), 남의것→own_ins(반납대기).
-async function _saveInboundContainers(date, farm) {
+async function _saveInboundContainers(date, farm, inboundId) {
   const el = document.getElementById('ib-container-sec');
   if (!el || !farm) return;
   const active = [...containerTypes].filter(t => t.is_active !== false);
@@ -3982,10 +3982,10 @@ async function _saveInboundContainers(date, farm) {
   for (const j of jobs) {
     try {
       if (j.t.owner === 'ours') {
-        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, auto: true, note: '입고 회수' });
+        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inboundId || null, auto: true, note: '입고 회수' });
         if (row) picks.unshift(row);
       } else {
-        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin' });
+        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, inbound_id: inboundId || null, staff: 'admin' });
         if (row) ownIns.unshift(row);
       }
     } catch (e) {
@@ -8937,7 +8937,17 @@ async function getInboundLinks(id) {
 
   const processing = processingRecords.filter(r => r.inbound_id === id).length;
 
-  return { sorting, details, inventory: inventory + directInv, processing, sortingResultIds, directInv };
+  // 콘테이너 연동(입고 자동 생성): picks(회수)+own_ins(반납대기) inbound_id 매칭
+  let containers = 0;
+  try {
+    const cps = await sbGet('picks', `inbound_id=eq.${id}&select=id`);
+    const cos = await sbGet('own_ins', `inbound_id=eq.${id}&select=id`);
+    containers = (cps || []).length + (cos || []).length;
+  } catch (e) {
+    console.error('getInboundLinks 콘테이너 조회 실패:', e);
+  }
+
+  return { sorting, details, inventory: inventory + directInv, processing, containers, sortingResultIds, directInv };
 }
 
 async function cascadeDeleteInbound(id) {
@@ -8990,6 +9000,25 @@ async function cascadeDeleteInbound(id) {
     catch (e) { throw new Error(`cascade 삭제 실패 (processing_records 단계): ${e.message}`); }
   }
 
+  // (d-2) 콘테이너 연동 삭제 — picks(회수)/own_ins(반납대기) inbound_id 매칭. 수동 등록(inbound_id null)은 보존.
+  let deletedPicks = 0, deletedOwnIns = 0;
+  {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/picks?inbound_id=eq.${id}`, {
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+    });
+    if (!res.ok) throw new Error(`cascade 삭제 실패 (콘테이너 회수 picks 단계): HTTP ${res.status} id=${id}`);
+    const json = await res.json();
+    deletedPicks = Array.isArray(json) ? json.length : 0;
+  }
+  {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/own_ins?inbound_id=eq.${id}`, {
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+    });
+    if (!res.ok) throw new Error(`cascade 삭제 실패 (콘테이너 반납 own_ins 단계): HTTP ${res.status} id=${id}`);
+    const json = await res.json();
+    deletedOwnIns = Array.isArray(json) ? json.length : 0;
+  }
+
   // (e) inbound_records 삭제
   try { await sbDeleteStrict('inbound_records', `id=eq.${id}`); }
   catch (e) { throw new Error(`cascade 삭제 실패 (inbound_records 단계): ${e.message}`); }
@@ -8997,6 +9026,8 @@ async function cascadeDeleteInbound(id) {
   // 메모리 정리
   inboundRecords     = inboundRecords.filter(r => r.id !== id);
   processingRecords  = processingRecords.filter(r => r.inbound_id !== id);
+  picks              = picks.filter(p => p.inbound_id !== id);
+  ownIns             = ownIns.filter(o => o.inbound_id !== id);
 
   return {
     ok: true,
@@ -9005,6 +9036,8 @@ async function cascadeDeleteInbound(id) {
       inventory_records:  deletedInventoryRecords,
       sorting_results:    sortingResultIds.length,
       processing_records: prIds.length,
+      picks:              deletedPicks,
+      own_ins:            deletedOwnIns,
       inbound:            1
     }
   };
@@ -12092,9 +12125,9 @@ async function deleteInbound(id) {
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
   const links = await getInboundLinks(id);
-  const hasLinks = links.sorting > 0 || links.inventory > 0 || links.processing > 0;
+  const hasLinks = links.sorting > 0 || links.inventory > 0 || links.processing > 0 || links.containers > 0;
   const items = [`${r.farm_name} · ${r.product} · ${r.date}`];
-  if (hasLinks) items.push(`연결된 선과 결과 ${links.sorting}건 · 재고 ${links.inventory}건 · 가공 ${links.processing}건`);
+  if (hasLinks) items.push(`연결된 선과 결과 ${links.sorting}건 · 재고 ${links.inventory}건 · 가공 ${links.processing}건${links.containers > 0 ? ` · 콘테이너 회수/반납 ${links.containers}건` : ''}`);
   const res = await showConfirmDanger({
     title: '입고 삭제',
     items,
@@ -12118,6 +12151,7 @@ async function deleteInbound(id) {
       staff: res.worker
     });
     await loadAndRenderInv();
+    if (links.containers > 0) { renderOwn(); renderPick(); renderDash(); }   // 콘테이너 현황 갱신
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
@@ -13178,7 +13212,7 @@ async function saveInboundSorted(keepOpen) {
       }
     }
     inventoryRecords.push(...inserted);
-    await _saveInboundContainers(date, supplier);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
+    await _saveInboundContainers(date, supplier, ibId);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
     renderInvSummary(); renderInboundList();
 
     const clearSorted = () => {
@@ -13306,6 +13340,7 @@ async function _addInboundCore(keepOpen) {
   const doInsert = async () => {
     try {
       const driverObj = driver_id ? (drivers.find(d => d.id === driver_id) || null) : null;
+      let ibId = null;   // 콘테이너 연동용 대표 입고 id(분산이면 첫 건)
       if (isDistributed) {
         const distribution_group_id = generateUUID();
         const inserted = [];
@@ -13314,11 +13349,13 @@ async function _addInboundCore(keepOpen) {
           inserted.push(row);
         }
         inserted.forEach(row => inboundRecords.unshift({ ...row, driver: driverObj }));
+        ibId = inserted[0] ? inserted[0].id : null;
       } else {
         const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
         inboundRecords.unshift({ ...row, driver: driverObj });
+        ibId = row.id;
       }
-      await _saveInboundContainers(date, farm_name);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
+      await _saveInboundContainers(date, farm_name, ibId);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
       renderInvSummary(); renderInboundList();
       if (keepOpen) {
         clearFormPartial();
