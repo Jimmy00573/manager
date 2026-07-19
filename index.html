@@ -152,6 +152,7 @@
     <div class="modal-grid">
       <div class="fg"><label>수확 시작일 *</label><input id="mh-date" type="date"></div>
       <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="mh-end" type="date"></div>
+      <div class="fg"><label>차수</label><input id="mh-round" type="number" min="1" value="1"></div>
       <div class="fg"><label>농가명 *</label><select id="mh-farm"><option value="">선택</option></select></div>
       <div class="fg"><label>품목</label><input id="mh-item" list="dl-v"></div>
       <div class="fg"><label>메모</label><input id="mh-note"></div>
@@ -473,6 +474,7 @@
     <div class="fg"><label>농가명 *</label><select id="cal-add-farm"><option value="">농가 선택</option></select></div>
     <div class="fg"><label>수확 시작일 *</label><input id="cal-add-date" type="date"></div>
     <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="cal-add-end" type="date"></div>
+    <div class="fg"><label>차수 <span style="font-size:10px;color:#aaa">(밭떼기 여러 날)</span></label><input id="cal-add-round" type="number" min="1" value="1"></div>
     <div class="fg"><label>품목</label><input id="cal-add-item" list="dl-v" placeholder="예) 노지감귤"></div>
     <div class="fg"><label>메모</label><input id="cal-add-note" placeholder="메모"></div>
   </div>
@@ -1819,6 +1821,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=370"></script>
+<script src="src/app.js?v=371"></script>
 </body>
 </html>

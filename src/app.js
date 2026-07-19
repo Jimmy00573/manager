@@ -2351,6 +2351,7 @@ function harvestRow(h, showDate) {
       ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
       <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
+      <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round||1}차</span>
       ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
       <span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
       <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${harvestActBtns(h)}</div>
@@ -2453,7 +2454,7 @@ function renderCal() {
     const isSel = dStr === calSelectedDate;
     let pills = evs.slice(0, 2).map(e => {
       const bg = e.status === '배출완료' ? '#E8F5E9;color:#2E7D32' : e.status === '배차없음' ? '#FFEBEE;color:#C62828' : '#FFF3E0;color:#C05800';
-      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}</div>`;
+      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}${e.round>1?' '+e.round+'차':''}</div>`;
     }).join('');
     if (evs.length > 2) pills += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
     const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
@@ -2502,7 +2503,7 @@ function calSelectDay(dStr) {
       : `<span class="badge ${bdg}">${e.status}</span>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:${bg};margin-bottom:5px;gap:8px;flex-wrap:wrap">
       <div>
-        <div style="font-weight:500;font-size:13px">${esc(e.farm)} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
+        <div style="font-weight:500;font-size:13px">${esc(e.farm)}${e.round?` <span style="font-weight:600;font-size:11px;color:#1565C0">${e.round}차</span>`:''} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
         <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?ctIcon[e.ctype]+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${detailBtns}</div>
@@ -2548,7 +2549,7 @@ function renderCalUpcoming() {
         ${dispBox}
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)} ${e.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;margin-left:4px;${itemColor(e.item)}">${esc(e.item)}</span>` : ''}</div>
+        <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)}${e.round?` <span style="font-weight:600;font-size:11px;color:#1565C0">${e.round}차</span>`:''} ${e.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;margin-left:4px;${itemColor(e.item)}">${esc(e.item)}</span>` : ''}</div>
         <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':''}</div>
       </div>
      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
@@ -2726,13 +2727,14 @@ function openHarvestEdit(id) {
   mhf.value = h.farm || '';
   document.getElementById('mh-item').value = h.item || '';
   document.getElementById('mh-note').value = h.note || '';
+  document.getElementById('mh-round').value = h.round || 1;
   document.getElementById('modal-harvest').style.display = 'flex';
 }
 async function saveHarvestEdit() {
   const date = document.getElementById('mh-date').value;
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
-  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null };
+  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
   try {
     await dbUpdateHarvest(_editHarvestId, data);
     harvests = harvests.map(h => h.id === _editHarvestId ? { ...h, ...data } : h);
@@ -2801,12 +2803,14 @@ async function addHarvest() {
   const end_date = document.getElementById('cal-add-end')?.value || null;
   const item = document.getElementById('cal-add-item')?.value || null;
   const note = document.getElementById('cal-add-note')?.value || null;
+  const round = parseInt(document.getElementById('cal-add-round')?.value, 10) || 1;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
   try {
-    const row = await dbInsertHarvest({ date, end_date, farm, item, note, status: '수확전' });
+    const row = await dbInsertHarvest({ date, end_date, farm, item, note, round, status: '수확전' });
     harvests.push(row);
     document.getElementById('cal-add-date').value = '';
     document.getElementById('cal-add-end').value = '';
+    document.getElementById('cal-add-round').value = '1';
     document.getElementById('cal-add-farm').value = '';
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
