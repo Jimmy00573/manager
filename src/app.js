@@ -5277,7 +5277,9 @@ function _renderInvMatrix(product, recs, auditMode) {
   h += `<div style="${HD}border-right:1px solid #2D4E7A;border-bottom:1px solid #2D4E7A;position:sticky;left:0;z-index:4"></div>`;
   displaySizes.forEach(sz => {
     const gi = szGI[sz];
-    h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px">${esc(sz)}${fruitNoBadge(sz)}</div>`;
+    // 실사 모드면 사이즈(열) 헤더 클릭 = 그 사이즈 모든 배치 확인/해제
+    const _colClk = audit ? ` onclick="toggleInvAuditCol('${esc(sz)}')" title="클릭: 이 사이즈 전체 확인/해제"` : '';
+    h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px${audit ? ';cursor:pointer' : ''}"${_colClk}>${esc(sz)}${fruitNoBadge(sz)}</div>`;
   });
   h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4"></div>`;
   if (isAdm) h += `<div style="${HD}border-right:none;position:sticky;right:0;z-index:4"></div>`;
@@ -5294,10 +5296,6 @@ function _renderInvMatrix(product, recs, auditMode) {
     const batchTotal = allSizes.reduce((s, sz) => s + (batch.sizes[sz] || 0), 0);
     const dateColor = daysAgo >= _invAgeDays * 2 ? '#B91C1C' : '#6B7280';
 
-    h += `<div style="${C}background:${firstBg};flex-direction:column;align-items:flex-start;justify-content:center;padding:4px 8px;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB" title="${esc(batch.farm)}">
-      <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
-      <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
-    </div>`;
     const recIds = {};
     Object.keys(batch.recsBySize).forEach(sz => {
       recIds[sz] = batch.recsBySize[sz]
@@ -5306,6 +5304,13 @@ function _renderInvMatrix(product, recs, auditMode) {
     });
     const regId = Object.keys(_matrixBatchRegistry).length;
     _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes }, recIds };
+    // 농가(행) 헤더 — 실사 모드면 클릭으로 이 배치 전체 확인/해제(regId를 위에서 먼저 계산)
+    const _rowClk   = audit ? ` onclick="toggleInvAuditRow(${regId})"` : '';
+    const _rowTitle = audit ? `${esc(batch.farm)} · 클릭: 이 배치 전체 확인/해제` : esc(batch.farm);
+    h += `<div style="${C}background:${firstBg};flex-direction:column;align-items:flex-start;justify-content:center;padding:4px 8px;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB${audit ? ';cursor:pointer' : ''}" title="${_rowTitle}"${_rowClk}>
+      <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
+      <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
+    </div>`;
     displaySizes.forEach(sz => {
       const val = batch.sizes[sz] || 0;
       if (!audit) {
@@ -10759,26 +10764,45 @@ async function toggleInvAuditCheck(key) {
   } catch (e) { showToast('오류: ' + e.message); }
 }
 // 매트릭스 셀(배치+사이즈) 실사 토글 — 셀 내 수량>0 레코드 전부 확인/해제
-async function toggleInvAuditCell(regId, sz) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const info = _matrixBatchRegistry[regId];
-  if (!info || !info.recIds) return;
-  const ids = info.recIds[sz] || [];
-  const recs = ids
-    .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
-    .filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0);
-  if (!recs.length) return;
-  const allChk = recs.every(r => r.audit_checked_at);   // 전부확인 상태면 해제, 아니면 전부확인
+// 실사 확인 토글 공통 로직 — 셀/행/열이 공유. 값>0·!is_void만 대상, 전부확인이면 해제/아니면 확인, 바꿀 것만 기록.
+async function _applyInvAuditToggle(recs) {
+  const valid = recs.filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0);
+  if (!valid.length) return;
+  const allChk = valid.every(r => r.audit_checked_at);   // 전부확인 상태면 해제, 아니면 전부확인
   const ts = allChk ? null : new Date().toISOString();
   try {
-    for (const r of recs) {
+    for (const r of valid) {
       if (allChk ? !!r.audit_checked_at : !r.audit_checked_at) {   // 바꿀 것만 기록(중복쓰기 방지)
         await sbUpdate('inventory_records', r.id, { audit_checked_at: ts });
         r.audit_checked_at = ts;
       }
     }
-    renderInventoryStatus();
+    renderInventoryStatus();   // 일괄 후 1회 재렌더
   } catch (e) { showToast('오류: ' + e.message); }
+}
+async function toggleInvAuditCell(regId, sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info || !info.recIds) return;
+  const ids = info.recIds[sz] || [];
+  await _applyInvAuditToggle(ids.map(id => inventoryRecords.find(r => String(r.id) === String(id))));
+}
+// 행(배치) 일괄 — 그 배치의 모든 사이즈 셀 확인/해제
+async function toggleInvAuditRow(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info || !info.recIds) return;
+  const ids = Object.values(info.recIds).flat();
+  await _applyInvAuditToggle(ids.map(id => inventoryRecords.find(r => String(r.id) === String(id))));
+}
+// 열(사이즈) 일괄 — 모든 배치의 그 사이즈 셀 확인/해제
+async function toggleInvAuditCol(sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ids = [];
+  Object.values(_matrixBatchRegistry).forEach(info => {
+    if (info && info.recIds && info.recIds[sz]) ids.push(...info.recIds[sz]);
+  });
+  await _applyInvAuditToggle(ids.map(id => inventoryRecords.find(r => String(r.id) === String(id))));
 }
 // 매트릭스 빈칸(-) 클릭 → 그 기존 배치에 누락 사이즈 신규 추가(등급·수량만 입력, 나머지는 배치 복사)
 async function openInvAuditAddCell(regId, sz) {
