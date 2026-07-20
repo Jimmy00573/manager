@@ -4125,15 +4125,20 @@ function renderBrixGradeCfg() {
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...brixGrades].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  const rows = sorted.map(g => `<tr>
+  const rows = sorted.map((g, i) => {
+    const isFirst = i === 0, isLast = i === sorted.length - 1;
+    return `<tr>
     <td style="font-weight:600">${esc(g.label)}</td>
     <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="toggleBrixGradeActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
     ${isAdm ? `<td style="white-space:nowrap">
+      <button class="btn" onclick="moveBrixGrade(${g.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
+      <button class="btn" onclick="moveBrixGrade(${g.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
       <button class="btn edt" onclick="editBrixGrade(${g.id})">수정</button>
       <button class="btn del" onclick="deleteBrixGrade(${g.id})">삭제</button>
     </td>` : '<td></td>'}
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -4148,6 +4153,26 @@ function renderBrixGradeCfg() {
       <thead><tr><th>등급명</th><th>순서</th><th>활성</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 당도 등급 없음</div>`}`;
+}
+
+// 당도 등급 순서 조정 — moveDriver 패턴 복제. 인접 등급과 sort_order 스왑(재고현황 등급 탭 순서 반영).
+async function moveBrixGrade(id, dir) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 순서를 변경할 수 있습니다.');
+  const sorted = [...brixGrades].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const i = sorted.findIndex(g => g.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= sorted.length) return;
+  const a = sorted[i], b = sorted[j];
+  const ao = a.sort_order ?? (i + 1);   // NULL 방어(정렬 위치값)
+  const bo = b.sort_order ?? (j + 1);
+  try {
+    await dbUpdateBrixGrade(a.id, { sort_order: bo });
+    await dbUpdateBrixGrade(b.id, { sort_order: ao });
+    brixGrades = await dbGetBrixGrades();   // 정렬 소스 재로드(단일 소스)
+    renderBrixGradeCfg();
+    renderInventoryStatus(); renderInvSummary();   // 재고현황 등급 탭·요약 순서 반영(가드 있어 안전)
+  } catch (e) { alert('순서 변경 오류: ' + e.message); }
 }
 
 async function addBrixGrade() {
