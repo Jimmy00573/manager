@@ -2386,19 +2386,25 @@ function renderCal() {
     h.status === '수확중' && h.date < todayStr &&
     !calTodayEvents.find(e => e.farm === h.farm)
   );
-  // 농가 기준 중복 제거 (같은 농가 1차/2차 등 여러 배차가 있을 때)
-  const seenFarms = new Set();
-  const allTodayItems = [...calTodayEvents, ...ongoingHarvests].filter(e => {
-    if (seenFarms.has(e.farm)) return false;
-    seenFarms.add(e.farm); return true;
-  });
+  // 농가 기준 중복 제거. 같은 농가에 배차+수확 이벤트가 둘 다면 수확 이벤트 우선(수확 관리 목적).
+  // status 집합 disjoint → 수확상태(수확전/중/완료)면 harvest 레코드. (배차가 수확 안 덮게)
+  const _isHarvestEv = e => e.status === '수확전' || e.status === '수확중' || e.status === '수확완료';
+  const _byFarm = new Map();   // 농가별 대표 이벤트(먼저 나온 농가 순서 유지, 수확 이벤트가 배차보다 우선)
+  for (const e of [...calTodayEvents, ...ongoingHarvests]) {
+    const prev = _byFarm.get(e.farm);
+    if (!prev || (!_isHarvestEv(prev) && _isHarvestEv(e))) _byFarm.set(e.farm, e);
+  }
+  const allTodayItems = [..._byFarm.values()];
 
   const todayEl = document.getElementById('cal-today-strip');
   if (todayEl) {
     if (allTodayItems.length) {
       todayEl.style.display = '';
       const rows = allTodayItems.map(e => {
-        const hEntry = harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
+        // 수확 이벤트면 그 harvest 레코드를 id로 정확히(상태 정확) — 배차 이벤트면 농가의 오늘/수확중 harvest 탐색
+        const hEntry = _isHarvestEv(e)
+          ? harvests.find(h => h.id === e.id)
+          : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
         if (hEntry) return harvestRow(hEntry, false);
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
