@@ -10065,7 +10065,7 @@ function renderIbFarmView() {
 
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const pm = _ibProcessedMap();
-  const active = inboundRecords.filter(r => !r.is_void);
+  const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품');
   const emptyGrades = () => ({ 상: 0, 중: 0, 하: 0, total: 0 });
 
   // farm → { remaining, cats{}, rows[], hasPriority, brixG{}, acidG{}, appearG{}, latestDate }
@@ -10094,6 +10094,8 @@ function renderIbFarmView() {
     const q = _farmViewSearch.toLowerCase();
     farms = farms.filter(f => f.toLowerCase().includes(q));
   }
+  // 잔여 0 농가 숨김(다 선과/출고된 농가 — 원물 재고 생기면 자동 복귀)
+  farms = farms.filter(f => farmMap[f].remaining > 0);
 
   // 정렬
   farms.sort((a, b) => {
