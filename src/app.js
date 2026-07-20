@@ -2316,9 +2316,8 @@ function calGetEvents(dStr) {
     ...h, harvest: h.date, driver: null, qty: null, ctype: null,
     status: h.status || '배차없음'
   }));
-  const dispFarms = fromDisp.map(d => d.farm);
-  const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm));
-  return [...fromDisp, ...extra];
+  // 배차(배출)와 수확은 별개 단계 → 같은 농가여도 둘 다 표시(배차가 수확 안 덮음)
+  return [...fromDisp, ...fromHarvest];
 }
 function calGetAllItems() {
   const mStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
@@ -2329,9 +2328,8 @@ function calGetAllItems() {
     (h.date && h.date.startsWith(mStr)) ||
     (h.date && h.end_date && h.date <= mEnd && h.end_date >= mStart)
   ).map(h => ({ ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: h.status || '배차없음' }));
-  const dispFarms = fromDisp.map(d => d.farm + d.harvest);
-  const extra = fromHarvest.filter(h => !dispFarms.includes(h.farm + h.date));
-  return calSortItems([...fromDisp, ...extra]);
+  // 배차·수확 둘 다 표시(별개 단계) — 정렬 유지
+  return calSortItems([...fromDisp, ...fromHarvest]);
 }
 // 수확 일정 관리 버튼(시작/완료/수정/삭제) — 금일 strip·달력 상세·월간 목록 공통 재사용
 const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
