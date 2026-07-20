@@ -242,7 +242,7 @@ async function initApp() {
 
   try {
     await loadProductWeights();
-    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages(), dbGetBrixGrades(), dbGetPachiSizes(), dbGetPachiConditions()]);
+    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages(), dbGetBrixGrades(), dbGetPachiSizes(), dbGetPachiConditions(), loadCategorySystem().catch(() => null)]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -261,6 +261,8 @@ async function initApp() {
     brixGrades = brixData || [];
     pachiSizes = pachiSizeData || [];
     pachiConditions = pachiCondData || [];
+    // 품목 마스터(수확·배차 품목 select용) — inv 탭 미방문 상태에서도 항상 사용 가능하게 부팅 시 로드
+    if (catSys) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; }
     partners = await dbGetPartners().catch(() => []);
     manualTransactions = await dbGetManualTransactions().catch(() => []);
     containerTypes = await dbGetContainerTypes().catch(() => []);
@@ -842,6 +844,7 @@ function popSels() {
     if (cur) filterDrvSel.value = cur;
   }
   popOperatorSel();
+  popItemSelects();   // 수확·배차 품목 select(items 마스터) 채우기
 }
 
 function popOperatorSel() {
@@ -2311,7 +2314,7 @@ function calGetEvents(dStr) {
   const fromHarvest = harvests.filter(h =>
     h.date === dStr ||
     (h.date <= dStr && h.end_date && h.end_date >= dStr) ||
-    (h.status === '수확중' && h.date < dStr && !h.end_date)
+    (h.status === '수확중' && h.date < dStr && dStr <= td() && !h.end_date)
   ).map(h => ({
     ...h, harvest: h.date, driver: null, qty: null, ctype: null,
     status: h.status || '배차없음'
@@ -3766,7 +3769,19 @@ function buildProductOptgroupHTML() {
   return html;
 }
 
+// 수확·배차 품목 select(items 마스터 기반, 자유입력 방지) — 4곳 공통. 현재 값 보존.
+function popItemSelects() {
+  const optHtml = buildProductOptgroupHTML();   // itemDefs 비어도 '선택' 옵션 반환
+  ['cal-add-item', 'mh-item', 'ed-item', 'dp-item'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el.tagName !== 'SELECT') return;
+    const cur = el.value;
+    el.innerHTML = optHtml;
+    if (cur) el.value = cur;
+  });
+}
 function popInvProductSelects() {
+  popItemSelects();   // 품목 마스터 변경 시 수확·배차 select도 갱신
   if (!itemDefs.length) return;
   const optHtml = buildProductOptgroupHTML();
   ['ib-product', 'wa-product'].forEach(id => {

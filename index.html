@@ -154,7 +154,7 @@
       <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="mh-end" type="date"></div>
       <div class="fg"><label>차수</label><input id="mh-round" type="number" min="1" value="1"></div>
       <div class="fg"><label>농가명 *</label><select id="mh-farm"><option value="">선택</option></select></div>
-      <div class="fg"><label>품목</label><input id="mh-item" list="dl-v"></div>
+      <div class="fg"><label>품목</label><select id="mh-item"></select></div>
       <div class="fg"><label>메모</label><input id="mh-note"></div>
     </div>
     <div class="modal-actions"><button class="btn cancel" onclick="CM('harvest')">취소</button><button class="btn pri" onclick="saveHarvestEdit()">저장</button></div>
@@ -223,7 +223,7 @@
       <div class="fg"><label>수량(개)</label><input id="ed-qty" type="number" placeholder="미정이면 비워두세요" min="0"></div>
       <div class="fg"><label>콘테이너 종류</label><select id="ed-ctype"><option value="노랑">🟡 노랑</option><option value="초록">🟢 초록</option><option value="헌콘">⬜ 헌콘</option></select></div>
       <div class="fg"><label>수확 예정일</label><input id="ed-harvest" type="date"></div>
-      <div class="fg"><label>품목</label><input id="ed-item" list="dl-v"></div>
+      <div class="fg"><label>품목</label><select id="ed-item"></select></div>
       <div class="fg"><label>특이사항</label><input id="ed-note"></div>
     </div>
     <div class="modal-actions"><button class="btn cancel" onclick="CM('disp')">취소</button><button class="btn pri" onclick="saveDispEdit()">저장</button></div>
@@ -337,7 +337,7 @@
         <div class="fg"><label>시간대</label><select id="dp-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
         <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
         <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
-        <div class="fg"><label>🍊 품목</label><input id="dp-item" list="dl-v" placeholder="예) 노지감귤"></div>
+        <div class="fg"><label>🍊 품목</label><select id="dp-item"></select></div>
         <div class="fg" style="grid-column:1/-1">
           <label>콘테이너 종류 * <span style="font-size:10px;color:#aaa">→ 재고 자동 차감</span></label>
           <div class="ctype-btns"><button class="ctype-btn" onclick="selCt('노랑')">🟡 노랑</button><button class="ctype-btn" onclick="selCt('초록')">🟢 초록</button><button class="ctype-btn" onclick="selCt('헌콘')">⬜ 헌콘</button></div>
@@ -475,7 +475,7 @@
     <div class="fg"><label>수확 시작일 *</label><input id="cal-add-date" type="date"></div>
     <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="cal-add-end" type="date"></div>
     <div class="fg"><label>차수 <span style="font-size:10px;color:#aaa">(밭떼기 여러 날)</span></label><input id="cal-add-round" type="number" min="1" value="1"></div>
-    <div class="fg"><label>품목</label><input id="cal-add-item" list="dl-v" placeholder="예) 노지감귤"></div>
+    <div class="fg"><label>품목</label><select id="cal-add-item"></select></div>
     <div class="fg"><label>메모</label><input id="cal-add-note" placeholder="메모"></div>
   </div>
   <div class="form-actions"><button class="btn pri" onclick="addHarvest()">일정 등록</button></div>
@@ -1821,6 +1821,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=372"></script>
+<script src="src/app.js?v=373"></script>
 </body>
 </html>
