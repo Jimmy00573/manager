@@ -5386,6 +5386,7 @@ function _renderInvAuditBar() {
     <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건 <span style="color:#9CA3AF;font-size:11px">— 값 있는 셀 클릭 = 확인/해제</span></span>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
       <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
+      <button onclick="outboundUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}건 출고</button>
       <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>
     </div>
   </div>`;
@@ -11046,6 +11047,72 @@ async function deleteUncheckedInvAudit() {
   await loadAndRenderInv();
   if (failMsg) alert(failMsg);
   else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
+}
+
+// 실사 미확인 = 나간 것(출고). 미확인 재고를 '실사출고'로 처리(출고 기록 생성 + 원본 재고 void).
+// deleteUncheckedInvAudit 패턴 복제 + 출고 기록. 선과품(source_type='sorting') 대상. 되돌릴 수 있게 감사로그.
+async function outboundUncheckedInvAudit() {
+  if (!_invAuditMode) return;
+  const unchecked = _invAuditVisible.filter(r => !r.audit_checked_at);   // DB 기준(미확인=나간 것)
+  if (unchecked.length === 0) {
+    await showConfirmEdit('미확인 없음', '확인되지 않은 항목이 없습니다. 모두 확인 완료되었습니다.');
+    return;
+  }
+  const totalCt = unchecked.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const MAX_SHOW = 10;
+  const itemLabels = unchecked.slice(0, MAX_SHOW).map(r =>
+    `${r.farm_name || '(농가없음)'} · ${r.product || ''} · ${r.size_code || ''} · ${r.quality_grade || '일반'} · ${fmtN(Number(r.quantity) || 0)}CT`
+  );
+  if (unchecked.length > MAX_SHOW) itemLabels.push(`...외 ${unchecked.length - MAX_SHOW}건`);
+  const res = await showConfirmDanger({
+    title: '📤 미확인 재고 실사 출고',
+    subtitle: `실사에서 확인하지 않은 ${unchecked.length}건 · 총 ${fmtN(totalCt)}CT를 '실사출고'로 처리합니다(출고 기록 생성 + 재고에서 빠짐). 실사를 끝까지 마쳤는지 확인하세요.`,
+    items: itemLabels,
+    confirmText: `${unchecked.length}건 출고`,
+    needWorker: true
+  });
+  if (!res || !res.ok) return;
+  const date = td();   // 로컬 오늘
+  const adm  = res.worker || sessionStorage.getItem('citrus_adm_user') || 'admin';
+  let successCount = 0;
+  let failMsg = '';
+  for (const r of unchecked) {
+    try {
+      const qty   = Number(r.quantity) || 0;
+      const kgPer = (productWeights && r.product && productWeights[r.product] != null) ? Number(productWeights[r.product]) : 17;
+      // 1) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
+      const ob = await dbInsertOutboundRecord({
+        date, product: r.product, size_code: r.size_code, quantity: qty, unit: 'CT',
+        partner_name: '실사출고', source_type: 'sorting',
+        farm_name: r.farm_name || null, note: '실사 출고', is_void: false,
+        created_by: adm,
+        ref_detail: [{ table: 'inventory_records', id: r.id, amount: qty, voided: true }],
+        weight_kg: qty * kgPer,
+        quality_grade: r.quality_grade || '일반'
+      });
+      if (ob) invOutbounds.unshift(ob);
+      // 2) 원본 재고 차감(미확인=전량 나감 → void)
+      await sbUpdate('inventory_records', r.id, { quantity: 0, is_void: true });
+      r.quantity = 0; r.is_void = true;
+      const inv = inventoryRecords.find(x => x.id === r.id);
+      if (inv) { inv.quantity = 0; inv.is_void = true; }
+      // 3) 감사로그(되돌릴 수 있게)
+      await dbInsertAuditLog({
+        target_table: 'inventory_records', target_id: r.id,
+        before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
+        after_val: { outbound: '실사출고', quantity: 0, is_void: true },
+        reason: `재고현황 실사 출고(실사출고): ${res.reason}`,
+        staff: adm
+      });
+      successCount++;
+    } catch(e) {
+      failMsg = `${successCount}건 출고 후 오류: ${r.farm_name || ''} · ${r.product || ''} — ${e.message}`;
+      break;
+    }
+  }
+  await loadAndRenderInv();
+  if (failMsg) alert(failMsg);
+  else showToast(`📤 미확인 ${successCount}건 실사 출고 완료`);
 }
 
 function toggleIbAuditMode() {
