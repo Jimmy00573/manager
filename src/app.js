@@ -3950,19 +3950,29 @@ function _ibcAddRow(id) {
   if (document.getElementById(`ibc-row-${t.id}`)) return;   // 이미 추가됨
   const chip = document.getElementById(`ibc-chip-${t.id}`);
   if (chip) chip.style.display = 'none';
-  const isOthers = t.owner !== 'ours';   // 남의것(농가것 farm + 농협 nhf) = 반납대기·특징 입력
-  const badge = isOthers
-    ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">남의·반납</span>`
-    : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#DBEAFE;color:#1D4ED8">우리·회수</span>`;
+  const isNhf = t.owner === 'nhf';         // 농협 → nhf_ins(농협별 관리, 농협명 필수)
+  const isOthers = t.owner !== 'ours';     // 남의것(농가것 farm + 농협 nhf) = 반납대기
+  const badge = !isOthers
+    ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#DBEAFE;color:#1D4ED8">우리·회수</span>`
+    : isNhf
+      ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#CCFBF1;color:#0F766E">농협·반납</span>`
+      : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">농가·반납</span>`;
+  const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
+  const extraInput = isNhf
+    ? `<input type="text" id="ibc-nhf-${t.id}" placeholder="농협명*" style="flex:0 0 92px;min-width:80px;${inpS}">` +
+      `<input type="text" id="ibc-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:80px;${inpS}">`
+    : isOthers
+      ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;${inpS}">`
+      : `<span style="flex:1"></span>`;
   const div = document.createElement('div');
   div.id = `ibc-row-${t.id}`;
   div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap';
   div.innerHTML = `
     <span style="flex:0 0 70px;font-size:13px;font-weight:500">${esc(t.name)}</span>
     ${badge}
-    <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty()" style="flex:0 0 62px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+    <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty()" style="flex:0 0 62px;${inpS}">
     <span style="font-size:12px;color:#6B7280">개</span>
-    ${isOthers ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">` : `<span style="flex:1"></span>`}
+    ${extraInput}
     <button type="button" onclick="_ibcRemoveRow('${t.id}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
   document.getElementById('ib-container-rows')?.appendChild(div);
   _ibcSyncQty();
@@ -3998,7 +4008,8 @@ function _ibcSyncQty() {
   _ibcQtyHint();
 }
 
-// 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 우리것→picks 원물수거(회수), 남의것→own_ins(반납대기).
+// 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 3분기:
+//   우리것(ours)→picks 원물수거(회수), 농가것(farm)→own_ins(반납대기), 농협(nhf)→nhf_ins(농협명별).
 async function _saveInboundContainers(date, farm, inboundId) {
   const el = document.getElementById('ib-container-sec');
   if (!el || !farm) return;
@@ -4008,15 +4019,25 @@ async function _saveInboundContainers(date, farm, inboundId) {
     const qty = parseInt(document.getElementById(`ibc-q-${t.id}`)?.value, 10) || 0;
     if (qty <= 0) return;
     const feature = document.getElementById(`ibc-f-${t.id}`)?.value?.trim() || null;
-    jobs.push({ t, qty, feature });
+    const nhf = document.getElementById(`ibc-nhf-${t.id}`)?.value?.trim() || null;   // 농협명(nhf 종류만)
+    jobs.push({ t, qty, feature, nhf });
   });
   if (!jobs.length) return;
   for (const j of jobs) {
+    // 농협 콘테이너는 농협명 필수(농협별 관리). 없으면 이 항목만 건너뜀(own 폴백 금지).
+    if (j.t.owner === 'nhf' && !j.nhf) {
+      alert(`농협 콘테이너(${j.t.name})는 농협명이 필요합니다. 이 항목은 저장하지 않았습니다.`);
+      continue;
+    }
     try {
       if (j.t.owner === 'ours') {
         const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inboundId || null, auto: true, note: '입고 회수' });
         if (row) picks.unshift(row);
+      } else if (j.t.owner === 'nhf') {
+        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin' });
+        if (row) nhfIns.unshift(row);
       } else {
+        // 농가것(farm) → own_ins(반납대기)
         const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, inbound_id: inboundId || null, staff: 'admin' });
         if (row) ownIns.unshift(row);
       }
@@ -4028,8 +4049,9 @@ async function _saveInboundContainers(date, farm, inboundId) {
   jobs.forEach(j => {
     const q = document.getElementById(`ibc-q-${j.t.id}`); if (q) q.value = '';
     const f = document.getElementById(`ibc-f-${j.t.id}`); if (f) f.value = '';
+    const nh = document.getElementById(`ibc-nhf-${j.t.id}`); if (nh) nh.value = '';
   });
-  renderOwn(); renderPick(); renderDash();
+  renderOwn(); renderPick(); renderNhf(); renderDash();
 }
 
 // ── 파치 사용처 관리 ────────────────────────────────────────────
