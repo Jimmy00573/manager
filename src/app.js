@@ -4580,15 +4580,18 @@ function renderPartnerCfg() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
   const usageLabelMap = { in:'입고처', out:'출고처', both:'둘다' };
-  const rows = sorted.map(p => {
+  const rows = sorted.map((p, i) => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
+    const isFirst = i === 0, isLast = i === sorted.length - 1;
     return `<tr>
     <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
     <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
-    ${isAdm ? `<td style="width:120px;white-space:nowrap;text-align:right">
+    ${isAdm ? `<td style="width:170px;white-space:nowrap;text-align:right">
+      <button class="btn" onclick="movePartner('${p.id}',-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
+      <button class="btn" onclick="movePartner('${p.id}',1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
       <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
       <button class="btn del" onclick="deletePartner('${p.id}')">삭제</button>
-    </td>` : '<td style="width:120px"></td>'}
+    </td>` : '<td style="width:170px"></td>'}
   </tr>`;
   }).join('');
 
@@ -4610,9 +4613,29 @@ function renderPartnerCfg() {
     </div>` : ''}
     ${sorted.length ? `
     <div class="tbl-wrap"><table style="width:100%;table-layout:fixed">
-      <thead><tr><th>거래처명</th><th style="width:80px">용도</th><th style="width:120px"></th></tr></thead>
+      <thead><tr><th>거래처명</th><th style="width:80px">용도</th><th style="width:170px"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 거래처가 없습니다.</div>`}`;
+}
+
+// 거래처 순서 조정 — moveBrixGrade 패턴 복제. 인접 거래처와 sort_order 스왑(입고처 드롭다운 순서 반영).
+async function movePartner(id, dir) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 순서를 변경할 수 있습니다.');
+  // 표시와 동일한 정렬(sort_order → name 타이브레이크)로 인접 항목 계산
+  const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
+  const i = sorted.findIndex(p => String(p.id) === String(id));
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= sorted.length) return;
+  const a = sorted[i], b = sorted[j];
+  const ao = a.sort_order ?? (i + 1);   // NULL 방어(정렬 위치값)
+  const bo = b.sort_order ?? (j + 1);
+  try {
+    await dbUpdatePartner(a.id, { sort_order: bo });
+    await dbUpdatePartner(b.id, { sort_order: ao });
+    partners = await dbGetPartners();   // 정렬 소스 재로드(단일 소스)
+    renderPartnerCfg(); popSels();       // 거래처 표 + 입고처 드롭다운 순서 반영
+  } catch (e) { alert('순서 변경 오류: ' + e.message); }
 }
 
 async function addPartner() {
