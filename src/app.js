@@ -1766,12 +1766,13 @@ function gOwnSt(n) {
 }
 function renderOwn() {
   popCtypeSels();   // 반입/반납 폼 종류 드롭다운 채우기
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const names = [...new Set([...ownIns.map(o => o.farm), ...ownOuts.map(o => o.farm)])];
   const pend = names.filter(n => gOwnSt(n).left > 0), done = names.filter(n => gOwnSt(n).left <= 0);
   const bg = document.getElementById('own-sum-badge');
   if (bg) { bg.textContent = pend.length > 0 ? `반납필요 ${pend.length}건` : '모두 정산완료'; bg.className = 'badge ' + (pend.length > 0 ? 'b-warn' : 'b-ok'); bg.style.textTransform = 'none'; bg.style.fontSize = '11px'; }
   let rows = '';
-  if (pend.length) rows += pend.map(n => { const st = gOwnSt(n); return `<tr><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-warn">반납필요</span></td></tr>`; }).join('');
+  if (pend.length) rows += pend.map(n => { const st = gOwnSt(n); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${n.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
   if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(n => { const st = gOwnSt(n); return `<tr class="dr"><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
   document.getElementById('own-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...ownIns.map(o => ({ ...o, dir: '반입', xt: 'ownIn', meth: '-' })), ...ownOuts.map(o => ({ ...o, dir: '반납', xt: 'ownOut', meth: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
@@ -1980,13 +1981,14 @@ function gNhfSt(nhf, type) {
   return { inQ: i, outQ: o, left: i - o };
 }
 function renderNhf() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const keys = [...new Set([...nhfIns.map(o => o.nhf + '||' + o.type), ...nhfOuts.map(o => o.nhf + '||' + o.type)])];
   const pend = keys.filter(k => { const [n, t] = k.split('||'); return gNhfSt(n, t).left > 0; });
   const done = keys.filter(k => { const [n, t] = k.split('||'); return gNhfSt(n, t).left <= 0; });
   const bg = document.getElementById('nhf-sum-badge');
   if (bg) { bg.textContent = pend.length > 0 ? `반납필요 ${pend.length}건` : '모두 정산완료'; bg.className = 'badge ' + (pend.length > 0 ? 'b-warn' : 'b-ok'); bg.style.textTransform = 'none'; bg.style.fontSize = '11px'; }
   let rows = '';
-  if (pend.length) rows += pend.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return `<tr><td class="nm">${esc(nhf)}</td><td><span class="badge b-teal">${esc(type)}</span></td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td><span class="badge b-warn">반납필요</span></td></tr>`; }).join('');
+  if (pend.length) rows += pend.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${nhf.replace(/'/g,"&#39;")}','${type.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td class="nm">${esc(nhf)}</td><td><span class="badge b-teal">${esc(type)}</span></td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
   if (done.length) { rows += `<tr class="ddiv"><td colspan="6">── 정산 완료 ──</td></tr>`; rows += done.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return `<tr class="dr"><td class="nm">${esc(nhf)}</td><td><span class="badge b-teal">${esc(type)}</span></td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
   document.getElementById('nhf-sum').innerHTML = rows || emr(6, '기록 없음');
   const all = [...nhfIns.map(o => ({ ...o, dir: '반입', xt: 'nhfIn', dm: o.goods ? '반입(' + o.goods + ')' : '-' })), ...nhfOuts.map(o => ({ ...o, dir: '반납', xt: 'nhfOut', dm: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
@@ -2107,6 +2109,12 @@ function renderFarmTbl() {
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
 }
 
+// 담당자(직원·기사) select 옵션 — 이름 값(picks.driver / own_out·nhf_out.staff 모두 이름 저장). 선택사항.
+function _drvOptHtml() {
+  return '<option value="">선택 안 함</option>' + drivers.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+}
+const _qrInpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
+
 // 현황판 농가보유 → 바로 회수 처리(빈콘회수 기본). dbInsertPick 재사용. 바깥클릭 닫힘 없음(입력 손실 방지).
 function openQuickRecovery(farm, hold) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
@@ -2131,7 +2139,9 @@ function openQuickRecovery(farm, hold) {
             <option value="원물수거">원물수거</option>
           </select></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">수량(개)</label>
-          <input id="qr-qty" type="number" min="1" value="${defQty}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
+          <input id="qr-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">담당자(회수한 사람)</label>
+          <select id="qr-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
@@ -2147,14 +2157,113 @@ async function saveQuickRecovery(farm) {
   const date = document.getElementById('qr-date')?.value || td();
   const type = document.getElementById('qr-type')?.value || '빈콘회수';
   const qty = parseInt(document.getElementById('qr-qty')?.value, 10) || 0;
+  const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(선택사항)
   if (qty <= 0) return alert('수량을 입력하세요.');
   try {
-    const row = await dbInsertPick({ date, farm, type, qty, auto: false, note: '현황판 회수' });
+    const car = driver ? (drivers.find(d => d.name === driver)?.car || null) : null;
+    const row = await dbInsertPick({ date, farm, type, qty, driver, car, auto: false, note: '현황판 회수' });
     if (row) picks.unshift(row);
     document.getElementById('modal-quick-recovery')?.remove();
     renderDash();   // 농가보유 재계산·현황판 즉시 반영(renderFarmTbl 포함)
     showToast(`${farm} ${type} ${qty}개 회수 등록`);
   } catch (e) { alert('회수 등록 오류: ' + e.message); }
+}
+
+// 현황판 농가 콘테이너 반납필요 → 바로 반납(own_out). dbInsertOwnOut 재사용. 담당자=drivers(선택).
+function openQuickReturnOwn(farm) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const st = gOwnSt(farm);
+  document.getElementById('modal-quick-return')?.remove();
+  const defQty = Math.max(0, Math.round(st.left || 0));
+  const lbl = 'font-size:12px;color:#374151;display:block;margin-bottom:3px';
+  const m = document.createElement('div');
+  m.id = 'modal-quick-return';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#6A1B9A">↩ 농가 콘테이너 반납 — ${esc(farm)}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:#6B7280">반납 필요 <strong style="color:#C05800">${defQty}개</strong>${st.ctype ? ` · 종류 <strong>${esc(st.ctype)}</strong>` : ''} (부분 반납 가능)</div>
+        <div><label style="${lbl}">날짜</label><input id="qt-date" type="date" value="${td()}" style="${_qrInpS}"></div>
+        <div><label style="${lbl}">반납 방법</label><select id="qt-method" style="${_qrInpS}"><option>공장→농가배달</option><option>농가직접회수</option><option>기타</option></select></div>
+        <div><label style="${lbl}">수량(개)</label><input id="qt-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
+        <div><label style="${lbl}">담당자</label><select id="qt-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickReturnOwn('${farm.replace(/'/g,"&#39;")}')">반납 등록</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+  document.body.appendChild(m);
+  setTimeout(() => document.getElementById('qt-qty')?.focus(), 30);
+}
+async function saveQuickReturnOwn(farm) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const st = gOwnSt(farm);
+  const date = document.getElementById('qt-date')?.value || td();
+  const method = document.getElementById('qt-method')?.value || null;
+  const qty = parseInt(document.getElementById('qt-qty')?.value, 10) || 0;
+  const staff = document.getElementById('qt-staff')?.value || null;
+  if (qty <= 0) return alert('수량을 입력하세요.');
+  try {
+    const row = await dbInsertOwnOut({ date, farm, qty, ctype: st.ctype || null, method, feature: st.feature || null, staff });
+    if (row) ownOuts.unshift(row);
+    document.getElementById('modal-quick-return')?.remove();
+    renderOwn(); renderDash();
+    showToast(`${farm} 콘테이너 ${qty}개 반납 등록`);
+  } catch (e) { alert('반납 등록 오류: ' + e.message); }
+}
+
+// 현황판 농협 반납필요 → 바로 반납(nhf_out). dbInsertNhfOut 재사용. 담당자=drivers(선택).
+function openQuickReturnNhf(nhf, type) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const st = gNhfSt(nhf, type);
+  document.getElementById('modal-quick-return-nhf')?.remove();
+  const defQty = Math.max(0, Math.round(st.left || 0));
+  const lbl = 'font-size:12px;color:#374151;display:block;margin-bottom:3px';
+  const m = document.createElement('div');
+  m.id = 'modal-quick-return-nhf';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#0F766E">↩ 농협 반납 — ${esc(nhf)}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:#6B7280">반납 필요 <strong style="color:#C05800">${defQty}개</strong> · 종류 <strong>${esc(type)}</strong> (부분 반납 가능)</div>
+        <div><label style="${lbl}">날짜</label><input id="qtn-date" type="date" value="${td()}" style="${_qrInpS}"></div>
+        <div><label style="${lbl}">반납 방법</label><select id="qtn-method" style="${_qrInpS}"><option>공장→농협배달</option><option>농협직접회수</option><option>기타</option></select></div>
+        <div><label style="${lbl}">수량(개)</label><input id="qtn-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
+        <div><label style="${lbl}">담당자</label><select id="qtn-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickReturnNhf('${nhf.replace(/'/g,"&#39;")}','${type.replace(/'/g,"&#39;")}')">반납 등록</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+  document.body.appendChild(m);
+  setTimeout(() => document.getElementById('qtn-qty')?.focus(), 30);
+}
+async function saveQuickReturnNhf(nhf, type) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const date = document.getElementById('qtn-date')?.value || td();
+  const method = document.getElementById('qtn-method')?.value || null;
+  const qty = parseInt(document.getElementById('qtn-qty')?.value, 10) || 0;
+  const staff = document.getElementById('qtn-staff')?.value || null;
+  if (qty <= 0) return alert('수량을 입력하세요.');
+  try {
+    const row = await dbInsertNhfOut({ date, nhf, type, qty, method, feature: null, staff });
+    if (row) nhfOuts.unshift(row);
+    document.getElementById('modal-quick-return-nhf')?.remove();
+    renderNhf(); renderDash();
+    showToast(`${nhf} ${type} ${qty}개 반납 등록`);
+  } catch (e) { alert('반납 등록 오류: ' + e.message); }
 }
 
 function renderDash() {
