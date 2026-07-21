@@ -110,6 +110,7 @@
     <div class="modal-hdr"><div class="modal-title">✏️ 거래처 수정</div><button class="modal-close" onclick="CM('partner-edit')">✕</button></div>
     <div class="modal-grid">
       <div class="fg"><label>거래처명 *</label><input id="pe-name"></div>
+      <div class="fg"><label>유형</label><select id="pe-category"><option value="농가">농가</option><option value="거래처">거래처</option><option value="농협">농협</option></select></div>
       <div class="fg"><label>용도</label><select id="pe-usage"><option value="both">둘다</option><option value="in">입고처</option><option value="out">출고처</option></select></div>
       <div class="fg"><label>전화</label><input id="pe-tel" type="tel" placeholder="010-0000-0000"></div>
       <div class="fg full"><label>주소</label><input id="pe-addr"></div>
@@ -1825,6 +1826,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=395"></script>
+<script src="src/app.js?v=396"></script>
 </body>
 </html>

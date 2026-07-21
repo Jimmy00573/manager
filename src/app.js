@@ -4012,6 +4012,13 @@ function buildSupplierOptHtml() {
   if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
   return html;
 }
+// 농협 콘테이너 입고 농협명 옵션 — partners 중 category==='농협'만(sort_order順). buildSupplierOptHtml(전체)와 구분.
+function _nhfOptHtml() {
+  return '<option value="">농협 선택</option>' + partners
+    .filter(p => p.category === '농협' && p.is_active !== false)
+    .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || (a.name || '').localeCompare(b.name || '', 'ko'))
+    .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+}
 
 function buildProductOptgroupHTML() {
   let html = '<option value="">선택</option>';
@@ -4220,7 +4227,7 @@ function _ibcAddRow(id) {
       : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">농가·반납</span>`;
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   const extraInput = isNhf
-    ? `<select id="ibc-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${buildSupplierOptHtml()}</select>` +
+    ? `<select id="ibc-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_nhfOptHtml()}</select>` +
       `<input type="text" id="ibc-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:70px;${inpS}">`
     : isOthers
       ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;${inpS}">`
@@ -4812,11 +4819,13 @@ function renderPartnerCfg() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
   const usageLabelMap = { in:'입고처', out:'출고처', both:'둘다' };
+  const catStyle = { 농가: 'background:#E8F5E9;color:#2E7D32', 거래처: 'background:#F3F4F6;color:#6B7280', 농협: 'background:#CCFBF1;color:#0F766E' };
   const rows = sorted.map((p, i) => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
+    const cat = p.category || '거래처';
     const isFirst = i === 0, isLast = i === sorted.length - 1;
     return `<tr>
-    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
+    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis"><span style="font-size:10px;padding:1px 6px;border-radius:8px;margin-right:5px;${catStyle[cat] || catStyle['거래처']}">${esc(cat)}</span>${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
     <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
     ${isAdm ? `<td style="width:170px;white-space:nowrap;text-align:right">
       <button class="btn" onclick="movePartner('${p.id}',-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
@@ -4836,6 +4845,11 @@ function renderPartnerCfg() {
     </div>
     ${isAdm ? `<div style="display:flex;gap:8px;margin-bottom:14px">
       <input id="pt-name" type="text" placeholder="거래처명 입력" style="flex:1;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+      <select id="pt-category" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" title="유형">
+        <option value="농가">농가</option>
+        <option value="거래처" selected>거래처</option>
+        <option value="농협">농협</option>
+      </select>
       <select id="pt-usage" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         <option value="both">둘다</option>
         <option value="in">입고처</option>
@@ -4877,8 +4891,9 @@ async function addPartner() {
   if (!name) return nameEl?.focus();
   if (partners.some(p => p.name === name)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
   const usage = document.getElementById('pt-usage')?.value || 'both';
+  const category = document.getElementById('pt-category')?.value || '거래처';
   try {
-    const row = await dbInsertPartner({ name, usage, sort_order: partners.length + 1, is_active: true });
+    const row = await dbInsertPartner({ name, usage, category, sort_order: partners.length + 1, is_active: true });
     partners.push(row);
     renderPartnerCfg(); popSels();
     if (nameEl) nameEl.value = '';
@@ -4893,6 +4908,7 @@ function editPartner(id) {
   _editPartnerId = id;
   document.getElementById('pe-name').value = p.name || '';
   document.getElementById('pe-usage').value = p.usage || 'both';
+  const peCat = document.getElementById('pe-category'); if (peCat) peCat.value = p.category || '거래처';
   document.getElementById('pe-tel').value = p.tel || '';
   document.getElementById('pe-addr').value = p.addr || '';
   document.getElementById('pe-memo').value = p.memo || '';
@@ -4907,11 +4923,12 @@ async function savePartnerEdit() {
   if (!name) return alert('거래처명을 입력해주세요.');
   if (partners.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
   const usage = document.getElementById('pe-usage').value || 'both';
+  const category = document.getElementById('pe-category')?.value || '거래처';
   const tel   = document.getElementById('pe-tel').value.trim() || null;
   const addr  = document.getElementById('pe-addr').value.trim() || null;
   const memo  = document.getElementById('pe-memo').value.trim() || null;
   try {
-    const updated = await dbUpdatePartner(id, { name, usage, tel, addr, memo });
+    const updated = await dbUpdatePartner(id, { name, usage, category, tel, addr, memo });
     const idx = partners.findIndex(x => x.id === id);
     if (idx !== -1) partners[idx] = { ...partners[idx], ...updated };
     CM('partner-edit');
