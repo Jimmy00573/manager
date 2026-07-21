@@ -13201,7 +13201,19 @@ function setIbKind(k) {
   if (sortedBtn) { sortedBtn.style.background = k === 'sorted' ? '#374151' : '#fff'; sortedBtn.style.color = k === 'sorted' ? '#fff' : '#6B7280'; }
   if (rawBlock)    rawBlock.style.display    = k === 'raw'    ? '' : 'none';
   if (sortedBlock) sortedBlock.style.display = k === 'sorted' ? '' : 'none';
-  if (k === 'sorted') renderIbSortedSizes();
+  if (k === 'sorted') { fillIbSortedGrade(); renderIbSortedSizes(); }
+}
+
+// 선과품 입고 당도 select 옵션 채우기(일반 + 활성 브릭스, sort_order 순) — 기본 '일반'
+function fillIbSortedGrade() {
+  const el = document.getElementById('ib-sorted-grade');
+  if (!el) return;
+  const gradeLabels = ['일반', ...brixGrades
+    .filter(g => g.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label)];
+  el.innerHTML = gradeLabels.map(lbl => `<option>${esc(lbl)}</option>`).join('');
+  el.value = '일반';
 }
 
 function renderIbSortedSizes() {
@@ -13331,6 +13343,7 @@ async function saveInboundSorted(keepOpen) {
   }));
   if (!sizeEntries.length) return alert('사이즈별 수량을 입력하세요.');
   const totalCt = sizeEntries.reduce((s, e) => s + e.ct, 0);
+  const grade = gv('ib-sorted-grade') || '일반';   // 한 입고=한 당도(전체 사이즈 적용)
 
   // 단가 수집
   let totalWeight = 0, totalAmount = 0;
@@ -13349,7 +13362,9 @@ async function saveInboundSorted(keepOpen) {
       inbound_category: '선과품',
       location, driver_id,
       weight_kg: totalWeight ? Math.round(totalWeight * 10) / 10 : null,
-      amount: totalAmount || null
+      amount: totalAmount || null,
+      // 입고 내역 영구 보존(재고 출고/void돼도 남음) — 2단계 상세 표시에서 사용
+      sorted_breakdown: { grade, sizes: sizeEntries.map(e => ({ size: e.size, ct: e.ct })), total_ct: totalCt }
     });
     const ibId = ibRow.id;
     inboundRecords.unshift({ ...ibRow, driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null });
@@ -13360,6 +13375,7 @@ async function saveInboundSorted(keepOpen) {
         const rows = await sbInsert('inventory_records', {
           date, farm_name: supplier, product,
           size_code: e.size, quantity: e.ct,
+          quality_grade: grade,
           location, source_type: 'inbound_sorted',
           inbound_record_id: ibId, is_void: false, created_by: 'admin',
           weight_kg: e._w || null, unit_price: e._p || null, amount: e._amt || null
@@ -13377,6 +13393,8 @@ async function saveInboundSorted(keepOpen) {
     const clearSorted = () => {
       const sizesEl = document.getElementById('ib-sorted-sizes');
       if (sizesEl) sizesEl.querySelectorAll('input[type=number]').forEach(i => { i.value = ''; });
+      const gradeEl = document.getElementById('ib-sorted-grade');
+      if (gradeEl) gradeEl.value = '일반';
       ibSortedTotal();
       const ispBody = document.getElementById('isp-body');
       if (ispBody) { ispBody.style.display = 'none'; }
