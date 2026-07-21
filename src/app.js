@@ -573,8 +573,10 @@ function switchMsgTab(t) {
 // ── 재고
 function getSt(t) {
   const init = stock[t]?.init || 0;
-  const out = dispatches.filter(d => d.ctype === t).reduce((s, d) => s + d.qty, 0);
-  return { init, out, remain: init - out };
+  const disp = dispatches.filter(d => d.ctype === t).reduce((s, d) => s + d.qty, 0);   // 총배출
+  const back = picks.filter(p => p.ctype === t && (p.type === '원물수거' || p.type === '빈콘회수')).reduce((s, p) => s + p.qty, 0);   // 회수(공장 복귀)
+  const out = Math.max(0, disp - back);   // 순배출(현재 나가있는 = 농가보유)
+  return { init, out, disp, back, remain: init - out };   // remain = init − 순배출(회수분 복귀 반영)
 }
 
 function renderSC() {
