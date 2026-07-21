@@ -1678,7 +1678,7 @@ function renderPick() {
   const tb = document.getElementById('pick-tb');
   const list = picks.filter(p => !p.auto);
   if (!list.length) { tb.innerHTML = emr(9, '수거·회수 기록이 없습니다'); return; }
-  const cls = { 원물수거: 'b-ok', 잉여회수: 'b-neu', 빈콘회수: 'b-teal' };
+  const cls = { 원물수거: 'b-ok', 빈콘회수: 'b-teal' };
   tb.innerHTML = list.map(p => `<tr>
     <td>${p.date}</td><td class="nm">${esc(p.farm)}</td>
     <td><span class="badge ${cls[p.type] || 'b-neu'}">${esc(p.type)}</span></td>
@@ -2075,15 +2075,15 @@ function renderRep() {
 function getFCS(name) {
   const out = picks.filter(p => p.farm === name && p.type === '배출').reduce((s, p) => s + p.qty, 0);
   const pk = picks.filter(p => p.farm === name && p.type === '원물수거').reduce((s, p) => s + p.qty, 0);
-  const ret = picks.filter(p => p.farm === name && p.type === '잉여회수').reduce((s, p) => s + p.qty, 0);
+  const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수').reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
   return { out, pk, ret, hold: out - pk - ret };
 }
 function getFCtypes(fn) {
   // 배차 종류별 합계(배차엔 ctype 있음)
   const ob = {}; dispatches.filter(d => d.farm === fn).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
-  // 회수(원물수거+잉여회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백)
+  // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백)
   let recNull = 0; const recByType = {};
-  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '잉여회수')).forEach(p => {
+  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수')).forEach(p => {
     if (p.ctype) recByType[p.ctype] = (recByType[p.ctype] || 0) + p.qty; else recNull += p.qty;
   });
   // 배차·회수 종류 합집합 — 배차만/회수만/둘다 모든 케이스 종류별 표시
@@ -2100,10 +2100,61 @@ function getFCtypes(fn) {
   return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const cl = { 노랑: 'cty', 초록: 'ctg', 헌콘: 'cto' }[t] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${t === '노랑' ? '🟡' : t === '초록' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
 }
 function renderFarmTbl() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; });
-  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); return `<tr><td class="nm">${esc(f.name)}${f.addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(f.addr)}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td>${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
+  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${f.addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(f.addr)}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td>${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
+}
+
+// 현황판 농가보유 → 바로 회수 처리(빈콘회수 기본). dbInsertPick 재사용. 바깥클릭 닫힘 없음(입력 손실 방지).
+function openQuickRecovery(farm, hold) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  document.getElementById('modal-quick-recovery')?.remove();
+  const defQty = Math.max(0, Math.round(hold || 0));
+  const m = document.createElement('div');
+  m.id = 'modal-quick-recovery';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#1565C0">🧺 콘테이너 회수 — ${esc(farm)}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:#6B7280">현재 농가보유 <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">날짜</label>
+          <input id="qr-date" type="date" value="${td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">구분</label>
+          <select id="qr-type" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+            <option value="빈콘회수" selected>⬜ 빈콘회수</option>
+            <option value="원물수거">원물수거</option>
+          </select></div>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">수량(개)</label>
+          <input id="qr-qty" type="number" min="1" value="${defQty}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickRecovery('${farm.replace(/'/g,"&#39;")}')">회수 등록</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(바깥클릭 X)
+  document.body.appendChild(m);
+  setTimeout(() => document.getElementById('qr-qty')?.focus(), 30);
+}
+async function saveQuickRecovery(farm) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const date = document.getElementById('qr-date')?.value || td();
+  const type = document.getElementById('qr-type')?.value || '빈콘회수';
+  const qty = parseInt(document.getElementById('qr-qty')?.value, 10) || 0;
+  if (qty <= 0) return alert('수량을 입력하세요.');
+  try {
+    const row = await dbInsertPick({ date, farm, type, qty, auto: false, note: '현황판 회수' });
+    if (row) picks.unshift(row);
+    document.getElementById('modal-quick-recovery')?.remove();
+    renderDash();   // 농가보유 재계산·현황판 즉시 반영(renderFarmTbl 포함)
+    showToast(`${farm} ${type} ${qty}개 회수 등록`);
+  } catch (e) { alert('회수 등록 오류: ' + e.message); }
 }
 
 function renderDash() {
@@ -2124,7 +2175,7 @@ function renderDash() {
   document.getElementById('afb').innerHTML = fhi.length ? fhi.map(i => {
     const st = getFCS(i.name);
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt w">${i.total}개</span></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 잉여회수 ${st.ret}개 = <strong style="color:#C05800">${st.hold}개</strong> 보유</div>
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 빈콘회수 ${st.ret}개 = <strong style="color:#C05800">${st.hold}개</strong> 보유</div>
     <div class="alert-item-ctypes">${i.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}${i.ownLeft > 0 ? `<span class="ct" style="background:#F3E5F5;color:#6A1B9A">농가것 ${i.ownLeft}개</span>` : ''}</div></div>`;
   }).join('') : '<div class="alert-none">처리 필요 없음 🎉</div>';
   document.getElementById('arb').innerHTML = ri.length ? ri.map(i => `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt g">${i.total}개</span></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div></div>`).join('') : '<div class="alert-none">반납 필요 없음</div>';
