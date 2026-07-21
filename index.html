@@ -80,9 +80,9 @@
       <div class="fg"><label>농가명 *</label><input id="mf-name"></div>
       <div class="fg"><label>연락처</label><input id="mf-tel"></div>
       <div class="fg full"><label>주소</label><input id="mf-addr"></div>
-      <div class="fg"><label>품종</label><input id="mf-variety" list="dl-v"></div>
+      <div class="fg"><label>품종</label><select id="mf-variety"></select></div>
       <div class="fg"><label>계약 콘테이너(개)</label><input id="mf-contract" type="number"></div>
-      <div class="fg"><label>담당직원</label><input id="mf-staff"></div>
+      <div class="fg"><label>담당직원</label><select id="mf-staff"></select></div>
       <div class="fg full"><label>비고</label><input id="mf-memo"></div>
     </div>
     <div class="modal-actions"><button class="btn cancel" onclick="CM('farm')">취소</button><button class="btn pri" onclick="saveFarmEdit()">저장</button></div>
@@ -424,7 +424,7 @@
 <!-- 농가 관리 -->
 <div id="p-farm" class="panel">
   <div class="form-card"><div class="form-title">농가 등록</div>
-    <div class="form-grid"><div class="fg"><label>농가명 *</label><input id="f-name" placeholder="예) 김개똥"></div><div class="fg"><label>연락처</label><input id="f-tel" placeholder="010-0000-0000"></div><div class="fg"><label>주소</label><input id="f-addr" placeholder="예) 서귀포시 ..."></div><div class="fg"><label>품종</label><input id="f-variety" list="dl-v"></div><div class="fg"><label>계약 콘테이너(개)</label><input id="f-contract" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="f-staff" placeholder="담당자명"></div><div class="fg"><label>비고</label><input id="f-memo" placeholder="메모"></div></div>
+    <div class="form-grid"><div class="fg"><label>농가명 *</label><input id="f-name" placeholder="예) 김개똥"></div><div class="fg"><label>연락처</label><input id="f-tel" placeholder="010-0000-0000"></div><div class="fg"><label>주소</label><input id="f-addr" placeholder="예) 서귀포시 ..."></div><div class="fg"><label>품종</label><select id="f-variety"></select></div><div class="fg"><label>계약 콘테이너(개)</label><input id="f-contract" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><select id="f-staff"></select></div><div class="fg"><label>비고</label><input id="f-memo" placeholder="메모"></div></div>
     <div class="form-actions"><button class="btn pri" onclick="addFarm()">등록</button></div>
   </div>
   <div style="font-size:12px;color:#888;margin:8px 0;display:flex;align-items:center;gap:8px">등록된 농가 <span id="farm-cnt" class="badge b-neu">0</span></div>
@@ -1824,6 +1824,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=383"></script>
+<script src="src/app.js?v=384"></script>
 </body>
 </html>

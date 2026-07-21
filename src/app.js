@@ -962,9 +962,13 @@ function copyMsg() {
 function openFarmEdit(id) {
   const f = farms.find(x => x.id === id); if (!f) return;
   _editFarmId = id;
-  ['name', 'tel', 'addr', 'variety', 'contract', 'staff', 'memo'].forEach(k => {
+  popFarmFormSelects();   // 품종·담당직원 옵션 먼저 채움(select라 값 설정 전 필요)
+  ['name', 'tel', 'addr', 'contract', 'memo'].forEach(k => {
     const el = document.getElementById('mf-' + k); if (el) el.value = f[k] || '';
   });
+  // select: 기존값이 목록에 없어도 옵션 추가해 selected(유실 방지)
+  _selEnsureVal(document.getElementById('mf-variety'), f.variety || '');
+  _selEnsureVal(document.getElementById('mf-staff'), f.staff || '');
   document.getElementById('modal-farm').style.display = 'flex';
 }
 async function saveFarmEdit() {
@@ -1118,7 +1122,36 @@ async function delFarm(id) {
   try { await dbDeleteFarm(id); farms = farms.filter(f => f.id !== id); popSels(); renderFarm(); }
   catch (e) { alert('오류: ' + e.message); }
 }
+// 농가 폼(등록 f-*, 수정 mf-*) select 옵션 채우기 — 품종=items 마스터, 담당직원=drivers. 현재값 보존.
+function popFarmFormSelects() {
+  const varOpts = buildProductOptgroupHTML();
+  // drivers는 로드 시 display_order 순으로 정렬됨 — 그 순서 그대로(재정렬 X, 기존 select 관례와 동일)
+  const staffOpts = '<option value="">선택</option>' + drivers
+    .map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+  _fillFarmSel('f-variety', varOpts);   _fillFarmSel('mf-variety', varOpts);
+  _fillFarmSel('f-staff', staffOpts);   _fillFarmSel('mf-staff', staffOpts);
+}
+function _fillFarmSel(id, opts) {
+  const el = document.getElementById(id);
+  if (!el || el.tagName !== 'SELECT') return;
+  const cur = el.value;
+  el.innerHTML = opts;
+  if (cur) _selEnsureVal(el, cur);
+}
+// select에 값 설정 — 옵션에 없는 값(퇴사자·옛 품종 등)이면 옵션 추가 후 선택(유실 방지)
+function _selEnsureVal(el, val) {
+  if (!el) return;
+  if (!val) { el.value = ''; return; }
+  el.value = val;
+  if (el.value !== val) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    el.appendChild(opt);
+    el.value = val;
+  }
+}
 function renderFarm() {
+  popFarmFormSelects();
   document.getElementById('farm-cnt').textContent = farms.length;
   const el = document.getElementById('farm-cards');
   if (!farms.length) { el.innerHTML = '<div class="note">등록된 농가가 없습니다</div>'; return; }
