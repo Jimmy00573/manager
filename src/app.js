@@ -5606,7 +5606,7 @@ function _renderInvMatrix(product, recs, auditMode) {
   displaySizes.forEach(sz => {
     const gi = szGI[sz];
     // 실사 모드면 사이즈(열) 헤더 클릭 = 그 사이즈 모든 배치 확인/해제
-    const _colClk = audit ? ` onclick="toggleInvAuditCol('${esc(sz)}')" title="클릭: 이 사이즈 전체 확인/해제"` : '';
+    const _colClk = audit ? (_invOutboundSub ? ` onclick="outboundInvCol('${esc(sz)}')" title="클릭: 이 사이즈 전량 출고"` : ` onclick="toggleInvAuditCol('${esc(sz)}')" title="클릭: 이 사이즈 전체 확인/해제"`) : '';
     h += `<div style="${H}background:${GC[gi].c};color:#374151;font-weight:600;font-size:11px;padding:5px 2px${audit ? ';cursor:pointer' : ''}"${_colClk}>${esc(sz)}${fruitNoBadge(sz)}</div>`;
   });
   h += `<div style="${HD}border-right:1px solid #2D4E7A;position:sticky;right:${totRight}px;z-index:4"></div>`;
@@ -5633,8 +5633,8 @@ function _renderInvMatrix(product, recs, auditMode) {
     const regId = Object.keys(_matrixBatchRegistry).length;
     _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes }, recIds };
     // 농가(행) 헤더 — 실사 모드면 클릭으로 이 배치 전체 확인/해제(regId를 위에서 먼저 계산)
-    const _rowClk   = audit ? ` onclick="toggleInvAuditRow(${regId})"` : '';
-    const _rowTitle = audit ? `${esc(batch.farm)} · 클릭: 이 배치 전체 확인/해제` : esc(batch.farm);
+    const _rowClk   = audit ? (_invOutboundSub ? ` onclick="outboundInvRow(${regId})"` : ` onclick="toggleInvAuditRow(${regId})"`) : '';
+    const _rowTitle = audit ? `${esc(batch.farm)} · 클릭: 이 배치 ${_invOutboundSub ? '전량 출고' : '전체 확인/해제'}` : esc(batch.farm);
     h += `<div style="${C}background:${firstBg};flex-direction:column;align-items:flex-start;justify-content:center;padding:4px 8px;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB${audit ? ';cursor:pointer' : ''}" title="${_rowTitle}"${_rowClk}>
       <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
       <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
@@ -11175,6 +11175,92 @@ async function saveInvOutbound(regId, sz) {
     document.getElementById('modal-inv-outbound')?.remove();
     renderInventoryStatus();
     showToast(`${info.product} ${sz} ${fmtCT(qty)}CT 출고(${partner})`);
+  } catch (e) { alert('출고 오류: ' + e.message); }
+}
+
+// 행/열 전량출고 — 대상 셀(배치×사이즈) 수집. 각 셀=1 출고 레코드(전량), 셀 재고 소진.
+function _collectInvCells(pairs) {
+  const cells = [];
+  pairs.forEach(({ info, sz }) => {
+    if (!info || !info.recIds) return;
+    const recs = (info.recIds[sz] || []).map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+      .filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0);
+    if (!recs.length) return;
+    const qty = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+    cells.push({ product: info.product, farm: info.farm || null, sz, grade: recs[0].quality_grade || '일반', recs, qty });
+  });
+  return cells;
+}
+function outboundInvRow(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const info = _matrixBatchRegistry[regId];
+  if (!info || !info.recIds) return;
+  const cells = _collectInvCells(Object.keys(info.recIds).map(sz => ({ info, sz })));
+  if (!cells.length) return alert('출고 가능한 재고가 없습니다.');
+  _openInvBulkOutbound(`📤 전량출고 — ${info.farm || ''} ${info.product}`, `배치 ${cells.length}개 사이즈`, cells);
+}
+function outboundInvCol(sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const cells = _collectInvCells(Object.values(_matrixBatchRegistry).map(info => ({ info, sz })));
+  if (!cells.length) return alert('출고 가능한 재고가 없습니다.');
+  _openInvBulkOutbound(`📤 전량출고 — 사이즈 ${sz}`, `${cells.length}개 배치`, cells);
+}
+function _openInvBulkOutbound(title, subLabel, cells) {
+  window._invBulkCells = cells;
+  const totCt = cells.reduce((s, c) => s + c.qty, 0);
+  document.getElementById('modal-inv-bulk-outbound')?.remove();
+  const inpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
+  const lbl = 'font-size:12px;color:#374151;display:block;margin-bottom:3px';
+  const partnerOpts = '<option value="">선택</option>' + partners
+    .filter(p => p.is_active !== false && (p.usage === 'out' || p.usage === 'both' || !p.usage))
+    .map(p => `<option value="${esc(p.name)}"${p.name === '온라인' ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  const m = document.createElement('div');
+  m.id = 'modal-inv-bulk-outbound';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#059669">${esc(title)}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:#6B7280">${esc(subLabel)} · 총 <strong style="color:#065F46">${fmtCT(totCt)} CT</strong> 전량 출고 (각 셀 소진)</div>
+        <div><label style="${lbl}">출고일</label><input id="io2-date" type="date" value="${td()}" style="${inpS}"></div>
+        <div><label style="${lbl}">출고처</label><select id="io2-partner" style="${inpS}">${partnerOpts}</select></div>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px;background:#059669;border-color:#059669" onclick="_execInvBulkOutbound()">전량 출고</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘
+  document.body.appendChild(m);
+}
+async function _execInvBulkOutbound() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const cells = window._invBulkCells || [];
+  const date = document.getElementById('io2-date')?.value || td();
+  const partner = document.getElementById('io2-partner')?.value || '';
+  if (!partner) return alert('출고처를 선택하세요.');
+  if (!cells.length) return;
+  try {
+    for (const c of cells) {
+      const kgPerCt = productWeights[c.product] != null ? productWeights[c.product] : 17;
+      const ob = await dbInsertOutboundRecord({
+        date, product: c.product, size_code: c.sz, quantity: c.qty, unit: 'CT',
+        partner_name: partner, source_type: 'inventory_partial',
+        farm_name: c.farm, quality_grade: c.grade,
+        weight_kg: Math.round(c.qty * kgPerCt * 10) / 10,
+        note: '전량 출고(행/열)', is_void: false,
+        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      });
+      if (ob) invOutbounds.unshift(ob);
+      for (const rec of c.recs) { await sbUpdate('inventory_records', rec.id, { is_void: true, quantity: 0 }); rec.is_void = true; rec.quantity = 0; }
+    }
+    document.getElementById('modal-inv-bulk-outbound')?.remove();
+    window._invBulkCells = null;
+    renderInventoryStatus();
+    showToast(`${cells.length}건 전량 출고(${partner})`);
   } catch (e) { alert('출고 오류: ' + e.message); }
 }
 async function toggleInvAuditCheck(key) {
