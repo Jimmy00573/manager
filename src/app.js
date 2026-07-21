@@ -2140,7 +2140,7 @@ function openQuickRecovery(farm, hold) {
           </select></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">수량(개)</label>
           <input id="qr-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
-        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">담당자(회수한 사람)</label>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">담당자(회수한 사람) <span style="color:#DC2626">*</span></label>
           <select id="qr-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
@@ -2157,8 +2157,9 @@ async function saveQuickRecovery(farm) {
   const date = document.getElementById('qr-date')?.value || td();
   const type = document.getElementById('qr-type')?.value || '빈콘회수';
   const qty = parseInt(document.getElementById('qr-qty')?.value, 10) || 0;
-  const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(선택사항)
+  const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(필수)
   if (qty <= 0) return alert('수량을 입력하세요.');
+  if (!driver) return alert('담당자를 선택하세요.');
   try {
     const car = driver ? (drivers.find(d => d.name === driver)?.car || null) : null;
     const row = await dbInsertPick({ date, farm, type, qty, driver, car, auto: false, note: '현황판 회수' });
@@ -2190,7 +2191,7 @@ function openQuickReturnOwn(farm) {
         <div><label style="${lbl}">날짜</label><input id="qt-date" type="date" value="${td()}" style="${_qrInpS}"></div>
         <div><label style="${lbl}">반납 방법</label><select id="qt-method" style="${_qrInpS}"><option>공장→농가배달</option><option>농가직접회수</option><option>기타</option></select></div>
         <div><label style="${lbl}">수량(개)</label><input id="qt-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
-        <div><label style="${lbl}">담당자</label><select id="qt-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
+        <div><label style="${lbl}">담당자 <span style="color:#DC2626">*</span></label><select id="qt-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
@@ -2209,6 +2210,7 @@ async function saveQuickReturnOwn(farm) {
   const qty = parseInt(document.getElementById('qt-qty')?.value, 10) || 0;
   const staff = document.getElementById('qt-staff')?.value || null;
   if (qty <= 0) return alert('수량을 입력하세요.');
+  if (!staff) return alert('담당자를 선택하세요.');
   try {
     const row = await dbInsertOwnOut({ date, farm, qty, ctype: st.ctype || null, method, feature: st.feature || null, staff });
     if (row) ownOuts.unshift(row);
@@ -2239,7 +2241,7 @@ function openQuickReturnNhf(nhf, type) {
         <div><label style="${lbl}">날짜</label><input id="qtn-date" type="date" value="${td()}" style="${_qrInpS}"></div>
         <div><label style="${lbl}">반납 방법</label><select id="qtn-method" style="${_qrInpS}"><option>공장→농협배달</option><option>농협직접회수</option><option>기타</option></select></div>
         <div><label style="${lbl}">수량(개)</label><input id="qtn-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
-        <div><label style="${lbl}">담당자</label><select id="qtn-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
+        <div><label style="${lbl}">담당자 <span style="color:#DC2626">*</span></label><select id="qtn-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
@@ -2257,6 +2259,7 @@ async function saveQuickReturnNhf(nhf, type) {
   const qty = parseInt(document.getElementById('qtn-qty')?.value, 10) || 0;
   const staff = document.getElementById('qtn-staff')?.value || null;
   if (qty <= 0) return alert('수량을 입력하세요.');
+  if (!staff) return alert('담당자를 선택하세요.');
   try {
     const row = await dbInsertNhfOut({ date, nhf, type, qty, method, feature: null, staff });
     if (row) nhfOuts.unshift(row);
