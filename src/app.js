@@ -4054,6 +4054,65 @@ function _eibEffAcid(orig) {
   return (c === null && orig && orig.acidity_range && !_acidParseable(orig.acidity_range)) ? orig.acidity_range : c;
 }
 
+// ── 입고 크기분포(그룹별 %) — 저장은 '그룹명N%' 문자열(기존 필드·표시 호환). 미선과 육안 추정, 선택사항 ──
+function _sdFmtPct(n) { return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10); }
+// 엄격 파싱: 전체가 '그룹명N%' 토큰(공백 구분)일 때만 {그룹:값}. 자유텍스트면 null(원문 보존용)
+function _parseSizeDist(str) {
+  const s = (str || '').trim();
+  if (!s) return {};
+  const re = /([가-힣]+)(\d+(?:\.\d+)?)%/g;
+  const map = {}; let m;
+  while ((m = re.exec(s)) !== null) map[m[1]] = m[2];
+  const leftover = s.replace(re, '').replace(/\s+/g, '');   // 토큰 외 잔여(공백 제외)
+  return (Object.keys(map).length && leftover === '') ? map : null;
+}
+// 품목 그룹(getSizeGroupsFor)별 % 입력 렌더 — existingStr 파싱해 값 채움(비파싱은 빈칸)
+function renderSizeDistInputs(prefix, product, existingStr) {
+  const wrap = document.getElementById(`${prefix}-size-dist-wrap`);
+  if (!wrap) return;
+  if (!product) { wrap.innerHTML = '<div style="font-size:11px;color:#9CA3AF;padding:4px 0">품목을 먼저 선택하세요</div>'; return; }
+  const groups = getSizeGroupsFor(product) || [];
+  const parsed = _parseSizeDist(existingStr);
+  const cls = `${prefix}-sd-inp`;
+  const inputs = groups.map(g => {
+    const v = (parsed && parsed[g.group] != null) ? parsed[g.group] : '';
+    return `<div style="display:flex;align-items:center;gap:3px">
+      <span style="font-size:11px;color:#6B7280">${esc(g.group)}</span>
+      <input type="number" class="${cls}" data-group="${esc(g.group)}" min="0" max="100" value="${v}" placeholder="0" oninput="_sizeDistRemain('${prefix}')" style="width:48px;padding:4px 4px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+      <span style="font-size:11px;color:#9CA3AF">%</span>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px 10px">${inputs}</div>
+    <div id="${prefix}-sd-remain" style="font-size:11px;margin-top:4px"></div>`;
+  _sizeDistRemain(prefix);
+}
+function _sizeDistRemain(prefix) {
+  const wrap = document.getElementById(`${prefix}-size-dist-wrap`);
+  const el = document.getElementById(`${prefix}-sd-remain`);
+  if (!wrap || !el) return;
+  let sum = 0;
+  wrap.querySelectorAll(`.${prefix}-sd-inp`).forEach(i => { sum += parseFloat(i.value) || 0; });
+  if (sum === 0) { el.textContent = ''; return; }
+  const remain = 100 - sum;
+  if (remain >= 0) { el.innerHTML = `남은 <b>${_sdFmtPct(remain)}%</b> <span style="color:#9CA3AF">(합 ${_sdFmtPct(sum)}%)</span>`; el.style.color = '#6B7280'; }
+  else { el.innerHTML = `⚠ 합 ${_sdFmtPct(sum)}% — 100% 초과(${_sdFmtPct(-remain)}% 넘음)`; el.style.color = '#DC2626'; }
+}
+function _composeSizeDist(prefix) {
+  const wrap = document.getElementById(`${prefix}-size-dist-wrap`);
+  if (!wrap) return null;
+  const parts = [];
+  wrap.querySelectorAll(`.${prefix}-sd-inp`).forEach(i => {
+    const v = parseFloat(i.value);
+    if (!isNaN(v) && v > 0) parts.push(`${i.dataset.group}${_sdFmtPct(v)}%`);
+  });
+  return parts.length ? parts.join(' ') : null;
+}
+// 수정 폼 유효값 — % 칸 비었고 기존값이 비파싱(자유텍스트)이면 원문 보존(유실 방지)
+function _eibEffSize(orig) {
+  const c = _composeSizeDist('eib-m');
+  return (c === null && orig && orig.size_distribution && _parseSizeDist(orig.size_distribution) === null) ? orig.size_distribution : c;
+}
+
 // 농협 콘테이너 입고 농협명 옵션 — partners 중 category==='농협'만(sort_order順). buildSupplierOptHtml(전체)와 구분.
 function _nhfOptHtml() {
   return '<option value="">농협 선택</option>' + partners
@@ -10375,6 +10434,11 @@ function toggleAdvQuality(prefix) {
   const open = panel.style.display === 'none';
   panel.style.display = open ? '' : 'none';
   toggle.textContent = (open ? '▼' : '▶') + ' 고급 입력 (수치)';
+  // 크기분포 그룹칸 아직 없으면 현재 품목으로 생성(입고 폼)
+  if (open && prefix === 'ib') {
+    const wrap = document.getElementById('ib-size-dist-wrap');
+    if (wrap && !wrap.querySelector('.ib-sd-inp')) renderSizeDistInputs('ib', document.getElementById('ib-product')?.value || '', null);
+  }
 }
 
 function onIbCatChange(prefix) {
@@ -12688,7 +12752,7 @@ function editInboundRow(id) {
   setDefectTags('eib-m-defect-wrap', r.defect_tags || null);
   _brixRangeToSel(r.brix_range, 'eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
   _acidRangeToSel(r.acidity_range, 'eib-m-acid-min', 'eib-m-acid-max');
-  document.getElementById('eib-m-size').value = r.size_distribution || '';
+  renderSizeDistInputs('eib-m', r.product, r.size_distribution);
   document.getElementById('eib-m-note').value = r.note || '';
   document.getElementById('eib-m-priority').checked = !!r.is_priority;
   document.getElementById('eib-m-reason').value = '';
@@ -12728,7 +12792,7 @@ async function closeEditInboundModal() {
       getDefectTags('eib-m-defect-wrap') !== (r.defect_tags || null) ||
       _eibEffBrix(r) !== (r.brix_range || null) ||
       _eibEffAcid(r) !== (r.acidity_range || null) ||
-      document.getElementById('eib-m-size').value !== (r.size_distribution || '') ||
+      _eibEffSize(r) !== (r.size_distribution || null) ||
       document.getElementById('eib-m-priority').checked !== !!r.is_priority ||
       (document.getElementById('eib-reclass-src')?.value || '') !== (r.reclassification_source || '') ||
       (document.getElementById('eib-reclass-reason')?.value || '') !== (r.reclassification_reason || '') ||
@@ -12757,7 +12821,7 @@ async function saveInboundModal() {
   const _origIb = inboundRecords.find(x => String(x.id) === String(id));
   const brix_range = _eibEffBrix(_origIb);
   const acidity_range = _eibEffAcid(_origIb);
-  const size_distribution = document.getElementById('eib-m-size').value.trim() || null;
+  const size_distribution = _eibEffSize(_origIb);
   const is_priority = document.getElementById('eib-m-priority').checked;
   const reason = document.getElementById('eib-m-reason').value.trim();
   const isReclass = inbound_category === '재선별';
@@ -13697,9 +13761,10 @@ function cancelIbForm() {
   if (arrow) arrow.style.transform = 'rotate(0deg)';
   if (btn) btn.style.borderBottomColor = 'transparent';
   sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib'); clearGrades('ib');
-  ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max', 'ib-size-dist',
+  ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max',
    'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderSizeDistInputs('ib', document.getElementById('ib-product')?.value || '', null);   // 크기분포 그룹칸 초기화
   const priEl = document.getElementById('ib-priority');
   if (priEl) priEl.checked = false;
   syncReclassList('ib');
@@ -14007,7 +14072,7 @@ async function _addInboundCore(keepOpen) {
   const defect_tags = getDefectTags('ib-defect-wrap');
   const brix_range = _rangeComposeBrix('ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos');
   const acidity_range = _rangeComposeAcid('ib-acidity-min', 'ib-acidity-max');
-  const size_distribution = (document.getElementById('ib-size-dist')?.value || '').trim() || null;
+  const size_distribution = _composeSizeDist('ib');
   const is_priority = document.getElementById('ib-priority')?.checked || false;
   const isReclass = inbound_category === '재선별';
   const reclassification_source = isReclass ? (document.getElementById('ib-reclass-src')?.value || null) : null;
@@ -14064,9 +14129,10 @@ async function _addInboundCore(keepOpen) {
     const catEl = document.getElementById('ib-category'); if (catEl) catEl.value = '상품';
     sv('ib-qty', ''); sv('ib-note', '');
     resetLocForm('ib'); clearGrades('ib');
-    ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max', 'ib-size-dist',
+    ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max',
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    renderSizeDistInputs('ib', document.getElementById('ib-product')?.value || '', null);   // 크기분포 그룹칸 초기화
     const priEl = document.getElementById('ib-priority'); if (priEl) priEl.checked = false;
     const ibpKgct = document.getElementById('ibp-kgct'); if (ibpKgct) ibpKgct.value = '';
     const ibpW = document.getElementById('ibp-weight'); if (ibpW) ibpW.value = '';
