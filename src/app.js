@@ -4820,7 +4820,7 @@ function renderPartnerCfg() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
   const usageLabelMap = { in:'입고처', out:'출고처', both:'둘다' };
-  const catStyle = { 농가: 'background:#E8F5E9;color:#2E7D32', 거래처: 'background:#F3F4F6;color:#6B7280', 농협: 'background:#CCFBF1;color:#0F766E' };
+  const catStyle = { 농가: 'background:#E8F5E9;color:#2E7D32', 거래처: 'background:#F3F4F6;color:#6B7280', 농협: 'background:#CCFBF1;color:#0F766E', 공판장: 'background:#FEF3C7;color:#B45309' };
   const rows = sorted.map((p, i) => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
     const cat = p.category || '거래처';
@@ -4850,6 +4850,7 @@ function renderPartnerCfg() {
         <option value="농가">농가</option>
         <option value="거래처" selected>거래처</option>
         <option value="농협">농협</option>
+        <option value="공판장">공판장</option>
       </select>
       <select id="pt-usage" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         <option value="both">둘다</option>
