@@ -3056,9 +3056,9 @@ function toggleLocMulti(pfx) {
   if (pfx === 'ib') {
     const qtyEl = document.getElementById('ib-qty');
     if (qtyEl) {
-      qtyEl.readOnly = isMulti;
-      qtyEl.style.background = isMulti ? '#f5f5f5' : '';
-      qtyEl.title = isMulti ? '분산 저장 수량 합계 (자동계산)' : '';
+      qtyEl.readOnly = true;   // 미선과 수량은 항상 자동(단일=콘테이너 합산, 분산=위치 합계) — 수기입력 불가
+      qtyEl.style.background = '#F3F4F6';
+      qtyEl.title = isMulti ? '분산 저장 수량 합계 (자동계산)' : '콘테이너 개수 합산 (자동계산)';
     }
     // ensure total display element exists inside loc-rows
     const rowsEl = document.getElementById('ib-loc-rows');
@@ -3069,6 +3069,7 @@ function toggleLocMulti(pfx) {
       rowsEl.appendChild(t);
     }
     if (isMulti) updateLocTotal('ib');
+    else _ibcSyncQty();   // 분산 해제 → 단일: 콘테이너 합산으로 수량 복원
   }
 }
 
@@ -4023,21 +4024,25 @@ function _ibcContainerSum() {
   containerTypes.forEach(t => { s += parseInt(document.getElementById(`ibc-q-${t.id}`)?.value, 10) || 0; });
   return s;
 }
-// ib-qty 옆 힌트: 콘테이너 합계 안내(미선과만). 수량과 다르면 '수량과 다름' 표시.
+// ib-qty 옆 힌트: 콘테이너 합계 안내(미선과 단일저장만). 수량=콘테이너 합산이라 항상 일치.
 function _ibcQtyHint() {
   const el = document.getElementById('ib-qty-hint');
   if (!el) return;
+  if (_ibKind !== 'raw') { el.textContent = ''; return; }
+  if (document.getElementById('ib-loc-multi')?.checked) { el.textContent = ''; return; }   // 분산은 위치합계 별도 표시
   const sum = _ibcContainerSum();
-  if (_ibKind !== 'raw' || sum <= 0) { el.textContent = ''; return; }
-  const cur = parseInt(document.getElementById('ib-qty')?.value, 10) || 0;
-  el.textContent = `🧺 콘테이너 합계 ${sum}개${cur !== sum ? ' (수량과 다름)' : ''}`;
+  el.textContent = sum > 0
+    ? `🧺 콘테이너 합계 ${sum}개 → 수량 자동`
+    : '🧺 콘테이너 개수를 입력하면 수량이 자동 계산됩니다';
 }
 // 콘테이너 합계 → 입고 수량 자동 반영 (미선과 raw만). 선과품은 안 건드림.
 function _ibcSyncQty() {
   if (_ibKind !== 'raw') { _ibcQtyHint(); return; }   // 선과품은 자동합산 없음
+  // 분산 저장은 위치 합계가 수량(updateLocTotal이 채움) — 콘테이너 합산으로 덮지 않음
+  if (document.getElementById('ib-loc-multi')?.checked) { _ibcQtyHint(); return; }
   const sum = _ibcContainerSum();
   const q = document.getElementById('ib-qty');
-  if (q && sum > 0) { q.value = sum; if (typeof calcIbWeightFromCt === 'function') calcIbWeightFromCt(); }
+  if (q) { q.value = sum > 0 ? sum : ''; if (typeof calcIbWeightFromCt === 'function') calcIbWeightFromCt(); }   // 0이면 비움(콘테이너 제거 시 수량도 0)
   _ibcQtyHint();
 }
 
@@ -13280,6 +13285,7 @@ function setIbKind(k) {
   if (rawBlock)    rawBlock.style.display    = k === 'raw'    ? '' : 'none';
   if (sortedBlock) sortedBlock.style.display = k === 'sorted' ? '' : 'none';
   if (k === 'sorted') { fillIbSortedGrade(); renderIbSortedSizes(); }
+  else _ibcSyncQty();   // 미선과: 콘테이너 합산으로 수량·힌트 동기화
 }
 
 // 선과품 입고 당도 select 옵션 채우기(일반 + 활성 브릭스, sort_order 순) — 기본 '일반'
@@ -13512,6 +13518,8 @@ async function _addInboundCore(keepOpen) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
+  // 미선과(원물)는 항상 콘테이너로 입고 — 콘테이너 개수 필수(수량=콘테이너 합산 자동, 수기입력 없음)
+  if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.');
   const driverSelect = document.getElementById('inv-driver-select');
   const drvSelVal = driverSelect?.value || '';
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
