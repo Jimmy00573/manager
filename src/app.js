@@ -2373,9 +2373,12 @@ const _hvStBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '
 function harvestActBtns(h) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
   const st = h.status || '수확전';
+  const canNext = st === '수확완료' && !h.is_final;   // 수확완료 & 전체종료 전 → 차수 이어가기 가능
   return `
     ${st !== '수확중'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
     ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
+    ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#6D28D9;color:#fff;border:none;border-radius:6px" onclick="startNextRound(${h.id})">＋ 다음 차수</button>` : ''}
+    ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#374151;color:#fff;border:none;border-radius:6px" onclick="finishAllHarvest(${h.id})">■ 전체 종료</button>` : ''}
     <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
     <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>`;
 }
@@ -2388,6 +2391,7 @@ function harvestRow(h, showDate) {
       <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round||1}차</span>
       ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
       <span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
+      ${h.is_final ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>` : ''}
       <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${harvestActBtns(h)}</div>
     </div>`;
 }
@@ -2834,6 +2838,34 @@ async function delHarvest(id) {
     await dbDeleteHarvest(id);
     harvests = harvests.filter(h => h.id !== id);
     renderCal();
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// 수확 차수 이어가기 — 재등록 없이 같은 농가·품목 round+1 새 harvest(수확중, 오늘). 이력 보존.
+async function startNextRound(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const h = harvests.find(x => x.id === id);
+  if (!h) return;
+  // 같은 농가의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
+  const nextRound = harvests.filter(x => x.farm === h.farm).reduce((m, x) => Math.max(m, x.round || 1), 0) + 1;
+  try {
+    const row = await dbInsertHarvest({ date: td(), farm: h.farm, item: h.item || null, round: nextRound, status: '수확중', is_final: false });
+    harvests.push(row);
+    renderCal();
+    showToast(`${h.farm} ${nextRound}차 수확 시작`);
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// 수확 전체 종료 — is_final=true(더 이상 차수 추가 불가). 확인 모달로 실수 방지.
+async function finishAllHarvest(id) {
+  const h = harvests.find(x => x.id === id);
+  if (!h) return;
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  if (!(await showConfirmEdit('수확 전체 종료', `${h.farm} 수확을 전체 종료할까요?\n더 이상 차수를 추가할 수 없습니다.`))) return;
+  harvests = harvests.map(x => x.id === id ? { ...x, is_final: true, status: '수확완료' } : x);   // 로컬 먼저 반영
+  renderCal();
+  try {
+    await dbUpdateHarvest(id, { is_final: true, status: '수확완료' });
   } catch (e) { alert('오류: ' + e.message); }
 }
 
