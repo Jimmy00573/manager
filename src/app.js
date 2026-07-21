@@ -5445,7 +5445,8 @@ function renderInventoryStatus() {
       .filter(lbl => lbl !== '일반' && !activeBrix.includes(lbl))
       .sort((a, b) => a.localeCompare(b, 'ko'));
     const gradeKeys = ['일반', ...activeBrix, ...others];
-    const grades = [{ key: 'all', label: '전체' }, ...gradeKeys.map(k => ({ key: k, label: k }))];
+    // 실사 모드면 '전체' 탭 숨김(실사 실수 방지 — 등급별로만). 조회 모드는 전체 유지.
+    const grades = [...(_invAuditMode ? [] : [{ key: 'all', label: '전체' }]), ...gradeKeys.map(k => ({ key: k, label: k }))];
     gradeToolbarEl.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
         <span style="font-size:12px;font-weight:600;color:#374151;margin-right:4px">등급 보기:</span>
@@ -11086,6 +11087,7 @@ function ibRatioBadge(r) {
 function toggleInvAuditMode() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invAuditMode = !_invAuditMode;
+  if (_invAuditMode && _invGrade === 'all') _invGrade = '일반';   // 실사는 등급별만(전체 탭 숨김) → 전체였으면 일반으로
   if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지
   renderInventoryStatus();
 }
@@ -11197,20 +11199,26 @@ function outboundInvRow(regId) {
   if (!info || !info.recIds) return;
   const cells = _collectInvCells(Object.keys(info.recIds).map(sz => ({ info, sz })));
   if (!cells.length) return alert('출고 가능한 재고가 없습니다.');
-  _openInvBulkOutbound(`📤 전량출고 — ${info.farm || ''} ${info.product}`, `배치 ${cells.length}개 사이즈`, cells);
+  _openInvBulkOutbound(`📤 전량출고 — ${info.farm || ''} ${info.product}`, `배치 ${cells.length}개 사이즈`, cells, 'size');
 }
 function outboundInvCol(sz) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
   const cells = _collectInvCells(Object.values(_matrixBatchRegistry).map(info => ({ info, sz })));
   if (!cells.length) return alert('출고 가능한 재고가 없습니다.');
-  _openInvBulkOutbound(`📤 전량출고 — 사이즈 ${sz}`, `${cells.length}개 배치`, cells);
+  _openInvBulkOutbound(`📤 전량출고 — 사이즈 ${sz}`, `${cells.length}개 배치`, cells, 'farm');
 }
-function _openInvBulkOutbound(title, subLabel, cells) {
+function _openInvBulkOutbound(title, subLabel, cells, itemMode) {
   window._invBulkCells = cells;
   const totCt = cells.reduce((s, c) => s + c.qty, 0);
   document.getElementById('modal-inv-bulk-outbound')?.remove();
   const inpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   const lbl = 'font-size:12px;color:#374151;display:block;margin-bottom:3px';
+  // 내역: 행 출고=사이즈별, 열 출고=배치(농가)별
+  const breakdown = cells.map(c => {
+    const name = itemMode === 'farm' ? (c.farm || '-') : c.sz;
+    const sub  = itemMode === 'farm' ? c.sz : '';   // 열 출고는 농가 옆에 사이즈도
+    return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:2px 0"><span style="color:#374151">${esc(name)}${sub ? ` <span style="color:#9CA3AF;font-size:11px">${esc(sub)}</span>` : ''}</span><strong style="color:#065F46">${fmtCT(c.qty)} CT</strong></div>`;
+  }).join('');
   const partnerOpts = '<option value="">선택</option>' + partners
     .filter(p => p.is_active !== false && (p.usage === 'out' || p.usage === 'both' || !p.usage))
     .map(p => `<option value="${esc(p.name)}"${p.name === '온라인' ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
@@ -11225,6 +11233,7 @@ function _openInvBulkOutbound(title, subLabel, cells) {
       </div>
       <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
         <div style="font-size:12px;color:#6B7280">${esc(subLabel)} · 총 <strong style="color:#065F46">${fmtCT(totCt)} CT</strong> 전량 출고 (각 셀 소진)</div>
+        <div style="max-height:150px;overflow-y:auto;border:1px solid #E5E7EB;border-radius:8px;padding:6px 10px;background:#F9FAFB">${breakdown}</div>
         <div><label style="${lbl}">출고일</label><input id="io2-date" type="date" value="${td()}" style="${inpS}"></div>
         <div><label style="${lbl}">출고처</label><select id="io2-partner" style="${inpS}">${partnerOpts}</select></div>
       </div>
