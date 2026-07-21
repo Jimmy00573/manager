@@ -4013,6 +4013,47 @@ function buildSupplierOptHtml() {
   if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
   return html;
 }
+// ── 입고 당도/산도 범위(드롭다운) — 저장은 'min~max' 문자열(기존 필드·표시 호환) ──
+const _ACID_LVLS = ['1이하', '1.1', '1.2', '1.3', '1.4', '1.5이상'];
+function _rangeComposeBrix(loNumId, loPosId, hiNumId, hiPosId) {   // 당도: [숫자][초중후]~[숫자][초중후]
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const lo = g(loNumId) ? g(loNumId) + g(loPosId) : '';
+  const hi = g(hiNumId) ? g(hiNumId) + g(hiPosId) : '';
+  if (!lo && !hi) return null;
+  return (lo && hi) ? `${lo}~${hi}` : (lo || hi);
+}
+function _rangeComposeAcid(loId, hiId) {   // 산도: [값]~[값]
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const lo = g(loId), hi = g(hiId);
+  if (!lo && !hi) return null;
+  return (lo && hi) ? `${lo}~${hi}` : (lo || hi);
+}
+function _brixParseable(str) { return (str || '').split('~').some(p => /^\d{1,2}(초|중|후)?$/.test((p || '').trim())); }
+function _acidParseable(str) { return (str || '').split('~').some(p => _ACID_LVLS.includes((p || '').trim())); }
+// 기존 'min~max' → 당도 4 select 채움(비파싱 세그먼트·옵션 없는 값은 빈 값)
+function _brixRangeToSel(str, loNumId, loPosId, hiNumId, hiPosId) {
+  const setV = (id, v) => { const el = document.getElementById(id); if (!el) return; el.value = v; if (el.value !== v) el.value = ''; };
+  const one = seg => { const m = (seg || '').trim().match(/^(\d{1,2})(초|중|후)?$/); return m ? { num: m[1], pos: m[2] || '' } : { num: '', pos: '' }; };
+  const parts = (str || '').split('~');
+  const a = one(parts[0]); const b = parts.length > 1 ? one(parts[1]) : { num: '', pos: '' };
+  setV(loNumId, a.num); setV(loPosId, a.pos); setV(hiNumId, b.num); setV(hiPosId, b.pos);
+}
+function _acidRangeToSel(str, loId, hiId) {
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = _ACID_LVLS.includes(v) ? v : ''; };
+  const parts = (str || '').split('~');
+  setV(loId, (parts[0] || '').trim());
+  setV(hiId, parts.length > 1 ? (parts[1] || '').trim() : '');
+}
+// 수정 폼 유효값 — 드롭다운 비었고 기존값이 비파싱이면 원문 보존(유실 방지)
+function _eibEffBrix(orig) {
+  const c = _rangeComposeBrix('eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
+  return (c === null && orig && orig.brix_range && !_brixParseable(orig.brix_range)) ? orig.brix_range : c;
+}
+function _eibEffAcid(orig) {
+  const c = _rangeComposeAcid('eib-m-acid-min', 'eib-m-acid-max');
+  return (c === null && orig && orig.acidity_range && !_acidParseable(orig.acidity_range)) ? orig.acidity_range : c;
+}
+
 // 농협 콘테이너 입고 농협명 옵션 — partners 중 category==='농협'만(sort_order順). buildSupplierOptHtml(전체)와 구분.
 function _nhfOptHtml() {
   return '<option value="">농협 선택</option>' + partners
@@ -12645,8 +12686,8 @@ function editInboundRow(id) {
   setGradeVal('eib-m-acid-grade', r.acidity_grade || null);
   setGradeVal('eib-m-appearance-grade', r.appearance_grade || null);
   setDefectTags('eib-m-defect-wrap', r.defect_tags || null);
-  document.getElementById('eib-m-brix-range').value = r.brix_range || '';
-  document.getElementById('eib-m-acid-range').value = r.acidity_range || '';
+  _brixRangeToSel(r.brix_range, 'eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
+  _acidRangeToSel(r.acidity_range, 'eib-m-acid-min', 'eib-m-acid-max');
   document.getElementById('eib-m-size').value = r.size_distribution || '';
   document.getElementById('eib-m-note').value = r.note || '';
   document.getElementById('eib-m-priority').checked = !!r.is_priority;
@@ -12685,8 +12726,8 @@ async function closeEditInboundModal() {
       getGradeVal('eib-m-acid-grade') !== (r.acidity_grade || null) ||
       getGradeVal('eib-m-appearance-grade') !== (r.appearance_grade || null) ||
       getDefectTags('eib-m-defect-wrap') !== (r.defect_tags || null) ||
-      document.getElementById('eib-m-brix-range').value !== (r.brix_range || '') ||
-      document.getElementById('eib-m-acid-range').value !== (r.acidity_range || '') ||
+      _eibEffBrix(r) !== (r.brix_range || null) ||
+      _eibEffAcid(r) !== (r.acidity_range || null) ||
       document.getElementById('eib-m-size').value !== (r.size_distribution || '') ||
       document.getElementById('eib-m-priority').checked !== !!r.is_priority ||
       (document.getElementById('eib-reclass-src')?.value || '') !== (r.reclassification_source || '') ||
@@ -12713,8 +12754,9 @@ async function saveInboundModal() {
   const acidity_grade = getGradeVal('eib-m-acid-grade');
   const appearance_grade = getGradeVal('eib-m-appearance-grade');
   const defect_tags = getDefectTags('eib-m-defect-wrap');
-  const brix_range = document.getElementById('eib-m-brix-range').value.trim() || null;
-  const acidity_range = document.getElementById('eib-m-acid-range').value.trim() || null;
+  const _origIb = inboundRecords.find(x => String(x.id) === String(id));
+  const brix_range = _eibEffBrix(_origIb);
+  const acidity_range = _eibEffAcid(_origIb);
   const size_distribution = document.getElementById('eib-m-size').value.trim() || null;
   const is_priority = document.getElementById('eib-m-priority').checked;
   const reason = document.getElementById('eib-m-reason').value.trim();
@@ -13655,7 +13697,7 @@ function cancelIbForm() {
   if (arrow) arrow.style.transform = 'rotate(0deg)';
   if (btn) btn.style.borderBottomColor = 'transparent';
   sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib'); clearGrades('ib');
-  ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
+  ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max', 'ib-size-dist',
    'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const priEl = document.getElementById('ib-priority');
@@ -13963,8 +14005,8 @@ async function _addInboundCore(keepOpen) {
   const acidity_grade = getGradeVal('ib-acid-grade');
   const appearance_grade = getGradeVal('ib-appearance-grade');
   const defect_tags = getDefectTags('ib-defect-wrap');
-  const brix_range = (document.getElementById('ib-brix-range')?.value || '').trim() || null;
-  const acidity_range = (document.getElementById('ib-acidity-range')?.value || '').trim() || null;
+  const brix_range = _rangeComposeBrix('ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos');
+  const acidity_range = _rangeComposeAcid('ib-acidity-min', 'ib-acidity-max');
   const size_distribution = (document.getElementById('ib-size-dist')?.value || '').trim() || null;
   const is_priority = document.getElementById('ib-priority')?.checked || false;
   const isReclass = inbound_category === '재선별';
@@ -14022,7 +14064,7 @@ async function _addInboundCore(keepOpen) {
     const catEl = document.getElementById('ib-category'); if (catEl) catEl.value = '상품';
     sv('ib-qty', ''); sv('ib-note', '');
     resetLocForm('ib'); clearGrades('ib');
-    ['ib-brix-range', 'ib-acidity-range', 'ib-size-dist',
+    ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max', 'ib-size-dist',
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const priEl = document.getElementById('ib-priority'); if (priEl) priEl.checked = false;
