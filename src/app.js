@@ -4220,8 +4220,8 @@ function _ibcAddRow(id) {
       : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">농가·반납</span>`;
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   const extraInput = isNhf
-    ? `<input type="text" id="ibc-nhf-${t.id}" placeholder="농협명*" style="flex:0 0 92px;min-width:80px;${inpS}">` +
-      `<input type="text" id="ibc-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:80px;${inpS}">`
+    ? `<select id="ibc-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${buildSupplierOptHtml()}</select>` +
+      `<input type="text" id="ibc-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:70px;${inpS}">`
     : isOthers
       ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;${inpS}">`
       : `<span style="flex:1"></span>`;
