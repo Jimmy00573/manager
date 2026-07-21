@@ -85,6 +85,7 @@ let _ibAuditMode = false;
 let _ibAuditChecked = new Set();
 let _ibAuditVisible = [];
 let _invAuditMode = false;
+let _invOutboundSub = false;   // 실사 모드 내 '부분출고' 서브 토글(ON이면 셀 클릭=출고, OFF=확인)
 let _invAuditExpanded = new Set();
 let _invAuditVisible = [];
 let _pachiAuditMode = false;      // 파치 실사 모드(재고/입고 실사와 별개 플래그)
@@ -5652,6 +5653,11 @@ function _renderInvMatrix(product, recs, auditMode) {
         h += `<div class="inv-mc" onclick="openInvAuditAddCell(${regId},'${esc(sz)}')" title="${esc(sz)} 누락 사이즈 추가" style="${C}background:${rowBg};padding:5px 2px;cursor:pointer;color:#D1D5DB">＋</div>`;
         return;
       }
+      // 부분출고 서브모드: 값 있는 셀 클릭 = 출고 모달(확인/편집 대신)
+      if (_invOutboundSub) {
+        h += `<div class="inv-mc" onclick="openInvOutbound(${regId},'${esc(sz)}')" title="클릭하여 부분출고" style="${C}background:#ECFDF5;box-shadow:inset 0 0 0 1.5px #10B981;cursor:pointer;flex-direction:column;gap:0;padding:3px 2px"><span style="font-size:9px;line-height:1;color:#059669">📤</span><strong style="font-size:13px;line-height:1.1;color:#065F46">${fmtCT(val)}</strong></div>`;
+        return;
+      }
       const cellRecs = (batch.recsBySize[sz] || []).filter(r => (Number(r.quantity) || 0) > 0 && !r.is_void);
       const allChk   = cellRecs.length > 0 && cellRecs.every(r => r.audit_checked_at);
       const chkTs    = allChk ? cellRecs.map(r => r.audit_checked_at).sort()[0] : null;
@@ -5740,8 +5746,9 @@ function _renderInvAuditBar() {
   const checked = items.filter(r => r.audit_checked_at).length;   // DB 기준
   const unchecked = total - checked;
   return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
-    <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건 <span style="color:#9CA3AF;font-size:11px">— 값 있는 셀 클릭 = 확인/해제</span></span>
+    <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건 <span style="color:${_invOutboundSub ? '#059669' : '#9CA3AF'};font-size:11px;font-weight:${_invOutboundSub ? '600' : '400'}">— 값 있는 셀 클릭 = ${_invOutboundSub ? '📤 부분출고' : '확인/해제'}</span></span>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
+      <button onclick="toggleInvOutboundSub()" title="ON이면 값 있는 셀 클릭 = 부분출고" style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;cursor:pointer;${_invOutboundSub ? 'background:#059669;color:#fff;border:1px solid #059669' : 'background:#fff;color:#059669;border:1px solid #6EE7B7'}">📤 부분출고 ${_invOutboundSub ? 'ON' : 'OFF'}</button>
       <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
       <button onclick="outboundUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}건 출고</button>
       <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>
@@ -11079,8 +11086,96 @@ function ibRatioBadge(r) {
 function toggleInvAuditMode() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invAuditMode = !_invAuditMode;
-  if (!_invAuditMode) { _invAuditExpanded = new Set(); }   // 체크(audit_checked_at)는 DB라 유지, 펼침만 초기화
+  if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지
   renderInventoryStatus();
+}
+// 실사 모드 내 '부분출고' 서브 토글 — ON이면 값 있는 셀 클릭 = 부분출고 모달
+function toggleInvOutboundSub() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  _invOutboundSub = !_invOutboundSub;
+  renderInventoryStatus();
+}
+// 셀(배치·사이즈) 부분출고 모달 — 현재고에서 부분/전량 출고. 거래처 기본 온라인, 수량 기본 현재고.
+function openInvOutbound(regId, sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const info = _matrixBatchRegistry[regId];
+  if (!info || !info.recIds) return;
+  const recs = (info.recIds[sz] || []).map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+    .filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0);
+  if (!recs.length) return alert('출고 가능한 재고가 없습니다.');
+  const cur = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const grade = recs[0].quality_grade || '일반';
+  document.getElementById('modal-inv-outbound')?.remove();
+  const inpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
+  const lbl = 'font-size:12px;color:#374151;display:block;margin-bottom:3px';
+  const partnerOpts = '<option value="">선택</option>' + partners
+    .filter(p => p.is_active !== false && (p.usage === 'out' || p.usage === 'both' || !p.usage))
+    .map(p => `<option value="${esc(p.name)}"${p.name === '온라인' ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  const m = document.createElement('div');
+  m.id = 'modal-inv-outbound';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#059669">📤 부분출고 — ${esc(info.farm || '')} ${esc(info.product)}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:12px;color:#6B7280">사이즈 <strong>${esc(sz)}</strong> · 당도 <strong>${esc(grade)}</strong> · 현재고 <strong style="color:#065F46">${fmtCT(cur)} CT</strong> (부분 출고 가능)</div>
+        <div><label style="${lbl}">출고일</label><input id="io-date" type="date" value="${td()}" style="${inpS}"></div>
+        <div><label style="${lbl}">출고처</label><select id="io-partner" style="${inpS}">${partnerOpts}</select></div>
+        <div><label style="${lbl}">출고 수량(CT)</label><input id="io-qty" type="number" min="0.1" step="0.1" value="${cur}" style="${inpS}"></div>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px;background:#059669;border-color:#059669" onclick="saveInvOutbound(${regId},'${esc(sz)}')">출고 등록</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘
+  document.body.appendChild(m);
+  setTimeout(() => document.getElementById('io-qty')?.focus(), 30);
+}
+async function saveInvOutbound(regId, sz) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const info = _matrixBatchRegistry[regId];
+  if (!info || !info.recIds) return;
+  const recs = (info.recIds[sz] || []).map(id => inventoryRecords.find(r => String(r.id) === String(id)))
+    .filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0)
+    .sort((a, b) => (a.created_at || a.date || '').localeCompare(b.created_at || b.date || '') || (a.id - b.id));   // FIFO(오래된 것부터)
+  const cur = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const date = document.getElementById('io-date')?.value || td();
+  const partner = document.getElementById('io-partner')?.value || '';
+  const qty = parseFloat(document.getElementById('io-qty')?.value) || 0;
+  if (!partner) return alert('출고처를 선택하세요.');
+  if (qty <= 0) return alert('출고 수량을 입력하세요.');
+  if (qty > cur + 1e-6) return alert(`현재고(${fmtCT(cur)} CT)를 초과했습니다.`);
+  const grade = recs[0]?.quality_grade || '일반';
+  const kgPerCt = productWeights[info.product] != null ? productWeights[info.product] : 17;
+  try {
+    // FIFO 차감(첫 레코드부터). 남은 수량 0되면 소진(is_void)
+    let remaining = qty;
+    for (const rec of recs) {
+      if (remaining <= 1e-6) break;
+      const rq = Number(rec.quantity) || 0;
+      const take = Math.min(rq, remaining);
+      const nq = Math.round((rq - take) * 100) / 100;
+      if (nq <= 0) { await sbUpdate('inventory_records', rec.id, { is_void: true, quantity: 0 }); rec.is_void = true; rec.quantity = 0; }
+      else { await sbUpdate('inventory_records', rec.id, { quantity: nq }); rec.quantity = nq; }
+      remaining -= take;
+    }
+    const ob = await dbInsertOutboundRecord({
+      date, product: info.product, size_code: sz, quantity: qty, unit: 'CT',
+      partner_name: partner, source_type: 'inventory_partial',
+      farm_name: info.farm || null, quality_grade: grade,
+      weight_kg: Math.round(qty * kgPerCt * 10) / 10,
+      note: '부분 출고', is_void: false,
+      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
+    if (ob) invOutbounds.unshift(ob);
+    document.getElementById('modal-inv-outbound')?.remove();
+    renderInventoryStatus();
+    showToast(`${info.product} ${sz} ${fmtCT(qty)}CT 출고(${partner})`);
+  } catch (e) { alert('출고 오류: ' + e.message); }
 }
 async function toggleInvAuditCheck(key) {
   const rec = inventoryRecords.find(r => String(r.id) === key);
