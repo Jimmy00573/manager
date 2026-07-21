@@ -2557,8 +2557,11 @@ function harvestRow(h, showDate) {
       <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
       <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round||1}차</span>
       ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
-      <span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>
-      ${h.is_final ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>` : ''}
+      ${h.is_final
+        ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>`
+        : (st === '수확완료'
+            ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
+            : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}
       <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${harvestActBtns(h)}</div>
     </div>`;
 }
