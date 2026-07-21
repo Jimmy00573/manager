@@ -15054,25 +15054,48 @@ function openSortedInboundDetail(inboundId, showPrice = false) {
   document.getElementById('modal-sorted-ib-detail')?.remove();
   if (_msibEscHandler) { document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; }
 
-  // 데이터 추출 — size별 CT/weight/amount 합산
-  const sizeRecs = inventoryRecords.filter(r =>
+  // 데이터 소스: sorted_breakdown(입고 이력, 출고돼도 보존) 우선, 없으면 재고(하위호환)
+  const liveRecs = inventoryRecords.filter(r =>
     !r.is_void && r.source_type === 'inbound_sorted' &&
     String(r.inbound_record_id) === String(inboundId)
   );
+  const bd = (ib.sorted_breakdown && Array.isArray(ib.sorted_breakdown.sizes)) ? ib.sorted_breakdown : null;
   const sizeData = {};
-  sizeRecs.forEach(r => {
-    if (!sizeData[r.size_code]) sizeData[r.size_code] = { ct: 0, weight: 0, price: null, amount: 0 };
-    sizeData[r.size_code].ct     += Number(r.quantity)  || 0;
-    sizeData[r.size_code].weight += Number(r.weight_kg) || 0;
-    sizeData[r.size_code].amount += Number(r.amount)    || 0;
-    if (r.unit_price) sizeData[r.size_code].price = Number(r.unit_price);
-  });
-  const totalCt  = Object.values(sizeData).reduce((s, v) => s + v.ct, 0);
+  if (bd) {
+    // breakdown 기준(출고 무관) — CT는 이력값, weight/price는 살아있는 재고에서 보강
+    bd.sizes.forEach(s => {
+      if (!s || !s.size) return;
+      if (!sizeData[s.size]) sizeData[s.size] = { ct: 0, weight: 0, price: null, amount: 0 };
+      sizeData[s.size].ct += Number(s.ct) || 0;
+    });
+    liveRecs.forEach(r => {
+      const d = sizeData[r.size_code];
+      if (!d) return;   // breakdown에 없는 사이즈는 이력값 유지
+      d.weight += Number(r.weight_kg) || 0;
+      d.amount += Number(r.amount)    || 0;
+      if (r.unit_price) d.price = Number(r.unit_price);
+    });
+  } else {
+    // 기존 입고(breakdown null) — 재고 기준(하위호환)
+    liveRecs.forEach(r => {
+      if (!sizeData[r.size_code]) sizeData[r.size_code] = { ct: 0, weight: 0, price: null, amount: 0 };
+      sizeData[r.size_code].ct     += Number(r.quantity)  || 0;
+      sizeData[r.size_code].weight += Number(r.weight_kg) || 0;
+      sizeData[r.size_code].amount += Number(r.amount)    || 0;
+      if (r.unit_price) sizeData[r.size_code].price = Number(r.unit_price);
+    });
+  }
+  const hasSizeData = Object.keys(sizeData).length > 0;
+  const totalCt  = (bd && bd.total_ct != null) ? Number(bd.total_ct) : Object.values(sizeData).reduce((s, v) => s + v.ct, 0);
   const totalAmt = Object.values(sizeData).reduce((s, v) => s + v.amount, 0);
+
+  // 당도(재고현황 체계 값 그대로) — breakdown.grade 우선, 없으면 재고 대표값, 없으면 일반
+  const grade = (bd && bd.grade) || (liveRecs.find(r => r.quality_grade)?.quality_grade) || '일반';
+  const gradeIsNormal = grade === '일반';
 
   // 사이즈 div 행
   const groups = getSizeGroupsFor(ib.product);
-  const sizeHtml = sizeRecs.length === 0
+  const sizeHtml = !hasSizeData
     ? `<div style="padding:16px;text-align:center;color:#9CA3AF;font-size:13px">사이즈 기록 없음</div>`
     : groups.map(g => {
         const rows = g.sizes.filter(sz => sizeData[sz]?.ct > 0).map(sz => {
@@ -15132,6 +15155,12 @@ function openSortedInboundDetail(inboundId, showPrice = false) {
             <div style="font-size:11px;color:#1D4ED8;margin-bottom:2px">총 CT</div>
             <div style="font-size:15px;font-weight:800;color:#1565C0">${fmtCT(totalCt || ib.quantity)}</div>
           </div>
+        </div>
+        <div style="margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:13px">
+          <span style="color:#6B7280">당도</span>
+          <span style="font-weight:800;padding:3px 12px;border-radius:999px;${gradeIsNormal
+            ? 'background:#F3F4F6;color:#374151'
+            : 'background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9'}">${esc(grade)}</span>
         </div>
         <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
           <div style="display:flex;justify-content:space-between;padding:6px 12px;background:#F3F4F6;font-size:12px;font-weight:600;color:#374151;border-bottom:2px solid #E5E7EB">
