@@ -2524,6 +2524,35 @@ function renderCal() {
     }
   }
   renderCalUpcoming();
+  renderHarvestActive();
+}
+
+// 수확 진행중 농가 목록 — 전체 종료(is_final) 전이면서 수확 시작(수확중/완료 차수)한 농가.
+// 농가별 최신 차수(max round) harvest 대표 카드 + harvestActBtns(재사용). 매 렌더 계산.
+function renderHarvestActive() {
+  const el = document.getElementById('cal-harvest-active');
+  if (!el) return;
+  const byFarm = {};
+  harvests.forEach(h => { (byFarm[h.farm] = byFarm[h.farm] || []).push(h); });
+  const reps = [];
+  Object.keys(byFarm).forEach(farm => {
+    const list = byFarm[farm];
+    if (list.some(h => h.is_final)) return;                                   // 전체 종료 농가 제외
+    if (!list.some(h => h.status === '수확중' || h.status === '수확완료')) return;   // 수확전만 → 제외
+    const rep = list.reduce((a, b) => ((b.round || 1) >= (a.round || 1) ? b : a));   // 최신 차수 대표
+    reps.push(rep);
+  });
+  if (!reps.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  reps.sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+  el.style.display = '';
+  el.innerHTML = `
+    <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🌾 수확 진행중</div>
+      <div style="font-size:11px;color:#aaa">${reps.length}개 농가</div>
+    </div>
+    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px">
+      ${reps.map(h => harvestRow(h, false)).join('')}
+    </div>`;
 }
 
 function calSelectDay(dStr) {
