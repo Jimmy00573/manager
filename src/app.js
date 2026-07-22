@@ -3556,7 +3556,10 @@ function renderStorageLocations() {
   const zones = [...new Set(storageLocations.map(l => l.zone).filter(Boolean))];
   const datalist = `<datalist id="loc-zone-dl">${zones.map(z => `<option value="${esc(z)}">`).join('')}</datalist>`;
 
-  const rows = storageLocations.map(loc => {
+  // 표시 순서 = movePartner 패턴과 동일 comparator(sort_order → name). moveLocation 인접 계산과 일치.
+  const sortedLocs = [...storageLocations].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
+  const rows = sortedLocs.map((loc, i) => {
+    const isFirst = i === 0, isLast = i === sortedLocs.length - 1;
     const stock = locStock[loc.name];
     const stockStr = stock > 0 ? `<strong style="color:#1565C0">${stock.toLocaleString()} CT</strong>` : '<span style="color:#bbb">—</span>';
     const activeChip = loc.is_active !== false
@@ -3568,6 +3571,8 @@ function renderStorageLocations() {
       <td style="text-align:right">${stockStr}</td>
       <td>${activeChip}</td>
       ${isAdm ? `<td style="white-space:nowrap">
+        <button class="btn" onclick="moveLocation(${loc.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
+        <button class="btn" onclick="moveLocation(${loc.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
         <button class="btn edt" onclick="openLocModal(${loc.id})">수정</button>
         <button class="btn del" onclick="deleteLocation(${loc.id})">삭제</button>
       </td>` : '<td></td>'}
@@ -3640,6 +3645,26 @@ async function saveLocation() {
     popLocSelects(); popUsageSelects();
     showToast(_editLocId ? '위치가 수정되었습니다.' : `"${name}" 위치가 추가되었습니다.`);
   } catch(e) { alert('저장 오류: ' + e.message); }
+}
+
+// 위치 순서 ▲▼ 스왑 — movePartner(4973) 패턴 복제. 인접 sort_order 교환 + dbUpdate 2회 + 재로드.
+async function moveLocation(id, dir) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 순서를 변경할 수 있습니다.');
+  // 표시와 동일한 정렬(sort_order → name 타이브레이크)로 인접 항목 계산
+  const sorted = [...storageLocations].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
+  const i = sorted.findIndex(l => String(l.id) === String(id));
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= sorted.length) return;
+  const a = sorted[i], b = sorted[j];
+  const ao = a.sort_order ?? (i + 1);   // NULL 방어(정렬 위치값)
+  const bo = b.sort_order ?? (j + 1);
+  try {
+    await dbUpdateLocation(a.id, { sort_order: bo });
+    await dbUpdateLocation(b.id, { sort_order: ao });
+    storageLocations = await dbGetLocations();   // 정렬 소스 재로드(단일 소스)
+    renderStorageLocations(); popLocSelects(); popUsageSelects();   // 위치 표 + 입고 등 드롭다운 순서 반영
+  } catch (e) { alert('순서 변경 오류: ' + e.message); }
 }
 
 async function deleteLocation(id) {
