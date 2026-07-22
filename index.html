@@ -303,7 +303,7 @@
   </div>
   <div class="sec-hdr"><div class="sec-title">⚠️ 처리 필요 알림</div><button class="sec-toggle" onclick="togS('alert')"><span id="alert-txt">간략히</span></button></div>
   <div id="alert-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="alert-badges"></div></div>
-  <div id="alert-detail"><div class="alert-cats"><div class="alert-cat"><div class="alert-cat-hdr fh">🟡 농가 보유 <span id="afc" class="alert-cnt w">0</span></div><div class="alert-cat-body" id="afb"></div></div><div class="alert-cat"><div class="alert-cat-hdr rh">🟢 반납 필요 <span id="arc" class="alert-cnt g">0</span></div><div class="alert-cat-body" id="arb"></div></div></div></div>
+  <div id="alert-detail"><div class="alert-cats"><div class="alert-cat"><div class="alert-cat-hdr fh">🟡 회수 필요 <span id="afc" class="alert-cnt w">0</span></div><div class="alert-cat-body" id="afb"></div></div><div class="alert-cat"><div class="alert-cat-hdr rh">🟢 반납 필요 <span id="arc" class="alert-cnt g">0</span></div><div class="alert-cat-body" id="arb"></div></div></div></div>
   <div class="sec-hdr"><div class="sec-title">농가별 콘테이너 현황</div><button class="sec-toggle" onclick="togS('farm-dash')"><span id="farm-dash-txt">간략히</span></button></div>
   <div id="farm-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="farm-dash-badges"></div></div>
   <div id="farm-dash-detail"><div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="ftab-n" onclick="switchFT('n')">처리 필요</button><button class="dtab" id="ftab-o" onclick="switchFT('o')">정상</button></div><table><thead><tr><th>농가명</th><th>배출</th><th>원물수거</th><th>빈콘회수</th><th>농가보유</th><th>상태</th></tr></thead><tbody id="d-farm-tb"></tbody></table></div></div>
@@ -1858,6 +1858,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=409"></script>
+<script src="src/app.js?v=410"></script>
 </body>
 </html>
