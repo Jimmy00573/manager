@@ -848,6 +848,7 @@ function popSels() {
   }
   popOperatorSel();
   popItemSelects();   // 수확·배차 품목 select(items 마스터) 채우기
+  ['ni', 'no'].forEach(pre => _extNameSync(pre));   // 외부용기 반입/반납 이름 드롭다운(소유별) — partners 변경 시 함께 갱신
 }
 
 function popOperatorSel() {
@@ -4157,6 +4158,24 @@ function _nhfOptHtml() {
     .filter(p => p.category === '농협' && p.is_active !== false)
     .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || (a.name || '').localeCompare(b.name || '', 'ko'))
     .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+}
+
+// 외부용기 반입/반납 이름 옵션 — 소유(owner_type)별 필터. 농협은 _nhfOptHtml 재사용, 거래처는 거래처+공판장.
+function _extNameOptHtml(ownerType) {
+  if (ownerType !== '거래처') return _nhfOptHtml();
+  return '<option value="">거래처 선택</option>' + partners
+    .filter(p => (p.category === '거래처' || p.category === '공판장') && p.is_active !== false)
+    .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || (a.name || '').localeCompare(b.name || '', 'ko'))
+    .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+}
+// 소유 select 변경 시 이름 옵션 즉시 갱신. pre: 'ni'(반입) | 'no'(반납)
+function _extNameSync(pre) {
+  const sel = document.getElementById(pre + '-nhf');
+  if (!sel) return;
+  const v = sel.value;
+  const owner = document.getElementById(pre + '-owner-type')?.value || '농협';
+  sel.innerHTML = _extNameOptHtml(owner);
+  if ([...sel.options].some(o => o.value === v)) sel.value = v;
 }
 
 function buildProductOptgroupHTML() {
