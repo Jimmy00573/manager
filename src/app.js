@@ -2155,7 +2155,8 @@ function _drvOptHtml() {
 const _qrInpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
 
 // 현황판 농가보유 → 바로 회수 처리(빈콘회수 기본). dbInsertPick 재사용. 바깥클릭 닫힘 없음(입력 손실 방지).
-function openQuickRecovery(farm, hold) {
+// targetType '농협'이면 농협行(우리 콘테이너 농협보유) 회수 — pick에 target_type='농협' 저장(C-2b-1). 기본 '농가'(기존 호출 무변).
+function openQuickRecovery(farm, hold, targetType = '농가') {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
   document.getElementById('modal-quick-recovery')?.remove();
   const defQty = Math.max(0, Math.round(hold || 0));
@@ -2169,7 +2170,7 @@ function openQuickRecovery(farm, hold) {
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
-        <div style="font-size:12px;color:#6B7280">현재 농가보유 <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
+        <div style="font-size:12px;color:#6B7280">현재 ${targetType === '농협' ? '농협보유(우리 콘테이너)' : '농가보유'} <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">날짜</label>
           <input id="qr-date" type="date" value="${td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">구분</label>
@@ -2184,14 +2185,14 @@ function openQuickRecovery(farm, hold) {
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
-        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickRecovery('${farm.replace(/'/g,"&#39;")}')">회수 등록</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickRecovery('${farm.replace(/'/g,"&#39;")}','${targetType}')">회수 등록</button>
       </div>
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(바깥클릭 X)
   document.body.appendChild(m);
   setTimeout(() => document.getElementById('qr-qty')?.focus(), 30);
 }
-async function saveQuickRecovery(farm) {
+async function saveQuickRecovery(farm, targetType = '농가') {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const date = document.getElementById('qr-date')?.value || td();
   const type = document.getElementById('qr-type')?.value || '빈콘회수';
@@ -2201,7 +2202,7 @@ async function saveQuickRecovery(farm) {
   if (!driver) return alert('담당자를 선택하세요.');
   try {
     const car = driver ? (drivers.find(d => d.name === driver)?.car || null) : null;
-    const row = await dbInsertPick({ date, farm, type, qty, driver, car, auto: false, note: '현황판 회수' });
+    const row = await dbInsertPick({ date, farm, type, qty, driver, car, auto: false, note: '현황판 회수', target_type: targetType });
     if (row) picks.unshift(row);
     document.getElementById('modal-quick-recovery')?.remove();
     renderDash();   // 농가보유 재계산·현황판 즉시 반영(renderFarmTbl 포함)
@@ -2333,11 +2334,12 @@ function renderDash() {
   const trTotal = allReturns.reduce((s, i) => s + i.total, 0);
   document.getElementById('afc').textContent = (fhi.length + nhfHoldList.length) + '곳 · ' + (tfTotal + nhfHoldTotal) + '개';
   document.getElementById('arc').textContent = allReturns.length + '건 · ' + trTotal + '개';
-  // 농협行 회수 항목(농협 배지로 구분) — 회수 처리 버튼은 C-2b에서.
-  const nhfHoldHtml = nhfHoldList.map(x =>
-    `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-teal">농협</span> ${esc(x.nhf)}</div><span class="alert-cnt w">${x.hold}개</span></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div></div>`
-  ).join('');
+  // 농협行 회수 항목(농협 배지로 구분) — 🧺 회수 버튼: openQuickRecovery 농협 확장(target_type='농협', C-2b-1). 관리자만.
+  const nhfHoldHtml = nhfHoldList.map(x => {
+    const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nhf.replace(/'/g,"&#39;")}', ${x.hold}, '농협')">🧺 회수</button>` : '';
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-teal">농협</span> ${esc(x.nhf)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${recBtn}</div></div>
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div></div>`;
+  }).join('');
   document.getElementById('afb').innerHTML = (fhi.length || nhfHoldList.length) ? fhi.map(i => {
     const st = getFCS(i.name);
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt w">${i.total}개</span></div>
