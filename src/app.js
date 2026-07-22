@@ -673,7 +673,7 @@ function T(id) {
   if (_stEl) _stEl.style.display = 'none';
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'chist', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
@@ -706,7 +706,7 @@ function transportSub(sub) {
       b.classList.toggle('active', b.getAttribute('data-sub') === sub));
   }
   // 전체 패널 먼저 끄고, 해당 sub만 켜기
-  ['dash','disp','ext','cal','dboard','farm','drv','vehicle','stats','export','inv','set'].forEach(p => {
+  ['dash','disp','ext','cal','dboard','chist','farm','drv','vehicle','stats','export','inv','set'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const cur = document.getElementById('p-' + sub); if (cur) cur.classList.add('active');
@@ -714,6 +714,7 @@ function transportSub(sub) {
   if (sub === 'dash') renderDash();
   if (sub === 'cal') renderCal();
   if (sub === 'dboard') { if (typeof _dbView !== 'undefined' && _dbView === 'sched') renderDSchedule(); else renderDBoard(); }
+  if (sub === 'chist') renderContainerHistory();
 }
 function DT(id) {
   document.querySelectorAll('#dnav .nbtn').forEach(b =>
@@ -2146,6 +2147,48 @@ function renderFarmTbl() {
   document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${f.addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(f.addr)}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td>${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
+}
+
+// ── 콘테이너 통합 이력(조회 전용) — 6소스 표준화. 계산·저장 로직과 무관, 읽기만.
+function buildContainerHistory() {
+  const rows = [];
+  // 배차 → 배출 (picks의 type='배출'은 배차 자동생성 중복이라 제외)
+  dispatches.forEach(d => rows.push({ date: d.date, kind: '배출', target: d.farm, targetKind: d.target_type === '농협' ? '농협' : '농가', category: d.ctype || '', qty: d.qty || 0, staff: d.driver || '', src: 'dispatch' }));
+  // 회수(원물수거/빈콘회수)
+  picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: p.target_type === '농협' ? '농협' : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
+  // 농가것 반입/반납
+  ownIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_in' }));
+  ownOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_out' }));
+  // 농협/거래처 반입/반납 (owner_type 없으면 농협 — nhfOwner 기본과 동일)
+  nhfIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.nhf, targetKind: o.owner_type === '거래처' ? '거래처' : '농협', category: o.type || '', qty: o.qty || 0, staff: o.staff || '', src: 'nhf_in' }));
+  nhfOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.nhf, targetKind: o.owner_type === '거래처' ? '거래처' : '농협', category: o.type || '', qty: o.qty || 0, staff: o.staff || '', src: 'nhf_out' }));
+  return rows;
+}
+function renderContainerHistory() {
+  const tb = document.getElementById('ch-tb'); if (!tb) return;
+  const all = buildContainerHistory();
+  // 종류 select 동적 채움(선택값 유지, 사라진 값이면 전체로)
+  const catEl = document.getElementById('ch-cat');
+  if (catEl) {
+    const cur = catEl.value;
+    const cats = [...new Set(all.map(r => r.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+    catEl.innerHTML = '<option value="">전체</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    catEl.value = cur;
+    if (catEl.value !== cur) catEl.value = '';
+  }
+  const tk = gv('ch-tkind'), kd = gv('ch-kind'), ct = gv('ch-cat'), q = gv('ch-q'), from = gv('ch-from'), to = gv('ch-to');
+  const list = all.filter(r =>
+    (!tk || r.targetKind === tk) && (!kd || r.kind === kd) && (!ct || r.category === ct) &&
+    (!q || (r.target || '').includes(q)) && (!from || (r.date || '') >= from) && (!to || (r.date || '') <= to)
+  ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const totQty = list.reduce((s, r) => s + r.qty, 0);
+  const sum = document.getElementById('ch-sum');
+  if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>`;
+  const kColor = { 배출: '#DC2626', 회수: '#2E7D32', 반입: '#1565C0', 반납: '#C05800' };
+  const tkBadge = t => t === '농협' ? '<span class="badge b-teal">농협</span>' : t === '거래처' ? '<span class="badge b-info">거래처</span>' : '<span class="badge" style="background:#F3E5F5;color:#6A1B9A">농가</span>';
+  tb.innerHTML = list.length ? list.map(r =>
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${esc(r.category || '-')}</td><td>${r.qty}</td><td>${esc(r.staff || '—')}</td></tr>`
+  ).join('') : emr(6, '이력 없음');
 }
 
 // 담당자(직원·기사) select 옵션 — 이름 값(picks.driver / own_out·nhf_out.staff 모두 이름 저장). 선택사항.
