@@ -5532,7 +5532,7 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
-  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_tiny', 'pachi_green'];
+  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_lowbrix', 'pachi_tiny', 'pachi_green'];
   const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
 
   // 등급 토글 툴바 — 동적: 전체 + 일반(항상) + 재고 있는 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
@@ -8757,7 +8757,7 @@ function renderInvSummary() {
   const isUsageIncluded = name => { const n = name || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
 
   const pachiMap = {}, pachiDetail = {};
-  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny','pachi_green'].includes(r.source_type) && isUsageIncluded(r.usage)).forEach(r => {
+  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_lowbrix','pachi_tiny','pachi_green'].includes(r.source_type) && isUsageIncluded(r.usage)).forEach(r => {
     const p = r.product || '기타';
     pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
     const _u = r.usage || '미분류'; pachiDetail[p] = pachiDetail[p] || {};
@@ -10034,7 +10034,7 @@ function productChip(name) {
 }
 
 const RECLASS_REASONS = {
-  '선과결과': ['고산도', '중품 (애매)', '80g이하', '고당파치', '기타'],
+  '선과결과': ['고산도', '저당도', '중품 (애매)', '80g이하', '고당파치', '기타'],
   '포장라인': ['상처', '변색', '크기 애매', '부패 의심', '기타'],
   '반품':     ['품질 불만', '운송 손상', '기타'],
   '신규입고': ['기타'],
@@ -12983,6 +12983,7 @@ async function openSortingModal(id) {
   document.getElementById('srt-input-ct').value = remaining;
   document.getElementById('srt-waste').value = 0;
   document.getElementById('srt-highacid').value = 0;
+  document.getElementById('srt-lowbrix').value = 0;
   document.getElementById('srt-tiny').value = 0;
   document.getElementById('srt-green').value = 0;
   document.getElementById('srt-loss').value = 0;
@@ -13353,10 +13354,11 @@ function srtUpdateTotals() {
 
   const waste    = parseFloat(document.getElementById('srt-waste').value)    || 0;
   const highacid = parseFloat(document.getElementById('srt-highacid').value) || 0;
+  const lowbrix  = parseFloat(document.getElementById('srt-lowbrix').value)  || 0;
   const tiny     = parseFloat(document.getElementById('srt-tiny').value)     || 0;
   const green    = parseFloat(document.getElementById('srt-green').value)    || 0;
   const loss     = parseFloat(document.getElementById('srt-loss').value)     || 0;
-  const abnormalTotal = waste + highacid + tiny + green + loss;
+  const abnormalTotal = waste + highacid + lowbrix + tiny + green + loss;
   const outputTotal   = normalTotal + abnormalTotal;
   const inputCt       = parseFloat(document.getElementById('srt-input-ct').value) || 0;
   const diff    = outputTotal - inputCt;
@@ -13393,6 +13395,7 @@ async function saveSortingResult() {
   const note        = document.getElementById('srt-note').value.trim();
   const waste       = parseFloat(document.getElementById('srt-waste').value)    || 0;
   const highacid    = parseFloat(document.getElementById('srt-highacid').value) || 0;
+  const lowbrix     = parseFloat(document.getElementById('srt-lowbrix').value)  || 0;
   const tiny        = parseFloat(document.getElementById('srt-tiny').value)     || 0;
   const green       = parseFloat(document.getElementById('srt-green').value)    || 0;
   const loss        = parseFloat(document.getElementById('srt-loss').value)     || 0;
@@ -13412,7 +13415,7 @@ async function saveSortingResult() {
     sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상', quality_grade: inp.dataset.grade || '일반' });
   });
 
-  const abnormalTotal = waste + highacid + tiny + green + loss;
+  const abnormalTotal = waste + highacid + lowbrix + tiny + green + loss;
   const outputTotal   = normalTotal + abnormalTotal;
   if (outputTotal === 0) { alert('선과 결과를 입력하세요.'); return; }
 
@@ -13451,6 +13454,7 @@ async function saveSortingResult() {
       ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', quality_grade: d.quality_grade, note: null })),
       { sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null },
       { sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null },
+      { sorting_result_id: headerId, size_code: null, ct: lowbrix,  category: '저당도', note: null },
       { sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null },
       { sorting_result_id: headerId, size_code: null, ct: green,    category: '청과',   note: null },
       { sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null },
@@ -13490,11 +13494,12 @@ async function saveSortingResult() {
     }
     console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
 
-    // 6-2단계. inventory_records 파치/부산물 등록 (파치·고산도·극소과·청과)
-    // 크기·상태 자동 매핑(4-B): 고산도→상태, 극소과→크기, 청과→상태. source_type은 그대로 유지.
+    // 6-2단계. inventory_records 파치/부산물 등록 (파치·고산도·저당도·극소과·청과)
+    // 크기·상태 자동 매핑(4-B): 고산도/저당도→상태, 극소과→크기, 청과→상태. source_type은 그대로 유지.
     const pachiItems = [
       { value: waste,    sourceType: 'pachi',          sizeGroup: null,     condition: null },
       { value: highacid, sourceType: 'pachi_highacid', sizeGroup: null,     condition: '고산도' },
+      { value: lowbrix,  sourceType: 'pachi_lowbrix',  sizeGroup: null,     condition: '저당도' },
       { value: tiny,     sourceType: 'pachi_tiny',     sizeGroup: '극소과', condition: null },
       { value: green,    sourceType: 'pachi_green',    sizeGroup: null,     condition: '청과' },
     ];
@@ -13553,7 +13558,8 @@ async function saveSortingResult() {
     // 5. audit_log
     const parts = [`정상 ${fmtN(normalTotal)}CT`];
     if (waste    > 0) parts.push(`파치 ${fmtN(waste)}CT`);
-    if (highacid > 0) parts.push(`고산/저당 ${fmtN(highacid)}CT`);
+    if (highacid > 0) parts.push(`고산도 ${fmtN(highacid)}CT`);
+    if (lowbrix  > 0) parts.push(`저당도 ${fmtN(lowbrix)}CT`);
     if (tiny     > 0) parts.push(`극소과 ${fmtN(tiny)}CT`);
     if (green    > 0) parts.push(`청과 ${fmtN(green)}CT`);
     if (loss     > 0) parts.push(`손실 ${fmtN(loss)}CT`);
@@ -14574,9 +14580,9 @@ function renderPachiSection() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
   // Source 1: inventory_records (선과 자동 + 수동 등록)
-  const irRecs = inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_tiny','pachi_green'].includes(r.source_type));
-  const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_tiny','pachi_green'].includes(st);
-  const pachiKindLabel = (st) => ({pachi:'파치', pachi_highacid:'고산/저당', pachi_tiny:'극소과', pachi_green:'청과', pachi_manual:'파치'}[st] || '파치');
+  const irRecs = inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_lowbrix','pachi_tiny','pachi_green'].includes(r.source_type));
+  const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_lowbrix','pachi_tiny','pachi_green'].includes(st);
+  const pachiKindLabel = (st) => ({pachi:'파치', pachi_highacid:'고산도', pachi_lowbrix:'저당도', pachi_tiny:'극소과', pachi_green:'청과', pachi_manual:'파치'}[st] || '파치');
   const irGrouped = {};
   irRecs.forEach(r => {
     const key = (isSortingPachi(r.source_type) && r.sorting_result_id) ? `srt_${r.sorting_result_id}_${r.source_type}` : `ir_${r.id}`;
@@ -15384,11 +15390,12 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
   const detailsByResult = {};
   details.forEach(d => {
     if (!detailsByResult[d.sorting_result_id])
-      detailsByResult[d.sorting_result_id] = { normalMap: {}, waste: 0, highacid: 0, tiny: 0, green: 0, loss: 0 };
+      detailsByResult[d.sorting_result_id] = { normalMap: {}, waste: 0, highacid: 0, lowbrix: 0, tiny: 0, green: 0, loss: 0 };
     const rd = detailsByResult[d.sorting_result_id];
     if (d.category === '정상' && d.size_code) rd.normalMap[d.size_code] = Number(d.ct);
     else if (d.category === '파치')   rd.waste    += Number(d.ct);
     else if (d.category === '고산도') rd.highacid += Number(d.ct);
+    else if (d.category === '저당도') rd.lowbrix  += Number(d.ct);
     else if (d.category === '극소과') rd.tiny     += Number(d.ct);
     else if (d.category === '청과')   rd.green    += Number(d.ct);
     else if (d.category === '손실')   rd.loss     += Number(d.ct);
@@ -15412,7 +15419,7 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
 
   // 차수별 HTML
   const sessionHtml = results.map(r => {
-    const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, tiny: 0, green: 0, loss: 0 };
+    const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, lowbrix: 0, tiny: 0, green: 0, loss: 0 };
     const ib = inboundMap[r.inbound_record_id];
     const ptForResult   = PRODUCT_TYPE_MAP[ib?.product] || '만감류';
     const groupsForResult = ptForResult === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
@@ -15420,7 +15427,8 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
     const normalTotal = allSzForResult.reduce((s, sz) => s + (rd.normalMap[sz] ?? 0), 0);
     const abnList = [
       { label: '파치',   ct: rd.waste    },
-      { label: '고산/저당', ct: rd.highacid },
+      { label: '고산도', ct: rd.highacid },
+      { label: '저당도', ct: rd.lowbrix  },
       { label: '극소과', ct: rd.tiny     },
       { label: '청과',   ct: rd.green    },
       { label: '손실',   ct: rd.loss     },
@@ -15546,7 +15554,7 @@ async function openSortingDetailModal(inboundId) {
   const detailsByResult = {};
   details.forEach(d => {
     if (!detailsByResult[d.sorting_result_id])
-      detailsByResult[d.sorting_result_id] = { normalMap: {}, byGrade: {}, waste: 0, highacid: 0, tiny: 0, green: 0, loss: 0 };
+      detailsByResult[d.sorting_result_id] = { normalMap: {}, byGrade: {}, waste: 0, highacid: 0, lowbrix: 0, tiny: 0, green: 0, loss: 0 };
     const rd = detailsByResult[d.sorting_result_id];
     if (d.category === '정상' && d.size_code) {
       rd.normalMap[d.size_code] = (rd.normalMap[d.size_code] || 0) + Number(d.ct);
@@ -15556,12 +15564,13 @@ async function openSortingDetailModal(inboundId) {
     }
     else if (d.category === '파치')   rd.waste    += Number(d.ct);
     else if (d.category === '고산도') rd.highacid += Number(d.ct);
+    else if (d.category === '저당도') rd.lowbrix  += Number(d.ct);
     else if (d.category === '극소과') rd.tiny     += Number(d.ct);
     else if (d.category === '청과')   rd.green    += Number(d.ct);
     else if (d.category === '손실')   rd.loss     += Number(d.ct);
   });
 
-  // 비정상품 2열 목록 (파치/고산도/극소과/손실)
+  // 비정상품 2열 목록 (파치/고산도/저당도/극소과/청과/손실)
   const abnGrid = list => `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:2px 14px;margin-top:4px">
     ${list.map(d => {
       const z = Number(d.ct) === 0;
@@ -15587,17 +15596,19 @@ async function openSortingDetailModal(inboundId) {
   });
   const cumPachi    = details.filter(d => d.category === '파치').reduce((s,d)   => s + Number(d.ct), 0);
   const cumHighacid = details.filter(d => d.category === '고산도').reduce((s,d) => s + Number(d.ct), 0);
+  const cumLowbrix  = details.filter(d => d.category === '저당도').reduce((s,d) => s + Number(d.ct), 0);
   const cumTiny     = details.filter(d => d.category === '극소과').reduce((s,d) => s + Number(d.ct), 0);
   const cumGreen    = details.filter(d => d.category === '청과').reduce((s,d)   => s + Number(d.ct), 0);
   const cumLoss     = details.filter(d => d.category === '손실').reduce((s,d)   => s + Number(d.ct), 0);
   const cumAbnList  = [
     { label: '파치',   ct: cumPachi    },
-    { label: '고산/저당', ct: cumHighacid },
+    { label: '고산도', ct: cumHighacid },
+    { label: '저당도', ct: cumLowbrix  },
     { label: '극소과', ct: cumTiny     },
     { label: '청과',   ct: cumGreen    },
     { label: '손실',   ct: cumLoss     },
   ];
-  const cumAbn = cumPachi + cumHighacid + cumTiny + cumGreen + cumLoss;
+  const cumAbn = cumPachi + cumHighacid + cumLowbrix + cumTiny + cumGreen + cumLoss;
 
   // 등급 순서: 일반 → 활성 브릭스(sort_order) → 잔존(고당 등, 가나다). 데이터에 있는 등급만.
   const orderGrades = present => {
@@ -15620,11 +15631,12 @@ async function openSortingDetailModal(inboundId) {
   }).join('');
 
   const sessionHtml = results.map(r => {
-    const rd = detailsByResult[r.id] || { normalMap: {}, byGrade: {}, waste: 0, highacid: 0, tiny: 0, green: 0, loss: 0 };
+    const rd = detailsByResult[r.id] || { normalMap: {}, byGrade: {}, waste: 0, highacid: 0, lowbrix: 0, tiny: 0, green: 0, loss: 0 };
     const normalTotal = allSizes.reduce((s, sz) => s + (rd.normalMap[sz] ?? 0), 0);
     const abnList = [
       { label: '파치',   ct: rd.waste    },
-      { label: '고산/저당', ct: rd.highacid },
+      { label: '고산도', ct: rd.highacid },
+      { label: '저당도', ct: rd.lowbrix  },
       { label: '극소과', ct: rd.tiny     },
       { label: '청과',   ct: rd.green    },
       { label: '손실',   ct: rd.loss     },
@@ -15941,7 +15953,8 @@ let _fsrHighlightId = null;
 function _fsrQualStyles(qualRatios) {
   const ABN = [
     { k: '파치',  color: '#9CA3AF' },
-    { k: '고산도', color: '#D97706', label: '고산/저당' },
+    { k: '고산도', color: '#D97706' },
+    { k: '저당도', color: '#2563EB' },
     { k: '극소과', color: '#7C3AED' },
     { k: '청과',  color: '#16A34A' },
   ];
@@ -16018,6 +16031,7 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
     const totalCt = outDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const pachiCt   = outDtls.filter(d => d.category === '파치').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const acidCt    = outDtls.filter(d => d.category === '고산도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+    const lowbrixCt = outDtls.filter(d => d.category === '저당도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const tinyCt    = outDtls.filter(d => d.category === '극소과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     const greenCt   = outDtls.filter(d => d.category === '청과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
     // 정상품을 등급(quality_grade)별로 세분화 — '고당' 뭉침 해소(일반/11.5br/12br/잔존 각각). gradeOf 재사용.
@@ -16027,6 +16041,7 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
     Object.keys(gradeCt).forEach(g => { qualRatios[g] = totalCt > 0 ? Math.round(gradeCt[g] / totalCt * 100) : 0; });
     qualRatios['파치']  = totalCt > 0 ? Math.round(pachiCt / totalCt * 100) : 0;
     qualRatios['고산도'] = totalCt > 0 ? Math.round(acidCt  / totalCt * 100) : 0;
+    qualRatios['저당도'] = totalCt > 0 ? Math.round(lowbrixCt / totalCt * 100) : 0;
     qualRatios['극소과'] = totalCt > 0 ? Math.round(tinyCt  / totalCt * 100) : 0;
     qualRatios['청과']  = totalCt > 0 ? Math.round(greenCt / totalCt * 100) : 0;
 
