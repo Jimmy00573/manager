@@ -14156,6 +14156,7 @@ async function _addInboundCore(keepOpen) {
     try {
       const driverObj = driver_id ? (drivers.find(d => d.id === driver_id) || null) : null;
       let ibId = null;   // 콘테이너 연동용 대표 입고 id(분산이면 첫 건)
+      let _newInbounds = [];   // 방금 저장된 입고 row(들) — 파치 재고 전환용
       if (isDistributed) {
         const distribution_group_id = generateUUID();
         const inserted = [];
@@ -14165,10 +14166,29 @@ async function _addInboundCore(keepOpen) {
         }
         inserted.forEach(row => inboundRecords.unshift({ ...row, driver: driverObj }));
         ibId = inserted[0] ? inserted[0].id : null;
+        _newInbounds = inserted;
       } else {
         const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
         inboundRecords.unshift({ ...row, driver: driverObj });
         ibId = row.id;
+        _newInbounds = [row];
+      }
+
+      // 입고 파치 → inventory_records 파치 재고 전환(사용처 지정·출고·실사 가능).
+      // ★inbound_record_id 연결 필수 — 입고 삭제 시 cascade(9482 b-2 자동). usage=null(미지정) → 파치 목록에서 지정.
+      if (inbound_category === '파치') {
+        for (const row of _newInbounds) {
+          if (!row || !row.id || !(Number(row.quantity) > 0)) continue;
+          try {
+            const pr = await sbInsert('inventory_records', {
+              date, farm_name, product, size_code: null,
+              quantity: row.quantity, location: row.location || null,
+              source_type: 'pachi', inbound_record_id: row.id,
+              usage: null, is_void: false, note: null, created_by: 'admin'
+            });
+            if (pr && pr[0]) inventoryRecords.push(pr[0]);
+          } catch (pErr) { console.warn('입고 파치 재고 생성 실패(무시):', pErr.message); }
+        }
       }
       await _saveInboundContainers(date, farm_name, ibId);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
       renderInvSummary(); renderInboundList();
@@ -14614,9 +14634,11 @@ function renderPachiSection() {
     sizeGroup: null, condition: null
   }));
 
-  // Source 3: inbound_records category=파치
+  // Source 3: inbound_records category=파치 — 단, inventory_records로 전환(source_type='pachi', inbound_record_id 연결)된 건은
+  // Source 1(irGrouped)에서 이미 표시되므로 제외(중복 방지). 아직 전환 안 된 레거시 입고 파치만 여기서 표시.
   const inboundPachi = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category === '파치')
+    .filter(r => !r.is_void && r.inbound_category === '파치'
+      && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === 'pachi' && ir.inbound_record_id === r.id))
     .map(r => ({
       date: r.date, farm: r.farm_name || null, product: r.product || '기타',
       ct: Number(r.quantity) || 0,
