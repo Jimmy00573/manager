@@ -13889,7 +13889,7 @@ function setIbKind(k) {
   if (sortedBtn) { sortedBtn.style.background = k === 'sorted' ? '#374151' : '#fff'; sortedBtn.style.color = k === 'sorted' ? '#fff' : '#6B7280'; }
   if (rawBlock)    rawBlock.style.display    = k === 'raw'    ? '' : 'none';
   if (sortedBlock) sortedBlock.style.display = k === 'sorted' ? '' : 'none';
-  if (k === 'sorted') { fillIbSortedGrade(); renderIbSortedSizes(); }
+  if (k === 'sorted') { fillIbSortedGrade(); renderIbSortedSizes(); renderIbContainerSection(); }   // 선과품도 콘테이너 칩 렌더(선택사항)
   else _ibcSyncQty();   // 미선과: 콘테이너 합산으로 수량·힌트 동기화
 }
 
