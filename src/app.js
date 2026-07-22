@@ -781,13 +781,29 @@ function afF(p) {
 }
 function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv(p + '-car', d.car || ''); }
 
+// 배차 대상 종류(dp-target-type: 농가/농협)에 따라 dp-farm 옵션 전환 — 농가면 farms 목록, 농협이면 _nhfOptHtml(category='농협')
+function refreshDpFarmOpts() {
+  const el = document.getElementById('dp-farm'); if (!el) return;
+  const tt = gv('dp-target-type') || '농가';
+  const prev = el.value;
+  if (tt === '농협') el.innerHTML = _nhfOptHtml();
+  else {
+    el.innerHTML = '<option value="">선택</option>';
+    farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+  }
+  el.value = prev;
+  if (el.value !== prev) { el.value = ''; afF('dp'); }   // 종류 전환으로 기존 선택이 없으면 초기화(자동값도 비움)
+}
+
 function popSels() {
-  ['dp-farm', 'pk-farm', 'oi-farm', 'oo-farm', 'bk-farm'].forEach(id => {
+  ['pk-farm', 'oi-farm', 'oo-farm', 'bk-farm'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value; el.innerHTML = '<option value="">선택</option>';
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
     el.value = v;
   });
+  refreshDpFarmOpts();   // dp-farm은 대상 종류(농가/농협)에 따라 별도 채움
+
   ['dp-drv', 'pk-drv', 'bk-drv'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value;
@@ -1464,15 +1480,16 @@ function ctB(v) { const m = { 노랑: '🟡', 초록: '🟢', 헌콘: '⬜', 사
 
 async function addDisp() {
   const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv'), qty = n('dp-qty'), ctype = gv('dp-ctype');
-  if (!date || !farm || !drv) { alert('날짜, 농가명, 기사명을 입력하세요'); return; }
+  const targetType = gv('dp-target-type') || '농가';   // 배차 대상 종류(농가/농협)
+  if (!date || !farm || !drv) { alert('날짜, 대상명, 기사명을 입력하세요'); return; }
   if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
   const d = gd(drv);
   try {
-    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배차완료' });
+    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배차완료', target_type: targetType });
     dispatches.unshift(row);
-    // 수량이 있을 때만 배출 자동 pick 생성
+    // 수량이 있을 때만 배출 자동 pick 생성(대상 종류 동일하게)
     if (qty > 0) {
-      await dbInsertPick({ date, farm, type: '배출', qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true });
+      await dbInsertPick({ date, farm, type: '배출', qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
       picks = await dbGetPicks();
     }
     clr('dp-qty', 'dp-note', 'dp-harvest'); sv('dp-ctype', ''); sv('dp-trip', '');
@@ -1628,6 +1645,7 @@ function renderHarvestNoDisp() {
 }
 
 function fillDispForm(farm, harvestDate, item) {
+  sv('dp-target-type', '농가'); refreshDpFarmOpts();   // 농가 배차 폼으로(농협 모드였으면 옵션 복원)
   const fd = document.getElementById('dp-farm');
   if (fd) { fd.value = farm; afF('dp'); }
   const hd = document.getElementById('dp-harvest');
@@ -2087,18 +2105,20 @@ function renderRep() {
 }
 
 // ── 현황판
+// 농가보유 집계 — target_type '농가'만(null 포함=구데이터). 농협行 배차는 getNhfContainerHold로 별도.
+function _isFarmTgt(r) { return r.target_type === '농가' || !r.target_type; }
 function getFCS(name) {
-  const out = picks.filter(p => p.farm === name && p.type === '배출').reduce((s, p) => s + p.qty, 0);
-  const pk = picks.filter(p => p.farm === name && p.type === '원물수거').reduce((s, p) => s + p.qty, 0);
-  const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수').reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
+  const out = picks.filter(p => p.farm === name && p.type === '배출' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);
+  const pk = picks.filter(p => p.farm === name && p.type === '원물수거' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);
+  const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
   return { out, pk, ret, hold: out - pk - ret };
 }
 function getFCtypes(fn) {
-  // 배차 종류별 합계(배차엔 ctype 있음)
-  const ob = {}; dispatches.filter(d => d.farm === fn).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
-  // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백)
+  // 배차 종류별 합계(배차엔 ctype 있음) — 농가 대상만
+  const ob = {}; dispatches.filter(d => d.farm === fn && _isFarmTgt(d)).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
+  // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 농가 대상만
   let recNull = 0; const recByType = {};
-  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수')).forEach(p => {
+  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && _isFarmTgt(p)).forEach(p => {
     if (p.ctype) recByType[p.ctype] = (recByType[p.ctype] || 0) + p.qty; else recNull += p.qty;
   });
   // 배차·회수 종류 합집합 — 배차만/회수만/둘다 모든 케이스 종류별 표시
@@ -2113,6 +2133,12 @@ function getFCtypes(fn) {
     Object.keys(remain).forEach(t => { if (remain[t] > 0) remain[t] *= ratio; });
   }
   return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const cl = { 노랑: 'cty', 초록: 'ctg', 헌콘: 'cto' }[t] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${t === '노랑' ? '🟡' : t === '초록' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
+}
+// 농협보유 집계(우리 콘테이너 농협行) — target_type='농협' picks만: 배출 − (원물수거+빈콘회수). 표시는 C-2에서.
+function getNhfContainerHold(nhfName) {
+  const out = picks.filter(p => p.farm === nhfName && p.type === '배출' && p.target_type === '농협').reduce((s, p) => s + p.qty, 0);
+  const rec = picks.filter(p => p.farm === nhfName && (p.type === '원물수거' || p.type === '빈콘회수') && p.target_type === '농협').reduce((s, p) => s + p.qty, 0);
+  return { out, rec, hold: out - rec };
 }
 function renderFarmTbl() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
@@ -2516,6 +2542,7 @@ let calUpPage = 1;
 function calSortOrder(s) { return s === '배차없음' ? 0 : s === '배차완료' ? 1 : 2; }
 function calGoDisp(farm, harvestDate, item) {
   T('disp'); switchPT('disp');
+  sv('dp-target-type', '농가'); refreshDpFarmOpts();   // 농가 배차 폼으로(농협 모드였으면 옵션 복원)
   const fd = document.getElementById('dp-farm');
   if (fd) { fd.value = farm; afF('dp'); }
   const hd = document.getElementById('dp-harvest');

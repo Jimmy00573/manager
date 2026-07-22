@@ -328,7 +328,8 @@
     <div class="form-card"><div class="form-title">배차 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
-        <div class="fg"><label>농가명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
+        <div class="fg"><label>대상 종류</label><select id="dp-target-type" onchange="refreshDpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option></select></div>
+        <div class="fg"><label>대상명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
         <div class="fg"><label>농가 연락처</label><input id="dp-ftel" class="auto" readonly></div>
         <div class="fg"><label>주소</label><input id="dp-addr" class="auto" readonly></div>
         <div class="fg"><label>기사 *</label><select id="dp-drv" onchange="afD('dp')"><option value="">선택</option></select></div>
@@ -1858,6 +1859,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=410"></script>
+<script src="src/app.js?v=411"></script>
 </body>
 </html>
