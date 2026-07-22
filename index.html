@@ -376,7 +376,7 @@
 
 <!-- 외부 용기 -->
 <div id="p-ext" class="panel">
-  <div class="ext-tabs"><button class="etab af" id="et-f" onclick="extTab('f')">🔵 농가 자가 콘테이너</button><button class="etab" id="et-n" onclick="extTab('n')">🟢 농협 콘테이너·파렛트</button><button class="etab" id="et-b" onclick="extTab('b')">⬜ 빈콘 회수</button></div>
+  <div class="ext-tabs"><button class="etab af" id="et-f" onclick="extTab('f')">🔵 농가 자가 콘테이너</button><button class="etab" id="et-n" onclick="extTab('n')">🟢 농협·거래처 용기</button><button class="etab" id="et-b" onclick="extTab('b')">⬜ 빈콘 회수</button></div>
   <div id="ext-f-div">
     <div class="ext-tabs"><button class="etab af" id="ot-i" onclick="ownTab('i')">반입 기록</button><button class="etab" id="ot-o" onclick="ownTab('o')">반납 기록</button></div>
     <div id="own-in" class="form-card"><div class="form-title">농가 자가 콘테이너 반입</div>
@@ -394,16 +394,16 @@
   </div>
   <div id="ext-n-div" style="display:none">
     <div class="ext-tabs"><button class="etab an" id="nt-i" onclick="nhfTab('i')">반입 기록</button><button class="etab" id="nt-o" onclick="nhfTab('o')">반납 기록</button></div>
-    <div id="nhf-in" class="form-card"><div class="form-title">농협 용기 반입</div>
-      <div class="form-grid"><div class="fg"><label>반입일자 *</label><input id="ni-date" type="date"></div><div class="fg"><label>농협명·지점</label><input id="ni-nhf" placeholder="예) 서귀포농협 서홍지점"></div><div class="fg"><label>용기 종류 *</label><input id="ni-type" list="dl-cx"></div><div class="fg"><label>용기 특징</label><input id="ni-feature" placeholder="예) 파란색, 번호표"></div><div class="fg"><label>반입 수량 *</label><input id="ni-qty" type="number" placeholder="0"></div><div class="fg"><label>구매 내용</label><input id="ni-goods" placeholder="예) 노지감귤 500kg"></div><div class="fg"><label>담당직원</label><input id="ni-staff" placeholder="직원명"></div></div>
+    <div id="nhf-in" class="form-card"><div class="form-title">농협·거래처 용기 반입</div>
+      <div class="form-grid"><div class="fg"><label>반입일자 *</label><input id="ni-date" type="date"></div><div class="fg"><label>소유</label><select id="ni-owner-type"><option>농협</option><option>거래처</option></select></div><div class="fg"><label>농협명·지점</label><input id="ni-nhf" placeholder="농협명 또는 거래처명"></div><div class="fg"><label>용기 종류 *</label><input id="ni-type" list="dl-cx"></div><div class="fg"><label>용기 특징</label><input id="ni-feature" placeholder="예) 파란색, 번호표"></div><div class="fg"><label>반입 수량 *</label><input id="ni-qty" type="number" placeholder="0"></div><div class="fg"><label>구매 내용</label><input id="ni-goods" placeholder="예) 노지감귤 500kg"></div><div class="fg"><label>담당직원</label><input id="ni-staff" placeholder="직원명"></div></div>
       <div class="form-actions"><button class="btn pri" onclick="addNhfIn()">반입 등록</button></div>
     </div>
-    <div id="nhf-out" class="form-card" style="display:none"><div class="form-title">농협 용기 반납</div>
-      <div class="form-grid"><div class="fg"><label>반납일자 *</label><input id="no-date" type="date"></div><div class="fg"><label>농협명·지점 *</label><input id="no-nhf" placeholder="예) 서귀포농협 서홍지점"></div><div class="fg"><label>용기 종류 *</label><input id="no-type" list="dl-cx"></div><div class="fg"><label>반납 방법</label><select id="no-method"><option>공장→농협배달</option><option>농협직접회수</option><option>기타</option></select></div><div class="fg"><label>용기 특징</label><input id="no-feature" placeholder="예) 파란색, 번호표"></div><div class="fg"><label>반납 수량 *</label><input id="no-qty" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="no-staff" placeholder="직원명"></div></div>
+    <div id="nhf-out" class="form-card" style="display:none"><div class="form-title">농협·거래처 용기 반납</div>
+      <div class="form-grid"><div class="fg"><label>반납일자 *</label><input id="no-date" type="date"></div><div class="fg"><label>소유</label><select id="no-owner-type"><option>농협</option><option>거래처</option></select></div><div class="fg"><label>농협명·지점 *</label><input id="no-nhf" placeholder="농협명 또는 거래처명"></div><div class="fg"><label>용기 종류 *</label><input id="no-type" list="dl-cx"></div><div class="fg"><label>반납 방법</label><select id="no-method"><option>공장→농협배달</option><option>농협직접회수</option><option>기타</option></select></div><div class="fg"><label>용기 특징</label><input id="no-feature" placeholder="예) 파란색, 번호표"></div><div class="fg"><label>반납 수량 *</label><input id="no-qty" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><input id="no-staff" placeholder="직원명"></div></div>
       <div class="form-actions"><button class="btn pri" onclick="addNhfOut()">반납 등록</button></div>
     </div>
     <div class="fold-bar" onclick="togF('nhf-sum')"><div class="fold-label">농협별 현황 <span id="nhf-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div><span id="nhf-sum-icon" class="fold-icon">▼ 자세히</span></div>
-    <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
+    <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>소유</th><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
     <div class="fold-bar" onclick="togF('nhf-tb')"><div class="fold-label">이동 내역 <span id="nhf-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="nhf-tb-icon" class="fold-icon">▼ 자세히</span></div>
     <div id="nhf-tb-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농협명</th><th>종류</th><th>구분</th><th>수량</th><th>방법</th><th>용기 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="nhf-tb"></tbody></table></div></div>
   </div>
@@ -1858,6 +1858,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=20"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=406"></script>
+<script src="src/app.js?v=407"></script>
 </body>
 </html>
