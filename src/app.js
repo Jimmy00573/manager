@@ -13915,20 +13915,23 @@ async function buildSortingShareText(srId) {
     const g = d.quality_grade || '일반';
     (gradeSize[g] = gradeSize[g] || {})[d.size_code] = (gradeSize[g][d.size_code] || 0) + (Number(d.ct) || 0);
   });
-  const sizeLines = g => sizes.map(sc => `${sc}\t${_srtShareCt((gradeSize[g] || {})[sc])}`).join('\n');
+  // 값 있는(ct>0) 사이즈 줄만 출력 — 표시만 생략, 데이터·계산 무변
+  const sizeLines = g => sizes.filter(sc => ((gradeSize[g] || {})[sc] || 0) > 0)
+    .map(sc => `${sc}\t${_srtShareCt(gradeSize[g][sc])}`).join('\n');
   const L = [];
   L.push(`입고일자\t${_srtShareMD(ir.date)}`);
   L.push(`선과일자\t${_srtShareMD(sr.sorting_date)}`);
   L.push(`농가명\t${ir.farm_name || ''}`);
   L.push(`품목명\t${ir.product || ''}`);
-  L.push(`선과CT\t${fmtN(sr.input_ct)}`);
-  L.push('');
-  L.push(`파치\t${_srtShareCt(catSum('파치'))}`);
-  L.push(`9브릭스 이하 저당도\t${_srtShareCt(catSum('저당도'))}`);
-  L.push(`고산도\t${_srtShareCt(catSum('고산도'))}`);
-  L.push('');
-  L.push('일반 선과내역');
-  L.push(sizeLines('일반'));
+  // 선과CT: '전체 NCT 중 MCT 선과' — 입고 총량(inbound_records.quantity) 기준. 못 구하면 기존 표기
+  const totalQty = Number(ir.quantity) || 0;
+  L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
+  // 비정상품: 값 있는 줄만(0 생략)
+  const abn = [['파치', catSum('파치')], ['9브릭스 이하 저당도', catSum('저당도')], ['고산도', catSum('고산도')]].filter(([, v]) => v > 0);
+  if (abn.length) { L.push(''); abn.forEach(([n, v]) => L.push(`${n}\t${_srtShareCt(v)}`)); }
+  // 일반 섹션: 전부 0이면 제목 포함 생략
+  const normalLines = sizeLines('일반');
+  if (normalLines) { L.push(''); L.push('일반 선과내역'); L.push(normalLines); }
   // 브릭스 등급 섹션(마스터 sort_order, 데이터 있는 등급만)
   [...brixGrades].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
     .filter(g => gradeSize[g.label] && Object.values(gradeSize[g.label]).some(v => v > 0))
