@@ -2117,12 +2117,14 @@ function getFCS(name) {
   const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
   return { out, pk, ret, hold: out - pk - ret };
 }
-function getFCtypes(fn) {
-  // 배차 종류별 합계(배차엔 ctype 있음) — 농가 대상만
-  const ob = {}; dispatches.filter(d => d.farm === fn && _isFarmTgt(d)).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
-  // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 농가 대상만
+// 종류별 잔여 칩 HTML. targetType 생략=농가(기존 호출 그대로). '농협'/'거래처'면 해당 대상行만 집계.
+function getFCtypes(fn, targetType) {
+  const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
+  // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
+  const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
+  // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
   let recNull = 0; const recByType = {};
-  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && _isFarmTgt(p)).forEach(p => {
+  picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && tgtOk(p)).forEach(p => {
     if (p.ctype) recByType[p.ctype] = (recByType[p.ctype] || 0) + p.qty; else recNull += p.qty;
   });
   // 배차·회수 종류 합집합 — 배차만/회수만/둘다 모든 케이스 종류별 표시
@@ -2371,11 +2373,11 @@ function renderDash() {
   const partnerLeft = nk.filter(k => { const [n, t] = k.split('||'); return nhfOwner(n, t) === '거래처'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
   // 농협行(우리 콘테이너가 농협에 나감) 회수 목록 — target_type='농협' 배차/픽의 농협명 distinct, hold>0만. getNhfContainerHold(C-1). ※'농협 콘테이너'(농협것)와 다름.
   const nhfHoldList = [...new Set([...dispatches.filter(d => d.target_type === '농협').map(d => d.farm), ...picks.filter(p => p.target_type === '농협').map(p => p.farm)])]
-    .map(nhf => ({ nhf, ...getNhfContainerHold(nhf) })).filter(x => x.hold > 0);
+    .map(nhf => ({ nhf, ...getNhfContainerHold(nhf), ctypes: getFCtypes(nhf, '농협') })).filter(x => x.hold > 0);
   const nhfHoldTotal = nhfHoldList.reduce((s, x) => s + x.hold, 0);
   // 거래처行(우리 콘테이너가 거래처에 나감) 회수 목록 — 농협行과 대칭(getTargetContainerHold). 출고 내용(outbound)과는 연결 안 함.
   const ptHoldList = [...new Set([...dispatches.filter(d => d.target_type === '거래처').map(d => d.farm), ...picks.filter(p => p.target_type === '거래처').map(p => p.farm)])]
-    .map(nm => ({ nm, ...getTargetContainerHold(nm, '거래처') })).filter(x => x.hold > 0);
+    .map(nm => ({ nm, ...getTargetContainerHold(nm, '거래처'), ctypes: getFCtypes(nm, '거래처') })).filter(x => x.hold > 0);
   const ptHoldTotal = ptHoldList.reduce((s, x) => s + x.hold, 0);
   document.getElementById('kpi').innerHTML = `<div class="kpi"><div class="kpi-label">배출 대기</div><div class="kpi-val kv-pu">${dw}</div></div><div class="kpi"><div class="kpi-label">배출 완료</div><div class="kpi-val kv-gr">${dd}</div></div><div class="kpi"><div class="kpi-label">농가보유</div><div class="kpi-val kv-bl">${th}개</div></div><div class="kpi"><div class="kpi-label">농협行 우리콘</div><div class="kpi-val kv-bl">${nhfHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">거래처行 우리콘</div><div class="kpi-val kv-bl">${ptHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">농가 콘테이너</div><div class="kpi-val kv-pu">${to}개</div></div><div class="kpi"><div class="kpi-label">농협 콘테이너</div><div class="kpi-val kv-teal">${nc}개</div></div><div class="kpi"><div class="kpi-label">농협 파렛트</div><div class="kpi-val kv-teal">${np}개</div></div><div class="kpi"><div class="kpi-label">거래처 용기</div><div class="kpi-val kv-bl">${partnerLeft}개</div></div>`;
   renderSC();
@@ -2393,13 +2395,15 @@ function renderDash() {
   const nhfHoldHtml = nhfHoldList.map(x => {
     const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nhf.replace(/'/g,"&#39;")}', ${x.hold}, '농협')">🧺 회수</button>` : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-teal">농협</span> ${esc(x.nhf)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${recBtn}</div></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div></div>`;
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div>
+    <div class="alert-item-ctypes">${x.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}</div></div>`;
   }).join('');
   // 거래처行 회수 항목(거래처 배지 파랑으로 구분) — 농협行과 대칭. 관리자만 회수 버튼.
   const ptHoldHtml = ptHoldList.map(x => {
     const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nm.replace(/'/g,"&#39;")}', ${x.hold}, '거래처')">🧺 회수</button>` : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-info">거래처</span> ${esc(x.nm)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${recBtn}</div></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 거래처行)</div></div>`;
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 거래처行)</div>
+    <div class="alert-item-ctypes">${x.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}</div></div>`;
   }).join('');
   document.getElementById('afb').innerHTML = (fhi.length || nhfHoldList.length || ptHoldList.length) ? fhi.map(i => {
     const st = getFCS(i.name);
