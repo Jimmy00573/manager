@@ -166,6 +166,30 @@ async function saveSizeConfig(data) {
   }
 }
 
+// ── 브릭스 분리 최대 사이즈 설정 (key='brix_max_size', value 예: {'감귤류':'M2'}) — loadSizeConfig 패턴
+async function loadBrixMaxSize() {
+  try {
+    const rows = await sbGet('settings', 'key=eq.brix_max_size');
+    if (rows && rows.length > 0) return rows[0].value || {};
+  } catch(e) {}
+  return {};
+}
+async function saveBrixMaxSize(data) {
+  const rows = await sbGet('settings', 'key=eq.brix_max_size');
+  if (rows && rows.length > 0) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.brix_max_size`, {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ value: data, updated_at: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error(`브릭스 최대 사이즈 저장 실패: HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || json.length === 0) throw new Error('브릭스 최대 사이즈 저장 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)');
+  } else {
+    await sbInsert('settings', { key: 'brix_max_size', value: data });
+  }
+}
+
 // ── 재고: 미선과
 async function dbGetUnsorted(date) {
   const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
