@@ -5810,7 +5810,9 @@ function renderInventoryStatus() {
 function _renderInvMatrix(product, recs, auditMode) {
   const audit    = !!auditMode;
   const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups   = getSizeGroupsFor(product);
+  // 품목 규칙 범위 열 + 데이터 실존 사이즈 합집합(규칙 밖 데이터 누락 방지). 감귤류 불변.
+  const dataSzs  = [...new Set(recs.map(r => r.size_code).filter(Boolean))];
+  const groups   = sizeGroupsForDisplay(product, dataSzs);
   const allSizes = groups.flatMap(g => g.sizes);
 
   // 그룹별 컬러 (헤더 진함, 사이즈행 연함) — 감귤류 5그룹까지 지원
