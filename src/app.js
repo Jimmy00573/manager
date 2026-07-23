@@ -6377,7 +6377,7 @@ function openPachiEditModal(regId) {
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품목</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.product)}</div></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">출처</label>
-          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${row.isSorting ? '선과 자동' : (row.isLegacy ? '레거시' : '수동')}</div></div>
+          <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${row.isSorting ? '선과 자동' : row.isLegacy ? '레거시' : (row.isInbound || row.fromInbound) ? '입고' : '수동'}</div></div>
       </div>
       <div style="margin-bottom:14px">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">수량 (CT)</label>
@@ -14764,7 +14764,10 @@ function renderPachiSection() {
     if (!irGrouped[key]) {
       irGrouped[key] = {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
-        ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type), isLegacy: false,
+        // 입고→재고 전환 파치(inbound_record_id 有)는 선과 아님 — '입고' 배지. fromInbound는 표시 전용
+        // (isInbound는 Source 3 전용: inventory_records가 아니라 실사·일괄수정 제외됨. 전환 파치는 실사·수정 가능해야 함.)
+        ct: 0, kg: 0, ids: [], memo: '', isSorting: isSortingPachi(r.source_type) && !r.inbound_record_id, isLegacy: false,
+        fromInbound: !!r.inbound_record_id,
         pachiKind: pachiKindLabel(r.source_type), usage: r.usage || '미분류', location: r.location || null,
         sizeGroup: r.pachi_size_group || null, condition: r.pachi_condition || null
       };
@@ -14860,7 +14863,7 @@ function renderPachiSection() {
     _pachiRowRegistry[regId] = r;
     const badge = r.isSorting
       ? `<span style="background:#E3F2FD;color:#1565C0;border-radius:10px;padding:2px 7px;font-size:11px">선과</span>`
-      : r.isInbound
+      : (r.isInbound || r.fromInbound)
         ? `<span style="background:#FEF9C3;color:#92400E;border-radius:10px;padding:2px 7px;font-size:11px">입고</span>`
         : `<span style="background:#F3E8FF;color:#7C3AED;border-radius:10px;padding:2px 7px;font-size:11px">수동</span>`;
     // 크기·상태 배지 (옛 항목/pachiKind 대체 — 값 없으면 '-'). 자동매핑은 4-B/5단계.
