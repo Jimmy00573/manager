@@ -4568,7 +4568,7 @@ async function _saveInboundContainers(date, farm, inboundId) {
         const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inboundId || null, auto: true, note: '입고 회수' });
         if (row) picks.unshift(row);
       } else if (j.t.owner === 'nhf') {
-        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin' });
+        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin', inbound_id: inboundId || null });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
         if (row) nhfIns.unshift(row);
       } else {
         // 농가것(farm) → own_ins(반납대기)
@@ -9625,17 +9625,19 @@ async function getInboundLinks(id) {
 
   const processing = processingRecords.filter(r => r.inbound_id === id).length;
 
-  // 콘테이너 연동(입고 자동 생성): picks(회수)+own_ins(반납대기) inbound_id 매칭
-  let containers = 0;
+  // 콘테이너 연동(입고 자동 생성): picks(회수)+own_ins(반납대기)+nhf_ins(농협) inbound_id 매칭
+  let containers = 0, nhfContainers = 0;
   try {
     const cps = await sbGet('picks', `inbound_id=eq.${id}&select=id`);
     const cos = await sbGet('own_ins', `inbound_id=eq.${id}&select=id`);
+    const cns = await sbGet('nhf_ins', `inbound_id=eq.${id}&select=id`);
     containers = (cps || []).length + (cos || []).length;
+    nhfContainers = (cns || []).length;
   } catch (e) {
     console.error('getInboundLinks 콘테이너 조회 실패:', e);
   }
 
-  return { sorting, details, inventory: inventory + directInv, processing, containers, sortingResultIds, directInv };
+  return { sorting, details, inventory: inventory + directInv, processing, containers, nhfContainers, sortingResultIds, directInv };
 }
 
 async function cascadeDeleteInbound(id) {
@@ -9707,6 +9709,17 @@ async function cascadeDeleteInbound(id) {
     deletedOwnIns = Array.isArray(json) ? json.length : 0;
   }
 
+  // (d-3) 농협 콘테이너(nhf_ins) 삭제 — inbound_id 매칭만(수동 등록 NULL은 보존). own_ins 패턴 동일.
+  let deletedNhfIns = 0;
+  {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/nhf_ins?inbound_id=eq.${id}`, {
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+    });
+    if (!res.ok) throw new Error(`cascade 삭제 실패 (농협 콘테이너 nhf_ins 단계): HTTP ${res.status} id=${id}`);
+    const json = await res.json();
+    deletedNhfIns = Array.isArray(json) ? json.length : 0;
+  }
+
   // (e) inbound_records 삭제
   try { await sbDeleteStrict('inbound_records', `id=eq.${id}`); }
   catch (e) { throw new Error(`cascade 삭제 실패 (inbound_records 단계): ${e.message}`); }
@@ -9716,6 +9729,7 @@ async function cascadeDeleteInbound(id) {
   processingRecords  = processingRecords.filter(r => r.inbound_id !== id);
   picks              = picks.filter(p => p.inbound_id !== id);
   ownIns             = ownIns.filter(o => o.inbound_id !== id);
+  nhfIns             = nhfIns.filter(o => o.inbound_id !== id);
 
   return {
     ok: true,
@@ -9726,6 +9740,7 @@ async function cascadeDeleteInbound(id) {
       processing_records: prIds.length,
       picks:              deletedPicks,
       own_ins:            deletedOwnIns,
+      nhf_ins:            deletedNhfIns,
       inbound:            1
     }
   };
@@ -13158,9 +13173,9 @@ async function deleteInbound(id) {
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
   const links = await getInboundLinks(id);
-  const hasLinks = links.sorting > 0 || links.inventory > 0 || links.processing > 0 || links.containers > 0;
+  const hasLinks = links.sorting > 0 || links.inventory > 0 || links.processing > 0 || links.containers > 0 || links.nhfContainers > 0;
   const items = [`${r.farm_name} · ${r.product} · ${r.date}`];
-  if (hasLinks) items.push(`연결된 선과 결과 ${links.sorting}건 · 재고 ${links.inventory}건 · 가공 ${links.processing}건${links.containers > 0 ? ` · 콘테이너 회수/반납 ${links.containers}건` : ''}`);
+  if (hasLinks) items.push(`연결된 선과 결과 ${links.sorting}건 · 재고 ${links.inventory}건 · 가공 ${links.processing}건${links.containers > 0 ? ` · 콘테이너 회수/반납 ${links.containers}건` : ''}${links.nhfContainers > 0 ? ` · 농협 콘테이너 ${links.nhfContainers}건` : ''}`);
   const res = await showConfirmDanger({
     title: '입고 삭제',
     items,
@@ -13184,7 +13199,7 @@ async function deleteInbound(id) {
       staff: res.worker
     });
     await loadAndRenderInv();
-    if (links.containers > 0) { renderOwn(); renderPick(); renderDash(); }   // 콘테이너 현황 갱신
+    if (links.containers > 0 || links.nhfContainers > 0) { renderOwn(); renderPick(); renderNhf(); renderDash(); }   // 콘테이너 현황 갱신(농협 포함)
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
