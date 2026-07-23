@@ -2798,7 +2798,8 @@ function renderCal() {
     const isSel = dStr === calSelectedDate;
     let pills = evs.slice(0, 2).map(e => {
       const bg = e.status === '배출완료' ? '#E8F5E9;color:#2E7D32' : e.status === '배차없음' ? '#FFEBEE;color:#C62828' : '#FFF3E0;color:#C05800';
-      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}${e.round>1?' '+e.round+'차':''}</div>`;
+      // 차수는 1차부터 표시(월간 목록·상세와 동일 규칙), 전체 종료(is_final)는 🏁만. 배차 이벤트엔 round·is_final 없어 기존과 동일.
+      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}${e.round?' '+e.round+'차':''}${e.is_final?' 🏁':''}</div>`;
     }).join('');
     if (evs.length > 2) pills += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
     const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
