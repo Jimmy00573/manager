@@ -2182,9 +2182,13 @@ function renderContainerHistory() {
     (!q || (r.target || '').includes(q)) && (!from || (r.date || '') >= from) && (!to || (r.date || '') <= to)
   ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const totQty = list.reduce((s, r) => s + r.qty, 0);
-  const sum = document.getElementById('ch-sum');
-  if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>`;
   const kColor = { 배출: '#DC2626', 회수: '#2E7D32', 반입: '#1565C0', 반납: '#C05800' };
+  // 유형별 소계(필터된 list 기준) — 0인 유형은 생략
+  const kindTot = {}; list.forEach(r => { kindTot[r.kind] = (kindTot[r.kind] || 0) + r.qty; });
+  const kindHtml = ['배출', '회수', '반입', '반납'].filter(k => kindTot[k])
+    .map(k => `<span class="badge" style="background:#fff;border:1px solid ${kColor[k]};color:${kColor[k]}">${k} ${kindTot[k]}개</span>`).join(' ');
+  const sum = document.getElementById('ch-sum');
+  if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>${kindHtml ? ' ' + kindHtml : ''}`;
   const tkBadge = t => t === '농협' ? '<span class="badge b-teal">농협</span>' : t === '거래처' ? '<span class="badge b-info">거래처</span>' : '<span class="badge" style="background:#F3E5F5;color:#6A1B9A">농가</span>';
   tb.innerHTML = list.length ? list.map(r =>
     `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${esc(r.category || '-')}</td><td>${r.qty}</td><td>${esc(r.staff || '—')}</td></tr>`
