@@ -2667,6 +2667,7 @@ function calGetAllItems() {
 // 수확 일정 관리 버튼(시작/완료/수정/삭제) — 금일 strip·달력 상세·월간 목록 공통 재사용
 const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
 const _hvStBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
+const _hvStFg    = { 수확전: '#C05800', 수확중: '#1565C0', 수확완료: '#2E7D32' };   // _hvStBg 짝 글자색(달력 셀 pill용) — 앱 기존 팔레트 재사용
 function harvestActBtns(h) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
   const st = h.status || '수확전';
@@ -2797,9 +2798,14 @@ function renderCal() {
     const isToday = dStr === todayStr;
     const isSel = dStr === calSelectedDate;
     let pills = evs.slice(0, 2).map(e => {
-      const bg = e.status === '배출완료' ? '#E8F5E9;color:#2E7D32' : e.status === '배차없음' ? '#FFEBEE;color:#C62828' : '#FFF3E0;color:#C05800';
-      // 차수는 1차부터 표시(월간 목록·상세와 동일 규칙), 전체 종료(is_final)는 🏁만. 배차 이벤트엔 round·is_final 없어 기존과 동일.
-      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}${e.round?' '+e.round+'차':''}${e.is_final?' 🏁':''}</div>`;
+      // 수확 이벤트는 상태색(_hvStBg/_hvStFg), 배차 이벤트는 기존 배출 상태색 그대로.
+      const bg = _isHarvestEv(e)
+        ? `${_hvStBg[e.status]||'#FFF3E0'};color:${_hvStFg[e.status]||'#C05800'}`
+        : e.status === '배출완료' ? '#E8F5E9;color:#2E7D32' : e.status === '배차없음' ? '#FFEBEE;color:#C62828' : '#FFF3E0;color:#C05800';
+      // 좁은 셀이라 기호만: 전체종료 🏁 > 수확완료 ✓ > 수확중 ▶ (수확전은 색으로만). 배차 이벤트엔 해당 status 없어 기존과 동일.
+      const mark = e.is_final ? ' 🏁' : e.status === '수확완료' ? ' ✓' : e.status === '수확중' ? ' ▶' : '';
+      // 차수는 1차부터 표시(월간 목록·상세와 동일 규칙). 배차 이벤트엔 round·is_final 없어 기존과 동일.
+      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}${e.round?' '+e.round+'차':''}${mark}</div>`;
     }).join('');
     if (evs.length > 2) pills += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
     const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
