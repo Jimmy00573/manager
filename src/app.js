@@ -13765,7 +13765,10 @@ async function showSortingHistory(id, btnEl) {
         <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
         ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
       </div>
-      ${isAdm ? `<button onclick="confirmCancelSorting('${row.id}','${id}',${idx+1})" style="font-size:11px;padding:2px 8px;border:1px solid #DC2626;border-radius:4px;color:#DC2626;background:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0">취소</button>` : ''}
+      <div style="display:flex;gap:4px;flex-shrink:0">
+        <button onclick="openSortingShareText('${row.id}')" style="font-size:11px;padding:2px 8px;border:1px solid #1565C0;border-radius:4px;color:#1565C0;background:#fff;cursor:pointer;white-space:nowrap">📋 공유</button>
+        ${isAdm ? `<button onclick="confirmCancelSorting('${row.id}','${id}',${idx+1})" style="font-size:11px;padding:2px 8px;border:1px solid #DC2626;border-radius:4px;color:#DC2626;background:#fff;cursor:pointer;white-space:nowrap">취소</button>` : ''}
+      </div>
     </div>`;
   }).join('');
 
@@ -13785,6 +13788,86 @@ async function showSortingHistory(id, btnEl) {
 
   const close = e => { if (!pop.contains(e.target) && e.target !== btnEl) { pop.remove(); document.removeEventListener('click', close); } };
   setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+// ── 선과내역 차수별 사무실 공유 텍스트(조회 전용 — 계산·저장 무변)
+function _srtShareMD(s) { if (!s) return ''; const p = String(s).slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}월 ${+p[2]}일` : s; }
+function _srtShareCt(v) { return (Number(v) || 0).toFixed(1); }
+async function buildSortingShareText(srId) {
+  const srs = await sbGet('sorting_results', `id=eq.${srId}`);
+  const sr = srs && srs[0];
+  if (!sr) throw new Error('선과 결과를 찾을 수 없습니다.');
+  const ir = inboundRecords.find(r => String(r.id) === String(sr.inbound_record_id))
+    || (await sbGet('inbound_records', `id=eq.${sr.inbound_record_id}`))[0] || {};
+  const details = await sbGet('sorting_details', `sorting_result_id=eq.${srId}&select=*`);
+  const sizes = getSizeGroupsFor(ir.product).flatMap(g => g.sizes);   // 사이즈 순서 = 기존 상수(감귤류/만감류)
+  const catSum = c => details.filter(d => d.category === c).reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  // 정상품: 등급 × 사이즈 합계
+  const gradeSize = {};
+  details.filter(d => d.category === '정상').forEach(d => {
+    const g = d.quality_grade || '일반';
+    (gradeSize[g] = gradeSize[g] || {})[d.size_code] = (gradeSize[g][d.size_code] || 0) + (Number(d.ct) || 0);
+  });
+  const sizeLines = g => sizes.map(sc => `${sc}\t${_srtShareCt((gradeSize[g] || {})[sc])}`).join('\n');
+  const L = [];
+  L.push(`입고일자\t${_srtShareMD(ir.date)}`);
+  L.push(`선과일자\t${_srtShareMD(sr.sorting_date)}`);
+  L.push(`농가명\t${ir.farm_name || ''}`);
+  L.push(`품목명\t${ir.product || ''}`);
+  L.push(`선과CT\t${fmtN(sr.input_ct)}`);
+  L.push('');
+  L.push(`파치\t${_srtShareCt(catSum('파치'))}`);
+  L.push(`9브릭스 이하 저당도\t${_srtShareCt(catSum('저당도'))}`);
+  L.push(`고산도\t${_srtShareCt(catSum('고산도'))}`);
+  L.push('');
+  L.push('일반 선과내역');
+  L.push(sizeLines('일반'));
+  // 브릭스 등급 섹션(마스터 sort_order, 데이터 있는 등급만)
+  [...brixGrades].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .filter(g => gradeSize[g.label] && Object.values(gradeSize[g.label]).some(v => v > 0))
+    .forEach(g => {
+      L.push('');
+      L.push(g.label.replace(/br$/i, '브릭스'));
+      L.push(sizeLines(g.label));
+    });
+  return L.join('\n');
+}
+async function openSortingShareText(srId) {
+  try {
+    const text = await buildSortingShareText(srId);
+    document.getElementById('modal-srt-share')?.remove();
+    const m = document.createElement('div');
+    m.id = 'modal-srt-share';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    m.innerHTML = `
+      <div style="background:#fff;border-radius:14px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:85vh">
+        <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:14px;font-weight:700;color:#1565C0">📋 선과내역 공유</div>
+          <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+        </div>
+        <div style="padding:14px 18px;flex:1;overflow:auto">
+          <textarea id="srt-share-text" style="width:100%;box-sizing:border-box;height:320px;max-height:50vh;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;font-family:inherit;line-height:1.5;resize:vertical"></textarea>
+        </div>
+        <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+          <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">닫기</button>
+          <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="copySortingShareText()">📋 복사</button>
+        </div>
+      </div>`;
+    m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+    document.body.appendChild(m);
+    document.getElementById('srt-share-text').value = text;   // .value로 주입(이스케이프 문제 방지)
+  } catch (e) { showToast('공유 텍스트 생성 오류: ' + e.message); }
+}
+async function copySortingShareText() {
+  const ta = document.getElementById('srt-share-text');
+  if (!ta) return;
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    showToast('📋 복사되었습니다');
+  } catch (e) {
+    ta.select(); document.execCommand('copy');   // 클립보드 권한 실패 폴백
+    showToast('📋 복사되었습니다');
+  }
 }
 
 async function confirmCancelSorting(srId, inboundId, seq) {
