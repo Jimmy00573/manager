@@ -10169,6 +10169,39 @@ function getSizeGroupsFor(product) {
   return groups.length >= 2 ? groups : SIZE_GROUPS_만감류;
 }
 
+// ── 품목 규칙 범위 사이즈(표시 전용) — 만감류 5~27수 고정 테이블이 과하게 넓은 문제.
+//    item_size_rules(min_su~max_su) 범위만 표시하되, 데이터에 실존하는 범위 밖 사이즈는 합집합으로 추가(누락 절대 방지).
+//    감귤류는 SIZES_감귤류 그대로(불변). 규칙 없는 만감류는 5~27 폴백. 계산·저장 무변.
+function sizesForProduct(product, dataSizes) {
+  const pt = PRODUCT_TYPE_MAP[product] || '만감류';
+  if (pt === '감귤류') return SIZES_감귤류;   // 감귤류 불변
+  let base;
+  const item = _getItemDef(product);
+  const rules = item ? itemSizeRules.filter(r => r.item_id === item.id) : [];
+  if (!rules.length) base = SIZES_만감류;   // 규칙 없으면 5~27 전체 폴백
+  else {
+    const min = Math.min(...rules.map(r => Number(r.min_su)));
+    const max = Math.max(...rules.map(r => Number(r.max_su)));
+    base = Array.from({ length: max - min + 1 }, (_, i) => `${min + i}수`);
+  }
+  const extras = [...new Set(dataSizes || [])].filter(sz => sz && !base.includes(sz));
+  if (!extras.length) return base;
+  return [...base, ...extras].sort((a, b) => {   // N수 숫자순 정렬(비숫자는 뒤로)
+    const na = parseInt(a), nb = parseInt(b);
+    if (isNaN(na) && isNaN(nb)) return String(a).localeCompare(String(b), 'ko');
+    if (isNaN(na)) return 1;
+    if (isNaN(nb)) return -1;
+    return na - nb;
+  });
+}
+// 그룹 표시용 — getSizeGroupsFor 그룹에서 표시 대상 사이즈만 남김(빈 그룹 제거)
+function sizeGroupsForDisplay(product, dataSizes) {
+  const allow = new Set(sizesForProduct(product, dataSizes));
+  return getSizeGroupsFor(product)
+    .map(g => ({ group: g.group, sizes: g.sizes.filter(sz => allow.has(sz)) }))
+    .filter(g => g.sizes.length);
+}
+
 // ── 브릭스 분리 최대 사이즈(설정 brix_max_size) — 선과기 배출구가 큰 사이즈는 브릭스별로 안 나눠 실물이 일반에 섞임.
 //    기준 초과 사이즈는 저장 시 quality_grade='일반'으로 합산해 실물과 데이터를 맞춤. 감귤류만 적용(만감류 전체 허용). 기존 데이터 무변.
 function _brixMaxSizeOf() { return (brixMaxSize && brixMaxSize['감귤류']) || 'M2'; }
@@ -13225,13 +13258,19 @@ function _srtGradeLabels() {
   return ['일반', ...brix];
 }
 
+// 업로드된 선과 엑셀(_srtExcel)에 실존하는 사이즈 목록 — 그리드 합집합용(규칙 밖 데이터 누락 방지)
+function _srtExcelSizes() {
+  if (!_srtExcel || !_srtExcel.posKg) return null;
+  const s = new Set();
+  Object.values(_srtExcel.posKg).forEach(m => Object.keys(m || {}).forEach(sz => { if (Number(m[sz]) > 0) s.add(sz); }));
+  return [...s];
+}
+
 function srtRenderSizeGrid(productType) {
-  const sizes = productType ? (productType === '감귤류' ? SIZES_감귤류 : SIZES_만감류)
-    : (() => {
-        const r = inboundRecords.find(x => x.id === _sortingInboundId);
-        const pt = r ? (PRODUCT_TYPE_MAP[r.product] || '만감류') : '만감류';
-        return pt === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
-      })();
+  // 품목 규칙 범위(item_size_rules) + 엑셀 실존 사이즈 합집합. 품목 불명이면 타입 전체 폴백(기존 동작).
+  const _r0 = inboundRecords.find(x => x.id === _sortingInboundId);
+  const sizes = _r0 ? sizesForProduct(_r0.product, _srtExcelSizes())
+    : ((productType || '만감류') === '감귤류' ? SIZES_감귤류 : SIZES_만감류);
 
   const grades = _srtGradeLabels();
   if (!grades.includes(_srtGrade)) _srtGrade = '일반';   // 방어
@@ -13510,6 +13549,12 @@ function srtApplyExcelMap() {
   const known = new Set(_srtGradeLabels());
   const missing = grades.filter(g => !known.has(g));
   if (missing.length) { alert(`등급 탭에 없는 등급입니다: ${missing.join(', ')}\n(설정 → 당도 등급을 확인하세요)`); return; }
+
+  // 규칙 밖 엑셀 사이즈도 그리드 열로 나타나게 재렌더(합집합) — 기존 수동 입력값은 보존
+  const _saved = {};
+  document.querySelectorAll('.srt-size-input').forEach(inp => { const v = parseFloat(inp.value) || 0; if (v > 0) _saved[inp.dataset.grade + '||' + inp.dataset.size] = v; });
+  srtRenderSizeGrid(null);
+  Object.entries(_saved).forEach(([k, v]) => { const [g, sz] = k.split('||'); const inp = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="${g}"]`); if (inp) inp.value = v; });
 
   // 1) 대상 등급 그리드 리셋 → 2) 매핑대로 세팅
   grades.forEach(g => {
@@ -15743,9 +15788,10 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
   const sessionHtml = results.map(r => {
     const rd = detailsByResult[r.id] || { normalMap: {}, waste: 0, highacid: 0, lowbrix: 0, tiny: 0, green: 0, loss: 0 };
     const ib = inboundMap[r.inbound_record_id];
-    const ptForResult   = PRODUCT_TYPE_MAP[ib?.product] || '만감류';
-    const groupsForResult = ptForResult === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
-    const allSzForResult  = ptForResult === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
+    // 품목 규칙 범위 열 + 데이터 실존 사이즈 합집합(규칙 밖 데이터 누락 방지). 감귤류 불변.
+    const _dataSzsForResult = Object.keys(rd.normalMap);
+    const groupsForResult = sizeGroupsForDisplay(ib?.product, _dataSzsForResult);
+    const allSzForResult  = sizesForProduct(ib?.product, _dataSzsForResult);
     const normalTotal = allSzForResult.reduce((s, sz) => s + (rd.normalMap[sz] ?? 0), 0);
     const abnList = [
       { label: '파치',   ct: rd.waste    },
@@ -15868,10 +15914,10 @@ async function openSortingDetailModal(inboundId) {
   let details = [];
   try { details = await dbGetSortingDetails(resultIds); } catch(e) {}
 
-  // 품목 타입에 따른 그룹/전체사이즈 결정
-  const productType = PRODUCT_TYPE_MAP[ib?.product] || '만감류';
-  const allGroups = productType === '감귤류' ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
-  const allSizes  = productType === '감귤류' ? SIZES_감귤류 : SIZES_만감류;
+  // 품목 규칙 범위 열 + 데이터 실존 사이즈 합집합(규칙 밖 데이터 누락 방지). 감귤류 불변.
+  const _histDataSzs = [...new Set(details.filter(d => d.category === '정상' && d.size_code).map(d => d.size_code))];
+  const allGroups = sizeGroupsForDisplay(ib?.product, _histDataSzs);
+  const allSizes  = sizesForProduct(ib?.product, _histDataSzs);
 
   const detailsByResult = {};
   details.forEach(d => {
