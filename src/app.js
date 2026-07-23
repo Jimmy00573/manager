@@ -3967,7 +3967,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage', 'weight', 'juicemaster', 'partner', 'ctype'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'brix', 'weight', 'juicemaster', 'partner', 'ctype'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
@@ -3975,7 +3975,8 @@ function setTab(t) {
   if (t === 'loc') renderStorageLocations();
   if (t === 'qc') loadQualityCriteria();
   if (t === 'cfg') renderSizeCfg();
-  if (t === 'usage') { renderPachiUsageCfg(); renderBrixGradeCfg(); renderPachiSizeCfg(); renderPachiConditionCfg(); }
+  if (t === 'usage') { renderPachiUsageCfg(); renderPachiSizeCfg(); renderPachiConditionCfg(); }
+  if (t === 'brix') renderBrixGradeCfg();   // 당도 등급 — 파치 사용처에서 독립 메뉴로 분리
   if (t === 'weight') renderProductWeightCfg();
   if (t === 'juicemaster') renderJuiceMasterCfg();
   if (t === 'partner') renderPartnerCfg();

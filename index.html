@@ -660,6 +660,13 @@
         </div>
         <div class="set-item">
           <div class="set-item-info">
+            <div class="set-item-title">🍊 당도 등급</div>
+            <div class="set-item-desc">당도(브릭스) 등급 관리 · 분리 최대 사이즈</div>
+          </div>
+          <button class="set-item-btn" onclick="setTab('brix')">열기</button>
+        </div>
+        <div class="set-item">
+          <div class="set-item-info">
             <div class="set-item-title">♻️ 파치 사용처</div>
             <div class="set-item-desc">파치 사용처 목록 추가·수정·삭제</div>
           </div>
@@ -770,9 +777,16 @@
       <span class="set-back-title">♻️ 파치 사용처</span>
     </div>
     <div id="csp-usage"></div>
-    <div id="csp-brix" style="margin-top:22px"></div>
     <div id="csp-pachi-size" style="margin-top:22px"></div>
     <div id="csp-pachi-cond" style="margin-top:22px"></div>
+  </div>
+  <!-- 당도 등급 (파치 사용처에서 분리) -->
+  <div id="set-brix-view" style="display:none">
+    <div class="set-back-bar">
+      <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
+      <span class="set-back-title">🍊 당도 등급</span>
+    </div>
+    <div id="csp-brix"></div>
   </div>
   <!-- 중량 기준 -->
   <div id="set-weight-view" style="display:none">
@@ -1878,6 +1892,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=21"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=419"></script>
+<script src="src/app.js?v=420"></script>
 </body>
 </html>
