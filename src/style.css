@@ -173,7 +173,7 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
 .empty { text-align: center; color: var(--text-tertiary); padding: 24px; font-size: 13px; }
 
 /* ── 미선과 입고 목록: 고정 컬럼 너비 ── */
-.ib-list-tbl { table-layout: fixed; min-width: 886px; }   /* colgroup 지정 폭 합 — 이보다 작으면 모바일에서 각 열이 비례 축소돼 잘림 */
+.ib-list-tbl { table-layout: fixed; min-width: 919px; }   /* colgroup 지정 폭 합 — 이보다 작으면 모바일에서 각 열이 비례 축소돼 잘림 */
 .ib-list-tbl th, .ib-list-tbl td { overflow: hidden; text-overflow: ellipsis; }
 /* 날짜 열(첫 컬럼)만 ellipsis 예외 — 모바일에서 "07/15" 안 잘리게 */
 .ib-list-tbl th:first-child, .ib-list-tbl td:first-child { overflow: visible; text-overflow: clip; white-space: nowrap; }
