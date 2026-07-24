@@ -4018,7 +4018,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage', 'brix', 'weight', 'juicemaster', 'partner', 'ctype'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'brix', 'weight', 'juicemaster', 'partner', 'ctype', 'datacheck'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
@@ -4031,6 +4031,7 @@ function setTab(t) {
   if (t === 'weight') renderProductWeightCfg();
   if (t === 'juicemaster') renderJuiceMasterCfg();
   if (t === 'partner') renderPartnerCfg();
+  if (t === 'datacheck') renderDataCheck();   // 진입 시 자동 1회 실행
 }
 function setBack() { setTab('menu'); }
 
@@ -16278,6 +16279,157 @@ function openSortedInboundDetail(inboundId, showPrice = false) {
   m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close !== undefined) close(); });
   document.addEventListener('keydown', _msibEscHandler);
   document.body.appendChild(m);
+}
+
+// ── [화면: 설정 > 🔍 데이터 점검] 조회 전용 ──────────────────────────────
+//    ★저장·수정·삭제 없음. 이상을 찾아 보여주기만 하고, 처리 여부는 사람이 판단.
+//    ①②④⑥은 이미 로드된 전역 데이터 + 기존 헬퍼(getFCS/getTargetContainerHold/gOwnSt/gNhfSt/nhfOwner)로 계산.
+//    ③⑤만 DB 직접 조회 — inboundRecords·inventoryRecords는 '재고관리' 탭에 들어가야 채워져서
+//    설정 탭에서 바로 열면 비어 있을 수 있음(전역으로 판정하면 전부 이상으로 오탐).
+const _dcEsc = v => esc(String(v == null ? '' : v));
+function _dcCard(title, desc, cols, rows, opt = {}) {
+  // warnRow 있으면 그 조건에 맞는 행만 '확인 필요'(현황 표시용 카드), 없으면 행 존재 자체가 이상.
+  const warnN = opt.warnRow ? rows.filter(opt.warnRow).length : rows.length;
+  const b = (bg, fg, t) => `<span style="background:${bg};color:${fg};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">${t}</span>`;
+  const badge = warnN > 0
+    ? b('#FEE2E2', '#B91C1C', `⚠ ${warnN}건 확인 필요`)
+    : (opt.info && rows.length ? b('#DBEAFE', '#1D4ED8', `📋 현황 ${rows.length}건`) : b('#DCFCE7', '#166534', '✅ 이상 없음'));
+  const head = cols.map(c => `<th style="text-align:left;padding:5px 8px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;font-size:11px;color:#6B7280;font-weight:600;white-space:nowrap">${_dcEsc(c)}</th>`).join('');
+  const body = rows.map(r => `<tr>${cols.map(c => {
+    const v = r[c];
+    const neg = typeof v === 'number' && v < 0;
+    return `<td style="padding:5px 8px;border-bottom:1px solid #F3F4F6;font-size:12px${neg ? ';color:#DC2626;font-weight:700' : ''}">${_dcEsc(v)}</td>`;
+  }).join('')}</tr>`).join('');
+  return `<div class="form-card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:14px;font-weight:700;color:#111827">${title}</span>${badge}</div>
+      <div style="font-size:11px;color:#9CA3AF;margin:3px 0 8px;line-height:1.5">${desc}</div>
+      ${rows.length
+        ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`
+        : `<div style="padding:10px;text-align:center;color:#9CA3AF;font-size:12px">해당 항목 없음</div>`}
+    </div>`;
+}
+async function renderDataCheck() {
+  const el = document.getElementById('csp-datacheck');
+  if (!el) return;
+  if (sessionStorage.getItem('citrus_role') !== 'admin') {
+    el.innerHTML = `<div class="form-card"><div style="padding:20px;text-align:center;color:#9CA3AF;font-size:13px">관리자만 볼 수 있습니다.</div></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="form-card"><div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">점검 중…</div></div>`;
+
+  // ① 우리 콘테이너 보유 대사 — 대상(농가/농협/거래처)별 배출−회수. 있는 게 정상, 음수면 과회수라 확인 필요.
+  const c1 = [];
+  farms.forEach(f => {
+    const st = getFCS(f.name);
+    if (st.hold !== 0) c1.push({ 구분: '농가', 대상: f.name, 배출: st.out, 회수: st.pk + st.ret, 잔량: st.hold });
+  });
+  ['농협', '거래처'].forEach(tt => {
+    [...new Set([...dispatches.filter(d => d.target_type === tt).map(d => d.farm), ...picks.filter(p => p.target_type === tt).map(p => p.farm)])]
+      .filter(Boolean).forEach(nm => {
+        const st = getTargetContainerHold(nm, tt);
+        if (st.hold !== 0) c1.push({ 구분: tt + '行', 대상: nm, 배출: st.out, 회수: st.rec, 잔량: st.hold });
+      });
+  });
+
+  // ② 남의 용기 보유 — 농가것(own)·농협/거래처(nhf) 반입−반납. 음수면 반납이 반입보다 많아 확인 필요.
+  const c2 = [];
+  [...new Set([...ownIns.map(o => o.farm), ...ownOuts.map(o => o.farm)])].filter(Boolean).forEach(n => {
+    const st = gOwnSt(n);
+    if (st.left !== 0) c2.push({ 구분: '농가것', 대상: n, 반입: st.inQ, 반납: st.outQ, 잔량: st.left });
+  });
+  [...new Set([...nhfIns.map(o => o.nhf + '||' + o.type), ...nhfOuts.map(o => o.nhf + '||' + o.type)])].forEach(k => {
+    const [nhf, type] = k.split('||');
+    const st = gNhfSt(nhf, type);
+    if (st.left !== 0) c2.push({ 구분: nhfOwner(nhf, type), 대상: `${nhf} · ${type}`, 반입: st.inQ, 반납: st.outQ, 잔량: st.left });
+  });
+
+  // ④ 수확 이상 — 차수 중복 / 미래 날짜인데 완료 / 전체종료 뒤에 차수 존재
+  const c4 = [];
+  const _hvSeen = {};
+  harvests.forEach(h => { const k = `${h.farm}||${h.round || 1}`; (_hvSeen[k] = _hvSeen[k] || []).push(h); });
+  Object.entries(_hvSeen).forEach(([k, arr]) => {
+    if (arr.length > 1) {
+      const [farm, rd] = k.split('||');
+      c4.push({ 유형: '차수 중복', 내용: `${farm} ${rd}차 ${arr.length}건 (${arr.map(x => x.date).join(', ')})` });
+    }
+  });
+  const _dcToday = td();
+  harvests.filter(h => h.status === '수확완료' && h.date > _dcToday)
+    .forEach(h => c4.push({ 유형: '미래 날짜인데 완료', 내용: `${h.farm} ${h.round || 1}차 (${h.date})` }));
+  harvests.filter(h => h.is_final).forEach(h => {
+    const later = harvests.filter(x => x.farm === h.farm && (x.round || 1) > (h.round || 1));
+    if (later.length) c4.push({ 유형: '전체종료 뒤 차수 존재', 내용: `${h.farm} ${h.round || 1}차 종료 — 이후 ${later.map(x => (x.round || 1) + '차').join(', ')} 있음` });
+  });
+
+  // ⑥ 마스터 정합성 — 거래처 정렬순서 중복 / 콘테이너 종류 이름 중복 / 외부용기 이름이 거래처 마스터에 없음
+  const c6 = [];
+  const _soMap = {};
+  partners.forEach(p => { if (p.sort_order != null) (_soMap[p.sort_order] = _soMap[p.sort_order] || []).push(p.name); });
+  Object.entries(_soMap).forEach(([so, names]) => {
+    if (names.length > 1) c6.push({ 유형: '거래처 정렬순서 중복', 내용: `순서 ${so} — ${names.join(', ')}` });
+  });
+  const _ctMap = {};
+  containerTypes.forEach(c => { const k = String(c.name || '').trim(); if (k) (_ctMap[k] = _ctMap[k] || []).push(c); });
+  Object.entries(_ctMap).forEach(([n, arr]) => {
+    if (arr.length > 1) c6.push({ 유형: '콘테이너 종류 이름 중복', 내용: `${n} — ${arr.length}건 (소유: ${arr.map(x => x.owner || '-').join(', ')})` });
+  });
+  const _pset = new Set(partners.map(p => String(p.name || '').trim()));
+  [...new Set([...nhfIns.map(o => o.nhf), ...nhfOuts.map(o => o.nhf)])].filter(Boolean).forEach(n => {
+    if (!_pset.has(String(n).trim())) c6.push({ 유형: '거래처 마스터에 없음', 내용: `외부용기 '${n}' — 거래처 관리에 미등록(오타 여부 확인)` });
+  });
+
+  // ③ 고아 콘테이너 기록(DB 조회) — inbound_id가 가리키는 입고가 실제로 있는지 확인. 입고 삭제 후 남은 기록 탐지.
+  let c3 = [], c3err = '';
+  try {
+    const linked = [
+      ...picks.filter(p => p.inbound_id).map(p => ({ 테이블: 'picks', 내용: `${p.date || '-'} ${p.farm || '-'} ${p.type || '-'} ${p.qty || 0}개`, inbound_id: p.inbound_id })),
+      ...ownIns.filter(o => o.inbound_id).map(o => ({ 테이블: 'own_ins', 내용: `${o.date || '-'} ${o.farm || '-'} ${o.qty || 0}개`, inbound_id: o.inbound_id })),
+      ...nhfIns.filter(o => o.inbound_id).map(o => ({ 테이블: 'nhf_ins', 내용: `${o.date || '-'} ${o.nhf || '-'} ${o.type || '-'} ${o.qty || 0}개`, inbound_id: o.inbound_id })),
+    ];
+    const ids = [...new Set(linked.map(x => String(x.inbound_id)))];
+    const alive = new Set();
+    for (let i = 0; i < ids.length; i += 100) {   // URL 길이 대비 100개씩 나눠 조회
+      const chunk = ids.slice(i, i + 100);
+      const rows = await sbGet('inbound_records', `id=in.(${chunk.join(',')})&select=id`);
+      (rows || []).forEach(r => alive.add(String(r.id)));
+    }
+    c3 = linked.filter(x => !alive.has(String(x.inbound_id)))
+      .map(x => ({ 테이블: x.테이블, 내용: x.내용, 없는_입고ID: String(x.inbound_id).slice(0, 8) + '…' }));
+  } catch (e) { c3err = e.message; }
+
+  // ⑤ 재고 이상(DB 조회) — 음수 수량 / 유효한데 0인 행(소진 처리 누락)
+  let c5 = [], c5err = '', c5cut = false;
+  try {
+    const sel = 'select=id,farm_name,product,size_code,quantity,quality_grade&limit=200';
+    const [neg, zero] = await Promise.all([
+      sbGet('inventory_records', `quantity=lt.0&or=(is_void.eq.false,is_void.is.null)&${sel}`),
+      sbGet('inventory_records', `quantity=eq.0&or=(is_void.eq.false,is_void.is.null)&${sel}`),
+    ]);
+    if ((neg || []).length >= 200 || (zero || []).length >= 200) c5cut = true;
+    c5 = [
+      ...(neg || []).map(r => ({ 유형: '수량 음수', 농가: r.farm_name || '-', 품목: r.product || '-', 사이즈: r.size_code || '-', 등급: r.quality_grade || '-', 수량: Number(r.quantity) })),
+      ...(zero || []).map(r => ({ 유형: '0인데 미소진', 농가: r.farm_name || '-', 품목: r.product || '-', 사이즈: r.size_code || '-', 등급: r.quality_grade || '-', 수량: Number(r.quantity) })),
+    ];
+  } catch (e) { c5err = e.message; }
+
+  const errBox = m => `<div style="padding:10px;color:#B91C1C;font-size:12px">조회 실패: ${_dcEsc(m)}</div>`;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#1565C0;color:#fff;border:none;border-radius:8px;cursor:pointer" onclick="renderDataCheck()">🔄 점검 실행</button>
+      <span style="font-size:11px;color:#9CA3AF">조회 전용 — 이 화면은 데이터를 바꾸지 않습니다. 점검 시각 ${_dcEsc(new Date().toLocaleString('ko-KR'))}</span>
+    </div>
+    ${_dcCard('① 우리 콘테이너 보유', '대상별 배출 − 회수 잔량. 잔량이 있는 건 정상(아직 안 걷힌 것)이고, <b>음수면 회수가 배출보다 많아</b> 확인이 필요합니다.', ['구분','대상','배출','회수','잔량'], c1, { info: true, warnRow: r => r.잔량 < 0 })}
+    ${_dcCard('② 남의 용기 보유', '농가·농협·거래처 용기의 반입 − 반납 잔량. 잔량은 아직 안 돌려준 것, <b>음수면 반납이 반입보다 많아</b> 확인이 필요합니다.', ['구분','대상','반입','반납','잔량'], c2, { info: true, warnRow: r => r.잔량 < 0 })}
+    ${c3err ? `<div class="form-card" style="margin-bottom:12px"><div style="font-size:14px;font-weight:700">③ 고아 콘테이너 기록</div>${errBox(c3err)}</div>`
+      : _dcCard('③ 고아 콘테이너 기록', '입고에 연결된(inbound_id) 콘테이너 기록 중 <b>그 입고가 이미 삭제된</b> 것. 남아 있으면 잔량 계산이 틀어집니다.', ['테이블','내용','없는_입고ID'], c3)}
+    ${_dcCard('④ 수확 이상', '같은 농가에 <b>같은 차수가 중복</b>, 아직 오지 않은 날짜인데 <b>수확완료</b>, 전체종료했는데 <b>그 뒤 차수가 존재</b>하는 경우.', ['유형','내용'], c4)}
+    ${c5err ? `<div class="form-card" style="margin-bottom:12px"><div style="font-size:14px;font-weight:700">⑤ 재고 이상</div>${errBox(c5err)}</div>`
+      : _dcCard('⑤ 재고 이상', `수량이 <b>음수</b>이거나, 유효한 재고인데 <b>수량이 0</b>(소진 처리가 안 된 행).${c5cut ? ' <b style="color:#B91C1C">※200건까지만 표시</b>' : ''}`, ['유형','농가','품목','사이즈','등급','수량'], c5)}
+    ${_dcCard('⑥ 마스터 정합성', '거래처 <b>정렬순서 중복</b>, 콘테이너 종류 <b>이름 중복</b>, 외부용기에 쓰인 이름이 <b>거래처 관리에 없는</b> 경우(오타·미등록).', ['유형','내용'], c6)}
+    <div style="font-size:11px;color:#9CA3AF;padding:0 4px 8px;line-height:1.6">
+      ※ ①②④⑥은 앱에 이미 올라온 데이터로 계산합니다. ③⑤는 DB에서 그때그때 조회합니다.<br>
+      ※ 이상이 나와도 이 화면에서는 고치지 않습니다. 무엇을 어떻게 정리할지는 확인 후 판단하세요.
+    </div>`;
 }
 
 // ── 설정 탭 — 비밀번호 변경 모달
