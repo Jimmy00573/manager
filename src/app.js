@@ -15923,9 +15923,15 @@ async function loadAndRenderFarmSortingResults(farmName, containerEl) {
   }).join('');
 
   // 사이즈별 누적 섹션 (그룹별 정렬)
+  // 만감류는 5~27수 전체가 아니라 '실제 누적 데이터가 있는 사이즈'만 열로(다른 화면과 동일 취지, 이 섹션은 품목 혼합이라 sizesForProduct 대신 데이터 기준).
+  // 감귤류 그룹은 사이즈 수가 적고 위치 안정성이 중요해 전체 유지.
+  const _cumDataSzs = new Set(Object.keys(cumSizeMap).filter(sz => (cumSizeMap[sz] || 0) > 0));
+  const _mandarinCum = SIZE_GROUPS_만감류
+    .map(g => ({ group: g.group, sizes: g.sizes.filter(sz => _cumDataSzs.has(sz)) }))
+    .filter(g => g.sizes.length);   // 데이터 없는 그룹(대/중/소과)은 통째로 제거
   const cumGroups = (farmPtypes.has('감귤류') && farmPtypes.has('만감류'))
-    ? [...SIZE_GROUPS_감귤류, ...SIZE_GROUPS_만감류]
-    : farmPtypes.has('감귤류') ? SIZE_GROUPS_감귤류 : SIZE_GROUPS_만감류;
+    ? [...SIZE_GROUPS_감귤류, ..._mandarinCum]
+    : farmPtypes.has('감귤류') ? SIZE_GROUPS_감귤류 : _mandarinCum;
 
   const cumSizeHtml = `
     <div style="padding:10px 14px;background:#F5F3FF">
