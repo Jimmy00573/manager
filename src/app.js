@@ -12836,7 +12836,8 @@ function _renderScTable() {
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
-        <col style="width:140px"><col style="width:80px"><col style="width:55px">
+        <!-- 농가=농가명+⭐+차수배지+비율칩, 품목=칩 전체 표시 위해 확대(모바일은 sc-table-wrap 가로 스크롤로 흡수) -->
+        <col style="width:190px"><col style="width:100px"><col style="width:62px">
         <col style="width:70px"><col style="width:70px"><col style="width:50px"><col style="width:100px">
         <col style="width:70px"><col style="width:85px"><col style="width:70px">
       </colgroup>
