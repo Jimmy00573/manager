@@ -7768,6 +7768,15 @@ function openInvEntryModal() {
   modal.style.display = 'flex';
 }
 
+// 입력칸 포커스 시 커서를 값의 끝으로 이동(text-align:right 칸에서 앞쪽 클릭 시 커서가 index 0에 놓이는 문제 방지).
+// type="number"는 setSelectionRange 시 InvalidStateError 위험 → 값 재대입 방식(프로그램적 value 변경은 input 이벤트 미발생 → 합계 영향 없음).
+function _caretToEnd(el) {
+  if (!el) return;
+  const v = el.value;
+  if (v === '') return;
+  setTimeout(() => { el.value = ''; el.value = v; }, 0);
+}
+
 function iemOnProductChange() {
   const product = document.getElementById('iem-product')?.value;
   const area    = document.getElementById('iem-size-area');
@@ -7793,7 +7802,7 @@ function iemOnProductChange() {
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
               <label style="font-size:12px;color:#374151;min-width:34px;flex-shrink:0">${esc(sz)}${fruitNoBadge(sz)}</label>
               <input type="number" class="iem-size-inp" data-size="${esc(sz)}" min="0" step="0.5" placeholder="0"
-                oninput="iemUpdateTotal()"
+                oninput="iemUpdateTotal()" onfocus="_caretToEnd(this)"
                 style="flex:1;min-width:0;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:13px;font-family:inherit;text-align:right">
             </div>`).join('')}
           <div style="display:flex;justify-content:space-between;font-size:11px;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5px;margin-top:3px">
