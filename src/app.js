@@ -4408,7 +4408,7 @@ function renderSizeCfg() {
   el.innerHTML = `
     <div class="form-card">
       <div class="form-title">⚙️ 품목 분류 시스템 설정</div>
-      <div class="note">💡 카테고리·품목·크기 기준을 설정합니다. 변경 후 전체현황에 즉시 반영됩니다.</div>
+      <div class="note">💡 카테고리·품목·크기 기준을 설정합니다. 변경 후 재고 요약에 즉시 반영됩니다.</div>
       <div style="display:flex;gap:0;margin:12px 0 0;border-bottom:1px solid var(--border)">
         <button class="cfg-stab af" id="cst-cat"   onclick="cfgSubTab('cat')">📁 카테고리·품목</button>
         <button class="cfg-stab"   id="cst-grade" onclick="cfgSubTab('grade')">🍊 감귤류 등급</button>
@@ -5666,7 +5666,7 @@ async function deleteItemRule(id) {
   } catch(e) { alert('오류: ' + e.message); }
 }
 
-// ── 재고 현황 (inventory_records 기반 매트릭스) ──────────────────
+// ── 선과품 재고 (inventory_records 기반 매트릭스) ──────────────────
 
 function invSetFilter(key, val) {
   _invFilter[key] = val;
@@ -5763,7 +5763,7 @@ let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초�
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
 
-// ── [화면: 재고관리 > 재고현황] 품목별 섹션 + 등급 탭. 매트릭스 본체는 _renderInvMatrix.
+// ── [화면: 재고관리 > 선과품 재고] 품목별 섹션 + 등급 탭. 매트릭스 본체는 _renderInvMatrix.
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
   const matrixEl = document.getElementById('inv-matrix-wrap');
@@ -5881,7 +5881,7 @@ function renderInventoryStatus() {
   }
 }
 
-// ── [화면: 재고관리 > 재고현황] 농가×사이즈 매트릭스 본체(CSS Grid). 호출부는 renderInventoryStatus.
+// ── [화면: 재고관리 > 선과품 재고] 농가×사이즈 매트릭스 본체(CSS Grid). 호출부는 renderInventoryStatus.
 function _renderInvMatrix(product, recs, auditMode) {
   const audit    = !!auditMode;
   const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
@@ -7275,7 +7275,7 @@ async function saveInvEdit() {
     await dbInsertAuditLog({
       target_table: 'inventory_records', target_id: ref?.id,
       before_val: oldQty, after_val: newQty,
-      reason: `재고 현황 [수정] 버튼 [${_invEditGrade}]`,
+      reason: `선과품 재고 [수정] 버튼 [${_invEditGrade}]`,
       staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     document.getElementById('modal-inv-edit').style.display = 'none';
@@ -9030,7 +9030,7 @@ function drvHtml(drv) {
     ? `<span class="driver-cell"><span class="driver-dot" style="background:${drv.dotColor}"></span><span class="driver-name">${esc(drv.display)}</span></span>`
     : '<span style="color:#9CA3AF">—</span>';
 }
-// ── [화면: 재고관리 > 전체현황(입출고 요약)] 날짜 선택(_summaryDate) 기준 입고·출고 집계 카드.
+// ── [화면: 재고관리 > 재고 요약(입출고 요약)] 날짜 선택(_summaryDate) 기준 입고·출고 집계 카드.
 function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
   if (!el) return;
@@ -10208,7 +10208,7 @@ function getAuditTableLabel(t) {
     inventory_sorted: '선과 재고', inventory_waste: '파치', inventory_juice: '주스',
     inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업',
     juice_batches: '주스·청', outbound_records: '출고',
-    inventory_records: '재고 현황', sorting_results: '선과 차수' })[t] || t;
+    inventory_records: '선과품 재고', sorting_results: '선과 차수' })[t] || t;
 }
 
 const AUDIT_ACTION_STYLE = {
@@ -12219,7 +12219,7 @@ async function deleteUncheckedInvAudit() {
         target_table: 'inventory_records', target_id: r.id,
         before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: r.quantity },
         after_val: null,
-        reason: `재고현황 실사 일괄삭제: ${res.reason}`,
+        reason: `선과품 재고 실사 일괄삭제: ${res.reason}`,
         staff: res.worker
       });
       successCount++;
@@ -12285,7 +12285,7 @@ async function outboundUncheckedInvAudit() {
         target_table: 'inventory_records', target_id: r.id,
         before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
         after_val: { outbound: '실사출고', quantity: 0, is_void: true },
-        reason: `재고현황 실사 출고(실사출고): ${res.reason}`,
+        reason: `선과품 재고 실사 출고(실사출고): ${res.reason}`,
         staff: adm
       });
       successCount++;
@@ -14008,7 +14008,7 @@ async function saveSortingResult() {
         invInsertOk++;
       } catch (rowErr) {
         console.error('[6단계] INSERT 실패:', rowErr.message, '/ 데이터:', JSON.stringify(insertData));
-        showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 재고 현황에서 직접 입력 필요');
+        showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 선과품 재고에서 직접 입력 필요');
         break;
       }
     }
@@ -14623,7 +14623,7 @@ async function saveInboundSorted(keepOpen) {
         });
         inserted.push(rows[0]);
       } catch(rowErr) {
-        alert(`재고 등록 부분 실패 (${e.size}): ${rowErr.message}\n입고 기록(id:${ibId})은 저장됨. 재고 현황에서 수동 추가 필요.`);
+        alert(`재고 등록 부분 실패 (${e.size}): ${rowErr.message}\n입고 기록(id:${ibId})은 저장됨. 선과품 재고에서 수동 추가 필요.`);
         break;
       }
     }

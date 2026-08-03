@@ -840,16 +840,16 @@
 <!-- 재고관리 -->
 <div id="p-inv" class="panel">
   <div class="ext-tabs">
-    <button class="etab af" id="it-sum" onclick="invTab('sum')">📊 전체현황</button>
+    <button class="etab af" id="it-sum" onclick="invTab('sum')">📊 재고 요약</button>
     <button class="etab" id="it-uns" onclick="invTab('uns')">🍊 미선과</button>
-    <button class="etab" id="it-srt" onclick="invTab('srt')">📦 재고 현황</button>
+    <button class="etab" id="it-srt" onclick="invTab('srt')">📦 선과품 재고</button>
     <button class="etab" id="it-pachi" onclick="invTab('pachi')">🧹 파치</button>
     <button class="etab" id="it-juice" onclick="invTab('juice')">🧃 주스·청</button>
     <button class="etab" id="it-out" onclick="invTab('out')">🔄 거래내역</button>
     <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
   </div>
 
-  <!-- 전체현황 -->
+  <!-- 재고 요약 -->
   <div id="inv-sum-div">
     <div id="inv-summary-cards"></div>
   </div>
@@ -1209,7 +1209,7 @@
     </div>
   </div>
 
-  <!-- 재고 현황 -->
+  <!-- 선과품 재고 -->
   <div id="inv-srt-div" style="display:none">
 
     <!-- 등급 토글 툴바 -->
@@ -1297,7 +1297,7 @@
             <option value="">전체</option>
             <option value="inbound_records">미선과 입고</option>
             <option value="outbound_records">출고</option>
-            <option value="inventory_records">재고 현황</option>
+            <option value="inventory_records">선과품 재고</option>
             <option value="juice_batches">주스·청</option>
             <option value="processing_records">선과 처리</option>
           </select>
@@ -1907,6 +1907,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=21"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=439"></script>
+<script src="src/app.js?v=440"></script>
 </body>
 </html>
