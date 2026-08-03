@@ -5782,7 +5782,11 @@ function renderInventoryStatus() {
   // 등급 토글 툴바 — 동적: 전체 + 일반(항상) + 재고 있는 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
   const gradeToolbarEl = document.getElementById('inv-grade-toolbar');
   if (gradeToolbarEl) {
-    const existing = new Set(activeRecs.map(r => r.quality_grade || '일반'));
+    // 실사 모드면 등급 탭을 선택 품목 기준으로(품목별 실사). 조회 모드는 전체 품목 기준(기존 불변).
+    const gradeBase = (_invAuditMode && _invFilter.product)
+      ? activeRecs.filter(r => r.product === _invFilter.product)
+      : activeRecs;
+    const existing = new Set(gradeBase.map(r => r.quality_grade || '일반'));
     // 활성 브릭스라도 재고 0이면 탭 미표시 (앱 전체 0건 숨김 원리와 일관)
     const activeBrix = brixGrades
       .filter(g => g.is_active !== false && existing.has(g.label))
@@ -5793,6 +5797,10 @@ function renderInventoryStatus() {
       .filter(lbl => lbl !== '일반' && !activeBrix.includes(lbl))
       .sort((a, b) => a.localeCompare(b, 'ko'));
     const gradeKeys = ['일반', ...activeBrix, ...others];
+    // 실사 모드: 선택 품목에 현재 등급 재고가 없으면 첫 등급(일반 우선, 재고 있는 것)으로 자동 전환. HTML 빌드 전에 처리.
+    if (_invAuditMode && _invFilter.product && !existing.has(_invGrade)) {
+      _invGrade = gradeKeys.find(k => existing.has(k)) || '일반';
+    }
     // 실사 모드면 '전체' 탭 숨김(실사 실수 방지 — 등급별로만). 조회 모드는 전체 유지.
     const grades = [...(_invAuditMode ? [] : [{ key: 'all', label: '전체' }]), ...gradeKeys.map(k => ({ key: k, label: k }))];
     gradeToolbarEl.innerHTML = `
@@ -5831,7 +5839,7 @@ function renderInventoryStatus() {
           <div style="font-size:10px;color:#9CA3AF">CT</div>
         </div>`;
       }).join('')}
-      ${_invFilter.product ? `<div onclick="invSetFilter('product','')" style="padding:10px 12px;background:#fff;border:2px dashed #D1D5DB;border-radius:8px;cursor:pointer;text-align:center;color:#9CA3AF;font-size:12px;display:flex;align-items:center;justify-content:center">전체 보기</div>` : ''}
+      ${(_invFilter.product && !_invAuditMode) ? `<div onclick="invSetFilter('product','')" style="padding:10px 12px;background:#fff;border:2px dashed #D1D5DB;border-radius:8px;cursor:pointer;text-align:center;color:#9CA3AF;font-size:12px;display:flex;align-items:center;justify-content:center">전체 보기</div>` : ''}
     </div>` : '<div style="padding:4px 0 12px;font-size:12px;color:#9CA3AF">재고 데이터 없음 — DB 마이그레이션 후 표시됩니다</div>';
 
   // 필터 적용 (등급필터 recs0 위에 product/farm 필터 추가)
@@ -11663,7 +11671,17 @@ function toggleInvAuditMode() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invAuditMode = !_invAuditMode;
   if (_invAuditMode && _invGrade === 'all') _invGrade = '일반';   // 실사는 등급별만(전체 탭 숨김) → 전체였으면 일반으로
-  if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지
+  // 실사 ON & 품목 미선택 → 현재 등급에 재고 있는 첫 품목 자동 선택(품목 카드와 동일 정렬). 재고 없으면 그대로 둠.
+  if (_invAuditMode && !_invFilter.product) {
+    const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_lowbrix', 'pachi_tiny', 'pachi_green'];
+    const g = _invGrade;
+    const prods = [...new Set(inventoryRecords
+      .filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type) && (Number(r.quantity) || 0) > 0
+        && (g === 'all' || (r.quality_grade || '일반') === g))
+      .map(r => r.product))].sort((a, b) => a.localeCompare(b, 'ko'));
+    if (prods.length) _invFilter.product = prods[0];
+  }
+  if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지. 품목 필터는 유지(사용자가 해제).
   renderInventoryStatus();
 }
 // 실사 모드 내 '부분출고' 서브 토글 — ON이면 값 있는 셀 클릭 = 부분출고 모달
