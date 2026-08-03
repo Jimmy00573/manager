@@ -2126,6 +2126,8 @@ function getFCtypes(fn, targetType) {
   const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
   // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
   const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
+  // 납품 콘테이너(D-1) 배출 — outbound_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
+  picks.filter(p => p.farm === fn && p.type === '배출' && p.outbound_id && p.ctype && tgtOk(p)).forEach(p => { ob[p.ctype] = (ob[p.ctype] || 0) + p.qty; });
   // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
   let recNull = 0; const recByType = {};
   picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && tgtOk(p)).forEach(p => {
@@ -2164,6 +2166,8 @@ function buildContainerHistory() {
   const rows = [];
   // 배차 → 배출 (picks의 type='배출'은 배차 자동생성 중복이라 제외)
   dispatches.forEach(d => rows.push({ date: d.date, kind: '배출', target: d.farm, targetKind: (d.target_type === '농협' || d.target_type === '거래처') ? d.target_type : '농가', category: d.ctype || '', qty: d.qty || 0, staff: d.driver || '', src: 'dispatch' }));
+  // 납품 콘테이너(D-1) → 배출 (outbound_id 연동 pick만. 배차 자동생성 픽은 dispatch_id라 위 dispatches에서 이미 집계)
+  picks.filter(p => p.type === '배출' && p.outbound_id).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
   // 회수(원물수거/빈콘회수)
   picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
   // 농가것 반입/반납
@@ -4306,6 +4310,15 @@ function _composeSizeDist(prefix) {
 function _eibEffSize(orig) {
   const c = _composeSizeDist('eib-m');
   return (c === null && orig && orig.size_distribution && _parseSizeDist(orig.size_distribution) === null) ? orig.size_distribution : c;
+}
+
+// 출고처(partner) → 콘테이너 target_type 매핑. partners.category 기준.
+// 농협→'농협', 거래처/공판장→'거래처', 농가→'농가', 미지정→'거래처'. getTargetContainerHold 집계 대상 판정에 사용.
+function _partnerTargetType(name) {
+  const c = partners.find(p => p.name === name)?.category;
+  if (c === '농협') return '농협';
+  if (c === '농가') return '농가';
+  return '거래처';   // 거래처/공판장/미지정
 }
 
 // 농협 콘테이너 입고 농협명 옵션 — partners 중 category==='농협'만(sort_order順). buildSupplierOptHtml(전체)와 구분.
@@ -8508,10 +8521,12 @@ async function deleteManualTx(id) {
 async function confirmCancelOutbound(id) {
   const r = invOutbounds.find(x => String(x.id) === String(id));
   if (!r) return;
+  const linkedPicks = picks.filter(p => String(p.outbound_id) === String(id));   // 납품 콘테이너 배출(D-1)
   const ok = await showConfirmDanger({
     title: '출고 취소',
     subtitle: '차감된 재고가 복구됩니다',
-    items: [`${r.product} ${fmtN(r.quantity)}${r.unit} (${r.partner_name||'-'})`],
+    items: [`${r.product} ${fmtN(r.quantity)}${r.unit} (${r.partner_name||'-'})`,
+      ...(linkedPicks.length ? [`콘테이너 배출 ${linkedPicks.length}건 함께 삭제`] : [])],
     resultNote: '차감됐던 재고가 다시 복구되고, 이 출고 기록은 취소 처리됩니다',
     confirmText: '출고 취소'
   });
@@ -8551,6 +8566,18 @@ async function cancelOutbound(id) {
         if (i >= 0) processingRecords.splice(i, 1);
       }
     }
+    // 납품 콘테이너 배출 pick cascade 삭제 — outbound_id 연결분만(수동/기존 NULL은 보존). 입고 cascade와 동일 raw fetch 패턴.
+    {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/picks?outbound_id=eq.${id}`, {
+        method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+      });
+      if (!res.ok) throw new Error(`콘테이너 배출 pick 삭제 실패: HTTP ${res.status} outbound_id=${id}`);
+      const del = await res.json();
+      if (Array.isArray(del) && del.length) {
+        const ids = new Set(del.map(x => String(x.id)));
+        picks = picks.filter(p => !ids.has(String(p.id)));
+      }
+    }
     await sbUpdate('outbound_records', id, { is_void: true });
     await dbInsertAuditLog({
       target_table: 'outbound_records', target_id: id,
@@ -8562,7 +8589,7 @@ async function cancelOutbound(id) {
     if (i >= 0) invOutbounds.splice(i, 1);
     showToast('출고 취소 — 재고 복구 완료');
     renderOutboundHistory(); renderInventoryStatus(); renderPachiSection();
-    renderJuiceSection(); renderInboundList(); renderInvSummary();
+    renderJuiceSection(); renderInboundList(); renderInvSummary(); renderDash();
   } catch(e) {
     alert('취소 중 오류가 발생했습니다. 일부 복구가 완료되지 않았을 수 있으니 재고를 확인해주세요.\n\n' + e.message);
   }
@@ -11552,6 +11579,10 @@ function openInvOutbound(regId, sz) {
   const partnerOpts = '<option value="">선택</option>' + partners
     .filter(p => p.is_active !== false && (p.usage === 'out' || p.usage === 'both' || !p.usage))
     .map(p => `<option value="${esc(p.name)}"${p.name === '온라인' ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  const ctypeOpts = '<option value="">없음</option>' + containerTypes
+    .filter(t => t.owner === 'ours' && t.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
   const m = document.createElement('div');
   m.id = 'modal-inv-outbound';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
@@ -11566,6 +11597,7 @@ function openInvOutbound(regId, sz) {
         <div><label style="${lbl}">출고일</label><input id="io-date" type="date" value="${td()}" style="${inpS}"></div>
         <div><label style="${lbl}">출고처</label><select id="io-partner" style="${inpS}">${partnerOpts}</select></div>
         <div><label style="${lbl}">출고 수량(CT)</label><input id="io-qty" type="number" min="0.1" step="0.1" value="${cur}" style="${inpS}"></div>
+        <div><label style="${lbl}">콘테이너 <span style="color:#9CA3AF;font-weight:400">(선택 시 출고 CT만큼 배출 기록)</span></label><select id="io-ctype" style="${inpS}">${ctypeOpts}</select></div>
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
@@ -11587,6 +11619,7 @@ async function saveInvOutbound(regId, sz) {
   const date = document.getElementById('io-date')?.value || td();
   const partner = document.getElementById('io-partner')?.value || '';
   const qty = parseFloat(document.getElementById('io-qty')?.value) || 0;
+  const ctype = document.getElementById('io-ctype')?.value || '';
   if (!partner) return alert('출고처를 선택하세요.');
   if (qty <= 0) return alert('출고 수량을 입력하세요.');
   if (qty > cur + 1e-6) return alert(`현재고(${fmtCT(cur)} CT)를 초과했습니다.`);
@@ -11613,6 +11646,14 @@ async function saveInvOutbound(regId, sz) {
       created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
     if (ob) invOutbounds.unshift(ob);
+    // 납품 콘테이너 자동 기록 — ctype 선택 시 출고 CT(1CT=콘테이너 1개)만큼 배출 pick. 배차가 만드는 pick과 동일 형태 → 집계·회수·이력 자동 반영.
+    if (ob && ctype) {
+      try {
+        const pk = await dbInsertPick({ date, farm: partner, type: '배출', qty, ctype, target_type: _partnerTargetType(partner), auto: true, note: '납품 콘테이너', outbound_id: ob.id });
+        if (pk) picks.unshift(pk);
+        renderDash();   // 현황판 회수 필요 즉시 반영
+      } catch (e) { alert('출고는 저장됐으나 콘테이너 기록에 실패했습니다.\n콘테이너 회수 화면에서 수동 등록해주세요.\n' + e.message); }
+    }
     document.getElementById('modal-inv-outbound')?.remove();
     renderInventoryStatus();
     showToast(`${info.product} ${sz} ${fmtCT(qty)}CT 출고(${partner})`);
