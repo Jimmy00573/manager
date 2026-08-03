@@ -8357,6 +8357,10 @@ function openManualTxModal(editId = null) {
     .filter(t => t.owner === 'ours' && t.is_active !== false)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
     .map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+  // 단위 옵션: kg/CT. 기존 값이 kg/CT가 아니면(자유 텍스트 구데이터) 옵션에 추가해 보존.
+  const curUnit = ed ? (ed.unit || 'kg') : 'kg';
+  const unitOpts = ['kg', 'CT', ...(curUnit && !['kg', 'CT'].includes(curUnit) ? [curUnit] : [])]
+    .map(u => `<option value="${esc(u)}"${u === curUnit ? ' selected' : ''}>${esc(u)}</option>`).join('');
   const inp = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
   const lbl = 'font-size:12px;color:#6B7280;display:block;margin-bottom:4px';
 
@@ -8382,13 +8386,19 @@ function openManualTxModal(editId = null) {
           </div>
           <div><label style="${lbl}"><span id="mtx-partner-label">출고처</span> *</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
           <div><label style="${lbl}">농가명 <span style="color:#9CA3AF;font-weight:400">(선택)</span></label><select id="mtx-farm" style="${inp}"><option value="">(선택 안 함)</option>${farmOpts}</select></div>
-          <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxUpdateSizes()" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
+          <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxOnProductChange()" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
           <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
           <div><label style="${lbl}">사이즈</label><select id="mtx-size" style="${inp}"><option value="">(품목 먼저 선택)</option></select></div>
-          <div><label style="${lbl}">단위</label><input type="text" id="mtx-unit" value="kg" style="${inp}"></div>
+          <div><label style="${lbl}">단위</label><select id="mtx-unit" onchange="_mtxOnUnitChange()" style="${inp}">${unitOpts}</select></div>
           <div><label style="${lbl}">수량 *</label><input type="number" id="mtx-qty" step="0.1" min="0" oninput="_mtxCalcAmount()" style="${inp}"></div>
-          <div><label style="${lbl}">단가 (원)</label><input type="number" id="mtx-price" step="1" min="0" oninput="_mtxCalcAmount()" placeholder="(선택)" style="${inp}"></div>
-          <div style="grid-column:1/3"><label style="${lbl}">금액 (원) <span style="color:#9CA3AF;font-weight:400">— 단가×수량 자동, 직접 수정 가능</span></label><input type="number" id="mtx-amount" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
+          <div id="mtx-ctkg-wrap" style="grid-column:1/3;display:${curUnit === 'CT' ? 'block' : 'none'};background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:8px 10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;align-items:end">
+              <div><label style="${lbl}">CT당 중량 (kg)</label><input type="number" id="mtx-ctkg" step="0.1" min="0" oninput="_mtxCalcAmount()" style="${inp}"></div>
+              <div style="font-size:12px;color:#374151;padding-bottom:8px">총 중량: <strong id="mtx-totkg" style="color:#1565C0">0 kg</strong></div>
+            </div>
+          </div>
+          <div><label style="${lbl}">단가 (원/kg)</label><input type="number" id="mtx-price" step="1" min="0" oninput="_mtxCalcAmount()" placeholder="(선택)" style="${inp}"></div>
+          <div style="grid-column:1/3"><label style="${lbl}">금액 (원) <span style="color:#9CA3AF;font-weight:400">— 단가×총중량 자동, 직접 수정 가능</span></label><input type="number" id="mtx-amount" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
           <div style="grid-column:1/3"><label style="${lbl}">메모</label><input type="text" id="mtx-note" placeholder="(선택)" style="${inp}"></div>
           <div id="mtx-container-sec" style="grid-column:1/3;display:${_mtxDir === 'out' ? 'block' : 'none'};border-top:1px solid #F0F0F0;padding-top:10px;margin-top:2px">
             <div style="font-size:12px;color:#6B7280;margin-bottom:6px">📦 콘테이너 <span style="color:#9CA3AF;font-weight:400">(우리 콘테이너가 함께 나갔으면 선택 — 배출 기록 자동 생성)</span></div>
@@ -8419,6 +8429,11 @@ function openManualTxModal(editId = null) {
     if (g('mtx-grade'))   g('mtx-grade').value   = ed.quality_grade || '';
     if (g('mtx-unit'))    g('mtx-unit').value    = ed.unit || 'kg';
     if (g('mtx-qty'))     g('mtx-qty').value     = ed.quantity ?? '';
+    // CT당중량 영역 동기화(저장 컬럼 없음 → 품목 기준 복원). ★금액은 재계산하지 않고 저장값 유지.
+    { const unit = g('mtx-unit')?.value || 'kg'; const wrap = g('mtx-ctkg-wrap');
+      if (wrap) wrap.style.display = unit === 'CT' ? 'block' : 'none';
+      if (g('mtx-ctkg')) g('mtx-ctkg').value = _kgPerCt(ed.product || '');
+      _mtxUpdateTotKg(); }
     if (g('mtx-price'))   g('mtx-price').value   = ed.unit_price ?? '';
     if (g('mtx-amount'))  g('mtx-amount').value  = ed.amount ?? '';
     if (g('mtx-note'))    g('mtx-note').value    = ed.note || '';
@@ -8456,15 +8471,52 @@ function _mtxUpdateSizes() {
   sel.value = (prev && sizes.includes(prev)) ? prev : '';   // 기존 선택값이 새 목록에 없으면 초기화
 }
 
-// 단가↔금액: 단가가 입력돼 있으면 금액=round(단가×수량) 자동. 단가 비어 있으면 금액은 직접입력값 유지.
-function _mtxCalcAmount() {
+// CT당 kg 전역 헬퍼 — productWeights[품목](설정 관리), 없으면 17 폴백. 신규 코드 전용(기존 인라인 정의는 유지).
+function _kgPerCt(product) {
+  return (productWeights && product && productWeights[product] != null) ? Number(productWeights[product]) : 17;
+}
+
+// 총 중량(kg) 표시만 갱신하고 반환 — 단위 CT면 수량×CT당중량, kg면 수량. 금액은 건드리지 않음(편집 진입 시 저장금액 보존용).
+function _mtxUpdateTotKg() {
   const qty = parseFloat(document.getElementById('mtx-qty')?.value) || 0;
+  const unit = document.getElementById('mtx-unit')?.value || 'kg';
+  const ctkg = parseFloat(document.getElementById('mtx-ctkg')?.value) || 0;
+  const totKg = (unit === 'CT' && ctkg > 0) ? qty * ctkg : qty;
+  const totEl = document.getElementById('mtx-totkg');
+  if (totEl) totEl.textContent = fmtN(Math.round(totKg * 10) / 10) + ' kg';
+  return totKg;
+}
+
+// 단위 변경/초기화: CT면 CT당중량 영역 표시+품목 기준 자동채움(비었을 때만), kg면 숨김. 총중량·금액 갱신.
+function _mtxOnUnitChange() {
+  const unit = document.getElementById('mtx-unit')?.value || 'kg';
+  const wrap = document.getElementById('mtx-ctkg-wrap');
+  const ctkgEl = document.getElementById('mtx-ctkg');
+  if (wrap) wrap.style.display = unit === 'CT' ? 'block' : 'none';
+  if (unit === 'CT' && ctkgEl && (ctkgEl.value === '' || Number(ctkgEl.value) <= 0)) {
+    ctkgEl.value = _kgPerCt(document.getElementById('mtx-product')?.value || '');
+  }
+  _mtxCalcAmount();
+}
+
+// 품목 변경: 사이즈 갱신 + CT당중량을 품목 기준으로 재설정. CT 단위면 금액도 재계산.
+function _mtxOnProductChange() {
+  _mtxUpdateSizes();
+  const ctkgEl = document.getElementById('mtx-ctkg');
+  if (ctkgEl) ctkgEl.value = _kgPerCt(document.getElementById('mtx-product')?.value || '');
+  if ((document.getElementById('mtx-unit')?.value || 'kg') === 'CT') _mtxCalcAmount();
+}
+
+// 단가↔금액: 단가가 입력돼 있으면 금액=round(단가×총중량) 자동. 단가 비어 있으면 금액은 직접입력값 유지.
+// 단위 kg → 총중량=수량이라 금액=단가×수량(기존 동작 100% 유지). 단위 CT → 총중량=수량×CT당중량.
+function _mtxCalcAmount() {
+  const totKg = _mtxUpdateTotKg();
   const priceEl = document.getElementById('mtx-price');
   if (!priceEl || priceEl.value === '') return;
   const price = parseFloat(priceEl.value);
   if (isNaN(price)) return;
   const amt = document.getElementById('mtx-amount');
-  if (amt) amt.value = Math.round(price * qty);
+  if (amt) amt.value = Math.round(price * totKg);
 }
 
 // 수동 거래(D-1b) 콘테이너 배출 pick 동기화 — 기존 연결 pick 삭제 후 조건 충족 시 재생성(수정=삭제후재생성 단순화). 재고 무관.
