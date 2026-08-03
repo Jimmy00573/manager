@@ -2126,8 +2126,8 @@ function getFCtypes(fn, targetType) {
   const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
   // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
   const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
-  // 납품 콘테이너(D-1) 배출 — outbound_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
-  picks.filter(p => p.farm === fn && p.type === '배출' && p.outbound_id && p.ctype && tgtOk(p)).forEach(p => { ob[p.ctype] = (ob[p.ctype] || 0) + p.qty; });
+  // 납품 콘테이너(D-1 출고 / D-1b 수동거래) 배출 — outbound_id·manual_tx_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
+  picks.filter(p => p.farm === fn && p.type === '배출' && (p.outbound_id || p.manual_tx_id) && p.ctype && tgtOk(p)).forEach(p => { ob[p.ctype] = (ob[p.ctype] || 0) + p.qty; });
   // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
   let recNull = 0; const recByType = {};
   picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && tgtOk(p)).forEach(p => {
@@ -2166,8 +2166,8 @@ function buildContainerHistory() {
   const rows = [];
   // 배차 → 배출 (picks의 type='배출'은 배차 자동생성 중복이라 제외)
   dispatches.forEach(d => rows.push({ date: d.date, kind: '배출', target: d.farm, targetKind: (d.target_type === '농협' || d.target_type === '거래처') ? d.target_type : '농가', category: d.ctype || '', qty: d.qty || 0, staff: d.driver || '', src: 'dispatch' }));
-  // 납품 콘테이너(D-1) → 배출 (outbound_id 연동 pick만. 배차 자동생성 픽은 dispatch_id라 위 dispatches에서 이미 집계)
-  picks.filter(p => p.type === '배출' && p.outbound_id).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
+  // 납품 콘테이너(D-1 출고 / D-1b 수동거래) → 배출 (outbound_id·manual_tx_id 연동 pick만. 배차 자동생성 픽은 dispatch_id라 위 dispatches에서 이미 집계)
+  picks.filter(p => p.type === '배출' && (p.outbound_id || p.manual_tx_id)).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
   // 회수(원물수거/빈콘회수)
   picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
   // 농가것 반입/반납
@@ -8353,6 +8353,10 @@ function openManualTxModal(editId = null) {
   const gradeOpts = ['일반', ...brixGrades.filter(g => g.is_active !== false)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(g => g.label)]
     .map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  const ctypeOpts = '<option value="">없음</option>' + containerTypes
+    .filter(t => t.owner === 'ours' && t.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
   const inp = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
   const lbl = 'font-size:12px;color:#6B7280;display:block;margin-bottom:4px';
 
@@ -8386,6 +8390,13 @@ function openManualTxModal(editId = null) {
           <div><label style="${lbl}">단가 (원)</label><input type="number" id="mtx-price" step="1" min="0" oninput="_mtxCalcAmount()" placeholder="(선택)" style="${inp}"></div>
           <div style="grid-column:1/3"><label style="${lbl}">금액 (원) <span style="color:#9CA3AF;font-weight:400">— 단가×수량 자동, 직접 수정 가능</span></label><input type="number" id="mtx-amount" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
           <div style="grid-column:1/3"><label style="${lbl}">메모</label><input type="text" id="mtx-note" placeholder="(선택)" style="${inp}"></div>
+          <div id="mtx-container-sec" style="grid-column:1/3;display:${_mtxDir === 'out' ? 'block' : 'none'};border-top:1px solid #F0F0F0;padding-top:10px;margin-top:2px">
+            <div style="font-size:12px;color:#6B7280;margin-bottom:6px">📦 콘테이너 <span style="color:#9CA3AF;font-weight:400">(우리 콘테이너가 함께 나갔으면 선택 — 배출 기록 자동 생성)</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px">
+              <div><label style="${lbl}">종류</label><select id="mtx-ctype" style="${inp}">${ctypeOpts}</select></div>
+              <div><label style="${lbl}">개수</label><input type="number" id="mtx-cqty" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
+            </div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:16px">
           <button id="mtx-save-btn" onclick="saveManualTx(${ed ? `'${ed.id}'` : ''})" style="flex:1;padding:10px;background:#2563EB;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">${ed ? '수정' : '저장'}</button>
@@ -8411,6 +8422,10 @@ function openManualTxModal(editId = null) {
     if (g('mtx-price'))   g('mtx-price').value   = ed.unit_price ?? '';
     if (g('mtx-amount'))  g('mtx-amount').value  = ed.amount ?? '';
     if (g('mtx-note'))    g('mtx-note').value    = ed.note || '';
+    // 연결된 콘테이너 배출 pick(있으면) 값 채우기(D-1b)
+    const cpk = picks.find(p => String(p.manual_tx_id) === String(ed.id));
+    if (g('mtx-ctype')) g('mtx-ctype').value = cpk?.ctype || '';
+    if (g('mtx-cqty'))  g('mtx-cqty').value  = cpk ? (cpk.qty ?? '') : '';
   }
 }
 
@@ -8421,6 +8436,12 @@ function _mtxSetDir(d) {
   const out = document.getElementById('mtx-dir-out'), inn = document.getElementById('mtx-dir-in');
   if (out) { const on = d === 'out'; out.style.background = on ? '#DC2626' : '#fff'; out.style.color = on ? '#fff' : '#374151'; out.style.borderColor = on ? '#DC2626' : '#D1D5DB'; }
   if (inn) { const on = d === 'in';  inn.style.background = on ? '#1D4ED8' : '#fff'; inn.style.color = on ? '#fff' : '#374151'; inn.style.borderColor = on ? '#1D4ED8' : '#D1D5DB'; }
+  // 콘테이너 섹션: 출고 방향만 표시. 입고 전환 시 값 초기화(입고는 이번 범위 아님)
+  const csec = document.getElementById('mtx-container-sec');
+  if (csec) {
+    csec.style.display = d === 'out' ? 'block' : 'none';
+    if (d === 'in') { const ct = document.getElementById('mtx-ctype'), cq = document.getElementById('mtx-cqty'); if (ct) ct.value = ''; if (cq) cq.value = ''; }
+  }
 }
 
 // 사이즈 드롭다운: 선택 품목의 사이즈(감귤류 000~왕2 / 만감류 N수)로 갱신. getSizeGroupsFor 재사용.
@@ -8446,12 +8467,31 @@ function _mtxCalcAmount() {
   if (amt) amt.value = Math.round(price * qty);
 }
 
+// 수동 거래(D-1b) 콘테이너 배출 pick 동기화 — 기존 연결 pick 삭제 후 조건 충족 시 재생성(수정=삭제후재생성 단순화). 재고 무관.
+async function _syncManualTxPick(txId, partner, ctype, cqty, date) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/picks?manual_tx_id=eq.${txId}`, {
+    method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+  });
+  if (!res.ok) throw new Error(`콘테이너 pick 삭제 실패: HTTP ${res.status} manual_tx_id=${txId}`);
+  const del = await res.json();
+  if (Array.isArray(del) && del.length) {
+    const ids = new Set(del.map(x => String(x.id)));
+    picks = picks.filter(p => !ids.has(String(p.id)));
+  }
+  if (partner && ctype && cqty > 0) {
+    const pk = await dbInsertPick({ date, farm: partner, type: '배출', qty: cqty, ctype, target_type: _partnerTargetType(partner), auto: true, note: '수동거래 콘테이너', manual_tx_id: txId });
+    if (pk) picks.unshift(pk);
+  }
+}
+
 async function saveManualTx(editId = null) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const g = id => document.getElementById(id);
   const date = g('mtx-date')?.value;
   const qty = parseFloat(g('mtx-qty')?.value);
   const partner = g('mtx-partner')?.value;
+  const ctype = _mtxDir === 'out' ? (g('mtx-ctype')?.value || '') : '';
+  const cqty = _mtxDir === 'out' ? (parseInt(g('mtx-cqty')?.value) || 0) : 0;
   if (!date) return alert('날짜를 입력해주세요.');
   if (!_mtxDir) return alert('입출 구분을 선택해주세요.');
   if (!partner) return alert(`${_mtxDir === 'in' ? '입고처' : '출고처'}를 선택해주세요.`);
@@ -8472,19 +8512,23 @@ async function saveManualTx(editId = null) {
   const btn = g('mtx-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = editId ? '수정 중...' : '저장 중...'; }
   try {
+    let txId = editId;
     if (editId) {
       const updated = await dbUpdateManualTransaction(editId, rec);
       const i = manualTransactions.findIndex(r => String(r.id) === String(editId));
       if (i >= 0) manualTransactions[i] = updated || { ...manualTransactions[i], ...rec };
-      document.getElementById('modal-manual-tx')?.remove();
-      showToast('수동 거래 수정 완료');
     } else {
       rec.created_by = sessionStorage.getItem('citrus_adm_user') || 'admin';
       const saved = await dbInsertManualTransaction(rec);
-      if (saved) manualTransactions.unshift(saved);
-      document.getElementById('modal-manual-tx')?.remove();
-      showToast('수동 거래 등록 완료');
+      if (saved) { manualTransactions.unshift(saved); txId = saved.id; }
     }
+    // 콘테이너 배출 pick 동기화(수정=삭제후재생성). 별도 try — 실패해도 거래 저장은 유지. 재고 무관.
+    if (txId) {
+      try { await _syncManualTxPick(txId, partner, ctype, cqty, date); renderDash(); }
+      catch (e) { alert('거래는 저장됐으나 콘테이너 기록에 실패했습니다.\n콘테이너 회수 화면에서 수동 등록해주세요.\n' + e.message); }
+    }
+    document.getElementById('modal-manual-tx')?.remove();
+    showToast(editId ? '수동 거래 수정 완료' : '수동 거래 등록 완료');
     renderOutboundHistory();
   } catch (e) {
     alert('저장 실패: ' + e.message);
@@ -8499,20 +8543,33 @@ async function deleteManualTx(id) {
   if (!r) return;
   const dir = r.direction === 'in' ? '입고' : '출고';
   const line = `${r.date} · ${dir} · ${r.partner_name || '-'}${r.product ? ' · ' + r.product : ''} · ${fmtN(Number(r.quantity) || 0)}${r.unit || ''}${r.amount ? ' · ' + fmtN(Math.round(r.amount)) + '원' : ''}`;
+  const linkedPicks = picks.filter(p => String(p.manual_tx_id) === String(id));   // 콘테이너 배출(D-1b)
   const ok = await showConfirmDanger({
     title: '수동 거래 삭제',
     subtitle: '이 수동 거래 기록이 삭제됩니다 (재고 영향 없음)',
-    items: [line],
+    items: [line, ...(linkedPicks.length ? [`콘테이너 배출 ${linkedPicks.length}건 함께 삭제`] : [])],
     resultNote: '거래내역 목록에서 사라집니다 (되돌릴 수 없음)',
     confirmText: '삭제'
   });
   if (!ok) return;
   try {
+    // 연결된 콘테이너 배출 pick 먼저 삭제(manual_tx_id). NULL(수동/기존)은 보존.
+    {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/picks?manual_tx_id=eq.${id}`, {
+        method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+      });
+      if (!res.ok) throw new Error(`콘테이너 배출 pick 삭제 실패: HTTP ${res.status} manual_tx_id=${id}`);
+      const del = await res.json();
+      if (Array.isArray(del) && del.length) {
+        const ids = new Set(del.map(x => String(x.id)));
+        picks = picks.filter(p => !ids.has(String(p.id)));
+      }
+    }
     await dbVoidManualTransaction(id);
     const i = manualTransactions.findIndex(x => String(x.id) === String(id));
     if (i >= 0) manualTransactions.splice(i, 1);
     showToast('수동 거래 삭제 완료');
-    renderOutboundHistory();
+    renderOutboundHistory(); renderDash();
   } catch (e) {
     alert('삭제 실패: ' + e.message);
   }
