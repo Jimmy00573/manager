@@ -4526,29 +4526,50 @@ function popCtypeSels() {
   renderIbContainerSection();   // 입고 모달 콘테이너 섹션도 종류 변경 시 갱신
 }
 
+// 콘테이너 칩 UI 컨텍스트 — 같은 UI를 여러 화면에서 쓰기 위한 id prefix 모음.
+//   ib  = 입고 모달(기존, 필드 id ibc-* 그대로 유지)
+//   mtx = 수동 거래 '입고' 방향(D-1c, 필드 id mibc-*)
+const _IBC_CTX = {
+  ib: {
+    sec: 'ib-container-sec', rows: 'ib-container-rows', pre: 'ibc',
+    head: '<div class="ib-section-label">🧺 콘테이너 (선택)</div>',
+    hint: '종류를 눌러 추가 · 우리것=회수, 남의것=반납대기 (자동)',
+  },
+  mtx: {
+    sec: 'mtx-ib-container-sec', rows: 'mtx-ib-container-rows', pre: 'mibc',
+    head: '<div style="font-size:12px;color:#6B7280;margin-bottom:6px">🧺 콘테이너 <span style="color:#9CA3AF;font-weight:400">(함께 들어온 콘테이너 — 우리것=회수, 남의것=반납대기 자동 기록)</span></div>',
+    hint: '종류를 눌러 추가 · 여러 종류 동시 입력 가능',
+  },
+};
+
 // 입고 모달 콘테이너 입력 섹션 — 활성 종류별 수량(+남의것은 특징). 선택(필수 아님).
 // 칩을 눌러 종류를 추가하는 방식(항상 나열 X). 추가된 줄만 표시. 저장 필드 id(ibc-q/ibc-f-{id}) 유지.
-function renderIbContainerSection() {
-  const el = document.getElementById('ib-container-sec');
+// key: _IBC_CTX 키. 기본 'ib' — 기존 호출부 동작·출력 100% 동일.
+function renderIbContainerSection(key = 'ib') {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return;
+  const el = document.getElementById(ctx.sec);
   if (!el) return;
   const active = [...containerTypes].filter(t => t.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   if (!active.length) { el.innerHTML = ''; return; }
   const chips = active.map(t =>
-    `<button type="button" id="ibc-chip-${t.id}" onclick="_ibcAddRow('${t.id}')" style="padding:4px 10px;border:1px solid #D1D5DB;border-radius:16px;background:#fff;font-size:12px;color:#374151;cursor:pointer;font-family:inherit">${esc(t.name)} +</button>`
+    `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid #D1D5DB;border-radius:16px;background:#fff;font-size:12px;color:#374151;cursor:pointer;font-family:inherit">${esc(t.name)} +</button>`
   ).join('');
-  el.innerHTML = `<div class="ib-section-label">🧺 콘테이너 (선택)</div>
+  el.innerHTML = `${ctx.head}
     <div style="border:1px solid #E5E7EB;border-radius:8px;padding:10px;background:#fff">
-      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px">종류를 눌러 추가 · 우리것=회수, 남의것=반납대기 (자동)</div>
+      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px">${ctx.hint}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
-      <div id="ib-container-rows"></div>
+      <div id="${ctx.rows}"></div>
     </div>`;
-  _ibcQtyHint();   // 재빌드 시 힌트 리셋(추가된 줄 없으면 합계 0 → 힌트 비움)
+  if (key === 'ib') _ibcQtyHint();   // 재빌드 시 힌트 리셋(추가된 줄 없으면 합계 0 → 힌트 비움). 입고 모달 전용
 }
-function _ibcAddRow(id) {
+function _ibcAddRow(id, key = 'ib') {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return;
   const t = containerTypes.find(x => String(x.id) === String(id));
   if (!t) return;
-  if (document.getElementById(`ibc-row-${t.id}`)) return;   // 이미 추가됨
-  const chip = document.getElementById(`ibc-chip-${t.id}`);
+  if (document.getElementById(`${ctx.pre}-row-${t.id}`)) return;   // 이미 추가됨
+  const chip = document.getElementById(`${ctx.pre}-chip-${t.id}`);
   if (chip) chip.style.display = 'none';
   const isNhf = t.owner === 'nhf';         // 농협 → nhf_ins(농협별 관리, 농협명 필수)
   const isOthers = t.owner !== 'ours';     // 남의것(농가것 farm + 농협 nhf) = 반납대기
@@ -4559,35 +4580,48 @@ function _ibcAddRow(id) {
       : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">농가·반납</span>`;
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   const extraInput = isNhf
-    ? `<select id="ibc-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_nhfOptHtml()}</select>` +
-      `<input type="text" id="ibc-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:70px;${inpS}">`
+    ? `<select id="${ctx.pre}-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_nhfOptHtml()}</select>` +
+      `<input type="text" id="${ctx.pre}-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:70px;${inpS}">`
     : isOthers
-      ? `<input type="text" id="ibc-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;${inpS}">`
+      ? `<input type="text" id="${ctx.pre}-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;${inpS}">`
       : `<span style="flex:1"></span>`;
   const div = document.createElement('div');
-  div.id = `ibc-row-${t.id}`;
+  div.id = `${ctx.pre}-row-${t.id}`;
   div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap';
   div.innerHTML = `
     <span style="flex:0 0 70px;font-size:13px;font-weight:500">${esc(t.name)}</span>
     ${badge}
-    <input type="number" id="ibc-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty()" style="flex:0 0 62px;${inpS}">
+    <input type="number" id="${ctx.pre}-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty('${key}')" style="flex:0 0 62px;${inpS}">
     <span style="font-size:12px;color:#6B7280">개</span>
     ${extraInput}
-    <button type="button" onclick="_ibcRemoveRow('${t.id}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
-  document.getElementById('ib-container-rows')?.appendChild(div);
-  _ibcSyncQty();
-  setTimeout(() => document.getElementById(`ibc-q-${t.id}`)?.focus(), 30);
+    <button type="button" onclick="_ibcRemoveRow('${t.id}','${key}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
+  document.getElementById(ctx.rows)?.appendChild(div);
+  _ibcSyncQty(key);
+  setTimeout(() => document.getElementById(`${ctx.pre}-q-${t.id}`)?.focus(), 30);
 }
-function _ibcRemoveRow(id) {
-  document.getElementById(`ibc-row-${id}`)?.remove();
-  const chip = document.getElementById(`ibc-chip-${id}`);
+function _ibcRemoveRow(id, key = 'ib') {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return;
+  document.getElementById(`${ctx.pre}-row-${id}`)?.remove();
+  const chip = document.getElementById(`${ctx.pre}-chip-${id}`);
   if (chip) chip.style.display = '';
-  _ibcSyncQty();
+  _ibcSyncQty(key);
+}
+// 추가된 줄 전부 제거 + 칩 원복(방향 전환 등 초기화용)
+function _ibcResetRows(key = 'ib') {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return;
+  const rows = document.getElementById(ctx.rows);
+  if (rows) rows.innerHTML = '';
+  containerTypes.forEach(t => {
+    const c = document.getElementById(`${ctx.pre}-chip-${t.id}`);
+    if (c) c.style.display = '';
+  });
 }
 // 콘테이너 종류별 수량 합계 (우리것+남의것 전체, 추가된 줄만)
-function _ibcContainerSum() {
+function _ibcContainerSum(pre = 'ibc') {
   let s = 0;
-  containerTypes.forEach(t => { s += parseInt(document.getElementById(`ibc-q-${t.id}`)?.value, 10) || 0; });
+  containerTypes.forEach(t => { s += parseInt(document.getElementById(`${pre}-q-${t.id}`)?.value, 10) || 0; });
   return s;
 }
 // ib-qty 옆 힌트: 콘테이너 합계 안내(미선과 단일저장만). 수량=콘테이너 합산이라 항상 일치.
@@ -4602,7 +4636,9 @@ function _ibcQtyHint() {
     : '🧺 콘테이너 개수를 입력하면 수량이 자동 계산됩니다';
 }
 // 콘테이너 합계 → 입고 수량 자동 반영 (미선과 raw만). 선과품은 안 건드림.
-function _ibcSyncQty() {
+// 입고 모달(key='ib') 전용 — 다른 화면(수동 거래 등)은 수량 자동합산 대상이 아니므로 즉시 반환.
+function _ibcSyncQty(key = 'ib') {
+  if (key !== 'ib') return;
   if (_ibKind !== 'raw') { _ibcQtyHint(); return; }   // 선과품은 자동합산 없음
   // 분산 저장은 위치 합계가 수량(updateLocTotal이 채움) — 콘테이너 합산으로 덮지 않음
   if (document.getElementById('ib-loc-multi')?.checked) { _ibcQtyHint(); return; }
@@ -4614,19 +4650,28 @@ function _ibcSyncQty() {
 
 // 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 3분기:
 //   우리것(ours)→picks 원물수거(회수), 농가것(farm)→own_ins(반납대기), 농협(nhf)→nhf_ins(농협명별).
-async function _saveInboundContainers(date, farm, inboundId) {
-  const el = document.getElementById('ib-container-sec');
+// opts(선택): { ctx:'mtx', manualTxId, note, targetType } — 수동 거래(D-1c) 입고 방향에서 재사용.
+//   manualTxId가 있으면 inbound_id 대신 manual_tx_id로 연결.
+//   targetType은 우리것 회수 pick에만 부여(배출과 같은 行에서 상계되도록). opts 미전달 시 기존 입고 동작과 100% 동일.
+async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
+  const ctx = _IBC_CTX[opts.ctx || 'ib'];
+  if (!ctx) return;
+  const el = document.getElementById(ctx.sec);
   if (!el || !farm) return;
   const active = [...containerTypes].filter(t => t.is_active !== false);
   const jobs = [];
   active.forEach(t => {
-    const qty = parseInt(document.getElementById(`ibc-q-${t.id}`)?.value, 10) || 0;
+    const qty = parseInt(document.getElementById(`${ctx.pre}-q-${t.id}`)?.value, 10) || 0;
     if (qty <= 0) return;
-    const feature = document.getElementById(`ibc-f-${t.id}`)?.value?.trim() || null;
-    const nhf = document.getElementById(`ibc-nhf-${t.id}`)?.value?.trim() || null;   // 농협명(nhf 종류만)
+    const feature = document.getElementById(`${ctx.pre}-f-${t.id}`)?.value?.trim() || null;
+    const nhf = document.getElementById(`${ctx.pre}-nhf-${t.id}`)?.value?.trim() || null;   // 농협명(nhf 종류만)
     jobs.push({ t, qty, feature, nhf });
   });
   if (!jobs.length) return;
+  // 연결 키: 수동 거래면 manual_tx_id, 입고면 inbound_id (둘 다 삭제 cascade용)
+  const link = opts.manualTxId ? { manual_tx_id: opts.manualTxId } : {};
+  const inbId = opts.manualTxId ? null : (inboundId || null);
+  const pickNote = opts.note || '입고 회수';
   for (const j of jobs) {
     // 농협 콘테이너는 농협명 필수(농협별 관리). 없으면 이 항목만 건너뜀(own 폴백 금지).
     if (j.t.owner === 'nhf' && !j.nhf) {
@@ -4635,14 +4680,14 @@ async function _saveInboundContainers(date, farm, inboundId) {
     }
     try {
       if (j.t.owner === 'ours') {
-        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inboundId || null, auto: true, note: '입고 회수' });
+        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...link });
         if (row) picks.unshift(row);
       } else if (j.t.owner === 'nhf') {
-        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin', inbound_id: inboundId || null });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
+        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin', inbound_id: inbId, ...link });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
         if (row) nhfIns.unshift(row);
       } else {
         // 농가것(farm) → own_ins(반납대기)
-        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, inbound_id: inboundId || null, staff: 'admin' });
+        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, inbound_id: inbId, staff: 'admin', ...link });
         if (row) ownIns.unshift(row);
       }
     } catch (e) {
@@ -4651,9 +4696,9 @@ async function _saveInboundContainers(date, farm, inboundId) {
   }
   // 입력칸 리셋 + 관련 현황 재렌더
   jobs.forEach(j => {
-    const q = document.getElementById(`ibc-q-${j.t.id}`); if (q) q.value = '';
-    const f = document.getElementById(`ibc-f-${j.t.id}`); if (f) f.value = '';
-    const nh = document.getElementById(`ibc-nhf-${j.t.id}`); if (nh) nh.value = '';
+    const q = document.getElementById(`${ctx.pre}-q-${j.t.id}`); if (q) q.value = '';
+    const f = document.getElementById(`${ctx.pre}-f-${j.t.id}`); if (f) f.value = '';
+    const nh = document.getElementById(`${ctx.pre}-nhf-${j.t.id}`); if (nh) nh.value = '';
   });
   renderOwn(); renderPick(); renderNhf(); renderDash();
 }
@@ -8419,6 +8464,7 @@ function openManualTxModal(editId = null) {
               <div><label style="${lbl}">개수</label><input type="number" id="mtx-cqty" step="1" min="0" placeholder="(선택)" style="${inp}"></div>
             </div>
           </div>
+          <div id="mtx-ib-container-sec" style="grid-column:1/3;display:${_mtxDir === 'in' ? 'block' : 'none'};border-top:1px solid #F0F0F0;padding-top:10px;margin-top:2px"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:16px">
           <button id="mtx-save-btn" onclick="saveManualTx(${ed ? `'${ed.id}'` : ''})" style="flex:1;padding:10px;background:#2563EB;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">${ed ? '수정' : '저장'}</button>
@@ -8427,6 +8473,7 @@ function openManualTxModal(editId = null) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  renderIbContainerSection('mtx');   // 입고 방향 콘테이너 칩(D-1c) — append 후 렌더
 
   // 편집모드: 기존 값 채우기 (append 후 select value 세팅 — 사이즈는 품목 기준으로 먼저 채움)
   if (ed) {
@@ -8449,11 +8496,31 @@ function openManualTxModal(editId = null) {
     if (g('mtx-price'))   g('mtx-price').value   = ed.unit_price ?? '';
     if (g('mtx-amount'))  g('mtx-amount').value  = ed.amount ?? '';
     if (g('mtx-note'))    g('mtx-note').value    = ed.note || '';
-    // 연결된 콘테이너 배출 pick(있으면) 값 채우기(D-1b)
-    const cpk = picks.find(p => String(p.manual_tx_id) === String(ed.id));
+    // 연결된 콘테이너 배출 pick(있으면) 값 채우기(D-1b) — 출고 방향만(입고는 '원물수거'라 제외)
+    const cpk = picks.find(p => String(p.manual_tx_id) === String(ed.id) && p.type === '배출');
     if (g('mtx-ctype')) g('mtx-ctype').value = cpk?.ctype || '';
     if (g('mtx-cqty'))  g('mtx-cqty').value  = cpk ? (cpk.qty ?? '') : '';
+    // 입고 방향: 연결된 콘테이너(회수·농가·농협) 칩 복원(D-1c) — 복원 안 하면 수정 저장 시 소실됨
+    if (_mtxDir === 'in') _mtxFillInContainers(ed.id);
   }
+}
+
+// 수동 거래 편집 진입 시 입고 콘테이너 칩 복원 — picks(원물수거)·own_ins·nhf_ins에서 manual_tx_id로 역조회
+function _mtxFillInContainers(txId) {
+  const same = v => String(v) === String(txId);
+  const rows = [
+    ...picks.filter(p => same(p.manual_tx_id) && p.type === '원물수거').map(p => ({ name: p.ctype, qty: p.qty, feature: null, nhf: null })),
+    ...ownIns.filter(o => same(o.manual_tx_id)).map(o => ({ name: o.ctype, qty: o.qty, feature: o.feature, nhf: null })),
+    ...nhfIns.filter(n => same(n.manual_tx_id)).map(n => ({ name: n.type, qty: n.qty, feature: n.feature, nhf: n.nhf })),
+  ];
+  rows.forEach(r => {
+    const t = containerTypes.find(x => x.name === r.name && x.is_active !== false);
+    if (!t) return;
+    _ibcAddRow(t.id, 'mtx');
+    const q = document.getElementById(`mibc-q-${t.id}`);   if (q) q.value = r.qty ?? '';
+    const f = document.getElementById(`mibc-f-${t.id}`);   if (f && r.feature) f.value = r.feature;
+    const nh = document.getElementById(`mibc-nhf-${t.id}`); if (nh && r.nhf) nh.value = r.nhf;
+  });
 }
 
 function _mtxSetDir(d) {
@@ -8463,11 +8530,16 @@ function _mtxSetDir(d) {
   const out = document.getElementById('mtx-dir-out'), inn = document.getElementById('mtx-dir-in');
   if (out) { const on = d === 'out'; out.style.background = on ? '#DC2626' : '#fff'; out.style.color = on ? '#fff' : '#374151'; out.style.borderColor = on ? '#DC2626' : '#D1D5DB'; }
   if (inn) { const on = d === 'in';  inn.style.background = on ? '#1D4ED8' : '#fff'; inn.style.color = on ? '#fff' : '#374151'; inn.style.borderColor = on ? '#1D4ED8' : '#D1D5DB'; }
-  // 콘테이너 섹션: 출고 방향만 표시. 입고 전환 시 값 초기화(입고는 이번 범위 아님)
+  // 콘테이너: 출고=단일 select(배출, D-1b) / 입고=칩 여러 종류(회수·반납, D-1c). 반대편은 숨기고 값 초기화.
   const csec = document.getElementById('mtx-container-sec');
   if (csec) {
     csec.style.display = d === 'out' ? 'block' : 'none';
     if (d === 'in') { const ct = document.getElementById('mtx-ctype'), cq = document.getElementById('mtx-cqty'); if (ct) ct.value = ''; if (cq) cq.value = ''; }
+  }
+  const isec = document.getElementById('mtx-ib-container-sec');
+  if (isec) {
+    isec.style.display = d === 'in' ? 'block' : 'none';
+    if (d === 'out') _ibcResetRows('mtx');
   }
 }
 
@@ -8531,21 +8603,44 @@ function _mtxCalcAmount() {
   if (amt) amt.value = Math.round(price * totKg);
 }
 
-// 수동 거래(D-1b) 콘테이너 배출 pick 동기화 — 기존 연결 pick 삭제 후 조건 충족 시 재생성(수정=삭제후재생성 단순화). 재고 무관.
-async function _syncManualTxPick(txId, partner, ctype, cqty, date) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/picks?manual_tx_id=eq.${txId}`, {
-    method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+// 수동 거래에 연결된 콘테이너 기록 일괄 삭제 — picks(배출·회수)·own_ins·nhf_ins 3테이블(manual_tx_id).
+// manual_tx_id가 NULL인 수동/기존 기록은 건드리지 않음. 로컬 배열도 동기화.
+async function _mtxDelLinkedContainers(txId) {
+  const defs = [
+    { tbl: 'picks',   get: () => picks,  set: v => { picks = v; } },
+    { tbl: 'own_ins', get: () => ownIns, set: v => { ownIns = v; } },
+    { tbl: 'nhf_ins', get: () => nhfIns, set: v => { nhfIns = v; } },
+  ];
+  for (const d of defs) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${d.tbl}?manual_tx_id=eq.${txId}`, {
+      method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
+    });
+    if (!res.ok) throw new Error(`연결 콘테이너 삭제 실패(${d.tbl}): HTTP ${res.status} manual_tx_id=${txId}`);
+    const del = await res.json();
+    if (Array.isArray(del) && del.length) {
+      const ids = new Set(del.map(x => String(x.id)));
+      d.set(d.get().filter(r => !ids.has(String(r.id))));
+    }
+  }
+}
+
+// 수동 거래 콘테이너 동기화 — 기존 연결분 전부 삭제 후 방향별로 재생성(수정=삭제후재생성 단순화). 재고 무관.
+//   출고(D-1b): 단일 종류 → picks 배출 1건
+//   입고(D-1c): 칩 여러 종류 → 우리것=picks 원물수거(회수) / 농가것=own_ins / 농협=nhf_ins
+async function _syncManualTxContainers(txId, partner, date, ctype, cqty) {
+  await _mtxDelLinkedContainers(txId);   // 방향 변경(출고↔입고) 시 반대편 기록도 정리됨
+  if (_mtxDir === 'out') {
+    if (partner && ctype && cqty > 0) {
+      const pk = await dbInsertPick({ date, farm: partner, type: '배출', qty: cqty, ctype, target_type: _partnerTargetType(partner), auto: true, note: '수동거래 콘테이너', manual_tx_id: txId });
+      if (pk) picks.unshift(pk);
+    }
+    return;
+  }
+  // 입고 방향 — 입고 폼과 동일한 3분기 저장 로직 재사용(농협명 필수 검증 포함)
+  await _saveInboundContainers(date, partner, null, {
+    ctx: 'mtx', manualTxId: txId, note: '수동거래 회수',
+    targetType: _partnerTargetType(partner),   // 출고 배출(D-1b)과 같은 行에서 상계되도록 대상 구분 부여
   });
-  if (!res.ok) throw new Error(`콘테이너 pick 삭제 실패: HTTP ${res.status} manual_tx_id=${txId}`);
-  const del = await res.json();
-  if (Array.isArray(del) && del.length) {
-    const ids = new Set(del.map(x => String(x.id)));
-    picks = picks.filter(p => !ids.has(String(p.id)));
-  }
-  if (partner && ctype && cqty > 0) {
-    const pk = await dbInsertPick({ date, farm: partner, type: '배출', qty: cqty, ctype, target_type: _partnerTargetType(partner), auto: true, note: '수동거래 콘테이너', manual_tx_id: txId });
-    if (pk) picks.unshift(pk);
-  }
 }
 
 async function saveManualTx(editId = null) {
@@ -8586,9 +8681,9 @@ async function saveManualTx(editId = null) {
       const saved = await dbInsertManualTransaction(rec);
       if (saved) { manualTransactions.unshift(saved); txId = saved.id; }
     }
-    // 콘테이너 배출 pick 동기화(수정=삭제후재생성). 별도 try — 실패해도 거래 저장은 유지. 재고 무관.
+    // 콘테이너 동기화(수정=삭제후재생성). 별도 try — 실패해도 거래 저장은 유지. 재고 무관.
     if (txId) {
-      try { await _syncManualTxPick(txId, partner, ctype, cqty, date); renderDash(); }
+      try { await _syncManualTxContainers(txId, partner, date, ctype, cqty); renderDash(); }
       catch (e) { alert('거래는 저장됐으나 콘테이너 기록에 실패했습니다.\n콘테이너 회수 화면에서 수동 등록해주세요.\n' + e.message); }
     }
     document.getElementById('modal-manual-tx')?.remove();
@@ -8607,33 +8702,27 @@ async function deleteManualTx(id) {
   if (!r) return;
   const dir = r.direction === 'in' ? '입고' : '출고';
   const line = `${r.date} · ${dir} · ${r.partner_name || '-'}${r.product ? ' · ' + r.product : ''} · ${fmtN(Number(r.quantity) || 0)}${r.unit || ''}${r.amount ? ' · ' + fmtN(Math.round(r.amount)) + '원' : ''}`;
-  const linkedPicks = picks.filter(p => String(p.manual_tx_id) === String(id));   // 콘테이너 배출(D-1b)
+  // 연결된 콘테이너 기록 — 출고 배출(D-1b) + 입고 회수·반납(D-1c)
+  const same = v => String(v) === String(id);
+  const linkedCnt = picks.filter(p => same(p.manual_tx_id)).length
+    + ownIns.filter(o => same(o.manual_tx_id)).length
+    + nhfIns.filter(n => same(n.manual_tx_id)).length;
   const ok = await showConfirmDanger({
     title: '수동 거래 삭제',
     subtitle: '이 수동 거래 기록이 삭제됩니다 (재고 영향 없음)',
-    items: [line, ...(linkedPicks.length ? [`콘테이너 배출 ${linkedPicks.length}건 함께 삭제`] : [])],
+    items: [line, ...(linkedCnt ? [`연결 콘테이너 기록 ${linkedCnt}건 함께 삭제`] : [])],
     resultNote: '거래내역 목록에서 사라집니다 (되돌릴 수 없음)',
     confirmText: '삭제'
   });
   if (!ok) return;
   try {
-    // 연결된 콘테이너 배출 pick 먼저 삭제(manual_tx_id). NULL(수동/기존)은 보존.
-    {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/picks?manual_tx_id=eq.${id}`, {
-        method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }
-      });
-      if (!res.ok) throw new Error(`콘테이너 배출 pick 삭제 실패: HTTP ${res.status} manual_tx_id=${id}`);
-      const del = await res.json();
-      if (Array.isArray(del) && del.length) {
-        const ids = new Set(del.map(x => String(x.id)));
-        picks = picks.filter(p => !ids.has(String(p.id)));
-      }
-    }
+    // 연결된 콘테이너 기록 먼저 삭제(picks·own_ins·nhf_ins, manual_tx_id). NULL(수동/기존)은 보존.
+    await _mtxDelLinkedContainers(id);
     await dbVoidManualTransaction(id);
     const i = manualTransactions.findIndex(x => String(x.id) === String(id));
     if (i >= 0) manualTransactions.splice(i, 1);
     showToast('수동 거래 삭제 완료');
-    renderOutboundHistory(); renderDash();
+    renderOutboundHistory(); renderDash(); renderOwn(); renderPick(); renderNhf();
   } catch (e) {
     alert('삭제 실패: ' + e.message);
   }
