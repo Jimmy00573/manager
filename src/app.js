@@ -18,6 +18,9 @@ function verifyPassword(plainPw, storedValue) {
 
 const PER = 7;
 const OT = ['노랑', '초록', '헌콘'];
+// 선과하지 않는 품목 카테고리 — 공용 품목 드롭다운(입고·수확·재고 등)에서 기본 제외.
+// 수동 거래처럼 전체가 필요한 곳만 buildProductOptgroupHTML(true) 호출. 카테고리 추가 시 여기에 이름만 추가.
+const NON_SORTING_CATEGORIES = ['기타'];
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const td = () => ymd(new Date());
 function buildSeqByDate(srRows) {
@@ -4347,11 +4350,13 @@ function _extNameSync(pre) {
   if ([...sel.options].some(o => o.value === v)) sel.value = v;
 }
 
-function buildProductOptgroupHTML() {
+// includeEtc=false(기본): 선과 무관 카테고리(NON_SORTING_CATEGORIES) 제외. true: 전체 품목 포함(수동 거래용)
+function buildProductOptgroupHTML(includeEtc = false) {
   let html = '<option value="">선택</option>';
   if (!itemDefs.length) return html;
   // 카테고리 순서: id 순 (categories 배열 순서 유지)
   categories.forEach(cat => {
+    if (!includeEtc && NON_SORTING_CATEGORIES.includes(cat.name)) return;
     const catItems = itemDefs
       .filter(i => i.category_id === cat.id)
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -4360,10 +4365,10 @@ function buildProductOptgroupHTML() {
     catItems.forEach(i => { html += `<option value="${esc(i.name)}">${esc(i.name)}</option>`; });
     html += '</optgroup>';
   });
-  // 카테고리 미지정 품목
+  // 카테고리 미지정 품목 — 카테고리 '기타'와 혼동 방지 위해 라벨은 '미분류'
   const uncategorized = itemDefs.filter(i => !i.category_id).sort((a, b) => a.name.localeCompare(b.name));
   if (uncategorized.length) {
-    html += '<optgroup label="기타">';
+    html += '<optgroup label="미분류">';
     uncategorized.forEach(i => { html += `<option value="${esc(i.name)}">${esc(i.name)}</option>`; });
     html += '</optgroup>';
   }
@@ -8356,8 +8361,7 @@ function openManualTxModal(editId = null) {
   const partnerOpts = partners.filter(p => p.is_active !== false)
     .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
   const farmOpts = farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
-  const prodOpts = [...itemDefs].map(i => i.name).sort((a, b) => a.localeCompare(b, 'ko'))
-    .map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  const prodOpts = buildProductOptgroupHTML(true);   // 수동 거래는 '기타'(선과 무관) 품목도 선택 가능 — '선택' 빈 옵션 포함
   const gradeOpts = ['일반', ...brixGrades.filter(g => g.is_active !== false)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(g => g.label)]
     .map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
@@ -8394,7 +8398,7 @@ function openManualTxModal(editId = null) {
           </div>
           <div><label style="${lbl}"><span id="mtx-partner-label">출고처</span> *</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
           <div><label style="${lbl}">농가명 <span style="color:#9CA3AF;font-weight:400">(선택)</span></label><select id="mtx-farm" style="${inp}"><option value="">(선택 안 함)</option>${farmOpts}</select></div>
-          <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxOnProductChange()" style="${inp}"><option value="">선택</option>${prodOpts}</select></div>
+          <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxOnProductChange()" style="${inp}">${prodOpts}</select></div>
           <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
           <div><label style="${lbl}">사이즈</label><select id="mtx-size" style="${inp}"><option value="">(품목 먼저 선택)</option></select></div>
           <div><label style="${lbl}">단위</label><select id="mtx-unit" onchange="_mtxOnUnitChange()" style="${inp}">${unitOpts}</select></div>
