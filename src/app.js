@@ -1810,13 +1810,21 @@ function _splitOwnKey(k) {
 function renderOwn() {
   popCtypeSels();   // 반입/반납 폼 종류 드롭다운 채우기
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const names = [...new Set([...ownIns.map(o => o.farm), ...ownOuts.map(o => o.farm)])];
-  const pend = names.filter(n => gOwnSt(n).left > 0), done = names.filter(n => gOwnSt(n).left <= 0);
+  // ★행 기준 = '농가||종류' 조합(현황판 renderDash 반납필요와 동일). 한 농가가 사각·농가 2종류면 2줄.
+  const combos = _ownComboKeys().map(k => { const [farm, ct] = _splitOwnKey(k); return { farm, ct, st: gOwnSt(farm, ct) }; })
+    .sort((a, b) => a.farm.localeCompare(b.farm, 'ko') || a.ct.localeCompare(b.ct, 'ko'));
+  const pend = combos.filter(c => c.st.left > 0), done = combos.filter(c => c.st.left <= 0);
   const bg = document.getElementById('own-sum-badge');
   if (bg) { bg.textContent = pend.length > 0 ? `반납필요 ${pend.length}건` : '모두 정산완료'; bg.className = 'badge ' + (pend.length > 0 ? 'b-warn' : 'b-ok'); bg.style.textTransform = 'none'; bg.style.fontSize = '11px'; }
+  // 반납 버튼은 종류까지 전달(현황판과 동일) — 종류 미지정 조합은 빈 문자열로 넘겨 own_outs.ctype=null 저장.
+  const ownRowHtml = (c, pending) => {
+    const st = c.st, q = s => String(s).replace(/'/g, "&#39;"), bcl = pending ? 'b-warn' : 'b-ok';
+    const retBtn = (pending && isAdm) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${q(c.farm)}','${q(c.ct)}')">↩ 반납</button>` : '';
+    return `<tr${pending ? '' : ' class="dr"'}><td class="nm">${esc(c.farm)}</td><td>${esc(c.ct || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge ${bcl}">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge ${bcl}">${pending ? '반납필요' : '정산완료'}</span>${retBtn}</td></tr>`;
+  };
   let rows = '';
-  if (pend.length) rows += pend.map(n => { const st = gOwnSt(n); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${n.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
-  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(n => { const st = gOwnSt(n); return `<tr class="dr"><td class="nm">${esc(n)}</td><td>${esc(st.ctype || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
+  if (pend.length) rows += pend.map(c => ownRowHtml(c, true)).join('');
+  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(c => ownRowHtml(c, false)).join(''); }
   document.getElementById('own-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...ownIns.map(o => ({ ...o, dir: '반입', xt: 'ownIn', meth: '-' })), ...ownOuts.map(o => ({ ...o, dir: '반납', xt: 'ownOut', meth: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('own-tb-badge'); if (tb) tb.textContent = all.length + '건';
