@@ -1788,11 +1788,22 @@ async function delOwn(id, t) {
   }
 }
 
-function gOwnSt(n) {
-  const i = ownIns.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
-  const o = ownOuts.filter(o => o.farm === n).reduce((s, o) => s + o.qty, 0);
-  const ctype = [...new Set([...ownIns, ...ownOuts].filter(x => x.farm === n).map(x => x.ctype).filter(Boolean))].join(', ');
-  return { inQ: i, outQ: o, left: i - o, feature: ownIns.filter(o => o.farm === n).map(o => o.feature).filter(Boolean).join(', '), ctype };
+// 농가것 콘테이너 반입·반납 집계. ctype 인자를 주면 그 종류만(한 농가가 사각·농가 등 여러 종류 보유 가능),
+// 생략하면 농가 전체 합계 — ★인자 1개 호출은 기존 동작 100% 동일.
+function gOwnSt(n, ctype) {
+  const hit = x => x.farm === n && (ctype === undefined || (x.ctype || '') === ctype);
+  const i = ownIns.filter(hit).reduce((s, o) => s + o.qty, 0);
+  const o = ownOuts.filter(hit).reduce((s, o) => s + o.qty, 0);
+  const ct = [...new Set([...ownIns, ...ownOuts].filter(hit).map(x => x.ctype).filter(Boolean))].join(', ');
+  return { inQ: i, outQ: o, left: i - o, feature: ownIns.filter(hit).map(o => o.feature).filter(Boolean).join(', '), ctype: ct };
+}
+// 농가것 '농가||종류' 조합 키 — 농협(nk) 패턴과 동일. 종류 없는 레코드는 빈 문자열 키(미지정).
+function _ownComboKeys() {
+  return [...new Set([...ownIns, ...ownOuts].map(o => o.farm + '||' + (o.ctype || '')))];
+}
+function _splitOwnKey(k) {
+  const i = k.indexOf('||');
+  return [k.slice(0, i), k.slice(i + 2)];
 }
 // ── [화면: 수확·수송 > 외부용기 > 농가것(own)] 농가 소유 콘테이너 반입·반납. 농협/거래처 것은 renderNhf.
 function renderOwn() {
@@ -2276,9 +2287,10 @@ async function saveQuickRecovery(farm, targetType = '농가') {
 }
 
 // 현황판 농가 콘테이너 반납필요 → 바로 반납(own_out). dbInsertOwnOut 재사용. 담당자=drivers(선택).
-function openQuickReturnOwn(farm) {
+// ctype 생략 시 농가 전체(기존 동작), 지정 시 그 종류만 반납.
+function openQuickReturnOwn(farm, ctype) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
-  const st = gOwnSt(farm);
+  const st = gOwnSt(farm, ctype);
   document.getElementById('modal-quick-return')?.remove();
   const defQty = Math.max(0, Math.round(st.left || 0));
   const lbl = 'font-size:12px;color:#374151;display:block;margin-bottom:3px';
@@ -2300,16 +2312,16 @@ function openQuickReturnOwn(farm) {
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
-        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickReturnOwn('${farm.replace(/'/g,"&#39;")}')">반납 등록</button>
+        <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveQuickReturnOwn('${farm.replace(/'/g,"&#39;")}'${ctype === undefined ? '' : `,'${ctype.replace(/'/g,"&#39;")}'`})">반납 등록</button>
       </div>
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
   document.body.appendChild(m);
   setTimeout(() => document.getElementById('qt-qty')?.focus(), 30);
 }
-async function saveQuickReturnOwn(farm) {
+async function saveQuickReturnOwn(farm, ctype) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const st = gOwnSt(farm);
+  const st = gOwnSt(farm, ctype);
   const date = document.getElementById('qt-date')?.value || td();
   const method = document.getElementById('qt-method')?.value || null;
   const qty = parseInt(document.getElementById('qt-qty')?.value, 10) || 0;
@@ -2317,7 +2329,9 @@ async function saveQuickReturnOwn(farm) {
   if (qty <= 0) return alert('수량을 입력하세요.');
   if (!staff) return alert('담당자를 선택하세요.');
   try {
-    const row = await dbInsertOwnOut({ date, farm, qty, ctype: st.ctype || null, method, feature: st.feature || null, staff });
+    // 종류 지정 반납이면 그 종류만 저장(미지정 반납은 null). 생략 호출은 기존대로 합산 ctype 문자열.
+    const outCtype = ctype !== undefined ? (ctype || null) : (st.ctype || null);
+    const row = await dbInsertOwnOut({ date, farm, qty, ctype: outCtype, method, feature: st.feature || null, staff });
     if (row) ownOuts.unshift(row);
     document.getElementById('modal-quick-return')?.remove();
     renderOwn(); renderDash();
@@ -2397,7 +2411,12 @@ function renderDash() {
   // 🟡 회수 필요: 우리 콘테이너 농가보유(hold>0)만. 농가것 반납은 🟢로 이동(회수/반납 분리).
   const fhi = farms.map(f => { const st = getFCS(f.name); if (st.hold <= 0) return null; return { name: f.name, ctypes: getFCtypes(f.name), total: st.hold }; }).filter(Boolean);
   // 🟢 반납 필요: 농가것(own) + 농협/거래처(nhf) 통합. kind로 소유 구분(배지·반납버튼 분기).
-  const ownReturns = on.map(farm => { const st = gOwnSt(farm); return st.left > 0 ? { name: farm, kind: 'own', detail: `농가 콘테이너 ${st.left}개 반납필요`, total: st.left } : null; }).filter(Boolean);
+  // 농가것도 종류별로 분리(농협 ri와 동일 형식) — 한 농가가 사각·농가 등 2종류면 2줄.
+  const ownReturns = _ownComboKeys().map(k => {
+    const [farm, ct] = _splitOwnKey(k);
+    const st = gOwnSt(farm, ct);
+    return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ct || '미지정'} ${st.left}개 반납필요`, total: st.left } : null;
+  }).filter(Boolean);
   const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${type} ${st.left}개 반납필요`, total: st.left } : null; }).filter(Boolean);
   const allReturns = [...ownReturns, ...ri];
   const tfTotal = fhi.reduce((s, i) => s + i.total, 0);
@@ -2432,7 +2451,7 @@ function renderDash() {
         : `<span class="badge b-teal">농협</span>`;
     const retBtn = isAdm
       ? (i.kind === 'own'
-          ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${i.name.replace(/'/g,"&#39;")}')">↩ 반납</button>`
+          ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${i.name.replace(/'/g,"&#39;")}','${(i.type || '').replace(/'/g,"&#39;")}')">↩ 반납</button>`
           : `<button class="btn" style="font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${i.name.replace(/'/g,"&#39;")}','${i.type.replace(/'/g,"&#39;")}')">↩ 반납</button>`)
       : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div></div>`;
