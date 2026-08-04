@@ -47,7 +47,8 @@ let _invFilter   = { product: '', farm: '' };
 let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id }
 let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
-let _pachiViewMode = (['none','size','condition','usage','location'].includes(localStorage.getItem('pachi_view_mode')) ? localStorage.getItem('pachi_view_mode') : 'usage');  // 파치 하위 분류축: none(품목만)|size|condition|usage|location. 기본 사용처별(판매 단위)
+let _pachiViewMode = 'usage';          // 파치 하위 분류축: none(품목만)|size|condition|usage|location. ★항상 사용처별(판매 단위)로 시작 — 세션 중 전환은 가능하되 저장하지 않음
+try { localStorage.removeItem('pachi_view_mode'); } catch (e) {}   // 예전 버전이 저장해 둔 값 정리(더 이상 읽지 않음)
 let _pachiCollapsed = new Set();       // 접힌 파치 키 (품목키 PROD::품목 + 하위그룹키 품목||라벨). 빈 Set = 전부 펼침
 let _pachiGroupKeysNow = [];           // 현재 렌더된 하위그룹 키(인덱스→키, togglePachiGroup용)
 let _pachiProdKeysNow = [];            // 현재 렌더된 품목 키(인덱스→키, togglePachiProduct용)
@@ -15289,8 +15290,7 @@ function renderWasteList() {
 // 파치 하위 분류축 전환 (전체/크기별/상태별/사용처별, 품목은 항상 최상위) — 3단계 수정
 function setPachiView(mode) {
   if (!['none', 'size', 'condition', 'usage', 'location'].includes(mode)) return;
-  _pachiViewMode = mode;
-  localStorage.setItem('pachi_view_mode', mode);
+  _pachiViewMode = mode;   // 세션 중에만 유지(저장 안 함 — 새로고침하면 사용처별로 복귀)
   _pachiCollapsed = new Set();   // 뷰 바뀌면 접힘 상태 초기화
   _pachiViewJustChanged = true;  // 새 뷰는 하위그룹 전부 접힘으로 시작
   renderPachiSection();
