@@ -4317,11 +4317,17 @@ function _eibEffSize(orig) {
 
 // 출고처(partner) → 콘테이너 target_type 매핑. partners.category 기준.
 // 농협→'농협', 거래처/공판장→'거래처', 농가→'농가', 미지정→'거래처'. getTargetContainerHold 집계 대상 판정에 사용.
+// partners에 없는 이름은 farms(농가 마스터) 조회 — 수동 거래에서 농가를 직접 고를 수 있어서(농가는 partners에 없음).
+// ★partners에서 찾히면 기존 판정 그대로 → 기존 호출부(D-1 부분출고 등) 동작 불변.
 function _partnerTargetType(name) {
-  const c = partners.find(p => p.name === name)?.category;
-  if (c === '농협') return '농협';
-  if (c === '농가') return '농가';
-  return '거래처';   // 거래처/공판장/미지정
+  const p = partners.find(x => x.name === name);
+  if (p) {
+    if (p.category === '농협') return '농협';
+    if (p.category === '농가') return '농가';
+    return '거래처';   // 거래처/공판장/미지정
+  }
+  if (farms.some(f => f.name === name)) return '농가';
+  return '거래처';
 }
 
 // 농협 콘테이너 입고 농협명 옵션 — partners 중 category==='농협'만(sort_order順). buildSupplierOptHtml(전체)와 구분.
@@ -8403,9 +8409,8 @@ function openManualTxModal(editId = null) {
   _mtxDir = ed ? (ed.direction === 'in' ? 'in' : 'out') : 'out';
   document.getElementById('modal-manual-tx')?.remove();
 
-  const partnerOpts = partners.filter(p => p.is_active !== false)
-    .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
-  const farmOpts = farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+  const partnerOpts = buildSupplierOptHtml();   // 농가 + 거래처 optgroup(입고 등록과 동일 피커) — '선택' 빈 옵션 포함
+  const farmOpts = farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');   // 아래 '농가명'(참고 필드) 전용
   const prodOpts = buildProductOptgroupHTML(true);   // 수동 거래는 '기타'(선과 무관) 품목도 선택 가능 — '선택' 빈 옵션 포함
   const gradeOpts = ['일반', ...brixGrades.filter(g => g.is_active !== false)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(g => g.label)]
@@ -8441,7 +8446,7 @@ function openManualTxModal(editId = null) {
               <button type="button" id="mtx-dir-in" onclick="_mtxSetDir('in')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer">입고</button>
             </div>
           </div>
-          <div><label style="${lbl}"><span id="mtx-partner-label">출고처</span> *</label><select id="mtx-partner" style="${inp}"><option value="">선택</option>${partnerOpts}</select></div>
+          <div><label style="${lbl}"><span id="mtx-partner-label">출고처</span> *</label><select id="mtx-partner" style="${inp}">${partnerOpts}</select></div>
           <div><label style="${lbl}">농가명 <span style="color:#9CA3AF;font-weight:400">(선택)</span></label><select id="mtx-farm" style="${inp}"><option value="">(선택 안 함)</option>${farmOpts}</select></div>
           <div><label style="${lbl}">품목</label><select id="mtx-product" onchange="_mtxOnProductChange()" style="${inp}">${prodOpts}</select></div>
           <div><label style="${lbl}">등급</label><select id="mtx-grade" style="${inp}"><option value="">선택</option>${gradeOpts}</select></div>
