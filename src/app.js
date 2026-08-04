@@ -2467,11 +2467,14 @@ function renderDash() {
   }).join('') : '<div class="alert-none">반납 필요 없음</div>';
   document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 회수필요 ${fhi.length + nhfHoldList.length + ptHoldList.length}곳 · ${tfTotal + nhfHoldTotal + ptHoldTotal}개</span><span class="badge b-ok">🟢 반납필요 ${allReturns.length}건 · ${trTotal}개</span>`;
   renderDDash(); renderFarmTbl();
-  const or = on.map(n => { const st = gOwnSt(n); return st.left > 0 ? `<div class="ext-row"><span>${esc(n)}</span><span class="ext-warn">${st.left}개</span></div>` : ''; }).filter(Boolean).join('');
+  // 농가것도 농협(nr)과 같은 '이름 (종류)' 형식 — '농가||종류' 조합 기준(외부용기 탭 renderOwn과 동일). KPI 총량(to)은 농가 단위 그대로.
+  const oCombos = _ownComboKeys().map(k => { const [farm, ct] = _splitOwnKey(k); return { farm, ct, left: gOwnSt(farm, ct).left }; })
+    .filter(c => c.left > 0).sort((a, b) => a.farm.localeCompare(b.farm, 'ko') || a.ct.localeCompare(b.ct, 'ko'));
+  const or = oCombos.map(c => `<div class="ext-row"><span>${esc(c.farm)}${c.ct ? ` (${esc(c.ct)})` : ''}</span><span class="ext-warn">${c.left}개</span></div>`).join('');
   const nr = nk.map(k => { const [n, t] = k.split('||'); const st = gNhfSt(n, t); return st.left > 0 ? `<div class="ext-row"><span>${esc(n)} (${esc(t)})</span><span class="ext-warn">${st.left}개</span></div>` : ''; }).filter(Boolean).join('');
   document.getElementById('ext-cards').innerHTML = `<div class="ext-card"><div class="ext-card-title"><span class="badge b-pur">농가 콘테이너</span></div>${or || '<div style="font-size:13px;color:#aaa">없음</div>'}</div><div class="ext-card"><div class="ext-card-title"><span class="badge b-teal">농협 용기 반납 필요</span></div>${nr || '<div style="font-size:13px;color:#aaa">없음</div>'}</div>`;
-  const oc = on.filter(n => gOwnSt(n).left > 0).length, nc2 = nk.filter(k => { const [n, t] = k.split('||'); return gNhfSt(n, t).left > 0; }).length;
-  document.getElementById('ext-dash-badges').innerHTML = `<span class="badge b-pur">농가것 ${oc}개 농가</span><span class="badge b-teal">농협 ${nc2}건 반납필요</span>`;
+  const oc = oCombos.length, nc2 = nk.filter(k => { const [n, t] = k.split('||'); return gNhfSt(n, t).left > 0; }).length;   // 둘 다 조합 수 기준
+  document.getElementById('ext-dash-badges').innerHTML = `<span class="badge b-pur">농가것 ${oc}건 반납필요</span><span class="badge b-teal">농협 ${nc2}건 반납필요</span>`;
   // 빈콘 회수 현황
   const bkList = picks.filter(p => p.type === '빈콘회수').slice(0, 10);
   const bkTotal = picks.filter(p => p.type === '빈콘회수').reduce((s, p) => s + p.qty, 0);
