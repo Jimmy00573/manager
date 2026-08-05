@@ -14317,7 +14317,9 @@ async function buildSortingShareText(srId) {
   const totalQty = Number(ir.quantity) || 0;
   L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
   // 비정상품: 값 있는 줄만(0 생략)
-  const abn = [['파치', catSum('파치')], ['9브릭스 이하 저당도', catSum('저당도')], ['고산도', catSum('고산도')]].filter(([, v]) => v > 0);
+  // ★앞 3개는 사무실에서 쓰던 기존 형식이라 라벨·순서 그대로. 누락됐던 극소과·청과·손실만 뒤에 추가.
+  const abn = [['파치', catSum('파치')], ['9브릭스 이하 저당도', catSum('저당도')], ['고산도', catSum('고산도')],
+               ['극소과', catSum('극소과')], ['청과', catSum('청과')], ['손실', catSum('손실')]].filter(([, v]) => v > 0);
   if (abn.length) { L.push(''); abn.forEach(([n, v]) => L.push(`${n}\t${_srtShareCt(v)}`)); }
   // 일반 섹션: 전부 0이면 제목 포함 생략
   const normalLines = sizeLines('일반');
