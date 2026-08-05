@@ -1113,7 +1113,7 @@ function openExtEdit(tp, id) {
   } else if (tp === 'nhfIn') {
     const o = nhfIns.find(x => x.id === id); if (!o) return;
     title.textContent = '✏️ 농협 용기 반입 수정';
-    body.innerHTML = `<div class="fg"><label>반입일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>소유</label><select id="em-owner-type"><option${o.owner_type==='거래처'?'':' selected'}>농협</option><option${o.owner_type==='거래처'?' selected':''}>거래처</option></select></div><div class="fg"><label>농협명</label><input id="em-nhf" value="${esc(o.nhf||'')}"></div><div class="fg"><label>종류</label><input id="em-type" value="${esc(o.type||'')}"></div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>구매 내용</label><input id="em-goods" value="${esc(o.goods||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div>`;
+    body.innerHTML = `<div class="fg"><label>반입일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>소유</label><select id="em-owner-type"><option${o.owner_type==='거래처'?'':' selected'}>농협</option><option${o.owner_type==='거래처'?' selected':''}>거래처</option></select></div><div class="fg"><label>농협명</label><input id="em-nhf" value="${esc(o.nhf||'')}"></div><div class="fg"><label>종류</label><input id="em-type" value="${esc(o.type||'')}"></div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>구매 내용</label><input id="em-goods" value="${esc(o.goods||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div><div class="fg"><label>원물 여부</label><div class="checkbox-row"><input type="checkbox" id="em-empty"${o.is_empty === true ? ' checked' : ''}><label for="em-empty" class="dist-label">📦 빈 콘테이너로 받음${o.inbound_id ? ' (입고 연결분 — 자동 계산 우선)' : ''}</label></div></div>`;
   } else if (tp === 'nhfOut') {
     const o = nhfOuts.find(x => x.id === id); if (!o) return;
     title.textContent = '✏️ 농협 용기 반납 수정';
@@ -1127,7 +1127,7 @@ async function saveExtEdit() {
   try {
     if (_XT === 'ownIn') { await dbUpdateOwnIn(_XI, { date: g('em-date'), farm: g('em-farm'), qty, feature: g('em-feature'), staff: g('em-staff') }); ownIns = await dbGetOwnIns(); }
     else if (_XT === 'ownOut') { await dbUpdateOwnOut(_XI, { date: g('em-date'), farm: g('em-farm'), qty, method: g('em-method'), feature: g('em-feature'), staff: g('em-staff') }); ownOuts = await dbGetOwnOuts(); }
-    else if (_XT === 'nhfIn') { await dbUpdateNhfIn(_XI, { date: g('em-date'), owner_type: g('em-owner-type') || '농협', nhf: g('em-nhf'), type: g('em-type'), qty, feature: g('em-feature'), goods: g('em-goods'), staff: g('em-staff') }); nhfIns = await dbGetNhfIns(); }
+    else if (_XT === 'nhfIn') { await dbUpdateNhfIn(_XI, { date: g('em-date'), owner_type: g('em-owner-type') || '농협', nhf: g('em-nhf'), type: g('em-type'), qty, feature: g('em-feature'), goods: g('em-goods'), staff: g('em-staff'), is_empty: document.getElementById('em-empty')?.checked || null }); nhfIns = await dbGetNhfIns(); }
     else if (_XT === 'nhfOut') { await dbUpdateNhfOut(_XI, { date: g('em-date'), owner_type: g('em-owner-type') || '농협', nhf: g('em-nhf'), type: g('em-type'), qty, method: g('em-method'), feature: g('em-feature'), staff: g('em-staff') }); nhfOuts = await dbGetNhfOuts(); }
     CM('ext'); renderOwn(); renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
@@ -2006,8 +2006,12 @@ async function addNhfIn() {
   const date = gv('ni-date'), nhf = gv('ni-nhf'), type = gv('ni-type'), qty = n('ni-qty');
   if (!date || !nhf || !qty) { alert('반입일자, 농협명, 수량을 입력하세요'); return; }
   try {
-    const row = await dbInsertNhfIn({ date, owner_type: gv('ni-owner-type') || '농협', nhf, type, feature: gv('ni-feature'), qty, goods: gv('ni-goods'), staff: gv('ni-staff') });
-    nhfIns.unshift(row); clr('ni-qty', 'ni-goods', 'ni-staff', 'ni-feature'); renderNhf(); renderDash();
+    // is_empty: 체크했을 때만 true. 안 하면 null(모름) — 반납 3분류에서 보수적으로 '확인필요'로 남는다.
+    const isEmpty = document.getElementById('ni-empty')?.checked || null;
+    const row = await dbInsertNhfIn({ date, owner_type: gv('ni-owner-type') || '농협', nhf, type, feature: gv('ni-feature'), qty, goods: gv('ni-goods'), staff: gv('ni-staff'), is_empty: isEmpty });
+    nhfIns.unshift(row); clr('ni-qty', 'ni-goods', 'ni-staff', 'ni-feature');
+    const ckEmpty = document.getElementById('ni-empty'); if (ckEmpty) ckEmpty.checked = false;   // clr은 value만 비움 — 체크박스는 따로
+    renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function addNhfOut() {
@@ -2052,6 +2056,7 @@ function _ibOccupiedCT(ib) {
 // 남의 용기(농협·거래처) 보유량을 반납가능/원물있음/확인필요로 쪼갠다. ★표시 전용 — gNhfSt·반납 처리는 안 건드림.
 // 1CT=콘테이너 1개 전제라 '콘테이너' 종류에만 적용(파렛트 등은 basis='na'로 내역 없음).
 // 원물 판정은 _ibOccupiedCT — inboundRecords/processingRecords/sortingResults/inventoryRecords 필요.
+// 입고 연결(inbound_id)이 없는 수동 반입분만 nhf_ins.is_empty(true=빈 용기로 받음)를 참고한다. 연결분은 자동 계산 우선.
 // 반환 basis: 'ct'=정상 산출 / 'na'=대상 아님 / 'nodata'=재고 전역 미로드(전량 확인필요)
 function getNhfReturnBreakdown(nhf, type) {
   const st = gNhfSt(nhf, type);
@@ -2069,7 +2074,9 @@ function getNhfReturnBreakdown(nhf, type) {
     .forEach(o => {
       const q = Number(o.qty) || 0;
       if (q <= 0) return;
-      if (!o.inbound_id) { unknown += q; return; }                       // 수동 등록 — 원물 여부 알 수 없음
+      // 수동 등록 — 시스템은 원물 여부를 모름. 단 등록 시점에 '빈 콘테이너로 받음'(is_empty)을 표시했으면 그 말을 믿는다.
+      // ★holding·unknown 어디에도 안 넣으면 아래 뺄셈에서 자연히 ready로 잡힘(ready 직접 가산 금지 — 이중 계상).
+      if (!o.inbound_id) { if (o.is_empty !== true) unknown += q; return; }
       const ib = inboundRecords.find(r => String(r.id) === String(o.inbound_id));
       if (!ib || ib.is_void) { unknown += q; return; }                   // 입고 없음/취소분
       const rem = Math.max(0, _ibOccupiedCT(ib) - (used[ib.id] || 0));   // 아직 물건이 든 CT
