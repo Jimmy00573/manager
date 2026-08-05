@@ -2506,7 +2506,7 @@ function renderDash() {
       ? `<div class="alert-item-ctypes" style="margin-top:3px">${[
           b.ready   ? `<span class="ct ctg">🟢 반납가능 ${b.ready}</span>` : '',
           b.holding ? `<span class="ct cty">🟡 원물있음 ${b.holding}</span>` : '',
-          b.unknown ? `<span class="ct cto">⬜ 확인필요 ${b.unknown}</span>` : ''
+          b.unknown ? `<span class="ct cto">❓ 확인필요 ${b.unknown}</span>` : ''   // ⬜는 헌콘·빈콘회수 기호라 혼동 → ❓
         ].join('')}</div>` : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div>${bdHtml}</div>`;
   }).join('') : '<div class="alert-none">반납 필요 없음</div>';
