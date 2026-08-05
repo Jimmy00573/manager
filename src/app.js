@@ -2036,9 +2036,22 @@ function gNhfSt(nhf, type) {
   const o = nhfOuts.filter(o => o.nhf === nhf && o.type === type).reduce((s, o) => s + o.qty, 0);
   return { inQ: i, outQ: o, left: i - o };
 }
+// 그 입고 물건이 아직 재고에 남아있는 만큼 그 콘테이너가 차 있다(물리 현실 기준). 반납 3분류의 '원물있음' 산출용.
+//  - 미선과 입고: 선과하면 선과품이 우리 CT로 옮겨 담기므로 남의 콘테이너는 빔 → 미선과 잔여(getRemainingCT).
+//  - 선과품 입고: 선과 없이 그대로 쓰므로 그 재고가 나가야 빔 → 그 입고에서 온 재고 잔량.
+//    ★getRemainingCT는 선과품을 0으로 반환(선과 대상이 아니라서)하므로 여기서 따로 계산해야 함.
+function _ibOccupiedCT(ib) {
+  if (!ib) return 0;
+  if (ib.inbound_category === '선과품') {
+    return inventoryRecords
+      .filter(r => !r.is_void && String(r.inbound_record_id) === String(ib.id))   // 소진분(is_void) 제외
+      .reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  }
+  return getRemainingCT(ib);
+}
 // 남의 용기(농협·거래처) 보유량을 반납가능/원물있음/확인필요로 쪼갠다. ★표시 전용 — gNhfSt·반납 처리는 안 건드림.
 // 1CT=콘테이너 1개 전제라 '콘테이너' 종류에만 적용(파렛트 등은 basis='na'로 내역 없음).
-// 원물 판정은 입고의 미선과 잔여(getRemainingCT) 기준 — inboundRecords/processingRecords/sortingResults 필요.
+// 원물 판정은 _ibOccupiedCT — inboundRecords/processingRecords/sortingResults/inventoryRecords 필요.
 // 반환 basis: 'ct'=정상 산출 / 'na'=대상 아님 / 'nodata'=재고 전역 미로드(전량 확인필요)
 function getNhfReturnBreakdown(nhf, type) {
   const st = gNhfSt(nhf, type);
@@ -2046,8 +2059,9 @@ function getNhfReturnBreakdown(nhf, type) {
   const none = b => ({ total, ready: 0, holding: 0, unknown: b === 'nodata' ? Math.max(0, total) : 0, basis: b });
   if (total <= 0) return none('na');
   if (!String(type || '').includes('콘테이너')) return none('na');
-  // 재고 탭을 아직 안 열었으면 입고/선과 전역이 비어 있음 → 전부 '원물있음'으로 오판하지 않게 확인필요 처리
-  if (!inboundRecords.length) return none('nodata');
+  // 재고 탭을 아직 안 열었으면 입고/선과/재고 전역이 비어 있음 → 오판하지 않게 확인필요 처리
+  // (inventoryRecords가 비면 선과품 입고가 전부 '빈 것'으로 잡히므로 이것도 함께 확인)
+  if (!inboundRecords.length || !inventoryRecords.length) return none('nodata');
   const used = {};   // 같은 입고에 nhf_ins가 여러 건이면 잔여를 나눠 배정(중복 계상 방지)
   let holding = 0, unknown = 0;
   nhfIns.filter(o => o.nhf === nhf && o.type === type)
@@ -2058,7 +2072,7 @@ function getNhfReturnBreakdown(nhf, type) {
       if (!o.inbound_id) { unknown += q; return; }                       // 수동 등록 — 원물 여부 알 수 없음
       const ib = inboundRecords.find(r => String(r.id) === String(o.inbound_id));
       if (!ib || ib.is_void) { unknown += q; return; }                   // 입고 없음/취소분
-      const rem = Math.max(0, getRemainingCT(ib) - (used[ib.id] || 0));  // 아직 원물이 든 CT
+      const rem = Math.max(0, _ibOccupiedCT(ib) - (used[ib.id] || 0));   // 아직 물건이 든 CT
       const h = Math.min(q, rem);
       used[ib.id] = (used[ib.id] || 0) + h;
       holding += h;
