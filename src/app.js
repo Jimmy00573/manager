@@ -4627,6 +4627,24 @@ const _IBC_CTX = {
   },
 };
 
+// 콘테이너 종류 칩의 소유별 그룹. ★test는 _saveInboundContainers 저장 분기와 같은 식(ours→picks / nhf→nhf_ins / 그 외→own_ins)
+// 이라 그룹 라벨이 곧 저장 위치. 색은 _ibcAddRow 줄 배지와 같은 값 재사용(신규 색 없음). 순서: 우리→농가→농협.
+const _IBC_OWNER_GROUPS = [
+  { key: 'ours', label: '우리 것',        hint: '회수',     bg: '#DBEAFE', fg: '#1D4ED8', bd: '#BFDBFE', test: t => t.owner === 'ours' },
+  { key: 'farm', label: '농가 것',        hint: '반납대기', bg: '#FFEDD5', fg: '#C2410C', bd: '#FED7AA', test: t => t.owner !== 'ours' && t.owner !== 'nhf' },
+  { key: 'nhf',  label: '농협·거래처 것', hint: '반납대기', bg: '#CCFBF1', fg: '#0F766E', bd: '#99F6E4', test: t => t.owner === 'nhf' },
+];
+// 그룹 안 칩이 전부 추가돼 사라지면 그룹 헤더도 숨김(빈 라벨만 남는 것 방지). 추가/삭제/리셋에서 호출.
+function _ibcSyncGroups(key = 'ib') {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return;
+  _IBC_OWNER_GROUPS.forEach(g => {
+    const box = document.getElementById(`${ctx.pre}-grp-${g.key}`);
+    if (!box) return;
+    const any = [...box.querySelectorAll('button')].some(b => b.style.display !== 'none');
+    box.style.display = any ? '' : 'none';
+  });
+}
 // 입고 모달 콘테이너 입력 섹션 — 활성 종류별 수량(+남의것은 특징). 선택(필수 아님).
 // 칩을 눌러 종류를 추가하는 방식(항상 나열 X). 추가된 줄만 표시. 저장 필드 id(ibc-q/ibc-f-{id}) 유지.
 // key: _IBC_CTX 키. 기본 'ib' — 기존 호출부 동작·출력 100% 동일.
@@ -4637,13 +4655,20 @@ function renderIbContainerSection(key = 'ib') {
   if (!el) return;
   const active = [...containerTypes].filter(t => t.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   if (!active.length) { el.innerHTML = ''; return; }
-  const chips = active.map(t =>
-    `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid #D1D5DB;border-radius:16px;background:#fff;font-size:12px;color:#374151;cursor:pointer;font-family:inherit">${esc(t.name)} +</button>`
-  ).join('');
+  // 소유별로 묶어 표시 — 종류 이름만으로는 소유를 알 수 없어(농협 것 이름이 '콘테이너') 오선택 사고가 있었음.
+  // ★그룹 판정은 _saveInboundContainers 저장 분기와 동일한 식이라 라벨과 실제 저장 위치가 항상 일치.
+  const groups = _IBC_OWNER_GROUPS.map(g => ({ ...g, items: active.filter(g.test) })).filter(g => g.items.length);
+  const chipsHtml = groups.map(g => `
+      <div id="${ctx.pre}-grp-${g.key}" style="margin-top:7px">
+        <div style="font-size:10px;color:#9CA3AF;margin-bottom:3px">${g.label} <span style="color:#C7CBD1">· ${g.hint}</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${g.items.map(t =>
+          `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid ${g.bd};border-radius:16px;background:${g.bg};font-size:12px;color:${g.fg};cursor:pointer;font-family:inherit">${esc(t.name)} +</button>`
+        ).join('')}</div>
+      </div>`).join('');
   el.innerHTML = `${ctx.head}
     <div style="border:1px solid #E5E7EB;border-radius:8px;padding:10px;background:#fff">
-      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px">${ctx.hint}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+      <div style="font-size:11px;color:#9CA3AF;margin-bottom:2px">${ctx.hint}</div>
+      ${chipsHtml}
       <div id="${ctx.rows}"></div>
     </div>`;
   if (key === 'ib') _ibcQtyHint();   // 재빌드 시 힌트 리셋(추가된 줄 없으면 합계 0 → 힌트 비움). 입고 모달 전용
@@ -4681,6 +4706,7 @@ function _ibcAddRow(id, key = 'ib') {
     ${extraInput}
     <button type="button" onclick="_ibcRemoveRow('${t.id}','${key}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
   document.getElementById(ctx.rows)?.appendChild(div);
+  _ibcSyncGroups(key);
   _ibcSyncQty(key);
   setTimeout(() => document.getElementById(`${ctx.pre}-q-${t.id}`)?.focus(), 30);
 }
@@ -4690,6 +4716,7 @@ function _ibcRemoveRow(id, key = 'ib') {
   document.getElementById(`${ctx.pre}-row-${id}`)?.remove();
   const chip = document.getElementById(`${ctx.pre}-chip-${id}`);
   if (chip) chip.style.display = '';
+  _ibcSyncGroups(key);
   _ibcSyncQty(key);
 }
 // 추가된 줄 전부 제거 + 칩 원복(방향 전환 등 초기화용)
@@ -4702,6 +4729,7 @@ function _ibcResetRows(key = 'ib') {
     const c = document.getElementById(`${ctx.pre}-chip-${t.id}`);
     if (c) c.style.display = '';
   });
+  _ibcSyncGroups(key);
 }
 // 콘테이너 종류별 수량 합계 (우리것+남의것 전체, 추가된 줄만)
 function _ibcContainerSum(pre = 'ibc') {
