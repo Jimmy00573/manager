@@ -3959,15 +3959,18 @@ function buildQcProductOpts(editProductName) {
   };
   let html = '<option value="">품목 선택</option>';
   categories.forEach(cat => {
+    // 선과 무관 카테고리(풋귤·단호박 등)는 당도·산도를 안 재므로 품질 기준 대상 아님 — 공용 buildProductOptgroupHTML과 같은 규칙
+    if (NON_SORTING_CATEGORIES.includes(cat.name)) return;
     const items = itemDefs.filter(i => i.category_id === cat.id).sort((a, b) => a.name.localeCompare(b.name));
     if (!items.length) return;
     html += `<optgroup label="${esc(cat.name)}">`;
     items.forEach(i => { html += optItem(i.name); });
     html += '</optgroup>';
   });
+  // 카테고리 미지정 품목 — 카테고리 '기타'와 혼동 방지 위해 라벨은 '미분류'(공용과 동일)
   const uncategorized = itemDefs.filter(i => !i.category_id).sort((a, b) => a.name.localeCompare(b.name));
   if (uncategorized.length) {
-    html += '<optgroup label="기타">';
+    html += '<optgroup label="미분류">';
     uncategorized.forEach(i => { html += optItem(i.name); });
     html += '</optgroup>';
   }
