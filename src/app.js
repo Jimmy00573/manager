@@ -2036,6 +2036,43 @@ function gNhfSt(nhf, type) {
   const o = nhfOuts.filter(o => o.nhf === nhf && o.type === type).reduce((s, o) => s + o.qty, 0);
   return { inQ: i, outQ: o, left: i - o };
 }
+// 남의 용기(농협·거래처) 보유량을 반납가능/원물있음/확인필요로 쪼갠다. ★표시 전용 — gNhfSt·반납 처리는 안 건드림.
+// 1CT=콘테이너 1개 전제라 '콘테이너' 종류에만 적용(파렛트 등은 basis='na'로 내역 없음).
+// 원물 판정은 입고의 미선과 잔여(getRemainingCT) 기준 — inboundRecords/processingRecords/sortingResults 필요.
+// 반환 basis: 'ct'=정상 산출 / 'na'=대상 아님 / 'nodata'=재고 전역 미로드(전량 확인필요)
+function getNhfReturnBreakdown(nhf, type) {
+  const st = gNhfSt(nhf, type);
+  const total = st.left;
+  const none = b => ({ total, ready: 0, holding: 0, unknown: b === 'nodata' ? Math.max(0, total) : 0, basis: b });
+  if (total <= 0) return none('na');
+  if (!String(type || '').includes('콘테이너')) return none('na');
+  // 재고 탭을 아직 안 열었으면 입고/선과 전역이 비어 있음 → 전부 '원물있음'으로 오판하지 않게 확인필요 처리
+  if (!inboundRecords.length) return none('nodata');
+  const used = {};   // 같은 입고에 nhf_ins가 여러 건이면 잔여를 나눠 배정(중복 계상 방지)
+  let holding = 0, unknown = 0;
+  nhfIns.filter(o => o.nhf === nhf && o.type === type)
+    .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))   // 오래된 반입부터
+    .forEach(o => {
+      const q = Number(o.qty) || 0;
+      if (q <= 0) return;
+      if (!o.inbound_id) { unknown += q; return; }                       // 수동 등록 — 원물 여부 알 수 없음
+      const ib = inboundRecords.find(r => String(r.id) === String(o.inbound_id));
+      if (!ib || ib.is_void) { unknown += q; return; }                   // 입고 없음/취소분
+      const rem = Math.max(0, getRemainingCT(ib) - (used[ib.id] || 0));  // 아직 원물이 든 CT
+      const h = Math.min(q, rem);
+      used[ib.id] = (used[ib.id] || 0) + h;
+      holding += h;
+    });
+  // 이미 반납된 분(outQ)은 원물 없던 것부터 나갔다고 본다(원물 든 통은 물리적으로 반납 불가).
+  // 그래도 모자라면 원물있음 → 확인필요 순으로 줄여 ready+holding+unknown = left 를 항상 유지.
+  let ready = st.inQ - holding - unknown - st.outQ;
+  if (ready < 0) {
+    let rest = -ready; ready = 0;
+    const dh = Math.min(holding, rest); holding -= dh; rest -= dh;
+    unknown -= Math.min(unknown, rest);
+  }
+  return { total, ready, holding, unknown, basis: 'ct' };
+}
 // ── [화면: 수확·수송 > 외부용기 > 농협·거래처(nhf, owner_type로 구분)] 반입·반납. 농가 것은 renderOwn.
 //    ※'우리 콘테이너가 농협行으로 나간 것'(getTargetContainerHold)과는 다른 개념 — 혼동 주의.
 function renderNhf() {
@@ -2426,7 +2463,7 @@ function renderDash() {
     const st = gOwnSt(farm, ct);
     return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ct || '미지정'} ${st.left}개 반납필요`, total: st.left } : null;
   }).filter(Boolean);
-  const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${type} ${st.left}개 반납필요`, total: st.left } : null; }).filter(Boolean);
+  const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${type} ${st.left}개 반납필요`, total: st.left, bd: getNhfReturnBreakdown(nhf, type) } : null; }).filter(Boolean);
   const allReturns = [...ownReturns, ...ri];
   const tfTotal = fhi.reduce((s, i) => s + i.total, 0);
   const trTotal = allReturns.reduce((s, i) => s + i.total, 0);
@@ -2463,7 +2500,15 @@ function renderDash() {
           ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${i.name.replace(/'/g,"&#39;")}','${(i.type || '').replace(/'/g,"&#39;")}')">↩ 반납</button>`
           : `<button class="btn" style="font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${i.name.replace(/'/g,"&#39;")}','${i.type.replace(/'/g,"&#39;")}')">↩ 반납</button>`)
       : '';
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div></div>`;
+    // 남의 용기 반납 가능 여부 내역(표시 전용, 0인 분류는 생략). 색은 기존 칩 팔레트 재사용(ctg 초록/cty 앰버/cto 회색).
+    const b = i.bd;
+    const bdHtml = (b && b.basis !== 'na' && (b.ready || b.holding || b.unknown))
+      ? `<div class="alert-item-ctypes" style="margin-top:3px">${[
+          b.ready   ? `<span class="ct ctg">🟢 반납가능 ${b.ready}</span>` : '',
+          b.holding ? `<span class="ct cty">🟡 원물있음 ${b.holding}</span>` : '',
+          b.unknown ? `<span class="ct cto">⬜ 확인필요 ${b.unknown}</span>` : ''
+        ].join('')}</div>` : '';
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div>${bdHtml}</div>`;
   }).join('') : '<div class="alert-none">반납 필요 없음</div>';
   document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 회수필요 ${fhi.length + nhfHoldList.length + ptHoldList.length}곳 · ${tfTotal + nhfHoldTotal + ptHoldTotal}개</span><span class="badge b-ok">🟢 반납필요 ${allReturns.length}건 · ${trTotal}개</span>`;
   renderDDash(); renderFarmTbl();
