@@ -11048,41 +11048,12 @@ function _updateIbSortIcons() {
   });
 }
 
-async function migrateDistributedStorage() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 실행할 수 있습니다.');
-  const toMigrate = inboundRecords.filter(r =>
-    !r.is_void && r.location && r.location.includes('/') && !r.distribution_group_id && !r._legacy
-  );
-  if (!toMigrate.length) return alert('마이그레이션할 분산 저장 데이터가 없습니다.');
-  const preview = toMigrate.slice(0, 5).map(r => `  ${r.date} ${r.product}(${r.farm_name}): ${r.location}`).join('\n');
-  if (!(await showConfirmEdit('기록 분리', `${toMigrate.length}건을 개별 row로 분리합니다. 원본은 무효 처리됩니다.`))) return;
-  let ok = 0, fail = 0;
-  for (const r of toMigrate) {
-    try {
-      const parts = parseLocationStr(r.location);
-      if (parts.length < 2) continue;
-      const distribution_group_id = generateUUID();
-      const totalQty = r.quantity;
-      const noQtyParts = parts.filter(p => p.qty === null);
-      const sumWithQty = parts.filter(p => p.qty !== null).reduce((s, p) => s + p.qty, 0);
-      const evenShare = noQtyParts.length > 0 ? Math.floor((totalQty - sumWithQty) / noQtyParts.length) : 0;
-      let noQtyIdx = 0;
-      const { id, location, quantity, created_at, updated_at, is_void, void_reason, void_at, void_by, _legacy, distribution_group_id: _dgid, ...baseData } = r;
-      for (const p of parts) {
-        let qty = p.qty !== null ? p.qty : evenShare;
-        if (!qty || qty <= 0) qty = 1;
-        await dbInsertInbound({ ...baseData, location: p.name, quantity: qty, distribution_group_id });
-      }
-      await dbUpdateInbound(r.id, { is_void: true, void_reason: '분산저장 분리 마이그레이션', void_at: new Date().toISOString(), void_by: 'admin' });
-      ok++;
-    } catch(e) {
-      fail++;
-      console.error('분산저장 마이그레이션 오류:', r.id, e);
-    }
-  }
-  showToast(`분산저장 마이그레이션 완료: ${ok}건 성공${fail ? `, ${fail}건 실패` : ''}`);
-  await loadAndRenderInv();
-}
+// ※'분산저장 분리' 마이그레이션(migrateDistributedStorage)·버튼(btn-dist-migrate)은 제거함.
+//   전제가 '입고 수량을 위치별로 나눠 고정'이었으나, 실제 운영에서 location은 '지금 남은 물건이 어디 있나'를
+//   적어두는 메모(선과가 진행되면 줄고 위치도 바뀜)라 실행하면 데이터가 틀어졌음.
+//   예) 전량 선과 끝난 입고인데 위치 문자열이 남아 있으면 유령 재고 행이 생기고,
+//       일부만 선과된 입고는 원래 수량이 '남은 수량'으로 쪼개져 차이만큼 소실.
+//   ★분산 저장 입력 기능(ib-loc-multi·updateLocTotal·distribution_group_id 저장)은 그대로 유지.
 
 function setGrade(btn) {
   const group = btn.closest('.grade-group');
@@ -12615,13 +12586,6 @@ async function deleteUncheckedAudit() {
 function renderInboundList() {
   _expandedMemoId = null;
   renderIbCatSummary();
-
-  // 분산저장 마이그레이션 버튼: 레거시 분산 기록이 있을 때만 표시
-  const migrateBtn = document.getElementById('btn-dist-migrate');
-  if (migrateBtn) {
-    const hasMigratable = inboundRecords.some(r => !r.is_void && r.location && r.location.includes('/') && !r.distribution_group_id && !r._legacy);
-    migrateBtn.style.display = hasMigratable ? '' : 'none';
-  }
 
   // 농가별/카테고리별/선과완료 뷰 모드면 해당 함수에 위임
   if (ibViewMode === 'farm') { renderIbFarmView(); return; }
