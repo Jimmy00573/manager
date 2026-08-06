@@ -5914,6 +5914,15 @@ function _getInvRecordDates(rec) {
   return { sortingDate: d, inboundDate: d };
 }
 
+// 오늘 '선과품으로 입고'된 재고인가 — 물건이 아직 들어오는 중일 수 있어 매트릭스에서 빨간 글씨로 구분하고,
+// 삭제 확인창에 경고를 덧붙인다(실사 중 '현장에 없다'고 지우는 사고 방지).
+// ★source_type='inbound_sorted'(선과품 입고로 생긴 재고)만 대상 — 'sorting'(선과 결과)은 inboundDate가
+//   원물 입고일이라, 오늘 입고한 원물을 오늘 선과하면 오탐이 남. manual/pachi*도 '입고 중' 상황이 아님.
+// ★날짜는 td()(로컬 ymd) 기준 — toISOString(UTC)은 KST에서 하루 밀림.
+// inbound_sorted의 date는 입고 등록 시 입고일과 같은 값으로 저장됨(_getInvRecordDates도 이 값을 inboundDate로 씀).
+function _isTodayInboundSorted(r) {
+  return !!r && !r.is_void && r.source_type === 'inbound_sorted' && (r.date || '') === td();
+}
 function _fmtInvDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00');
@@ -6228,10 +6237,13 @@ function _renderInvMatrix(product, recs, auditMode) {
     </div>`;
     displaySizes.forEach(sz => {
       const val = batch.sizes[sz] || 0;
+      // 이 셀에 '오늘 선과품 입고분'이 섞여 있으면 수량을 빨강으로(값 0인 '-'·'＋'는 대상 아님).
+      // 셀 단위 판정 — 같은 농가·날짜의 수동 등록분과 한 배치로 묶일 수 있어 행 전체를 물들이지 않는다.
+      const cellToday = (batch.recsBySize[sz] || []).some(r => (Number(r.quantity) || 0) > 0 && _isTodayInboundSorted(r));
       if (!audit) {
         const inner = val === 0
           ? `<span style="color:#9CA3AF">-</span>`
-          : `<strong style="color:#111827">${fmtCT(val)}</strong>`;
+          : `<strong style="color:${cellToday ? '#DC2626' : '#111827'}">${fmtCT(val)}</strong>`;
         h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
         return;
       }
@@ -6250,7 +6262,8 @@ function _renderInvMatrix(product, recs, auditMode) {
       const chkTs    = allChk ? cellRecs.map(r => r.audit_checked_at).sort()[0] : null;
       const title    = allChk ? `${_fmtAuditTs(chkTs)} 확인` : '미확인 · 클릭하여 확인';
       const cellBg   = allChk ? 'background:#F5F3FF;box-shadow:inset 0 0 0 1.5px #7C3AED;' : 'background:#FEF2F2;box-shadow:inset 0 0 0 1.5px #F87171;';
-      const numColor = allChk ? '#7C3AED' : '#B91C1C';
+      // ★실사 모드에서도 당일 입고분은 빨강 유지(확인해도 색 안 바뀜). 배경·✓ 표시는 기존 그대로.
+      const numColor = cellToday ? '#DC2626' : (allChk ? '#7C3AED' : '#B91C1C');
       const mark     = allChk ? `<span style="font-size:9px;line-height:1;color:#7C3AED">✓</span>` : '';
       const single   = cellRecs.length === 1 ? cellRecs[0] : null;
       const numHtml  = single
@@ -6403,7 +6416,13 @@ async function deleteMatrixBatch(regId) {
   const gradeLabel = targetGrade === 'all' ? '전체' : targetGrade;
   const dateLabel  = _invDateMode === 'inbound' ? info.inboundDate : info.sortingDate;
   const label = `${info.farm}  ${info.product}  ${_fmtInvDate(dateLabel) || ''}  [${gradeLabel}]`;
-  const ok = await showConfirmDanger({ title: '재고 삭제', items: [label], confirmText: '삭제' });
+  // 당일 선과품 입고분이 섞여 있으면 경고 한 줄 추가(삭제를 막지는 않음 — 물건이 아직 들어오는 중일 수 있음)
+  const hasTodayIn = inventoryRecords.filter(baseFilter).some(_isTodayInboundSorted);
+  const ok = await showConfirmDanger({
+    title: '재고 삭제',
+    subtitle: hasTodayIn ? '⚠ 오늘 입고된 건이 포함돼 있습니다. 물건이 아직 입고 중일 수 있습니다.' : undefined,
+    items: [label], confirmText: '삭제'
+  });
   if (!ok) return;
 
   let toDelete;
@@ -12452,9 +12471,12 @@ async function deleteUncheckedInvAudit() {
     `${r.farm_name || '(농가없음)'} · ${r.product || ''} · ${r.size_code || ''} · ${r.quality_grade || '일반'} · ${fmtN(Number(r.quantity) || 0)}CT`
   );
   if (unchecked.length > MAX_SHOW) itemLabels.push(`...외 ${unchecked.length - MAX_SHOW}건`);
+  // 당일 선과품 입고분이 섞여 있으면 경고 한 줄 추가(막지는 않음 — 물건이 아직 들어오는 중일 수 있음)
+  const todayInWarn = unchecked.some(_isTodayInboundSorted)
+    ? ' ⚠ 오늘 입고된 건이 포함돼 있습니다. 물건이 아직 입고 중일 수 있습니다.' : '';
   const res = await showConfirmDanger({
     title: '⚠️ 미확인 재고 일괄 삭제',
-    subtitle: `실사에서 확인(체크)하지 않은 ${unchecked.length}건 · 총 ${fmtN(totalCt)}CT를 삭제합니다. 되돌릴 수 없습니다. 실사를 끝까지 마쳤는지 확인하세요.`,
+    subtitle: `실사에서 확인(체크)하지 않은 ${unchecked.length}건 · 총 ${fmtN(totalCt)}CT를 삭제합니다. 되돌릴 수 없습니다. 실사를 끝까지 마쳤는지 확인하세요.${todayInWarn}`,
     items: itemLabels,
     confirmText: `${unchecked.length}건 삭제`,
     needWorker: true
