@@ -5914,7 +5914,7 @@ function _getInvRecordDates(rec) {
   return { sortingDate: d, inboundDate: d };
 }
 
-// 오늘 '선과품으로 입고'된 재고인가 — 물건이 아직 들어오는 중일 수 있어 매트릭스에서 빨간 글씨로 구분하고,
+// 오늘 '선과품으로 입고'된 재고인가 — 물건이 아직 들어오는 중일 수 있어 매트릭스에서 주황 글씨로 구분하고,
 // 삭제 확인창에 경고를 덧붙인다(실사 중 '현장에 없다'고 지우는 사고 방지).
 // ★source_type='inbound_sorted'(선과품 입고로 생긴 재고)만 대상 — 'sorting'(선과 결과)은 inboundDate가
 //   원물 입고일이라, 오늘 입고한 원물을 오늘 선과하면 오탐이 남. manual/pachi*도 '입고 중' 상황이 아님.
@@ -6237,13 +6237,13 @@ function _renderInvMatrix(product, recs, auditMode) {
     </div>`;
     displaySizes.forEach(sz => {
       const val = batch.sizes[sz] || 0;
-      // 이 셀에 '오늘 선과품 입고분'이 섞여 있으면 수량을 빨강으로(값 0인 '-'·'＋'는 대상 아님).
+      // 이 셀에 '오늘 선과품 입고분'이 섞여 있으면 수량을 주황으로(값 0인 '-'·'＋'는 대상 아님).
       // 셀 단위 판정 — 같은 농가·날짜의 수동 등록분과 한 배치로 묶일 수 있어 행 전체를 물들이지 않는다.
       const cellToday = (batch.recsBySize[sz] || []).some(r => (Number(r.quantity) || 0) > 0 && _isTodayInboundSorted(r));
       if (!audit) {
         const inner = val === 0
           ? `<span style="color:#9CA3AF">-</span>`
-          : `<strong style="color:${cellToday ? '#DC2626' : '#111827'}">${fmtCT(val)}</strong>`;
+          : `<strong style="color:${cellToday ? '#C05800' : '#111827'}">${fmtCT(val)}</strong>`;
         h += `<div class="inv-mc" data-farm="${esc(batch.farm)}" data-product="${esc(product)}" data-size="${esc(sz)}" data-val="${val}" style="${C}background:${rowBg};padding:5px 2px">${inner}</div>`;
         return;
       }
@@ -6262,8 +6262,9 @@ function _renderInvMatrix(product, recs, auditMode) {
       const chkTs    = allChk ? cellRecs.map(r => r.audit_checked_at).sort()[0] : null;
       const title    = allChk ? `${_fmtAuditTs(chkTs)} 확인` : '미확인 · 클릭하여 확인';
       const cellBg   = allChk ? 'background:#F5F3FF;box-shadow:inset 0 0 0 1.5px #7C3AED;' : 'background:#FEF2F2;box-shadow:inset 0 0 0 1.5px #F87171;';
-      // ★실사 모드에서도 당일 입고분은 빨강 유지(확인해도 색 안 바뀜). 배경·✓ 표시는 기존 그대로.
-      const numColor = cellToday ? '#DC2626' : (allChk ? '#7C3AED' : '#B91C1C');
+      // ★실사 모드에서도 당일 입고분은 주황 유지(확인해도 색 안 바뀜). 배경·✓ 표시는 기존 그대로.
+      //   주황(#C05800, 앱 공통 '주의·진행 중')이라 실사 미확인(#B91C1C 빨강)·확인(#7C3AED 보라)과 구분됨.
+      const numColor = cellToday ? '#C05800' : (allChk ? '#7C3AED' : '#B91C1C');
       const mark     = allChk ? `<span style="font-size:9px;line-height:1;color:#7C3AED">✓</span>` : '';
       const single   = cellRecs.length === 1 ? cellRecs[0] : null;
       const numHtml  = single
