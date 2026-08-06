@@ -13513,6 +13513,16 @@ function editInboundRow(id) {
   const eibDrvSel = document.getElementById('eib-driver-sel');
   if (eibDrvSel) eibDrvSel.value = r.driver_id ? String(r.driver_id) : '';
 
+  // 저장된 품질 수치가 있으면 '고급 입력(수치)' 패널을 펼친 채로 연다 — 값은 위에서 이미 복원됨(표시 상태만 조정).
+  // ★매번 판정해 현재 상태와 다를 때만 토글 호출(라벨·display는 toggleAdvQuality 한 곳에서 관리).
+  //   모달을 닫았다 다시 열면 이전 열림 상태가 남아 있으므로, 이 보정이 없으면 반대로 동작함.
+  const eibAdvPanel = document.getElementById('eib-m-adv-quality');
+  if (eibAdvPanel) {
+    const wantOpen = !!(r.brix_range || r.acidity_range || r.size_distribution);
+    const isOpen = eibAdvPanel.style.display !== 'none';
+    if (wantOpen !== isOpen) toggleAdvQuality('eib-m');
+  }
+
   document.getElementById('modal-edit-inbound').style.display = 'flex';
 }
 
