@@ -1105,7 +1105,7 @@ function openExtEdit(tp, id) {
   if (tp === 'ownIn') {
     const o = ownIns.find(x => x.id === id); if (!o) return;
     title.textContent = '✏️ 자가 콘테이너 반입 수정';
-    body.innerHTML = `<div class="fg"><label>반입일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>농가명</label><input id="em-farm" value="${esc(o.farm||'')}"></div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div>`;
+    body.innerHTML = `<div class="fg"><label>반입일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>농가명</label><input id="em-farm" value="${esc(o.farm||'')}"></div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div><div class="fg"><label>원물 여부</label><div class="checkbox-row"><input type="checkbox" id="em-empty"${o.is_empty === true ? ' checked' : ''}><label for="em-empty" class="dist-label">📦 빈 콘테이너로 받음${o.inbound_id ? ' (입고 연결분 — 자동 계산 우선)' : ''}</label></div></div>`;
   } else if (tp === 'ownOut') {
     const o = ownOuts.find(x => x.id === id); if (!o) return;
     title.textContent = '✏️ 자가 콘테이너 반납 수정';
@@ -1125,7 +1125,7 @@ async function saveExtEdit() {
   const g = i => document.getElementById(i)?.value?.trim() || '';
   const qty = parseInt(document.getElementById('em-qty')?.value) || 0;
   try {
-    if (_XT === 'ownIn') { await dbUpdateOwnIn(_XI, { date: g('em-date'), farm: g('em-farm'), qty, feature: g('em-feature'), staff: g('em-staff') }); ownIns = await dbGetOwnIns(); }
+    if (_XT === 'ownIn') { await dbUpdateOwnIn(_XI, { date: g('em-date'), farm: g('em-farm'), qty, feature: g('em-feature'), staff: g('em-staff'), is_empty: document.getElementById('em-empty')?.checked || null }); ownIns = await dbGetOwnIns(); }
     else if (_XT === 'ownOut') { await dbUpdateOwnOut(_XI, { date: g('em-date'), farm: g('em-farm'), qty, method: g('em-method'), feature: g('em-feature'), staff: g('em-staff') }); ownOuts = await dbGetOwnOuts(); }
     else if (_XT === 'nhfIn') { await dbUpdateNhfIn(_XI, { date: g('em-date'), owner_type: g('em-owner-type') || '농협', nhf: g('em-nhf'), type: g('em-type'), qty, feature: g('em-feature'), goods: g('em-goods'), staff: g('em-staff'), is_empty: document.getElementById('em-empty')?.checked || null }); nhfIns = await dbGetNhfIns(); }
     else if (_XT === 'nhfOut') { await dbUpdateNhfOut(_XI, { date: g('em-date'), owner_type: g('em-owner-type') || '농협', nhf: g('em-nhf'), type: g('em-type'), qty, method: g('em-method'), feature: g('em-feature'), staff: g('em-staff') }); nhfOuts = await dbGetNhfOuts(); }
@@ -1732,8 +1732,12 @@ async function addOwnIn() {
   if (!date || !farm || !qty) { alert('반입일자, 농가명, 수량을 입력하세요'); return; }
   if (!gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; }
   try {
-    const row = await dbInsertOwnIn({ date, farm, qty, ctype: gv('oi-ctype') || null, feature: gv('oi-feature'), staff: gv('oi-staff') });
-    ownIns.unshift(row); clr('oi-qty', 'oi-feature', 'oi-staff'); renderOwn(); renderDash();
+    // is_empty: 체크했을 때만 true. 안 하면 null(모름) — 반납 3분류에서 보수적으로 '확인필요'로 남는다.
+    const isEmpty = document.getElementById('oi-empty')?.checked || null;
+    const row = await dbInsertOwnIn({ date, farm, qty, ctype: gv('oi-ctype') || null, feature: gv('oi-feature'), staff: gv('oi-staff'), is_empty: isEmpty });
+    ownIns.unshift(row); clr('oi-qty', 'oi-feature', 'oi-staff');
+    const ckEmpty = document.getElementById('oi-empty'); if (ckEmpty) ckEmpty.checked = false;   // clr은 value만 비움 — 체크박스는 따로
+    renderOwn(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function addOwnOut() {
@@ -2053,24 +2057,23 @@ function _ibOccupiedCT(ib) {
   }
   return getRemainingCT(ib);
 }
-// 남의 용기(농협·거래처) 보유량을 반납가능/원물있음/확인필요로 쪼갠다. ★표시 전용 — gNhfSt·반납 처리는 안 건드림.
-// 1CT=콘테이너 1개 전제라 '콘테이너' 종류에만 적용(파렛트 등은 basis='na'로 내역 없음).
+// 남의 용기(농협·거래처·농가) 보유량을 반납가능/원물있음/확인필요로 쪼개는 공통 계산. ★표시 전용 —
+// gNhfSt·gOwnSt·반납 처리는 안 건드림. 대상별 차이(적용 종류 등)는 호출부가 판단하고, 여기는
+// '반입 레코드 배열(ins) + 집계(st)'만 받아 계산한다. ★ins의 합 = st.inQ 여야 검산이 성립(필터를 집계와 일치시킬 것).
 // 원물 판정은 _ibOccupiedCT — inboundRecords/processingRecords/sortingResults/inventoryRecords 필요.
-// 입고 연결(inbound_id)이 없는 수동 반입분만 nhf_ins.is_empty(true=빈 용기로 받음)를 참고한다. 연결분은 자동 계산 우선.
+// 입고 연결(inbound_id)이 없는 수동 반입분만 is_empty(true=빈 용기로 받음)를 참고한다. 연결분은 자동 계산 우선.
 // 반환 basis: 'ct'=정상 산출 / 'na'=대상 아님 / 'nodata'=재고 전역 미로드(전량 확인필요)
-function getNhfReturnBreakdown(nhf, type) {
-  const st = gNhfSt(nhf, type);
+function _bdNone(total, basis) {
+  return { total, ready: 0, holding: 0, unknown: basis === 'nodata' ? Math.max(0, total) : 0, basis };
+}
+function _calcReturnBreakdown(ins, st) {
   const total = st.left;
-  const none = b => ({ total, ready: 0, holding: 0, unknown: b === 'nodata' ? Math.max(0, total) : 0, basis: b });
-  if (total <= 0) return none('na');
-  if (!String(type || '').includes('콘테이너')) return none('na');
   // 재고 탭을 아직 안 열었으면 입고/선과/재고 전역이 비어 있음 → 오판하지 않게 확인필요 처리
   // (inventoryRecords가 비면 선과품 입고가 전부 '빈 것'으로 잡히므로 이것도 함께 확인)
-  if (!inboundRecords.length || !inventoryRecords.length) return none('nodata');
-  const used = {};   // 같은 입고에 nhf_ins가 여러 건이면 잔여를 나눠 배정(중복 계상 방지)
+  if (!inboundRecords.length || !inventoryRecords.length) return _bdNone(total, 'nodata');
+  const used = {};   // 같은 입고에 반입 기록이 여러 건이면 잔여를 나눠 배정(중복 계상 방지)
   let holding = 0, unknown = 0;
-  nhfIns.filter(o => o.nhf === nhf && o.type === type)
-    .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))   // 오래된 반입부터
+  ins.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))   // 오래된 반입부터
     .forEach(o => {
       const q = Number(o.qty) || 0;
       if (q <= 0) return;
@@ -2093,6 +2096,22 @@ function getNhfReturnBreakdown(nhf, type) {
     unknown -= Math.min(unknown, rest);
   }
   return { total, ready, holding, unknown, basis: 'ct' };
+}
+// 농협·거래처(nhf_ins). 1CT=콘테이너 1개 전제라 '콘테이너' 종류에만 적용(파렛트 등은 basis='na'로 내역 없음).
+function getNhfReturnBreakdown(nhf, type) {
+  const st = gNhfSt(nhf, type);
+  if (st.left <= 0) return _bdNone(st.left, 'na');
+  if (!String(type || '').includes('콘테이너')) return _bdNone(st.left, 'na');
+  return _calcReturnBreakdown(nhfIns.filter(o => o.nhf === nhf && o.type === type), st);
+}
+// 농가것(own_ins). 농가 콘테이너도 물건이 담겨 오므로 농협과 같은 기준을 쓴다.
+// ★종류 제한 없음 — 농가것 종류는 사각·농가·헌콘(농가) 등 전부 콘테이너라 농협의 '콘테이너 포함' 조건을 가져오지 않음.
+// ★필터는 gOwnSt의 hit와 동일하게(ctype 생략=농가 전체) — 그래야 ins 합 = st.inQ 가 되어 검산이 성립.
+function getOwnReturnBreakdown(farm, ctype) {
+  const st = gOwnSt(farm, ctype);
+  if (st.left <= 0) return _bdNone(st.left, 'na');
+  const hit = o => o.farm === farm && (ctype === undefined || (o.ctype || '') === ctype);
+  return _calcReturnBreakdown(ownIns.filter(hit), st);
 }
 // ── [화면: 수확·수송 > 외부용기 > 농협·거래처(nhf, owner_type로 구분)] 반입·반납. 농가 것은 renderOwn.
 //    ※'우리 콘테이너가 농협行으로 나간 것'(getTargetContainerHold)과는 다른 개념 — 혼동 주의.
@@ -2482,7 +2501,7 @@ function renderDash() {
   const ownReturns = _ownComboKeys().map(k => {
     const [farm, ct] = _splitOwnKey(k);
     const st = gOwnSt(farm, ct);
-    return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ct || '미지정'} ${st.left}개 반납필요`, total: st.left } : null;
+    return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ct || '미지정'} ${st.left}개 반납필요`, total: st.left, bd: getOwnReturnBreakdown(farm, ct) } : null;
   }).filter(Boolean);
   const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${type} ${st.left}개 반납필요`, total: st.left, bd: getNhfReturnBreakdown(nhf, type) } : null; }).filter(Boolean);
   const allReturns = [...ownReturns, ...ri];
@@ -2506,7 +2525,10 @@ function renderDash() {
   }).join('');
   document.getElementById('afb').innerHTML = (fhi.length || nhfHoldList.length || ptHoldList.length) ? fhi.map(i => {
     const st = getFCS(i.name);
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><span class="alert-cnt w">${i.total}개</span></div>
+    // 농가行 🧺 회수 — 농협行·거래처行과 동일 스타일/위치. targetType 생략 = 기본 '농가'. 관리자만.
+    // (농가별 테이블의 회수 버튼은 그대로 — 여긴 요약, 저긴 전체 목록)
+    const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${i.name.replace(/'/g,"&#39;")}', ${i.total})">🧺 회수</button>` : '';
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${i.total}개</span>${recBtn}</div></div>
     <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 빈콘회수 ${st.ret}개 = <strong style="color:#C05800">${st.hold}개</strong> 보유</div>
     <div class="alert-item-ctypes">${i.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}</div></div>`;
   }).join('') + nhfHoldHtml + ptHoldHtml : '<div class="alert-none">처리 필요 없음 🎉</div>';
