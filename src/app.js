@@ -10258,14 +10258,20 @@ function toggleRowMenu(id, e, btnEl) {
   }
 }
 
-function qualityInline(r) {
+// showNums=true면 등급 칩 아래에 실측 수치(당도·산도 범위) 한 줄 추가. 입고내역 목록(renderInboundList)만 사용 —
+// 다른 호출부(농가카드·선과 대기 등)는 좁은 flex 행이라 기존 그대로 칩만.
+function qualityInline(r, showNums) {
   const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
   const gChip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
   const chips = [
     gChip('당', r.brix_grade), gChip('산', r.acidity_grade), gChip('외', r.appearance_grade),
     ...(r.defect_tags ? r.defect_tags.split(',').map(t => defectChip(t.trim())).filter(Boolean) : [])
   ].filter(Boolean);
-  return chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
+  // 실측 수치(당도·산도 범위)는 등급 칩 아래 줄에 작게. ★열 폭은 그대로 두고 세로로만 늘어나게(넘치면 …).
+  const nums = showNums ? [r.brix_range, r.acidity_range].filter(Boolean).map(v => esc(v)).join(' · ') : '';
+  const numLine = nums ? `<div style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${nums.replace(/"/g, '&quot;')}">${nums}</div>` : '';   // esc는 따옴표를 안 바꿈 — 속성용만 추가 처리
+  const chipLine = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
+  return chipLine + numLine;   // 둘 다 없으면 '' — 기존과 동일(빈 줄 안 만듦)
 }
 
 function toggleMemo(id) {
@@ -12748,7 +12754,7 @@ function renderInboundList() {
     const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
     const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
     const sortedBadge = isSorted ? `<span onclick="event.stopPropagation();openSortedInboundDetail('${r.id}')" style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과품 입고 내역">선과품 🔍</span>` : '';
-    const qInline = qualityInline(r);
+    const qInline = qualityInline(r, true);   // 입고내역 목록만 실측 수치 줄 표시
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     let driverCell;
     if (r.driver_id && r.driver?.name) {

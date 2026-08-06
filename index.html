@@ -1022,8 +1022,8 @@
             </div>
           </div>
           <div>
-            <button type="button" id="ib-adv-toggle" class="btn" style="font-size:11px;padding:3px 10px;color:var(--text-tertiary)" onclick="toggleAdvQuality('ib')">▶ 고급 입력 (수치)</button>
-            <div id="ib-adv-quality" style="display:none;margin-top:8px">
+            <button type="button" id="ib-adv-toggle" class="btn" style="font-size:11px;padding:3px 10px;color:var(--text-tertiary)" onclick="toggleAdvQuality('ib')">▼ 고급 입력 (수치)</button>
+            <div id="ib-adv-quality" style="margin-top:8px"><!-- 입고 등록은 기본 열림(수정 폼 eib-m-는 기존대로 닫힘). 토글은 toggleAdvQuality가 style.display로 전환 -->
               <div class="form-grid">
                 <div class="fg"><label>당도 범위 <small>(Brix)</small></label>
                   <div style="display:flex;align-items:center;gap:3px">
@@ -1907,6 +1907,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=21"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=454"></script>
+<script src="src/app.js?v=455"></script>
 </body>
 </html>
