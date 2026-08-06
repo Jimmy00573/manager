@@ -1359,6 +1359,8 @@ function renderVehicles() {
       : `<span class="badge b-ok">대기 없음</span>`;
 
     const pendingRows = pending.slice(0, 8).map(d => {
+      // 지연 = '해야 할 배차인데 날짜가 지남'. pending이 이미 status==='배차완료'(미완료)만 담고 있어
+      // 여기서 상태를 다시 볼 필요 없음 — ★위 pending 필터를 바꾸면 이 표시도 같이 봐야 함.
       const isToday = d.date === today, isLate = d.date < today;
       const dateStyle = isLate ? 'color:#C62828;font-weight:600' : isToday ? 'color:#C05800;font-weight:600' : 'color:#555';
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 14px;border-top:0.5px solid #f0f0f0;font-size:12px;flex-wrap:wrap">
@@ -1586,7 +1588,11 @@ function renderDDash() {
 
   el.innerHTML = dates.map(date => {
     const dayItems = list.filter(d => d.date === date);
-    const isToday = date === today, isLate = date < today;
+    const isToday = date === today;
+    // 지연 = '해야 할 배차인데 날짜가 지남' → 배출완료된 건은 지연이 아니다.
+    // ★여기는 날짜 그룹 단위라 그 날짜에 미완료가 하나라도 있을 때만 지연 표시.
+    //   (완료 탭 _dt='d'는 list가 전부 배출완료라 지난 날짜가 전부 '⚠ 지연'으로 찍히던 문제)
+    const isLate = date < today && dayItems.some(d => d.status !== '배출완료');
     const dateLabel = isToday ? `오늘 <span style="color:#C05800">${date}</span>` : isLate ? `<span style="color:#C62828">⚠ ${date} 지연</span>` : date;
 
     const tripOrder = t => ({ '1차': 1, '2차': 2, '3차': 3 }[t] || 99);
@@ -2692,6 +2698,8 @@ function renderDBoard() {
 
     const rows = hasPending ? myPending.map(d => {
       const farm = gf(d.farm);
+      // 지연 판정 — myPending이 이미 status==='배차완료'(미완료)만 담고 있음(위 pending 필터).
+      // ★그 필터를 바꾸면 이 표시도 같이 봐야 함.
       const isToday = d.date === today;
       const isBefore = d.date < today;
       const dateStyle = isBefore ? 'color:#C62828;font-weight:600' : isToday ? 'color:#C05800;font-weight:600' : 'color:#555';
