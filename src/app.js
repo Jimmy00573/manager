@@ -4368,6 +4368,19 @@ function _parseSizeDist(str) {
   const leftover = s.replace(re, '').replace(/\s+/g, '');   // 토큰 외 잔여(공백 제외)
   return (Object.keys(map).length && leftover === '') ? map : null;
 }
+// 목록(좁은 품질 열) 표시용 축약. 구조화된 '그룹명N%'이면 '소30 · 로50 · 중20', 자유 텍스트면 원문 그대로.
+// 축약 글자는 그룹명 앞에서 잘라 쓰되, 다른 그룹과 겹치면 안 겹칠 때까지 한 글자씩 늘린다(매핑 하드코딩 X).
+//  예) 극소과·소과 → '극'·'소'(1글자로 이미 구분) / 중과·중대과 같은 경우만 '중과'·'중대'로 늘어남.
+// ★품질 상세 모달은 원문 그대로 — 여기(목록)만 축약.
+function _sizeDistInline(str) {
+  const s = (str || '').trim();
+  if (!s) return '';
+  const p = _parseSizeDist(s);
+  if (!p || !Object.keys(p).length) return s;   // 자유 텍스트(파싱 불가) — 원문 보존
+  const ks = Object.keys(p);                    // 입력 순서 = 저장 문자열 순서
+  const abbr = k => { let n = 1; while (n < k.length && ks.some(o => o !== k && o.slice(0, n) === k.slice(0, n))) n++; return k.slice(0, n); };
+  return ks.map(k => abbr(k) + p[k]).join(' · ');
+}
 // 품목 그룹(getSizeGroupsFor)별 % 입력 렌더 — existingStr 파싱해 값 채움(비파싱은 빈칸)
 function renderSizeDistInputs(prefix, product, existingStr) {
   const wrap = document.getElementById(`${prefix}-size-dist-wrap`);
@@ -10267,11 +10280,16 @@ function qualityInline(r, showNums) {
     gChip('당', r.brix_grade), gChip('산', r.acidity_grade), gChip('외', r.appearance_grade),
     ...(r.defect_tags ? r.defect_tags.split(',').map(t => defectChip(t.trim())).filter(Boolean) : [])
   ].filter(Boolean);
-  // 실측 수치(당도·산도 범위)는 등급 칩 아래 줄에 작게. ★열 폭은 그대로 두고 세로로만 늘어나게(넘치면 …).
-  const nums = showNums ? [r.brix_range, r.acidity_range].filter(Boolean).map(v => esc(v)).join(' · ') : '';
-  const numLine = nums ? `<div style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${nums.replace(/"/g, '&quot;')}">${nums}</div>` : '';   // esc는 따옴표를 안 바꿈 — 속성용만 추가 처리
+  // 실측 수치(당도·산도 범위)·크기분포는 등급 칩 아래에 한 줄씩 작게.
+  // ★열 폭은 그대로 두고 세로로만 늘어나게 — nowrap + ellipsis, 잘린 전체는 title 툴팁으로.
+  const smallLine = raw => {
+    const t = esc(raw);
+    return t ? `<div style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${t.replace(/"/g, '&quot;')}">${t}</div>` : '';   // esc는 따옴표를 안 바꿈 — 속성용만 추가 처리
+  };
+  const numLine = smallLine(showNums ? [r.brix_range, r.acidity_range].filter(Boolean).join(' · ') : '');
+  const sdLine  = smallLine(showNums ? _sizeDistInline(r.size_distribution) : '');
   const chipLine = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
-  return chipLine + numLine;   // 둘 다 없으면 '' — 기존과 동일(빈 줄 안 만듦)
+  return chipLine + numLine + sdLine;   // 전부 없으면 '' — 기존과 동일(빈 줄 안 만듦)
 }
 
 function toggleMemo(id) {
