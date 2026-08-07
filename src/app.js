@@ -13978,6 +13978,17 @@ function closeSortingModal() {
   if (re) { re.style.display = 'none'; re.innerHTML = ''; }
 }
 
+// 배출구 매핑의 '저당도(비정상품)' 전용 값 — 정상품 등급 라벨과 절대 겹치지 않게 특수 토큰을 쓴다.
+// ★브릭스 등급 '9브릭스 이하'(정상품)와는 별개. 이쪽은 사이즈 구분 없는 비정상품 총량 칸(srt-lowbrix)으로 간다.
+const _SRT_LOWBRIX = '__lowbrix__';
+
+// 배출구 매핑 드롭다운 옵션 라벨
+function _srtGradeOptLabel(v) {
+  if (v === '') return '제외';
+  if (v === _SRT_LOWBRIX) return '저당도(비정상품)';
+  return esc(v);
+}
+
 // 선과 엑셀: 활성 브릭스 등급 라벨(sort_order). invSgExcelRenderBody와 동일 규칙.
 function _srtBrixLabels() {
   return brixGrades
@@ -13993,9 +14004,10 @@ function _srtRenderExcelMap() {
   const { posKg, posTotalKg, unmatched, kgPerCt, sizes, foundTotal, map } = _srtExcel;
   const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
 
-  const gradeOpts = ['', '일반', ..._srtBrixLabels()];   // '' = 제외
+  // '' = 제외 / 정상품 등급들 / 맨 끝 저당도(비정상품 — 사이즈 없는 총량 한 칸)
+  const gradeOpts = ['', '일반', ..._srtBrixLabels(), _SRT_LOWBRIX];
   const gradeOptHtml = pos => gradeOpts.map(v =>
-    `<option value="${esc(v)}"${map[pos] === v ? ' selected' : ''}>${v === '' ? '제외' : esc(v)}</option>`).join('');
+    `<option value="${esc(v)}"${map[pos] === v ? ' selected' : ''}>${_srtGradeOptLabel(v)}</option>`).join('');
 
   // 배출구 행
   const posRows = _SRT_POS.map(pos => {
@@ -14007,7 +14019,11 @@ function _srtRenderExcelMap() {
     });
     totalCT = Math.round(totalCT * 10) / 10;
     const kgTxt = (foundTotal && posTotalKg[pos] > 0) ? ` <span style="color:#9CA3AF">(엑셀 ${fmtN(posTotalKg[pos])}kg)</span>` : '';
-    const info = totalCT > 0 ? `총 ${fmtCT(totalCT)}CT · ${parts.join(', ')}${kgTxt}` : '재고 없음';
+    // ★저당도로 매핑된 배출구는 사이즈 구분 없이 총 CT 한 칸으로 가므로 미리보기도 사이즈 나열 없이 총량만.
+    const info = totalCT <= 0 ? '재고 없음'
+      : (map[pos] === _SRT_LOWBRIX
+          ? `총 <strong style="color:#E65100">${fmtCT(totalCT)}CT</strong> → 비정상품 저당도(사이즈 구분 없음)${kgTxt}`
+          : `총 ${fmtCT(totalCT)}CT · ${parts.join(', ')}${kgTxt}`);
     const has = totalCT > 0;
     return `
       <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid #E5E7EB;border-radius:6px;${has ? '' : 'opacity:.5'}">
@@ -14047,7 +14063,10 @@ function _srtRenderExcelMap() {
 
 function srtSetExcelMap(pos, grade) {
   if (!_srtExcel) return;
+  const before = _srtExcel.map[pos];
   _srtExcel.map[pos] = grade;
+  // 저당도로 바뀌거나 저당도에서 풀릴 때만 미리보기 재렌더(정상품 등급끼리 바꿀 땐 표시가 같아 재렌더 불필요).
+  if (before === _SRT_LOWBRIX || grade === _SRT_LOWBRIX) _srtRenderExcelMap();
 }
 
 // 미매칭 사이즈를 앱 사이즈에 병합(또는 무시) 후 재렌더
@@ -14071,11 +14090,19 @@ function srtApplyExcelMap() {
   const toCT = kg => Math.round((Number(kg) / kgPerCt) * 10) / 10;
 
   // 등급별 사이즈별 kg 합산(여러 배출구가 같은 등급이면 kg 합산 후 한 번 반올림)
-  const fill = {};   // 등급 → 사이즈 → kg
+  // ★저당도는 사이즈 그리드가 아니라 비정상품 총량 칸으로 가므로 fill에 넣지 않고 kg만 따로 모은다.
+  const fill = {};        // 등급 → 사이즈 → kg (정상품 그리드)
+  let lowbrixKg = 0;      // 저당도로 매핑된 배출구들의 kg 합
+  let lowbrixPos = 0;     // 저당도로 매핑된 배출구 개수
   _SRT_POS.forEach(pos => {
     const grade = map[pos];
     if (!grade) return;   // '' = 제외
     const szKg = posKg[pos] || {};
+    if (grade === _SRT_LOWBRIX) {
+      lowbrixPos++;
+      Object.keys(szKg).forEach(sz => { lowbrixKg += szKg[sz]; });   // 사이즈 무시하고 배출구 전체 합
+      return;
+    }
     Object.keys(szKg).forEach(sz => {
       fill[grade] = fill[grade] || {};
       fill[grade][sz] = (fill[grade][sz] || 0) + szKg[sz];
@@ -14083,7 +14110,7 @@ function srtApplyExcelMap() {
   });
 
   const grades = Object.keys(fill);
-  if (!grades.length) { alert('채울 등급을 하나 이상 지정하세요. (모두 제외됨)'); return; }
+  if (!grades.length && !lowbrixPos) { alert('채울 등급을 하나 이상 지정하세요. (모두 제외됨)'); return; }
 
   // 등급 탭에 없는 등급이면 중단(브릭스 마스터 불일치 방어)
   const known = new Set(_srtGradeLabels());
@@ -14111,10 +14138,26 @@ function srtApplyExcelMap() {
     });
   });
 
+  // 3) 저당도(비정상품) — 사이즈 구분 없는 총량 한 칸. 매핑된 배출구가 있을 때만 건드린다.
+  // ★재적용해도 누적되지 않게 '+= ' 가 아니라 매번 새로 계산한 값을 set(정상품 그리드 리셋과 같은 멱등 규칙).
+  let lowbrixNote = '';
+  if (lowbrixPos) {
+    const lbInp = document.getElementById('srt-lowbrix');
+    if (lbInp) {
+      const prevVal = parseFloat(lbInp.value) || 0;
+      const newVal  = toCT(lowbrixKg);
+      lbInp.value = newVal > 0 ? newVal : 0;
+      lowbrixNote = ` · 저당도 ${fmtCT(newVal)}CT`;
+      // 수동 입력이 있었다면 덮어썼음을 알린다(정상품 등급 그리드와 동일하게 매핑된 칸은 엑셀이 기준).
+      if (prevVal > 0 && prevVal !== newVal) lowbrixNote += `(기존 입력 ${fmtCT(prevVal)}CT 대체)`;
+    }
+  }
+
   srtUpdateTotals();
 
   // 완료 요약(매핑 UI 아래에 덧붙임)
-  const summary = _SRT_POS.filter(p => map[p]).map(p => `${p}→${map[p]}`).join(', ');
+  const summary = _SRT_POS.filter(p => map[p])
+    .map(p => `${p}→${map[p] === _SRT_LOWBRIX ? '저당도' : map[p]}`).join(', ');
   const el = document.getElementById('srt-excel-result');
   if (el) {
     const prev = el.querySelector('.srt-excel-done');
@@ -14122,7 +14165,7 @@ function srtApplyExcelMap() {
     const done = document.createElement('div');
     done.className = 'srt-excel-done';
     done.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px solid #BBF7D0;color:#166534;font-weight:600';
-    done.textContent = `✅ ${filled}개 칸 채움 · ${summary}`;
+    done.textContent = `✅ ${filled}개 칸 채움${lowbrixNote} · ${summary}`;
     el.appendChild(done);
   }
 }
