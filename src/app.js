@@ -9365,7 +9365,7 @@ function renderInvSummary() {
 
   // ── 섹션 1: 미선과 재고 (원물 / 소과 분리)
   const unsMap = {};
-  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품').forEach(r => {
+  inboundRecords.filter(_isUnsortedTarget).forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
     if (rem <= 0) return;
     if (!unsMap[r.product]) unsMap[r.product] = { raw: 0, small: 0 };
@@ -9477,7 +9477,7 @@ function renderInvSummary() {
   const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
   const priorityByProduct = {};
   let priorityCount = 0;
-  inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품').forEach(r => {
+  inboundRecords.filter(_isUnsortedTarget).forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
     if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_MID) {
       priorityCount++;
@@ -10065,6 +10065,23 @@ function moveSummaryDate(n) {
   setSummaryDate(ymd(dt));
 }
 
+// ── 미선과(선과 대상) 판정 — 전 화면 공통 기준. ★기준이 바뀌면 여기 한 곳만 고칠 것.
+//  · is_void          : 무효 데이터
+//  · 선과품            : 이미 선과된 완제품 입고 — 선과할 대상이 아님
+//  · 파치              : 입고 즉시 inventory_records(source_type='pachi')로 전환돼 파치 재고에서 관리됨.
+//                       미선과 목록에도 두면 같은 물건이 두 곳에 중복 표시됨.
+//                       ★"선과를 안 해서"가 아니라 "이미 다른 경로로 관리되어서" 제외.
+//  · exclude_from_unsorted : 소과·대과처럼 선과 여부가 그때그때 다른 건을 관리자가 수동 제외한 것
+//                            (toggleInboundSortExclude). 되돌리면 다시 대상이 됨.
+//  ※ 재선별·상품은 선과 대상. 잔여(remaining) 조건은 호출부에서 따로 판단.
+function _isUnsortedTarget(r) {
+  return !!r
+    && !r.is_void
+    && !r.exclude_from_unsorted
+    && r.inbound_category !== '선과품'
+    && r.inbound_category !== '파치';
+}
+
 function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
@@ -10486,7 +10503,7 @@ const AUDIT_FIELD_LABELS = {
   inbound_category: '카테고리', is_priority: '우선사용',
   brix_grade: '당도등급', acidity_grade: '산도등급', appearance_grade: '외관등급', defect_tags: '특이사항',
   brix_range: '당도범위', acidity_range: '산도범위', size_distribution: '크기분포',
-  is_void: '무효여부',
+  is_void: '무효여부', exclude_from_unsorted: '선과 안 함',
   reclassification_source: '재선별출처', reclassification_reason: '재선별사유', original_work_date: '원본작업일'
 };
 
@@ -11254,7 +11271,7 @@ function renderIbFarmView() {
 
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const pm = _ibProcessedMap();
-  const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품');
+  const active = inboundRecords.filter(_isUnsortedTarget);
   const emptyGrades = () => ({ 상: 0, 중: 0, 하: 0, total: 0 });
 
   // farm → { remaining, cats{}, rows[], hasPriority, brixG{}, acidG{}, appearG{}, latestDate }
@@ -11685,7 +11702,7 @@ function renderIbCatSummary() {
     processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
   });
 
-  const active = inboundRecords.filter(r => !r.is_void && !r.exclude_from_unsorted && r.inbound_category !== '선과품');
+  const active = inboundRecords.filter(_isUnsortedTarget);
 
   // (카테고리, 품목, 출처) 조합별 집계
   const catTotals = {};
@@ -12784,8 +12801,15 @@ function renderInboundList() {
     const isSorted = r.inbound_category === '선과품';
     const isGrayed = isDone || isSorted;
     const grayStyle = isGrayed ? 'background:#F3F4F6;color:#9CA3AF;' : '';
+    // '선과 안 함' 수동 제외 — 파치·선과품은 자동 제외라 토글 노출 안 함(이미 켜진 건은 되돌릴 수 있게 노출)
+    const isSrtExcluded  = !!r.exclude_from_unsorted;
+    const _srtExcludable = isSrtExcluded || !['선과품', '파치'].includes(r.inbound_category || '상품');
+    const srtExBadge = isSrtExcluded
+      ? ` <span style="background:#EDE9FE;color:#6D28D9;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;display:inline-block" title="'선과 안 함'으로 지정됨 — 미선과 목록·우선처리 집계에서 제외">🚫 선과 안 함</span>`
+      : '';
     const _auditChk = _ibAuditMode && _ibAuditChecked.has(r.id);
-    const _trBaseStyle = _auditChk ? 'background:#DBEAFE;' : (isGrayed ? grayStyle : priorityStyle);
+    const _trBaseStyle = _auditChk ? 'background:#DBEAFE;'
+      : (isGrayed ? grayStyle : (isSrtExcluded ? 'background:#FAF9FF;' : priorityStyle));
     const _trStyle = _ibAuditMode ? `${_trBaseStyle}cursor:pointer;` : _trBaseStyle;
     const _trClick = _ibAuditMode ? `onclick="toggleIbAuditCheck('${r.id}')"` : '';
     const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
@@ -12806,6 +12830,7 @@ function renderInboundList() {
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
          ${remaining > 0 ? `<button onclick="openUnsortedOutboundModal('${r.id}')">📤 출고</button>` : ''}
+         ${_srtExcludable ? `<button onclick="toggleInboundSortExclude('${r.id}')">${isSrtExcluded ? '↩️ 선과 대상으로' : '🚫 선과 안 함'}</button>` : ''}
          <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
          <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
          <div class="menu-divider"></div>
@@ -12825,7 +12850,7 @@ function renderInboundList() {
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
-      <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}</td>
+      <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
       <td style="text-align:right">${qtyDisplay}</td>
       <td title="${esc(r.location || '')}">${locCell}</td>
       <td style="white-space:nowrap">${driverCell}</td>
@@ -12982,7 +13007,7 @@ function _renderScStats() {
     .reduce((s, p) => s + p.quantity, 0);
 
   const allW = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0)
+    .filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
   const totalRem = allW.reduce((s, r) => s + r.remaining, 0);
   const urgCnt = allW.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
@@ -13098,7 +13123,7 @@ function _renderScProductOptions() {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
   const prods = [...new Set(
-    inboundRecords.filter(r => !r.is_void && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0)
+    inboundRecords.filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
       .map(r => r.product).filter(Boolean)
   )].sort();
   const cur = [...sel.options].slice(1).map(o => o.value);
@@ -13243,7 +13268,7 @@ function _renderScTable() {
   });
 
   let rows = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category !== '선과품' && r.inbound_category !== '파치' && (r.quantity - (pm[r.id] || 0)) > 0)
+    .filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
 
   if (_scSearch) {
@@ -14626,6 +14651,35 @@ async function cancelSortingResult(srId, inboundId, seq, worker, reason) {
     await loadAndRenderInv();
     showToast(`${seq}차 선과 취소 완료`);
   } catch(e) { alert('선과 취소 오류: ' + e.message); }
+}
+
+// ── '선과 안 함' 토글 (관리자 전용)
+// 소과·대과처럼 선과할 때도 있고 그냥 출고할 때도 있는 건을 미선과 목록에서 빼기 위한 수동 스위치.
+// exclude_from_unsorted만 바꾼다 — 입고 기록·재고·출고는 그대로. 판정은 _isUnsortedTarget 참조.
+async function toggleInboundSortExclude(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const r = inboundRecords.find(x => x.id === id);
+  if (!r) return;
+  const next  = !r.exclude_from_unsorted;
+  const label = next ? '선과 안 함' : '선과 대상';
+  const ok = await showConfirmEdit(
+    `'${label}'(으)로 변경할까요?`,
+    `${r.farm_name} · ${r.product} · 미선과 목록에서만 ${next ? '빠집니다' : '다시 보입니다'}`
+  );
+  if (!ok) return;
+  try {
+    const updated = await dbUpdateInbound(id, { exclude_from_unsorted: next });
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: id,
+      before_val: { exclude_from_unsorted: !!r.exclude_from_unsorted },
+      after_val:  { exclude_from_unsorted: next },
+      reason: next ? '선과 안 함 (미선과 목록 제외)' : '선과 대상으로 되돌림',
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(() => {});
+    Object.assign(r, updated || { exclude_from_unsorted: next });
+    renderInvSummary(); renderInboundList(); renderProcessingTab();
+    showToast(`'${label}'(으)로 변경되었습니다.`);
+  } catch(e) { alert('변경 오류: ' + e.message); }
 }
 
 async function restoreInbound(id) {
