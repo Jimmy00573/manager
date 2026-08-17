@@ -10977,26 +10977,39 @@ function ibSetSearch(val) {
 }
 
 // 1단 품목 칩 — 실제 데이터에 있는 품목만 동적 생성(하드코딩 금지, 새 품목 자동 반영).
-// 순서: 건수 많은 순(주력 품목이 앞), 동수면 가나다. 색은 PRODUCT_COLORS 재사용(신규 색 없음).
+// ★칩의 숫자는 '지금 선과 대기 중인 건수'(전체 누적 아님) — 평소 필요한 건 지금 처리할 게 몇 건인지.
+//   판정은 정렬·행 색과 같은 기준(_isUnsortedTarget + getRemainingCT). ★새 계산식 만들지 말 것.
+//   getRemainingCT가 미선과 출고분·선과 투입분을 이미 빼므로 여기서 다시 빼지 않는다.
+// 순서: 대기 많은 순 → 동점이면 전체 건수 순(비수기에 전부 0이 돼도 순서가 안 흔들리게) → 가나다.
+// 대기 0건 품목도 칩을 남긴다(과거 기록 조회 필요) — 대신 흐리게.
 function _renderIbProductChips() {
   const el = document.getElementById('ib-fprod-btns');
   if (!el) return;
-  const cnt = {};
-  inboundRecords.forEach(r => { if (!r.is_void && r.product) cnt[r.product] = (cnt[r.product] || 0) + 1; });
-  const prods = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, 'ko'));
+  const wait = {}, all = {};
+  inboundRecords.forEach(r => {
+    if (r.is_void || !r.product) return;
+    all[r.product] = (all[r.product] || 0) + 1;
+    if (_isUnsortedTarget(r) && getRemainingCT(r) > 0) wait[r.product] = (wait[r.product] || 0) + 1;
+  });
+  const prods = Object.keys(all).sort((a, b) =>
+    (wait[b] || 0) - (wait[a] || 0) || all[b] - all[a] || a.localeCompare(b, 'ko'));
+  const totalWait = Object.values(wait).reduce((s, n) => s + n, 0);
   const base = 'font-size:12px;padding:3px 11px;border-radius:12px;cursor:pointer;font-family:inherit';
-  const chip = (val, label, active) => {
+  const chip = (val, label, active, dim) => {
     const c = val ? (PRODUCT_COLORS[val] || null) : null;
     const st = active
       ? (c ? `border:1px solid ${c.border};background:${c.bg};color:${c.color};font-weight:700`
            : 'border:1px solid #555;background:#333;color:#fff;font-weight:700')
-      : 'border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary)';
+      : dim
+        ? 'border:1px solid var(--border);background:#fafafa;color:#c3c7cc'
+        : 'border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary)';
     // esc()는 따옴표를 안 바꾸므로 onclick 인자만 별도 이스케이프(품목명에 ' 가 들어와도 안전)
     const arg = String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<button class="ib-fprod" data-prod="${esc(val)}" onclick="setIbProductFilter('${arg}')" style="${base};${st}">${esc(label)}</button>`;
+    const tip = val ? ` title="선과 대기 ${wait[val] || 0}건 · 전체 입고 ${all[val]}건"` : ` title="선과 대기 ${totalWait}건"`;
+    return `<button class="ib-fprod" data-prod="${esc(val)}" onclick="setIbProductFilter('${arg}')"${tip} style="${base};${st}">${esc(label)}</button>`;
   };
-  el.innerHTML = chip('', '전체', !ibFilterProduct)
-    + prods.map(p => chip(p, `${p} ${cnt[p]}`, ibFilterProduct === p)).join('');
+  el.innerHTML = chip('', `전체 ${totalWait}`, !ibFilterProduct, false)
+    + prods.map(p => chip(p, `${p} ${wait[p] || 0}`, ibFilterProduct === p, !(wait[p] > 0))).join('');
 }
 
 // 품목 칩/드롭다운 공통 진입점 — 두 경로가 같은 상태(ibFilterProduct)를 쓰도록.
