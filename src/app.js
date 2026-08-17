@@ -12818,7 +12818,7 @@ function renderInboundList() {
     const _auditChk = _ibAuditMode && _ibAuditChecked.has(r.id);
     // 우선순위: 실사 체크 > 완료·선과품(회색) > 선과 대상 아님(연보라) > 우선처리(노랑)
     const _trBaseStyle = _auditChk ? 'background:#DBEAFE;'
-      : (isGrayed ? grayStyle : (isNotSrtTarget ? 'background:#FAF9FF;' : priorityStyle));
+      : (isGrayed ? grayStyle : (isNotSrtTarget ? 'background:#F5F3FF;' : priorityStyle));
     const _trStyle = _ibAuditMode ? `${_trBaseStyle}cursor:pointer;` : _trBaseStyle;
     const _trClick = _ibAuditMode ? `onclick="toggleIbAuditCheck('${r.id}')"` : '';
     const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
