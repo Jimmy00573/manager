@@ -10384,8 +10384,10 @@ function toggleRowMenu(id, e, btnEl) {
 function qualityInline(r, showNums) {
   const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
   const gChip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
+  // ★당·산 등급 배지 제거 — 당도는 수치(brix_range)가 원본이고, 산도는 없을 때가 많아 등급이 무의미했음.
+  //   선과 결과에 등급별 실제 데이터가 남으므로 입고 시점의 추정 등급은 불필요. 외관은 수치가 없어 유지.
   const chips = [
-    gChip('당', r.brix_grade), gChip('산', r.acidity_grade), gChip('외', r.appearance_grade),
+    gChip('외', r.appearance_grade),
     ...(r.defect_tags ? r.defect_tags.split(',').map(t => defectChip(t.trim())).filter(Boolean) : [])
   ].filter(Boolean);
   // 실측 수치(당도·산도 범위)·크기분포는 등급 칩 아래에 한 줄씩 작게.
@@ -10480,7 +10482,8 @@ function openQualityModal(id) {
         <span style="color:#888;width:40px;font-size:12px">${lbl}</span>
         <span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid;${GS[val]};font-weight:700">${val}</span>
        </div>` : '';
-  const gradeBlock = [gradeRow('당도', r.brix_grade), gradeRow('산도', r.acidity_grade), gradeRow('외관', r.appearance_grade)].filter(Boolean).join('');
+  // ★당도·산도 등급은 표시하지 않음(qualityInline과 동일 방침). 수치는 아래 measureBlock에 그대로 나온다.
+  const gradeBlock = [gradeRow('외관', r.appearance_grade)].filter(Boolean).join('');
   const defectBlock = r.defect_tags
     ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${
         r.defect_tags.split(',').map(t => `<span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid #FFCC80;background:#FFF3E0;color:#E65100;font-weight:600">${esc(t.trim())}</span>`).join('')
@@ -11257,6 +11260,9 @@ function setDefectTags(wrapId, val) {
     cb.checked = val ? val.split(',').includes(cb.value) : false;
   });
 }
+// ★현재 호출부 없음 — 당도·산도 등급 입력을 제거하면서 그 옆 '?' 힌트도 같이 사라졌다.
+//   품질 기준(quality_criteria)을 상/중/하로 풀어 보여주던 유일한 소비처였음.
+//   설정 > 품질 기준 화면은 그대로 두므로(데이터 보존), 등급을 되살릴 때 바로 다시 쓸 수 있게 남겨둔다.
 function showGradeHint(el, field, prefix) {
   const productId = prefix === 'ib' ? 'ib-product' : 'eib-m-product';
   const productName = (document.getElementById(productId)?.value || '').trim();
@@ -11295,7 +11301,7 @@ function hideGradeHint() {
 }
 
 function clearGrades(prefix) {
-  ['brix-grade', 'acid-grade', 'appearance-grade'].forEach(suffix => {
+  ['appearance-grade'].forEach(suffix => {   // ★당도·산도 등급 입력 제거 — 외관만 남음
     document.querySelectorAll(`#${prefix}-${suffix} .grade-btn`).forEach(b => b.classList.remove('active'));
   });
   setDefectTags(`${prefix}-defect-wrap`, null);
@@ -11389,7 +11395,7 @@ function renderIbFarmView() {
     const rem = r.quantity - (pm[r.id] || 0);
     if (!farmMap[r.farm_name]) farmMap[r.farm_name] = {
       remaining: 0, cats: {}, rows: [], hasPriority: false, latestDate: '',
-      brixG: emptyGrades(), acidG: emptyGrades(), appearG: emptyGrades()
+      appearG: emptyGrades()
     };
     const f = farmMap[r.farm_name];
     const cat = r.inbound_category || '상품';
@@ -11397,8 +11403,7 @@ function renderIbFarmView() {
     f.remaining += rem;
     if (r.is_priority) f.hasPriority = true;
     if (r.date > f.latestDate) f.latestDate = r.date;
-    if (r.brix_grade      && f.brixG[r.brix_grade]   !== undefined) { f.brixG[r.brix_grade]++;   f.brixG.total++; }
-    if (r.acidity_grade   && f.acidG[r.acidity_grade]  !== undefined) { f.acidG[r.acidity_grade]++;  f.acidG.total++; }
+    // ★당도·산도 등급은 집계하지 않음(입력·표시 제거됨). 외관만.
     if (r.appearance_grade && f.appearG[r.appearance_grade] !== undefined) { f.appearG[r.appearance_grade]++; f.appearG.total++; }
     f.rows.push({ ...r, rem });
   });
@@ -11473,7 +11478,7 @@ function renderIbFarmView() {
 
   let cardsHtml = '';
   farms.forEach((farm, idx) => {
-    const { remaining, cats, rows, hasPriority, brixG, acidG, appearG } = farmMap[farm];
+    const { remaining, cats, rows, hasPriority, appearG } = farmMap[farm];
     const isExpanded = _farmExpanded.has(farm);
     const borderColor = remaining >= 200 ? '#2E7D32' : remaining >= 50 ? '#F57F17' : remaining > 0 ? '#C62828' : '#BDBDBD';
 
@@ -11524,7 +11529,7 @@ function renderIbFarmView() {
         </div>`;
       }).join('');
 
-    const gradeParts = [gradeStat('당도', brixG), gradeStat('산도', acidG), gradeStat('외관', appearG)].filter(Boolean);
+    const gradeParts = [gradeStat('외관', appearG)].filter(Boolean);
     const gradeRow = gradeParts.length
       ? `<div style="border-top:1px solid #f0f0f0;padding:5px 14px;background:#fafafa;font-size:11px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <span style="font-size:10px;font-weight:700;color:#bbb;letter-spacing:.04em;text-transform:uppercase">품질</span>
@@ -11532,7 +11537,7 @@ function renderIbFarmView() {
          </div>`
       : '';
 
-    const hdrChips = [gradeHeaderChip('당', brixG), gradeHeaderChip('산', acidG), gradeHeaderChip('외', appearG)].filter(Boolean);
+    const hdrChips = [gradeHeaderChip('외', appearG)].filter(Boolean);
 
     cardsHtml += `<div style="background:#fff;border:1px solid #e8e8e8;border-left:4px solid ${borderColor};border-radius:8px;margin-bottom:10px;overflow:hidden">
       <div data-farm="${esc(farm)}" onclick="ibToggleFarm(this.dataset.farm)"
@@ -11959,11 +11964,9 @@ function renderIbCatSummary() {
       ? Object.entries(locMap).sort((a,b)=>b[1]-a[1]).map(([l,n]) => n>1?`${esc(l)} (${n}건)`:esc(l)).join(', ')
       : '-';
 
-    // 평균 품질
-    const bg  = _avgGrade(rows,'brix_grade');
-    const ag  = _avgGrade(rows,'acidity_grade');
+    // 평균 품질 — ★당도·산도 등급은 입력·표시가 제거돼 집계하지 않음. 외관만.
     const apg = _avgGrade(rows,'appearance_grade');
-    const qualStr = [_gChip('당',bg),_gChip('산',ag),_gChip('외',apg)].filter(Boolean).join('&ensp;');
+    const qualStr = [_gChip('외',apg)].filter(Boolean).join('&ensp;');
 
     // 경과일
     const oldDays = _daysSince(oldestDate);
@@ -13674,9 +13677,7 @@ function editInboundRow(id) {
   if (processed > 0) { hint.textContent = `이미 ${fmtN(processed)}CT 처리됨 — ${fmtN(processed)}CT 미만으로 줄일 수 없습니다`; hint.style.display = ''; }
   else hint.style.display = 'none';
   document.getElementById('eib-m-cat').value = r.inbound_category || '상품';
-  setGradeVal('eib-m-brix-grade', r.brix_grade || null);
-  setGradeVal('eib-m-acid-grade', r.acidity_grade || null);
-  setGradeVal('eib-m-appearance-grade', r.appearance_grade || null);
+  setGradeVal('eib-m-appearance-grade', r.appearance_grade || null);   // ★당도·산도 등급 입력은 제거됨
   setDefectTags('eib-m-defect-wrap', r.defect_tags || null);
   _brixRangeToSel(r.brix_range, 'eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
   _acidRangeToSel(r.acidity_range, 'eib-m-acid-min', 'eib-m-acid-max');
@@ -13724,8 +13725,6 @@ async function closeEditInboundModal() {
       getLocValue('eib') !== (r.location || null) ||
       document.getElementById('eib-m-note').value !== (r.note || '') ||
       document.getElementById('eib-m-cat').value !== (r.inbound_category || '상품') ||
-      getGradeVal('eib-m-brix-grade') !== (r.brix_grade || null) ||
-      getGradeVal('eib-m-acid-grade') !== (r.acidity_grade || null) ||
       getGradeVal('eib-m-appearance-grade') !== (r.appearance_grade || null) ||
       getDefectTags('eib-m-defect-wrap') !== (r.defect_tags || null) ||
       _eibEffBrix(r) !== (r.brix_range || null) ||
@@ -13752,8 +13751,8 @@ async function saveInboundModal() {
   const location = getLocValue('eib') || null;
   const note = document.getElementById('eib-m-note').value.trim() || null;
   const inbound_category = document.getElementById('eib-m-cat').value || '상품';
-  const brix_grade = getGradeVal('eib-m-brix-grade');
-  const acidity_grade = getGradeVal('eib-m-acid-grade');
+  // ★당도·산도 등급은 입력 UI 제거 — updatePayload에서도 빼서 PATCH가 그 컬럼을 건드리지 않게 한다.
+  //   (남겨두면 getGradeVal이 null을 돌려줘 기존 DB 값이 지워짐. 데이터는 보존해야 함.)
   const appearance_grade = getGradeVal('eib-m-appearance-grade');
   const defect_tags = getDefectTags('eib-m-defect-wrap');
   const _origIb = inboundRecords.find(x => String(x.id) === String(id));
@@ -13782,8 +13781,6 @@ async function saveInboundModal() {
     location !== (prev.location || null) ||
     note !== (prev.note || null) ||
     inbound_category !== (prev.inbound_category || '상품') ||
-    brix_grade !== (prev.brix_grade || null) ||
-    acidity_grade !== (prev.acidity_grade || null) ||
     appearance_grade !== (prev.appearance_grade || null) ||
     defect_tags !== (prev.defect_tags || null) ||
     brix_range !== (prev.brix_range || null) ||
@@ -13802,7 +13799,7 @@ async function saveInboundModal() {
 
   const updatePayload = {
     date, quantity: qty, location, note, inbound_category, is_priority,
-    brix_grade, acidity_grade, appearance_grade, defect_tags,
+    appearance_grade, defect_tags,
     brix_range, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
     driver_id, driver_name_manual: null,
@@ -13814,12 +13811,12 @@ async function saveInboundModal() {
         target_table: 'inbound_records', target_id: id,
         before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note,
           inbound_category: prev.inbound_category, is_priority: prev.is_priority,
-          brix_grade: prev.brix_grade, acidity_grade: prev.acidity_grade, appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
+          appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
           brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
           reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date,
           driver_id: prev.driver_id },
         after_val: { date, quantity: qty, location, note, inbound_category, is_priority,
-          brix_grade, acidity_grade, appearance_grade, defect_tags,
+          appearance_grade, defect_tags,
           brix_range, acidity_range, size_distribution,
           reclassification_source, reclassification_reason, original_work_date,
           driver_id },
@@ -13829,7 +13826,7 @@ async function saveInboundModal() {
     const idx = inboundRecords.findIndex(r => r.id === id);
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx],
       date, quantity: qty, location, note, inbound_category, is_priority,
-      brix_grade, acidity_grade, appearance_grade, defect_tags,
+      appearance_grade, defect_tags,   // ★brix_grade·acidity_grade는 안 건드림 — 기존 값 보존
       brix_range, acidity_range, size_distribution,
       reclassification_source, reclassification_reason, original_work_date,
       driver_id, driver_name_manual: null,
@@ -15187,8 +15184,7 @@ async function _addInboundCore(keepOpen) {
   const drvSelVal = driverSelect?.value || '';
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
   const inbound_category = gv('ib-category') || '상품';
-  const brix_grade = getGradeVal('ib-brix-grade');
-  const acidity_grade = getGradeVal('ib-acid-grade');
+  // ★당도·산도 등급은 입력 UI 제거로 더 이상 저장하지 않음(신규 null). DB 컬럼·기존 값은 그대로 둔다.
   const appearance_grade = getGradeVal('ib-appearance-grade');
   const defect_tags = getDefectTags('ib-defect-wrap');
   const brix_range = _rangeComposeBrix('ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos');
@@ -15229,8 +15225,6 @@ async function _addInboundCore(keepOpen) {
     note, staff: 'admin',
     inbound_category, is_priority,
     driver_id,
-    ...(brix_grade && { brix_grade }),
-    ...(acidity_grade && { acidity_grade }),
     ...(appearance_grade && { appearance_grade }),
     ...(defect_tags && { defect_tags }),
     ...(brix_range && { brix_range }),

@@ -987,22 +987,9 @@
         <!-- 품질 정보 -->
         <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
         <div style="margin-bottom:12px">
-          <div style="margin-bottom:8px">
-            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">당도 <span class="grade-hint" onmouseenter="showGradeHint(this,'brix','ib')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'brix','ib')">?</span></div>
-            <div class="grade-group" id="ib-brix-grade">
-              <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
-              <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
-              <button type="button" class="grade-btn" data-val="하" onclick="setGrade(this)">하</button>
-            </div>
-          </div>
-          <div style="margin-bottom:8px">
-            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">산도 <span class="grade-hint" onmouseenter="showGradeHint(this,'acid','ib')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'acid','ib')">?</span></div>
-            <div class="grade-group" id="ib-acid-grade">
-              <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
-              <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
-              <button type="button" class="grade-btn" data-val="하" onclick="setGrade(this)">하</button>
-            </div>
-          </div>
+          <!-- ★당도·산도 등급(상/중/하) 제거됨 — 당도는 비파괴 당도계 수치가 원본이라 등급은 중복 입력이었고,
+               산도는 파괴 검사 때만 나와 없을 때가 많은데 억지로 고르게 돼 있었음.
+               수치 입력(고급 입력의 당도·산도 범위)만 남긴다. 외관은 수치가 없어 등급 유지. -->
           <div style="margin-bottom:8px">
             <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">외관 <span class="grade-hint" title="균일·착색양호=상 / 약간 불균일=중 / 착색불량·상처·변형=하">?</span></div>
             <div class="grade-group" id="ib-appearance-grade">
@@ -1487,22 +1474,7 @@
 
     <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
     <div style="margin-bottom:12px">
-      <div style="margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">당도 <span class="grade-hint" onmouseenter="showGradeHint(this,'brix','eib-m')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'brix','eib-m')">?</span></div>
-        <div class="grade-group" id="eib-m-brix-grade">
-          <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
-          <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
-          <button type="button" class="grade-btn" data-val="하" onclick="setGrade(this)">하</button>
-        </div>
-      </div>
-      <div style="margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">산도 <span class="grade-hint" onmouseenter="showGradeHint(this,'acid','eib-m')" onmouseleave="hideGradeHint()" onclick="showGradeHint(this,'acid','eib-m')">?</span></div>
-        <div class="grade-group" id="eib-m-acid-grade">
-          <button type="button" class="grade-btn" data-val="상" onclick="setGrade(this)">상</button>
-          <button type="button" class="grade-btn" data-val="중" onclick="setGrade(this)">중</button>
-          <button type="button" class="grade-btn" data-val="하" onclick="setGrade(this)">하</button>
-        </div>
-      </div>
+      <!-- ★당도·산도 등급 제거 — 등록 폼과 동일하게 유지할 것(위 ib- 폼 주석 참고). -->
       <div style="margin-bottom:8px">
         <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:4px">외관 <span class="grade-hint" title="균일·착색양호=상 / 약간 불균일=중 / 착색불량·상처·변형=하">?</span></div>
         <div class="grade-group" id="eib-m-appearance-grade">
@@ -1916,6 +1888,6 @@
 <script src="src/supabase-client.js?v=26"></script>
 <script src="src/db.js?v=21"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=472"></script>
+<script src="src/app.js?v=473"></script>
 </body>
 </html>
