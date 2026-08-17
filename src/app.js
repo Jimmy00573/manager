@@ -10865,6 +10865,15 @@ const RECLASS_REASONS = {
   '기타':     [],
 };
 
+// ── 목록 정렬용 카테고리 순서 (뒤로 갈수록 아래).
+// ★입고내역(_applyIbStatusSort)과 선과처리센터(_renderScTable 기본 정렬)가 공유 — 순서를 바꾸려면 여기만.
+// 목록에 없는 값('선과품' 등)은 indexOf -1 → 맨 뒤로.
+const IB_CAT_SORT_ORDER = ['상품', '대과', '소과', '재선별', '파치'];
+function _ibCatRank(cat) {
+  const i = IB_CAT_SORT_ORDER.indexOf(cat || '상품');
+  return i < 0 ? IB_CAT_SORT_ORDER.length : i;
+}
+
 // ── 목록 필터
 const IB_FILTER_STYLES = {
   '상품':  { bg: '#E3F2FD', color: '#1565C0', border: '#90CAF9' },
@@ -10893,6 +10902,9 @@ function onIbSrcFilterChange() {
 }
 
 function _updateIbFilterBtns() {
+  // 2단(카테고리)은 품목을 고른 뒤에만 노출 — 품목 전체일 땐 정렬만으로 카테고리가 묶여 보인다.
+  const catWrap = document.getElementById('ib-fcat-wrap');
+  if (catWrap) catWrap.style.display = ibFilterProduct ? 'flex' : 'none';   // 인라인 기본이 none이라 'flex'로 명시
   document.querySelectorAll('.ib-fcat').forEach(btn => {
     const active = btn.dataset.cat === ibFilterCat;
     const st = IB_FILTER_STYLES[btn.dataset.cat];
@@ -10931,7 +10943,10 @@ function _applyIbSort(arr) {
   });
 }
 
-// 기본 정렬: 선과 대기(미선과+선과중) 오래된 입고 위 → 그 외(완료·파치·선과품·선과 안 함) 최신 입고 위
+// 기본 정렬 3단: ①선과 대기 여부(대기 위) → ②카테고리 순서(IB_CAT_SORT_ORDER) → ③날짜.
+//   대기는 오래된 입고 위, 그 외(완료·파치·선과품·선과 안 함)는 최신 입고 위.
+// ★①을 0순위로 두는 이유: 카테고리를 1순위로 올리면 '완료된 상품'이 '미완료 대과'보다 위로 온다.
+//   대기 건들 안에서 카테고리 순 → 날짜 순, 그 외 건들도 같은 규칙.
 function _applyIbStatusSort(arr, cntMap) {
   // 선과 대기=0(위) / 그 외=1(아래).
   // ★판정은 _isUnsortedTarget 재사용 — 행 색 로직과 같은 기준이어야 함.
@@ -10940,11 +10955,13 @@ function _applyIbStatusSort(arr, cntMap) {
   const statusRank = (r) => (_isUnsortedTarget(r) && getRemainingCT(r) > 0) ? 0 : 1;
   return [...arr].sort((a, b) => {
     const ra = statusRank(a), rb = statusRank(b);
-    if (ra !== rb) return ra - rb;            // 대기 위, 그 외 아래
+    if (ra !== rb) return ra - rb;            // ① 대기 위, 그 외 아래
+    const ca = _ibCatRank(a.inbound_category), cb = _ibCatRank(b.inbound_category);
+    if (ca !== cb) return ca - cb;            // ② 상품→대과→소과→재선별→파치
     const da = a.date || '', db = b.date || '';
     if (da === db) return 0;
-    if (ra === 0) return da < db ? -1 : 1;    // 대기: 입고날짜 오름차순(오래된 것 위)
-    return da < db ? 1 : -1;                  // 그 외: 입고날짜 내림차순(최신 것 위)
+    if (ra === 0) return da < db ? -1 : 1;    // ③ 대기: 입고날짜 오름차순(오래된 것 위)
+    return da < db ? 1 : -1;                  // ③ 그 외: 입고날짜 내림차순(최신 것 위)
   });
 }
 
@@ -10954,10 +10971,45 @@ function ibSetSearch(val) {
   renderInboundList();
 }
 
-function ibSetProduct(val) {
+// 1단 품목 칩 — 실제 데이터에 있는 품목만 동적 생성(하드코딩 금지, 새 품목 자동 반영).
+// 순서: 건수 많은 순(주력 품목이 앞), 동수면 가나다. 색은 PRODUCT_COLORS 재사용(신규 색 없음).
+function _renderIbProductChips() {
+  const el = document.getElementById('ib-fprod-btns');
+  if (!el) return;
+  const cnt = {};
+  inboundRecords.forEach(r => { if (!r.is_void && r.product) cnt[r.product] = (cnt[r.product] || 0) + 1; });
+  const prods = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, 'ko'));
+  const base = 'font-size:12px;padding:3px 11px;border-radius:12px;cursor:pointer;font-family:inherit';
+  const chip = (val, label, active) => {
+    const c = val ? (PRODUCT_COLORS[val] || null) : null;
+    const st = active
+      ? (c ? `border:1px solid ${c.border};background:${c.bg};color:${c.color};font-weight:700`
+           : 'border:1px solid #555;background:#333;color:#fff;font-weight:700')
+      : 'border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary)';
+    // esc()는 따옴표를 안 바꾸므로 onclick 인자만 별도 이스케이프(품목명에 ' 가 들어와도 안전)
+    const arg = String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button class="ib-fprod" data-prod="${esc(val)}" onclick="setIbProductFilter('${arg}')" style="${base};${st}">${esc(label)}</button>`;
+  };
+  el.innerHTML = chip('', '전체', !ibFilterProduct)
+    + prods.map(p => chip(p, `${p} ${cnt[p]}`, ibFilterProduct === p)).join('');
+}
+
+// 품목 칩/드롭다운 공통 진입점 — 두 경로가 같은 상태(ibFilterProduct)를 쓰도록.
+// 품목 '전체'로 되돌리면 2단 카테고리·3단 출처도 함께 초기화(2단이 숨겨져 보이지 않는 필터가 남는 것 방지).
+function setIbProductFilter(val) {
   ibFilterProduct = val;
+  if (!val) {
+    ibFilterCat = '';
+    ibFilterSrc = '';
+    const srcEl = document.getElementById('ib-filter-src'); if (srcEl) srcEl.value = '';
+  }
   ibPage = 1;
+  const sel = document.getElementById('ib-filter-product'); if (sel) sel.value = val;   // 드롭다운 동기화
   renderInboundList();
+}
+
+function ibSetProduct(val) {
+  setIbProductFilter(val);
 }
 
 function ibSetDriver(val) {
@@ -10968,6 +11020,8 @@ function ibSetDriver(val) {
 
 function ibClearNewFilters() {
   ibFilterProduct = ''; ibFilterDriver = ''; ibFilterDateFrom = ''; ibFilterDateTo = '';
+  ibFilterCat = ''; ibFilterSrc = '';   // 2단·3단은 품목 선택 시에만 보이므로 함께 해제
+  const s = document.getElementById('ib-filter-src'); if (s) s.value = '';
   const p = document.getElementById('ib-filter-product'); if (p) p.value = '';
   const d = document.getElementById('ib-filter-driver'); if (d) d.value = '';
   const f = document.getElementById('ib-date-from'); if (f) f.value = '';
@@ -10980,7 +11034,9 @@ function ibClearNewFilters() {
 function ibClearSingleFilter(type) {
   if (type === 'product') {
     ibFilterProduct = '';
+    ibFilterCat = ''; ibFilterSrc = '';   // 2단·3단은 품목 선택 시에만 보이므로 함께 해제
     const el = document.getElementById('ib-filter-product'); if (el) el.value = '';
+    const s = document.getElementById('ib-filter-src'); if (s) s.value = '';
   } else if (type === 'driver') {
     ibFilterDriver = '';
     const el = document.getElementById('ib-filter-driver'); if (el) el.value = '';
@@ -12734,6 +12790,7 @@ function renderInboundList() {
 
   // 품목 옵션 갱신 + 필터 칩 + 카운트
   _refreshIbProductOptions();
+  _renderIbProductChips();   // 1단 품목 칩(동적)
   _renderIbFilterChips();
   const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
   const fcountEl = document.getElementById('ib-filter-count');
@@ -13359,7 +13416,15 @@ function _renderScTable() {
     });
   } else {
     const [sortCol, sortDir] = _scSort.split('-');
+    // 기본(입고일순)일 때만 카테고리 1순위 → 날짜. 입고내역과 같은 IB_CAT_SORT_ORDER 공유.
+    // ★헤더 클릭(농가·경과·잔여, 또는 날짜 내림차순)은 사용자가 명시적으로 고른 것이라 그대로 둔다.
+    const _scDefaultOrder = sortCol === 'date' && sortDir === 'asc';
     rows.sort((a, b) => {
+      if (_scDefaultOrder) {
+        const cr = _ibCatRank(a.inbound_category) - _ibCatRank(b.inbound_category);
+        if (cr) return cr;
+        return a.date.localeCompare(b.date);
+      }
       let cmp;
       if (sortCol === 'farm')           cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
       else if (sortCol === 'date')      cmp = a.date.localeCompare(b.date);
