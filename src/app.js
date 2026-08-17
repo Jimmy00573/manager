@@ -10398,14 +10398,16 @@ function qualityInline(r, showNums) {
     return t ? `<div style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${t.replace(/"/g, '&quot;')}">${html || t}</div>` : '';   // esc는 따옴표를 안 바꿈 — 속성용만 추가 처리
   };
   // 수치만 있으면 뭐가 당도이고 뭐가 산도인지 알 수 없어 라벨을 붙인다(등급 배지를 없앤 뒤 특히).
-  // 본문은 폭을 아끼려 한 글자('당'·'산', 없앤 등급 배지에서 쓰던 글자라 익숙함) + 값보다 흐린 색,
+  // 본문은 폭을 아끼려 한 글자('당'·'산', 없앤 등급 배지에서 쓰던 글자라 익숙함).
+  // ★라벨은 '이 숫자가 뭔지' 알려주는 역할이라 값보다 또렷해야 한다 — 10px에 흐린 색을 쓰면 묻힌다.
+  //   진한 회색+굵게 + 콜론으로 라벨-값 관계를 드러냄(콜론은 2자로 폭 대비 효과가 큼).
   // 툴팁은 처음 보는 사람도 알 수 있게 풀어서('당도'·'산도'). ★값 없는 항목은 라벨도 안 나오게 조립.
   const numParts = showNums
     ? [['당', '당도', r.brix_range], ['산', '산도', r.acidity_range]].filter(p => p[2])
     : [];
   const numLine = smallLine(
     numParts.map(([, full, v]) => `${full} ${v}`).join(' · '),
-    numParts.map(([sh, , v]) => `<span style="color:#9CA3AF">${sh}</span> ${esc(v)}`).join(' · ')
+    numParts.map(([sh, , v]) => `<span style="color:#6B7280;font-weight:600">${sh}:</span> ${esc(v)}`).join(' · ')
   );
   const sdLine  = smallLine(showNums ? _sizeDistInline(r.size_distribution) : '');
   const chipLine = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
