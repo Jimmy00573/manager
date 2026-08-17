@@ -12803,13 +12803,21 @@ function renderInboundList() {
     const grayStyle = isGrayed ? 'background:#F3F4F6;color:#9CA3AF;' : '';
     // '선과 안 함' 수동 제외 — 파치·선과품은 자동 제외라 토글 노출 안 함(이미 켜진 건은 되돌릴 수 있게 노출)
     const isSrtExcluded  = !!r.exclude_from_unsorted;
+    // 선과 대상이 아닌 건 = 파치(자동, 파치 재고에서 관리) + '선과 안 함'(수동 토글).
+    // 흰색으로 두면 '아직 처리 안 됨'처럼 보이므로 연보라 배경으로 묶는다.
+    // ★판정은 _isUnsortedTarget 재사용 — 색이 목록 판정과 어긋나지 않게. 새 조건 만들지 말 것.
+    // ※선과품은 기존 회색(isGrayed) 표시를 그대로 쓰므로 여기서 뺀다.
+    // ※회색(#F3F4F6)을 안 쓰는 이유: '선과완료'와 같은 색이라 "처리해서 끝난 것"으로 읽힘.
+    //   파치는 완료가 아니라 애초에 선과 대상이 아닌 것.
+    const isNotSrtTarget = !isSorted && !_isUnsortedTarget(r);
     const _srtExcludable = isSrtExcluded || !['선과품', '파치'].includes(r.inbound_category || '상품');
     const srtExBadge = isSrtExcluded
       ? ` <span style="background:#EDE9FE;color:#6D28D9;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;display:inline-block" title="'선과 안 함'으로 지정됨 — 미선과 목록·우선처리 집계에서 제외">🚫 선과 안 함</span>`
       : '';
     const _auditChk = _ibAuditMode && _ibAuditChecked.has(r.id);
+    // 우선순위: 실사 체크 > 완료·선과품(회색) > 선과 대상 아님(연보라) > 우선처리(노랑)
     const _trBaseStyle = _auditChk ? 'background:#DBEAFE;'
-      : (isGrayed ? grayStyle : (isSrtExcluded ? 'background:#FAF9FF;' : priorityStyle));
+      : (isGrayed ? grayStyle : (isNotSrtTarget ? 'background:#FAF9FF;' : priorityStyle));
     const _trStyle = _ibAuditMode ? `${_trBaseStyle}cursor:pointer;` : _trBaseStyle;
     const _trClick = _ibAuditMode ? `onclick="toggleIbAuditCheck('${r.id}')"` : '';
     const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
