@@ -242,6 +242,104 @@ async function saveProductWeights() {
   } catch(e) { alert('저장 오류: ' + e.message); }
 }
 
+// ── 동기화 상태(다중 사용자) ──────────────────────────────────────────────
+// 여러 명이 동시에 쓰는데 자동 갱신이 없어, 남이 바꾼 걸 모르고 낡은 값 위에 판단·저장할
+// 위험이 있었음. ★★화면을 자동으로 갈아끼우면 재고 실사 체크·입력 중인 값이 날아가므로
+//   알림만 하고 실제 갱신(location.reload)은 사용자가 누를 때만 한다. 전역 데이터도 안 건드림.
+// 감지 방법: 테이블별 max(created_at) 1건씩만 조회(목록 재조회 아님).
+//   ※출고·선과·콘테이너는 audit_logs에 안 남아서 해당 테이블을 따로 본다.
+const SYNC_TABLES = ['audit_logs', 'outbound_records', 'sorting_results', 'inbound_records'];
+const SYNC_POLL_MS = 60000;
+let _lastLoadedAt = null;        // 데이터 로드 완료 시각(표시용)
+let _syncBaseline = {};          // 테이블별 '마지막으로 확인한' created_at — 이보다 새 것이 있으면 변경
+let _syncBannerOn = false;
+let _syncSelfWriting = false;    // 본인 쓰기 직후 — 자기 저장으로 배너가 뜨는 것 방지
+let _syncRebaseTimer = null;
+let _syncPollTimer = null;
+
+// 테이블별 최신 created_at 1건. 실패는 undefined로 두고 조용히 넘어감(앱이 멈추면 안 됨).
+async function _syncFetchLatest() {
+  const out = {};
+  await Promise.all(SYNC_TABLES.map(async t => {
+    try {
+      const rows = await sbGet(t, 'select=created_at&order=created_at.desc&limit=1');
+      out[t] = (Array.isArray(rows) && rows[0]?.created_at) || null;
+    } catch (e) { out[t] = undefined; }
+  }));
+  return out;
+}
+
+// 기준선을 현재 서버 최신값으로. 조회 실패한 테이블은 기존 값 유지.
+async function _syncRebase() {
+  const latest = await _syncFetchLatest();
+  SYNC_TABLES.forEach(t => { if (latest[t] !== undefined) _syncBaseline[t] = latest[t]; });
+}
+
+// ★본인 저장으로 배너가 뜨면 못 쓰는 기능이 됨 — 쓰기 직후 기준선을 최신으로 끌어올린다.
+//   sbInsert/sbUpdate/sbDelete/sbDeleteStrict가 호출(연속 저장은 디바운스로 한 번만).
+function _syncMarkSelfWrite() {
+  _syncSelfWriting = true;
+  clearTimeout(_syncRebaseTimer);
+  _syncRebaseTimer = setTimeout(async () => {
+    try { await _syncRebase(); } catch (e) {}
+    _syncSelfWriting = false;
+  }, 1500);
+}
+
+async function _syncPoll() {
+  if (document.hidden) return;      // 백그라운드 탭이면 요청하지 않음
+  if (_syncBannerOn) return;        // 이미 떠 있으면 더 볼 필요 없음
+  if (_syncSelfWriting) return;     // 본인 저장 직후 — 기준선 재설정이 끝나면 재개
+  const latest = await _syncFetchLatest();
+  const changed = SYNC_TABLES.some(t => {
+    const a = latest[t], b = _syncBaseline[t];
+    if (a === undefined || b === undefined || !a) return false;   // 조회 실패·기준선 없음은 판단 보류
+    if (!b) return true;                                          // 기준선이 비었는데 값이 생김
+    return new Date(a) > new Date(b);
+  });
+  if (changed) { _syncBannerOn = true; _syncRenderBar(); }
+}
+
+// 배너 닫기 — 지금 뜬 변경을 '봤다'로 처리하고 기준선을 올린다.
+// ★세션 내내 끄지 않는 이유: 닫는 건 "지금은 새로고침 안 할래"이지 "앞으로 알리지 마"가 아니고,
+//   영구히 끄면 낡은 데이터 경고라는 목적 자체가 사라짐. 다음에 새 변경이 생기면 다시 뜬다.
+function _syncDismissBanner() {
+  _syncBannerOn = false;
+  _syncRenderBar();
+  _syncRebase().catch(() => {});
+}
+
+function _syncRenderBar() {
+  const el = document.getElementById('sync-bar');
+  if (!el) return;
+  const BTN = 'border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;padding:3px 10px';
+  if (_syncBannerOn) {
+    el.style.cssText = 'position:sticky;top:50px;z-index:98;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'
+      + 'padding:7px 14px;background:#FEF3C7;border-bottom:1px solid #FCD34D;font-size:13px;color:#92400E';
+    el.innerHTML = `<span style="flex:1;min-width:180px">🔄 다른 곳에서 변경된 내용이 있습니다. 지금 화면은 예전 데이터입니다.</span>
+      <button onclick="location.reload()" style="${BTN};background:#D97706;color:#fff;font-weight:600">새로고침</button>
+      <button onclick="_syncDismissBanner()" title="닫기(다음 변경 때 다시 알림)" style="${BTN};background:transparent;color:#92400E">✕</button>`;
+  } else {
+    el.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:6px;'
+      + 'padding:3px 12px;background:#FAFAFA;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-secondary)';
+    const hm = _lastLoadedAt
+      ? `${String(_lastLoadedAt.getHours()).padStart(2,'0')}:${String(_lastLoadedAt.getMinutes()).padStart(2,'0')}`
+      : '-';
+    el.innerHTML = `<span>마지막 갱신 ${hm}</span>
+      <button onclick="location.reload()" title="새로고침 — 최신 데이터를 다시 불러옵니다"
+        style="${BTN};background:#fff;border:1px solid var(--border);padding:1px 7px;font-size:12px;line-height:1.4">🔄</button>`;
+  }
+  el.style.display = '';
+}
+
+function _syncStart() {
+  _lastLoadedAt = new Date();
+  _syncRenderBar();
+  _syncRebase().catch(() => {});
+  clearInterval(_syncPollTimer);
+  _syncPollTimer = setInterval(() => { _syncPoll().catch(() => {}); }, SYNC_POLL_MS);
+}
+
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
@@ -336,6 +434,7 @@ async function initApp() {
     setPinMode('staff');
     document.getElementById('pin-screen').style.display = 'flex';
   }
+  _syncStart();   // 마지막 갱신 시각 표시 + 변경 감지 폴링 시작(알림만, 화면은 안 건드림)
   hideLoading();
 }
 

@@ -26,6 +26,13 @@ async function sbGet(table, params = '') {
   return res.json();
 }
 
+// ★본인이 쓴 변경으로 '다른 곳에서 변경됨' 배너가 뜨면 저장할 때마다 배너가 떠서 못 쓰게 된다.
+// 모든 쓰기가 아래 4개 함수를 지나므로, 여기서 한 번만 알려 동기화 기준선을 끌어올린다.
+// app.js보다 먼저 로드되므로 optional call — 정의 전이면 그냥 넘어간다.
+function _sbNotifyWrite() {
+  try { if (typeof _syncMarkSelfWrite === 'function') _syncMarkSelfWrite(); } catch (e) {}
+}
+
 async function sbInsert(table, data) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
@@ -37,6 +44,7 @@ async function sbInsert(table, data) {
   if (!Array.isArray(json) || json.length === 0) {
     throw new Error(`sbInsert: ${table} - 삽입된 행 없음 (RLS 차단 또는 거부)`);
   }
+  _sbNotifyWrite();
   return json;
 }
 
@@ -51,6 +59,7 @@ async function sbUpdate(table, id, data) {
   if (!Array.isArray(json) || json.length === 0) {
     throw new Error(`sbUpdate: ${table} id=${id} - 영향받은 행 없음 (RLS 차단 또는 id 불일치)`);
   }
+  _sbNotifyWrite();
   return json;
 }
 
@@ -60,6 +69,7 @@ async function sbDelete(table, id) {
     headers: SB_HEADERS
   });
   if (!res.ok) throw new Error(await res.text());
+  _sbNotifyWrite();
   return true;
 }
 
@@ -73,6 +83,7 @@ async function sbDeleteStrict(table, filter) {
   if (!Array.isArray(json) || json.length === 0) {
     throw new Error(`sbDeleteStrict: ${table} (${filter}) — 삭제된 행 없음`);
   }
+  _sbNotifyWrite();
   return json.length;
 }
 

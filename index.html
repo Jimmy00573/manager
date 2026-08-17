@@ -288,6 +288,11 @@
   <button class="tsub-btn nbtn" data-sub="chist" onclick="transportSub('chist')">📋 콘테이너 이력</button>
 </div>
 
+<!-- 동기화 상태 줄 — 평소: 마지막 갱신 시각 + 🔄 / 다른 곳 변경 감지 시: 배너로 전환.
+     ★내용·스타일은 _syncRenderBar가 그림. 여러 명이 동시에 쓰는데 자동 갱신이 없어
+     낡은 값 위에 판단·저장하는 위험을 알리는 용도 — 화면을 자동으로 갈아끼우지는 않는다. -->
+<div id="sync-bar" style="display:none"></div>
+
 <div class="main">
 
 <!-- 현황판 -->
@@ -1885,9 +1890,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="src/supabase-client.js?v=26"></script>
+<script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=21"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=475"></script>
+<script src="src/app.js?v=476"></script>
 </body>
 </html>
