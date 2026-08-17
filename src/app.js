@@ -10897,19 +10897,20 @@ function _applyIbSort(arr) {
   });
 }
 
-// 기본 정렬: 진행중(미선과+선과중) 오래된 입고 위 → 완료 최신 입고 위
+// 기본 정렬: 선과 대기(미선과+선과중) 오래된 입고 위 → 그 외(완료·파치·선과품·선과 안 함) 최신 입고 위
 function _applyIbStatusSort(arr, cntMap) {
-  const statusRank = (r) => {
-    const rem = getRemainingCT(r);
-    return rem <= 0 ? 1 : 0;     // 완료=1(아래) / 진행중=0(위)
-  };
+  // 선과 대기=0(위) / 그 외=1(아래).
+  // ★판정은 _isUnsortedTarget 재사용 — 행 색 로직과 같은 기준이어야 함.
+  // 파치·선과품·'선과 안 함'은 선과 대상이 아니므로 잔여가 남아 있어도 '대기'가 아니다.
+  // (파치는 선과를 안 해 잔여가 그대로라, 예전엔 대기로 잡혀 목록 최상단에 왔음)
+  const statusRank = (r) => (_isUnsortedTarget(r) && getRemainingCT(r) > 0) ? 0 : 1;
   return [...arr].sort((a, b) => {
     const ra = statusRank(a), rb = statusRank(b);
-    if (ra !== rb) return ra - rb;            // 진행중 위, 완료 아래
+    if (ra !== rb) return ra - rb;            // 대기 위, 그 외 아래
     const da = a.date || '', db = b.date || '';
     if (da === db) return 0;
-    if (ra === 0) return da < db ? -1 : 1;    // 진행중: 입고날짜 오름차순(오래된 것 위)
-    return da < db ? 1 : -1;                  // 완료: 입고날짜 내림차순(최신 것 위)
+    if (ra === 0) return da < db ? -1 : 1;    // 대기: 입고날짜 오름차순(오래된 것 위)
+    return da < db ? 1 : -1;                  // 그 외: 입고날짜 내림차순(최신 것 위)
   });
 }
 
