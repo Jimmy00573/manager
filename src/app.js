@@ -10392,11 +10392,21 @@ function qualityInline(r, showNums) {
   ].filter(Boolean);
   // 실측 수치(당도·산도 범위)·크기분포는 등급 칩 아래에 한 줄씩 작게.
   // ★열 폭은 그대로 두고 세로로만 늘어나게 — nowrap + ellipsis, 잘린 전체는 title 툴팁으로.
-  const smallLine = raw => {
+  // raw = title(툴팁)용 평문 + 기본 본문. html을 주면 본문만 그것으로 대체(라벨 색 구분용).
+  const smallLine = (raw, html) => {
     const t = esc(raw);
-    return t ? `<div style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${t.replace(/"/g, '&quot;')}">${t}</div>` : '';   // esc는 따옴표를 안 바꿈 — 속성용만 추가 처리
+    return t ? `<div style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${t.replace(/"/g, '&quot;')}">${html || t}</div>` : '';   // esc는 따옴표를 안 바꿈 — 속성용만 추가 처리
   };
-  const numLine = smallLine(showNums ? [r.brix_range, r.acidity_range].filter(Boolean).join(' · ') : '');
+  // 수치만 있으면 뭐가 당도이고 뭐가 산도인지 알 수 없어 라벨을 붙인다(등급 배지를 없앤 뒤 특히).
+  // 본문은 폭을 아끼려 한 글자('당'·'산', 없앤 등급 배지에서 쓰던 글자라 익숙함) + 값보다 흐린 색,
+  // 툴팁은 처음 보는 사람도 알 수 있게 풀어서('당도'·'산도'). ★값 없는 항목은 라벨도 안 나오게 조립.
+  const numParts = showNums
+    ? [['당', '당도', r.brix_range], ['산', '산도', r.acidity_range]].filter(p => p[2])
+    : [];
+  const numLine = smallLine(
+    numParts.map(([, full, v]) => `${full} ${v}`).join(' · '),
+    numParts.map(([sh, , v]) => `<span style="color:#9CA3AF">${sh}</span> ${esc(v)}`).join(' · ')
+  );
   const sdLine  = smallLine(showNums ? _sizeDistInline(r.size_distribution) : '');
   const chipLine = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
   return chipLine + numLine + sdLine;   // 전부 없으면 '' — 기존과 동일(빈 줄 안 만듦)
