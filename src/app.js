@@ -10313,10 +10313,13 @@ function categoryBadge(cat, reclassSource, reclassReason, origDate) {
 
 const DEFECT_QUALITY = new Set(['고산도','저산도','고당도','저당도']);
 const DEFECT_APPEARANCE = new Set(['잔싸비','약해','영덩이파치','부끔','봉나옴','찍힘','변색']);
+// 보관 상태 계열 — 품질(주황)·외관(빨강)과 구분되는 파랑. 부패 전 단계라 회색이면 묻힌다.
+const DEFECT_STATE = new Set(['물기/습']);
 const DEFECT_TIPS = {
   고산도:'산도가 높음', 저산도:'산도가 낮음', 고당도:'당도가 높음', 저당도:'당도가 낮음',
   잔싸비:'잔류 나방 피해', 약해:'약제 피해', 영덩이파치:'꼭지 반대쪽 부패',
-  부끔:'과피 부패', 봉나옴:'봉 돌출', 찍힘:'압상 피해', 변색:'색깔 이상'
+  부끔:'과피 부패', 봉나옴:'봉 돌출', 찍힘:'압상 피해', 변색:'색깔 이상',
+  '물기/습':'비·수분으로 젖은 상태 — 부패 전 우선 선과 필요'
 };
 
 function defectChip(tag) {
@@ -10325,6 +10328,8 @@ function defectChip(tag) {
     ? 'background:#FFF3E0;color:#E65100;border-color:#FFCC80'
     : DEFECT_APPEARANCE.has(t)
     ? 'background:#FFEBEE;color:#C62828;border-color:#EF9A9A'
+    : DEFECT_STATE.has(t)
+    ? 'background:#E3F2FD;color:#1565C0;border-color:#90CAF9'
     : 'background:#F5F5F5;color:#616161;border-color:#E0E0E0';
   const tip = DEFECT_TIPS[t] ? ` title="${DEFECT_TIPS[t]}"` : '';
   return `<span class="defect-chip" style="${style}"${tip}>${esc(t)}</span>`;
