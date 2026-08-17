@@ -4825,6 +4825,37 @@ function _ibcSyncQty(key = 'ib') {
   _ibcQtyHint();
 }
 
+// ── 저장 '전' 콘테이너 입력 검증 (농협 콘테이너는 농협명 필수)
+// ★반드시 입고 저장 전에 호출할 것. _saveInboundContainers는 입고 저장 '후'에 도는데,
+//   거기서 막으면 콘테이너만 조용히 누락된 채 입고가 남는다(이 함수를 만든 이유).
+// ★농협명이 없으면 어느 농협 것인지 알 수 없어 반납 관리(nhf_ins/반납 3분류)가 불가능하고
+//   사후에 찾기도 어려움. 그래서 경고가 아니라 저장 자체를 막는다.
+// 대상: owner==='nhf' && 수량>0 && 농협명 없음. 수량 0인 칩(안 넣은 것)·우리것·농가것은 제외.
+// 특징(feature)은 선택사항 — 검증하지 않는다.
+// 반환: true=통과 / false=중단(알림·빨간 테두리·포커스는 이 함수가 처리)
+function _validateInboundContainers(key = 'ib') {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return true;
+  if (!document.getElementById(ctx.sec)) return true;   // 콘테이너 섹션이 없는 화면
+  const nhfTypes = [...containerTypes].filter(t => t.is_active !== false && t.owner === 'nhf');
+  const bad = [];
+  nhfTypes.forEach(t => {
+    const sel = document.getElementById(`${ctx.pre}-nhf-${t.id}`);
+    if (!sel) return;                                   // 칩이 추가되지 않은 종류
+    const qty = parseInt(document.getElementById(`${ctx.pre}-q-${t.id}`)?.value, 10) || 0;
+    if (qty <= 0) { sel.style.borderColor = '#D1D5DB'; return; }
+    if (sel.value.trim()) { sel.style.borderColor = '#D1D5DB'; return; }
+    bad.push({ t, sel });
+  });
+  if (!bad.length) return true;
+  bad.forEach(b => { b.sel.style.borderColor = '#DC2626'; });
+  alert(`농협 콘테이너(${bad.map(b => b.t.name).join(', ')})의 농협명을 선택하세요.\n\n`
+    + `어느 농협 것인지 모르면 반납 관리가 안 되므로 저장하지 않았습니다.\n`
+    + `농협명을 선택한 뒤 다시 저장해 주세요.`);
+  bad[0].sel.focus();
+  return false;
+}
+
 // 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 3분기:
 //   우리것(ours)→picks 원물수거(회수), 농가것(farm)→own_ins(반납대기), 농협(nhf)→nhf_ins(농협명별).
 // opts(선택): { ctx:'mtx', manualTxId, note, targetType } — 수동 거래(D-1c) 입고 방향에서 재사용.
@@ -4851,6 +4882,7 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
   const pickNote = opts.note || '입고 회수';
   for (const j of jobs) {
     // 농협 콘테이너는 농협명 필수(농협별 관리). 없으면 이 항목만 건너뜀(own 폴백 금지).
+    // ★이중 안전장치 — 정상 흐름에선 저장 전 _validateInboundContainers가 막으므로 여기 도달하지 않음.
     if (j.t.owner === 'nhf' && !j.nhf) {
       alert(`농협 콘테이너(${j.t.name})는 농협명이 필요합니다. 이 항목은 저장하지 않았습니다.`);
       continue;
@@ -8853,6 +8885,8 @@ async function saveManualTx(editId = null) {
   if (!_mtxDir) return alert('입출 구분을 선택해주세요.');
   if (!partner) return alert(`${_mtxDir === 'in' ? '입고처' : '출고처'}를 선택해주세요.`);
   if (!qty || qty <= 0) return alert('수량을 입력해주세요.');
+  // ★입고 방향 콘테이너도 동일 — 농협명 없으면 거래 저장 자체를 중단(저장 후엔 콘테이너만 누락됨)
+  if (_mtxDir === 'in' && !_validateInboundContainers('mtx')) return;
   const rec = {
     date, direction: _mtxDir,
     partner_name: partner,
@@ -14970,6 +15004,7 @@ async function saveInboundSorted(keepOpen) {
     if (ct > 0) sizeEntries.push({ size: sz, ct });
   }));
   if (!sizeEntries.length) return alert('사이즈별 수량을 입력하세요.');
+  if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
   const totalCt = sizeEntries.reduce((s, e) => s + e.ct, 0);
   const grade = gv('ib-sorted-grade') || '일반';   // 한 입고=한 당도(전체 사이즈 적용)
 
@@ -15064,6 +15099,7 @@ async function _addInboundCore(keepOpen) {
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
   // 미선과(원물)는 항상 콘테이너로 입고 — 콘테이너 개수 필수(수량=콘테이너 합산 자동, 수기입력 없음)
   if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.');
+  if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
   const driverSelect = document.getElementById('inv-driver-select');
   const drvSelVal = driverSelect?.value || '';
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
