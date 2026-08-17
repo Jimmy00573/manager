@@ -256,6 +256,7 @@ let _syncBannerOn = false;
 let _syncSelfWriting = false;    // 본인 쓰기 직후 — 자기 저장으로 배너가 뜨는 것 방지
 let _syncRebaseTimer = null;
 let _syncPollTimer = null;
+let _syncAgeTimer = null;        // 경과 시간 문구는 가만 둬도 늙으므로 1분마다 다시 그린다(텍스트만)
 
 // 테이블별 최신 created_at 1건. 실패는 undefined로 두고 조용히 넘어감(앱이 멈추면 안 됨).
 async function _syncFetchLatest() {
@@ -309,6 +310,21 @@ function _syncDismissBanner() {
   _syncRebase().catch(() => {});
 }
 
+// 경과 시간 문구 — 시각(14:32)보다 '얼마나 묵었나'가 바로 읽힌다.
+function _syncAgeText(min) {
+  if (min < 1) return '방금 갱신';
+  if (min < 60) return `${min}분 전 갱신`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h}시간 ${m}분 전 갱신` : `${h}시간 전 갱신`;
+}
+// 오래될수록 강조 — 평소엔 조용하고, 묵을수록 눈에 띄게. 색은 앱에서 쓰던 값 재사용(신규 색 없음).
+function _syncAgeStyle(min) {
+  if (min < 10) return { c: 'var(--text-secondary)', w: '400' };
+  if (min < 30) return { c: '#374151', w: '500' };
+  if (min < 60) return { c: '#C05800', w: '600' };
+  return { c: '#DC2626', w: '700' };
+}
+
 function _syncRenderBar() {
   const el = document.getElementById('sync-bar');
   if (!el) return;
@@ -320,14 +336,20 @@ function _syncRenderBar() {
       <button onclick="location.reload()" style="${BTN};background:#D97706;color:#fff;font-weight:600">새로고침</button>
       <button onclick="_syncDismissBanner()" title="닫기(다음 변경 때 다시 알림)" style="${BTN};background:transparent;color:#92400E">✕</button>`;
   } else {
-    el.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:6px;'
-      + 'padding:3px 12px;background:#FAFAFA;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-secondary)';
+    // ★안쪽 래퍼를 .main과 같은 폭(max-width:1280px + 좌우 16px)으로 맞춘다 —
+    //   sync-bar는 .main 밖이라 그냥 flex-end로 두면 넓은 화면에서 콘텐츠 오른쪽 끝과 어긋난다.
+    el.style.cssText = 'background:#FAFAFA;border-bottom:1px solid var(--border)';
+    const mins = _lastLoadedAt ? Math.max(0, Math.floor((Date.now() - _lastLoadedAt.getTime()) / 60000)) : null;
+    const st = _syncAgeStyle(mins == null ? 0 : mins);
+    const ageTxt = mins == null ? '갱신 시각 알 수 없음' : _syncAgeText(mins);
     const hm = _lastLoadedAt
       ? `${String(_lastLoadedAt.getHours()).padStart(2,'0')}:${String(_lastLoadedAt.getMinutes()).padStart(2,'0')}`
       : '-';
-    el.innerHTML = `<span>마지막 갱신 ${hm}</span>
-      <button onclick="location.reload()" title="새로고침 — 최신 데이터를 다시 불러옵니다"
-        style="${BTN};background:#fff;border:1px solid var(--border);padding:1px 7px;font-size:12px;line-height:1.4">🔄</button>`;
+    el.innerHTML = `<div style="max-width:1280px;margin:0 auto;padding:4px 16px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+        <span title="마지막 갱신 ${hm}" style="font-size:12px;color:${st.c};font-weight:${st.w}">🕐 ${ageTxt}</span>
+        <button onclick="location.reload()" title="최신 데이터를 다시 불러옵니다"
+          style="${BTN};background:#fff;border:1px solid var(--border);color:var(--text)">🔄 새로고침</button>
+      </div>`;
   }
   el.style.display = '';
 }
@@ -338,6 +360,9 @@ function _syncStart() {
   _syncRebase().catch(() => {});
   clearInterval(_syncPollTimer);
   _syncPollTimer = setInterval(() => { _syncPoll().catch(() => {}); }, SYNC_POLL_MS);
+  // 문구·색만 다시 그림 — 데이터 조회도, 화면 갱신도 아님. ★배너가 떠 있으면 덮어쓰지 않는다.
+  clearInterval(_syncAgeTimer);
+  _syncAgeTimer = setInterval(() => { if (!_syncBannerOn) _syncRenderBar(); }, 60000);
 }
 
 // ── 앱 초기화
