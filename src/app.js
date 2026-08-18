@@ -16530,6 +16530,21 @@ async function deleteManualPachi(idsStr, label) {
 }
 
 // ── [화면: 재고관리 > 주스/청] 원물 배치(invJuiceBatches)·제품별 재고. 제품별 이력 모달은 이 섹션 내 histAll 참고.
+// ★주스 배치 표 열 폭 — 품목마다 표를 따로 그리므로 colgroup으로 고정하지 않으면 품목끼리 열이 세로로 어긋난다.
+//   폭 근거: 입고일 '2026-06-11' / 소비기한 '유통 06-11 임박' 뱃지 / 잔량 '2,284병' /
+//            박스 '65박스 + 9병 (박스당 35병)' / 비고 가변 / ⋮ 버튼.
+//   ★_jbMinW = colgroup 폭 합계와 반드시 일치시킬 것 — 어긋나면 모바일에서 열이 비례 축소돼 잘린다.
+const _JB_COLW = { date: 92, expiry: 110, remain: 84, box: 178, note: 120, menu: 36 };
+function _jbMinW(isAdm) {
+  const { date, expiry, remain, box, note, menu } = _JB_COLW;
+  return date + expiry + remain + box + note + (isAdm ? menu : 0);
+}
+function _jbColGroup(isAdm) {
+  const { date, expiry, remain, box, note, menu } = _JB_COLW;
+  return `<colgroup><col style="width:${date}px"><col style="width:${expiry}px"><col style="width:${remain}px">`
+       + `<col style="width:${box}px"><col style="width:${note}px">${isAdm ? `<col style="width:${menu}px">` : ''}</colgroup>`;
+}
+
 function renderJuiceSection() {
   const el = document.getElementById('inv-juice-section');
   if (!el) return;
@@ -16606,12 +16621,13 @@ function renderJuiceSection() {
       const dl = b.expiry_date ? Math.ceil((new Date(b.expiry_date + 'T00:00:00') - today) / 86400000) : null;
       const trBg = dl !== null && dl < 0 ? 'background:#FEF2F2' : dl !== null && dl <= juiceExpiryDays ? 'background:#FFF7F7' : '';
       const stickyBg = dl !== null && dl < 0 ? '#FEF2F2' : dl !== null && dl <= juiceExpiryDays ? '#FFF7F7' : '#fff';
+      const boxTxt = _juiceBoxCell(b, juiceUnitOf(product));   // 순수 텍스트 — 열 폭에 잘리면 title로 전체를 보여준다
       return `<tr style="${trBg}">
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
         <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
-        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">${_juiceBoxCell(b, juiceUnitOf(product))}</td>
-        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF">${esc(b.note || '')}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(boxTxt)}">${esc(boxTxt)}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(b.note || '')}">${esc(b.note || '')}</td>
         ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px;position:sticky;right:0;background:${stickyBg};z-index:1">
           <button class="juice-batch-kebab" onclick="toggleJuiceBatchMenu('${b.id}',this)"
             style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:3px 7px;border-radius:4px;line-height:1" title="메뉴">⋮</button></td>` : ''}
@@ -16653,7 +16669,9 @@ function renderJuiceSection() {
           style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-      <table style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:${_jbMinW(isAdm)}px">
+        ${_jbColGroup(isAdm)}
+        <thead><tr>
         <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB;white-space:nowrap">입고일</th>
         <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB;white-space:nowrap">소비기한</th>
         <th style="padding:5px 10px;text-align:right;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB">잔량</th>
