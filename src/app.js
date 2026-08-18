@@ -1007,6 +1007,7 @@ function popSels() {
     const v = ibf.value;
     ibf.innerHTML = buildSupplierOptHtml();
     ibf.value = v;
+    _ibFarmSyncInput();   // ib-farm은 숨겨져 있고 검색 입력칸이 화면 담당 — 옵션 재구성 후 표시도 맞춘다
   }
   const soFarm = document.getElementById('so-farm');
   if (soFarm) {
@@ -4622,6 +4623,90 @@ function buildSupplierOptHtml() {
   if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
   return html;
 }
+// ── [입고 등록] 공급처 검색형 선택 ─────────────────────────────
+// 농가 55곳 + 거래처라 드롭다운에서 못 찾고, 모바일 비중이 높아 datalist는 조작이 불편하다.
+// ★숨긴 <select id="ib-farm">이 여전히 값의 주인 — 이 UI는 고른 이름을 거기에 넣기만 한다.
+//   덕분에 gv('ib-farm')·popSels()·저장 로직을 하나도 안 건드렸다. 다른 농가 select 10여 곳도 그대로.
+const _ibQ = s => String(s).replace(/'/g, '&#39;');   // onclick 속성용(코드베이스 기존 방식과 동일)
+
+// 최근 입고한 공급처가 위로, 나머지는 가나다순.
+// ★inboundRecords는 재고 탭 진입 시에만 로드된다 — 비어 있으면 조용히 가나다순으로만 정렬(오판 금지).
+function _ibFarmCandidates() {
+  const last = {};
+  (inboundRecords || []).forEach(r => {
+    if (r.is_void || !r.farm_name) return;
+    const d = r.date || '';
+    if (!last[r.farm_name] || d > last[r.farm_name]) last[r.farm_name] = d;
+  });
+  return [
+    ...farms.map(f => ({ name: f.name, kind: '농가' })),
+    ...partners.filter(p => p.is_active !== false).map(p => ({ name: p.name, kind: '거래처' })),
+  ].sort((a, b) => (last[b.name] || '').localeCompare(last[a.name] || '') || a.name.localeCompare(b.name, 'ko'));
+}
+
+function ibFarmRender() {
+  const inp = document.getElementById('ib-farm-search'), box = document.getElementById('ib-farm-list');
+  if (!inp || !box) return;
+  const picked = document.getElementById('ib-farm')?.value || '';
+  const raw = inp.value.trim();
+  const q = raw === picked ? '' : raw;                   // 이미 고른 이름 그대로면 전체 목록을 보여준다(다시 눌러 재검색)
+  const all = _ibFarmCandidates();
+  const hit = q ? all.filter(x => x.name.includes(q)) : all;
+  let html = hit.map(x => `<div class="ibf-row" onclick="ibFarmPick('${_ibQ(x.name)}')">
+      <span>${esc(x.name)}</span>${x.kind === '거래처' ? '<span class="ibf-tag">거래처</span>' : ''}
+    </div>`).join('');
+  // 목록에 정확히 같은 이름이 없을 때만 즉석 등록을 제안(부분일치가 있어도 새 이름일 수 있음)
+  if (q && !all.some(x => x.name === q)) {
+    html += `<div class="ibf-row ibf-new" onclick="ibFarmAddNew('${_ibQ(q)}')">+ "${esc(q)}" 새 농가로 등록</div>`;
+  }
+  box.innerHTML = html || '<div class="ibf-none">등록된 공급처가 없습니다</div>';
+  box.style.display = '';
+}
+
+function ibFarmOpen() {
+  document.getElementById('ib-farm-search')?.select();   // 다시 누르면 전체 선택 → 바로 새로 입력 가능
+  ibFarmRender();
+  // ★모바일: 키보드가 올라오면 화면 아래쪽이 가려진다 → 입력칸을 위로 올려 목록이 보이게.
+  setTimeout(() => document.getElementById('ib-farm-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+}
+function ibFarmClose() { const box = document.getElementById('ib-farm-list'); if (box) box.style.display = 'none'; }
+// 목록 항목 클릭이 blur보다 늦게 잡히므로 조금 기다렸다 닫는다. 고르지 않고 나갔으면 입력칸을 선택값으로 되돌린다.
+function ibFarmBlur() { setTimeout(() => { _ibFarmSyncInput(); ibFarmClose(); }, 200); }
+
+// 숨긴 select의 값을 검색 입력칸에 반영. popSels()가 옵션을 다시 채운 뒤에도 화면이 맞도록 거기서도 부른다.
+function _ibFarmSyncInput() {
+  const sel = document.getElementById('ib-farm'), inp = document.getElementById('ib-farm-search');
+  if (sel && inp) inp.value = sel.value || '';
+}
+
+function ibFarmPick(name) {
+  const sel = document.getElementById('ib-farm');
+  if (sel) {
+    if (![...sel.options].some(o => o.value === name)) sel.innerHTML = buildSupplierOptHtml();   // 방금 추가된 농가 등
+    sel.value = name;
+    sel.dispatchEvent(new Event('change'));   // 나중에 onchange(자동채움 등)가 붙어도 그대로 동작하도록
+  }
+  _ibFarmSyncInput();
+  ibFarmClose();
+}
+
+// 목록에 없는 이름 → 그 자리에서 농가 등록(이름만). 새 농가가 자주 생기는데 매번 농가 관리로 가는 게 번거로워서.
+async function ibFarmAddNew(name) {
+  const nm = (name || '').trim();
+  if (!nm) return;
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 농가를 등록할 수 있습니다.');
+  if (farms.some(f => f.name === nm)) return alert('이미 등록된 농가입니다.');
+  if (partners.some(p => p.name === nm)) return alert(`"${nm}"은(는) 거래처로 등록돼 있습니다. 목록에서 거래처를 선택하세요.`);
+  if (!confirm(`"${nm}"을(를) 새 농가로 등록할까요?\n\n이름만 먼저 등록됩니다. 연락처·주소는 [설정 > 농가 관리]에서 채워주세요.`)) return;
+  try {
+    const row = await dbInsertFarm({ name: nm });
+    farms.push(row);
+    popSels(); renderFarm();          // 농가 목록 갱신 경로 — addFarm과 동일하게 재사용(다른 화면 드롭다운도 같이 갱신됨)
+    ibFarmPick(nm);
+    showToast(`"${nm}" 농가 등록 완료 — 연락처·주소는 농가 관리에서 채워주세요.`);
+  } catch (e) { alert('농가 등록 오류: ' + e.message); }
+}
+
 // ── 입고 당도/산도 범위(드롭다운) — 저장은 'min~max' 문자열(기존 필드·표시 호환) ──
 const _ACID_LVLS = ['1이하', '1.1', '1.2', '1.3', '1.4', '1.5이상'];
 function _rangeComposeBrix(loNumId, loPosId, hiNumId, hiPosId) {   // 당도: [숫자][초중후]~[숫자][초중후]
