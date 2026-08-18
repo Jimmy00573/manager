@@ -4157,6 +4157,10 @@ function renderQualityCriteria() {
     </div>`).join('');
 
   el.innerHTML = `
+    <div style="margin-bottom:12px;padding:8px 12px;background:#F8FAFC;border:1px solid var(--border);border-left:3px solid #94A3B8;border-radius:4px;font-size:12px;color:var(--text-secondary);line-height:1.6">
+      ※ 현재 이 기준은 화면 표시에 사용되지 않습니다. 당도·산도는 수치로만 입력되며,
+      추후 수치에서 등급을 자동 산출하는 데 사용할 예정입니다.
+    </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
         <div style="font-size:14px;font-weight:700">품목별 품질 기준</div>
@@ -11399,6 +11403,13 @@ function setDefectTags(wrapId, val) {
 // ★현재 호출부 없음 — 당도·산도 등급 입력을 제거하면서 그 옆 '?' 힌트도 같이 사라졌다.
 //   품질 기준(quality_criteria)을 상/중/하로 풀어 보여주던 유일한 소비처였음.
 //   설정 > 품질 기준 화면은 그대로 두므로(데이터 보존), 등급을 되살릴 때 바로 다시 쓸 수 있게 남겨둔다.
+//
+// ★향후 계획(삭제 금지) — 등급 개념을 버린 게 아니라 '사람이 고르는 입력'만 없앤 것이다.
+//   지금은 수치(brix_range/acidity_range)만 입력받고, 앞으로는 그 수치를 quality_criteria와
+//   대조해 등급을 **자동 산출**해 표시할 예정. 예) 하우스감귤 brix_high_min=11 → 당 11.5 = '상'.
+//   사람이 고르면 주관이 섞이지만 수치 기준 산출은 일관되므로 이 방향이 더 정확하다.
+//   quality_criteria에는 품목별 기준이 이미 등록돼 있어(노지감귤 10/8, 한라봉 12/10, 카라향 14/12 등)
+//   지우면 다시 채워야 한다. 이 함수·db.js 4함수·설정 화면·grade-tooltip DOM 모두 그대로 유지할 것.
 function showGradeHint(el, field, prefix) {
   const productId = prefix === 'ib' ? 'ib-product' : 'eib-m-product';
   const productName = (document.getElementById(productId)?.value || '').trim();
