@@ -7517,6 +7517,32 @@ function openJuiceBatchEdit(id) {
     : `<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 병수</label>
         <input id="jbe-remaining" type="number" min="0" value="${b.remaining_bottles || 0}"
           style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>`;
+
+  // ── 입고 당시 기록(box_count·total_bottles) — 남은 재고와 성격이 달라 저장에서 분리하고 여기선 읽기 전용으로만 보여준다.
+  //    total_bottles는 덮인 적이 없어 신뢰할 수 있고, box_count는 과거 수정으로 덮인 배치가 있어 검산이 맞을 때만 구성을 보여준다.
+  const inTotal = Number(b.total_bottles) || 0;
+  const inBox   = Number(b.box_count) || 0;
+  const inLoose = inTotal - inBox * perBox;
+  const inConsistent = perBox > 0 && inBox > 0 && inLoose >= 0 && inLoose < perBox;   // 박스×박스당 + 낱개 = 총량이 맞는가
+  const inboundLine = inConsistent
+    ? `입고 당시 <strong>${fmtN(inBox)}박스 × ${fmtN(perBox)}</strong>${inLoose > 0 ? ` + 낱개 <strong>${fmtN(inLoose)}</strong>` : ''} = <strong>${fmtN(inTotal)}${lu}</strong>`
+    : `입고 당시 <strong>${fmtN(inTotal)}${lu}</strong>${inBox > 0 ? ` <span style="color:#C05800">(기록된 ${fmtN(inBox)}박스와 총량이 안 맞음 — 아래에서 바로잡을 수 있습니다)</span>` : ''}`;
+  const inboundSection = `
+    <div style="grid-column:1/-1;padding:8px 10px;background:#F9FAFB;border:1px solid var(--border);border-radius:6px;font-size:12px;color:#6B7280">
+      📦 ${inboundLine}
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer;font-size:11px;color:#9CA3AF">입고 정보 수정 (입력 실수 정정용)</summary>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">입고 박스</label>
+            <input id="jbe-in-box" type="number" min="0" step="1" value="${inBox}"
+              style="width:100%;padding:6px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box;text-align:right"></div>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">입고 총 ${lu}</label>
+            <input id="jbe-in-total" type="number" min="0" step="1" value="${inTotal}"
+              style="width:100%;padding:6px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box;text-align:right"></div>
+        </div>
+        <div style="font-size:10px;color:#9CA3AF;margin-top:4px">※ 이 값은 '받은 기록'입니다. 남은 재고는 위에서 고치세요.</div>
+      </details>
+    </div>`;
   body.innerHTML = `
     <div style="padding:16px 20px">
       <div style="margin-bottom:12px">
@@ -7531,6 +7557,7 @@ function openJuiceBatchEdit(id) {
           <input id="jbe-expiry" type="date" value="${esc(b.expiry_date || '')}"
             style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
         ${remainingSection}
+        ${inboundSection}
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">비고</label>
           <input id="jbe-note" type="text" value="${esc(b.note || '')}"
             style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></div>
@@ -7551,15 +7578,22 @@ async function saveJuiceBatchEdit() {
   const expiry = document.getElementById('jbe-expiry')?.value || null;
   const note   = document.getElementById('jbe-note')?.value?.trim() || null;
   const perBox = parseFloat(document.getElementById('jbe-per-box')?.value) || 0;
-  const boxCount = perBox > 0 ? (parseFloat(document.getElementById('jbe-box')?.value) || 0) : 0;
+  // ★jbe-box는 '남은 박스'다. 예전엔 이 값을 box_count에 그대로 저장해 입고 기록이 매 수정마다 덮였다.
+  //   이제 remaining_bottles 계산에만 쓰고 저장하지 않는다. 입고 기록은 아래 '입고 정보 수정' 값만 반영한다.
+  const remBox = perBox > 0 ? (parseFloat(document.getElementById('jbe-box')?.value) || 0) : 0;
   const remaining = perBox > 0
-    ? boxCount * perBox + (parseFloat(document.getElementById('jbe-loose')?.value) || 0)
+    ? remBox * perBox + (parseFloat(document.getElementById('jbe-loose')?.value) || 0)
     : parseFloat(document.getElementById('jbe-remaining')?.value) || 0;
   if (!id || !indate) return alert('입고일은 필수입니다.');
+  // 입고 기록 — 접힌 영역을 열어 값을 바꿨을 때만 payload에 담는다(평소엔 손대지 않아 원본 보존).
+  const inBoxEl = document.getElementById('jbe-in-box'), inTotEl = document.getElementById('jbe-in-total');
+  const rec = invJuiceBatches.find(x => x.id === id);
+  const inboundPatch = {};
+  if (inBoxEl) { const v = parseFloat(inBoxEl.value) || 0; if (v !== (Number(rec?.box_count) || 0)) inboundPatch.box_count = v || null; }
+  if (inTotEl) { const v = parseFloat(inTotEl.value) || 0; if (v !== (Number(rec?.total_bottles) || 0)) inboundPatch.total_bottles = v || null; }
   try {
-    await sbUpdate('juice_batches', id, { inbound_date: indate, expiry_date: expiry, remaining_bottles: remaining, note, per_box: perBox || null, box_count: boxCount || null });
-    const rec = invJuiceBatches.find(x => x.id === id);
-    if (rec) { rec.inbound_date = indate; rec.expiry_date = expiry; rec.remaining_bottles = remaining; rec.note = note; rec.per_box = perBox || null; rec.box_count = boxCount || null; }
+    await sbUpdate('juice_batches', id, { inbound_date: indate, expiry_date: expiry, remaining_bottles: remaining, note, per_box: perBox || null, ...inboundPatch });
+    if (rec) { rec.inbound_date = indate; rec.expiry_date = expiry; rec.remaining_bottles = remaining; rec.note = note; rec.per_box = perBox || null; Object.assign(rec, inboundPatch); }
     document.getElementById('modal-juice-edit').style.display = 'none';
     showToast('수정 완료');
     renderJuiceSection(); renderInvSummary();
