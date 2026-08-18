@@ -447,6 +447,7 @@ async function initApp() {
   }
 
   setDates();
+  _ibRenderCatQty();   // 입고 카테고리별 수량칸 생성(IB_CAT_SORT_ORDER 순서)
   _fsAttachAll();   // 농가 select들을 검색형으로 전환(숨긴 select가 값의 주인) — popSels보다 먼저 붙여야 첫 동기화가 걸린다
   popSels();
   renderAll();
@@ -3891,6 +3892,7 @@ function updateLocTotal(pfx) {
   if (pfx === 'ib') {
     const qtyEl = document.getElementById('ib-qty');
     if (qtyEl && qtyEl.readOnly) qtyEl.value = total || '';
+    _ibRecalcCatQty();   // 분산저장은 위치 합계가 총 수량 — 상품칸도 따라 간다
   }
 }
 
@@ -5263,6 +5265,64 @@ function _ibcQtyHint() {
 }
 // 콘테이너 합계 → 입고 수량 자동 반영 (미선과 raw만). 선과품은 안 건드림.
 // 입고 모달(key='ib') 전용 — 다른 화면(수동 거래 등)은 수량 자동합산 대상이 아니므로 즉시 반환.
+// ── [입고 등록] 카테고리별 수량 ───────────────────────────────
+// 한 차에 상품·대과·소과·파치가 섞여 오는데 예전엔 카테고리마다 따로 등록해야 했다(같은 정보 3~6번 반복 입력).
+// ★총 수량(ib-qty)은 예전 그대로 자동이다 — 단일저장은 콘테이너 합계, 분산저장은 위치 합계.
+//   그래서 '상품 = 총 수량 − 나머지 카테고리 합계'로 자동 계산한다.
+//   → 카테고리가 하나뿐인 평소에는 예전과 똑같이 아무것도 안 쳐도 되고, 섞였을 때만 작은 수(대과·소과·파치)만 친다.
+//   → 카테고리 합계가 총 수량과 어긋날 일이 구조적으로 없다.
+const _IB_CQ = (i) => document.getElementById('ib-cq-' + i);
+function _ibRenderCatQty() {
+  const wrap = document.getElementById('ib-cat-qty');
+  if (!wrap || wrap.dataset.built) return;
+  wrap.dataset.built = '1';
+  wrap.innerHTML = IB_CAT_SORT_ORDER.map((cat, i) => {
+    const auto = i === 0;   // IB_CAT_SORT_ORDER[0] = '상품' — 나머지를 뺀 값이 들어간다
+    return `<label><span>${esc(cat)}${auto ? ' <small style="font-weight:400;color:#9CA3AF">자동</small>' : ''}</span>
+      <input id="ib-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0"
+        ${auto ? 'readonly title="총 수량에서 나머지를 뺀 값입니다"' : 'oninput="_ibCatQtyChanged()"'}></label>`;
+  }).join('');
+}
+
+// 총 수량(ib-qty)과 나머지 카테고리 입력으로 상품칸·힌트를 다시 계산. 값을 바꾸는 모든 경로에서 부른다.
+function _ibRecalcCatQty() {
+  const wrap = document.getElementById('ib-cat-qty');
+  if (!wrap || !wrap.dataset.built) return;
+  const total = parseInt(document.getElementById('ib-qty')?.value, 10) || 0;
+  let others = 0;
+  for (let i = 1; i < IB_CAT_SORT_ORDER.length; i++) others += parseInt(_IB_CQ(i)?.value, 10) || 0;
+  const main = total - others;
+  const mainEl = _IB_CQ(0);
+  if (mainEl) mainEl.value = main > 0 ? main : (total === 0 && others === 0 ? '' : 0);
+  const hint = document.getElementById('ib-cat-qty-hint');
+  if (hint) {
+    if (others > total) {
+      hint.textContent = `⚠ 나머지 합계 ${fmtN(others)}이(가) 총 수량 ${fmtN(total)}보다 많습니다 — 수량이나 콘테이너를 확인하세요.`;
+      hint.style.color = '#DC2626';
+    } else if (total > 0) {
+      const parts = IB_CAT_SORT_ORDER.map((c, i) => ({ c, q: parseInt(_IB_CQ(i)?.value, 10) || 0 })).filter(x => x.q > 0);
+      hint.textContent = `합계 ${fmtN(total)} CT = ` + (parts.map(x => `${x.c} ${fmtN(x.q)}`).join(' · ') || '-');
+      hint.style.color = 'var(--text-tertiary)';
+    } else { hint.textContent = ''; }
+  }
+  // 재선별 칸에 값이 있으면 기존 재선별 섹션 토글을 그대로 태운다(숨긴 ib-category가 스위치 역할)
+  const reIdx = IB_CAT_SORT_ORDER.indexOf('재선별');
+  const catEl = document.getElementById('ib-category');
+  if (catEl && reIdx >= 0) {
+    const want = (parseInt(_IB_CQ(reIdx)?.value, 10) || 0) > 0 ? '재선별' : '상품';
+    if (catEl.value !== want) { catEl.value = want; onIbCatChange('ib'); }
+  }
+}
+function _ibCatQtyChanged() { _ibRecalcCatQty(); }
+// 입력된 카테고리만 [{cat, qty}]로. 저장·요약 양쪽이 이 하나를 쓴다.
+function _ibCatQtyList() {
+  return IB_CAT_SORT_ORDER.map((cat, i) => ({ cat, qty: parseInt(_IB_CQ(i)?.value, 10) || 0 })).filter(x => x.qty > 0);
+}
+function _ibClearCatQty() {
+  IB_CAT_SORT_ORDER.forEach((_, i) => { const el = _IB_CQ(i); if (el) el.value = ''; });
+  _ibRecalcCatQty();
+}
+
 function _ibcSyncQty(key = 'ib') {
   if (key !== 'ib') return;
   if (_ibKind !== 'raw') { _ibcQtyHint(); return; }   // 선과품은 자동합산 없음
@@ -5272,6 +5332,7 @@ function _ibcSyncQty(key = 'ib') {
   const q = document.getElementById('ib-qty');
   if (q) { q.value = sum > 0 ? sum : ''; if (typeof calcIbWeightFromCt === 'function') calcIbWeightFromCt(); }   // 0이면 비움(콘테이너 제거 시 수량도 0)
   _ibcQtyHint();
+  _ibRecalcCatQty();   // 총 수량이 바뀌면 '상품 = 총 − 나머지'도 다시 계산
 }
 
 // ── 저장 '전' 콘테이너 입력 검증 (농협 콘테이너는 농협명 필수)
@@ -15747,7 +15808,10 @@ async function _addInboundCore(keepOpen) {
   const driverSelect = document.getElementById('inv-driver-select');
   const drvSelVal = driverSelect?.value || '';
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
-  const inbound_category = gv('ib-category') || '상품';
+  // ★카테고리별 수량 — 입력된 것만 각각 inbound_records 행이 된다(한 차에 섞여 온 경우 한 번에 등록).
+  //   상품칸은 '총 수량 − 나머지' 자동이라, 카테고리가 하나뿐이면 예전과 완전히 같은 1행 등록이 된다.
+  const catQtys = _ibCatQtyList();
+  if (!catQtys.length) return alert('수량은 필수입니다.\n콘테이너 개수를 입력하면 상품 수량이 자동으로 채워집니다.');
   // ★당도·산도 등급은 입력 UI 제거로 더 이상 저장하지 않음(신규 null). DB 컬럼·기존 값은 그대로 둔다.
   const appearance_grade = getGradeVal('ib-appearance-grade');
   const defect_tags = getDefectTags('ib-defect-wrap');
@@ -15755,10 +15819,16 @@ async function _addInboundCore(keepOpen) {
   const acidity_range = _rangeComposeAcid('ib-acidity-min', 'ib-acidity-max');
   const size_distribution = _composeSizeDist('ib');
   const is_priority = document.getElementById('ib-priority')?.checked || false;
-  const isReclass = inbound_category === '재선별';
-  const reclassification_source = isReclass ? (document.getElementById('ib-reclass-src')?.value || null) : null;
-  const reclassification_reason = isReclass ? (document.getElementById('ib-reclass-reason')?.value.trim() || null) : null;
-  const original_work_date = isReclass ? (document.getElementById('ib-reclass-date')?.value || null) : null;
+  // 재선별 부가정보 — ★'재선별' 행에만 붙인다(다른 카테고리 행에 새어 들어가지 않게).
+  const hasReclass = catQtys.some(c => c.cat === '재선별');
+  const reclassification_source = hasReclass ? (document.getElementById('ib-reclass-src')?.value || null) : null;
+  const reclassification_reason = hasReclass ? (document.getElementById('ib-reclass-reason')?.value.trim() || null) : null;
+  const original_work_date = hasReclass ? (document.getElementById('ib-reclass-date')?.value || null) : null;
+  const reclassFields = {
+    ...(reclassification_source && { reclassification_source }),
+    ...(reclassification_reason && { reclassification_reason }),
+    ...(original_work_date && { original_work_date }),
+  };
   const note = gv('ib-note') || null;
   const isDistributed = document.getElementById('ib-loc-multi')?.checked;
 
@@ -15775,28 +15845,39 @@ async function _addInboundCore(keepOpen) {
     if (locs.some(l => !l.qty || l.qty <= 0)) return alert('각 위치의 수량을 입력해 주세요.');
     const locNames = locs.map(l => l.name);
     if (new Set(locNames).size !== locNames.length) return alert('중복된 위치가 있습니다.');
+    // ★분산저장 + 카테고리 여러 개는 이번 범위에서 제외 — 위치별 수량과 카테고리별 수량을 어떻게 나눌지가 정해져 있지 않아
+    //   추측으로 배분하면 재고가 어긋난다. 둘 중 하나만 쓰도록 막고, 기존 분산저장 동작은 그대로 둔다.
+    if (catQtys.length > 1) return alert('분산 저장은 카테고리 1개만 등록할 수 있습니다.\n\n카테고리를 나눠 등록하려면 분산 저장을 끄고, 위치는 나중에 이동으로 조정해 주세요.');
   } else {
     qty = parseInt(document.getElementById('ib-qty').value) || 0;
     if (!qty) return alert('수량은 필수입니다.');
+  }
+
+  // ★카테고리 합계 = 총 수량(단일저장이면 콘테이너 합계) 이어야 한다.
+  //   상품칸이 '총 − 나머지' 자동이라 평소엔 늘 맞지만, 나머지가 총량을 넘으면 상품이 0으로 잘려 합이 어긋난다 → 여기서 막는다.
+  if (!isDistributed) {
+    const catSum = catQtys.reduce((s, c) => s + c.qty, 0);
+    if (catSum !== qty) {
+      return alert(`카테고리 합계(${fmtN(catSum)})와 콘테이너 합계(${fmtN(qty)})가 맞지 않습니다.\n\n대과·소과·재선별·파치 수량을 줄이거나 콘테이너 개수를 확인해 주세요.`);
+    }
   }
 
   const ibWeight = parseFloat(document.getElementById('ibp-weight')?.value) || null;
   const ibPrice  = parseFloat(document.getElementById('ibp-price')?.value) || null;
   const ibAmount = (ibWeight && ibPrice) ? ibWeight * ibPrice : null;
 
+  // ★inbound_category는 여기 넣지 않는다 — 카테고리마다 다르므로 저장 루프에서 행별로 붙인다.
+  //   재선별 부가정보(reclassFields)도 '재선별' 행에만 붙는다.
   const commonData = {
     date, product, farm_name,
     note, staff: 'admin',
-    inbound_category, is_priority,
+    is_priority,
     driver_id,
     ...(appearance_grade && { appearance_grade }),
     ...(defect_tags && { defect_tags }),
     ...(brix_range && { brix_range }),
     ...(acidity_range && { acidity_range }),
     ...(size_distribution && { size_distribution }),
-    ...(reclassification_source && { reclassification_source }),
-    ...(reclassification_reason && { reclassification_reason }),
-    ...(original_work_date && { original_work_date }),
     ...(ibWeight && { weight_kg: ibWeight }),
     ...(ibPrice  && { unit_price: ibPrice }),
     ...(ibAmount && { amount: ibAmount }),
@@ -15807,6 +15888,7 @@ async function _addInboundCore(keepOpen) {
     const prodEl = document.getElementById('ib-product'); if (prodEl) prodEl.value = '';
     const catEl = document.getElementById('ib-category'); if (catEl) catEl.value = '상품';
     sv('ib-qty', ''); sv('ib-note', '');
+    _ibClearCatQty();   // 카테고리별 수량칸도 비움(상품 자동값·힌트까지 재계산)
     resetLocForm('ib'); clearGrades('ib');
     ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max',
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
@@ -15825,46 +15907,54 @@ async function _addInboundCore(keepOpen) {
   const doInsert = async () => {
     try {
       const driverObj = driver_id ? (drivers.find(d => d.id === driver_id) || null) : null;
-      let ibId = null;   // 콘테이너 연동용 대표 입고 id(분산이면 첫 건)
-      let _newInbounds = [];   // 방금 저장된 입고 row(들) — 파치 재고 전환용
-      if (isDistributed) {
-        const distribution_group_id = generateUUID();
-        const inserted = [];
-        for (const loc of locs) {
-          const row = await dbInsertInbound({ ...commonData, location: loc.name, quantity: loc.qty, distribution_group_id });
-          inserted.push(row);
+      let ibId = null, ibIdQty = -1;   // 콘테이너 연동용 대표 입고 id
+      // ★카테고리마다 행을 만든다. 카테고리가 하나면 예전과 완전히 같은 1회 등록.
+      for (const c of catQtys) {
+        const catData = { ...commonData, inbound_category: c.cat, ...(c.cat === '재선별' ? reclassFields : {}) };
+        let _newInbounds = [];   // 이 카테고리로 방금 저장된 행(들) — 파치 재고 전환용
+        if (isDistributed) {     // 분산은 위에서 카테고리 1개만 허용 — 이 분기는 최대 1회
+          const distribution_group_id = generateUUID();
+          const inserted = [];
+          for (const loc of locs) {
+            const row = await dbInsertInbound({ ...catData, location: loc.name, quantity: loc.qty, distribution_group_id });
+            inserted.push(row);
+          }
+          inserted.forEach(row => inboundRecords.unshift({ ...row, driver: driverObj }));
+          _newInbounds = inserted;
+        } else {
+          const row = await dbInsertInbound({ ...catData, quantity: c.qty, location: getLocValue('ib') || null });
+          inboundRecords.unshift({ ...row, driver: driverObj });
+          _newInbounds = [row];
         }
-        inserted.forEach(row => inboundRecords.unshift({ ...row, driver: driverObj }));
-        ibId = inserted[0] ? inserted[0].id : null;
-        _newInbounds = inserted;
-      } else {
-        const row = await dbInsertInbound({ ...commonData, quantity: qty, location: getLocValue('ib') || null });
-        inboundRecords.unshift({ ...row, driver: driverObj });
-        ibId = row.id;
-        _newInbounds = [row];
-      }
+        // 대표 id는 '수량이 가장 큰' 카테고리의 첫 행 — 콘테이너는 차 단위라 어딘가 한 곳에만 붙는데,
+        // 입고를 지우면 붙은 콘테이너도 함께 지워진다(cascade). 잘못 넣어 지우는 건 대개 수량 적은 줄이라 큰 쪽에 붙인다.
+        if (c.qty > ibIdQty && _newInbounds[0]) { ibIdQty = c.qty; ibId = _newInbounds[0].id; }
 
-      // 입고 파치 → inventory_records 파치 재고 전환(사용처 지정·출고·실사 가능).
-      // ★inbound_record_id 연결 필수 — 입고 삭제 시 cascade(9482 b-2 자동). usage=null(미지정) → 파치 목록에서 지정.
-      if (inbound_category === '파치') {
-        for (const row of _newInbounds) {
-          if (!row || !row.id || !(Number(row.quantity) > 0)) continue;
-          try {
-            const pr = await sbInsert('inventory_records', {
-              date, farm_name, product, size_code: null,
-              quantity: row.quantity, location: row.location || null,
-              source_type: 'pachi', inbound_record_id: row.id,
-              usage: null, is_void: false, note: null, created_by: 'admin'
-            });
-            if (pr && pr[0]) inventoryRecords.push(pr[0]);
-          } catch (pErr) { console.warn('입고 파치 재고 생성 실패(무시):', pErr.message); }
+        // 입고 파치 → inventory_records 파치 재고 전환(사용처 지정·출고·실사 가능).
+        // ★inbound_record_id 연결 필수 — 입고 삭제 시 cascade(9482 b-2 자동). usage=null(미지정) → 파치 목록에서 지정.
+        if (c.cat === '파치') {
+          for (const row of _newInbounds) {
+            if (!row || !row.id || !(Number(row.quantity) > 0)) continue;
+            try {
+              const pr = await sbInsert('inventory_records', {
+                date, farm_name, product, size_code: null,
+                quantity: row.quantity, location: row.location || null,
+                source_type: 'pachi', inbound_record_id: row.id,
+                usage: null, is_void: false, note: null, created_by: 'admin'
+              });
+              if (pr && pr[0]) inventoryRecords.push(pr[0]);
+            } catch (pErr) { console.warn('입고 파치 재고 생성 실패(무시):', pErr.message); }
+          }
         }
       }
+      // ★콘테이너는 차 단위 — 카테고리 수와 무관하게 반드시 한 번만 저장한다(루프 밖).
+      //   여기서 카테고리마다 부르면 콘테이너가 카테고리 수만큼 중복 기록된다.
       await _saveInboundContainers(date, farm_name, ibId);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
       renderInvSummary(); renderInboundList();
+      const _catSummary = catQtys.map(c => `${c.cat} ${fmtN(c.qty)}`).join(' · ');   // 예: 상품 133 · 대과 4 · 소과 1 · 파치 2
       if (keepOpen) {
         clearFormPartial();
-        showToast('✓ 등록 완료 — 같은 농가/기사로 계속 입력 중');
+        showToast(`✓ ${_catSummary} 등록 — 같은 농가/기사로 계속 입력 중`);
         setTimeout(() => document.getElementById('ib-product')?.focus(), 50);
       } else {
         clearFormPartial();
@@ -15875,23 +15965,25 @@ async function _addInboundCore(keepOpen) {
         if (body) { body.style.maxHeight = body.scrollHeight + 'px'; body._ibOpen = false; requestAnimationFrame(() => requestAnimationFrame(() => { body.style.maxHeight = '0'; })); }
         if (arrow) arrow.style.transform = 'rotate(0deg)';
         if (btn) btn.style.borderBottomColor = 'transparent';
-        showToast('입고가 등록되었습니다.');
+        showToast(`${_catSummary} 등록되었습니다.`);
       }
     } catch(e) { alert('등록 오류: ' + e.message); }
   };
 
-  // 5분 이내 중복 체크 (단일 등록만)
-  if (!isDistributed) {
+  // 5분 이내 중복 체크 (단일 저장 + 카테고리 1개일 때만)
+  // ★카테고리를 여러 개 넣은 등록은 비교할 '한 건의 수량'이 없어 건너뛴다 — 같은 조합을 실수로 두 번 넣기는 어렵다.
+  if (!isDistributed && catQtys.length === 1) {
+    const qty1 = catQtys[0].qty;
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;
     const dups = inboundRecords.filter(r => {
       if (!r.created_at || new Date(r.created_at).getTime() < fiveMinAgo) return false;
-      if (r.farm_name !== farm_name || r.product !== product || r.quantity !== qty) return false;
+      if (r.farm_name !== farm_name || r.product !== product || r.quantity !== qty1) return false;
       if (driver_id) return r.driver_id === driver_id;
       return !r.driver_id;
     });
     if (dups.length) {
       _pendingInboundInsert = doInsert;
-      _showDupWarnModal(dups[0], farm_name, product, qty, driver_id);
+      _showDupWarnModal(dups[0], farm_name, product, qty1, driver_id);
       return;
     }
   }

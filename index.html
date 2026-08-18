@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🍊 시트리앙 통합관리</title>
-  <link rel="stylesheet" href="src/style.css?v=25">
+  <link rel="stylesheet" href="src/style.css?v=26">
 </head>
 <body>
 
@@ -968,15 +968,19 @@
         <div class="ib-section-label">수량 정보</div>
         <div class="form-grid">
           <div class="fg"><label>수량(CT) *</label><input id="ib-qty" type="text" inputmode="numeric" placeholder="콘테이너 합산 자동" readonly title="미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다" style="background:#F3F4F6;cursor:not-allowed"><div id="ib-qty-hint" style="font-size:11px;color:#9CA3AF;margin-top:2px"></div></div>
-          <div class="fg"><label>카테고리</label>
-            <select id="ib-category" onchange="onIbCatChange('ib')">
-              <option value="상품">상품</option>
-              <option value="대과">대과</option>
-              <option value="소과">소과</option>
-              <option value="파치">파치</option>
-              <option value="재선별">재선별 ⭐</option>
-            </select>
-          </div>
+          <!-- ★카테고리 select는 지우지 않고 숨겨 둔다 — onIbCatChange(재선별 섹션 토글)·clearFormPartial 등이 그대로 쓴다.
+               아래 카테고리별 수량칸이 실제 입력이고, 재선별 칸에 값이 들어가면 이 select를 '재선별'로 맞춰 준다. -->
+          <select id="ib-category" style="display:none" onchange="onIbCatChange('ib')">
+            <option value="상품">상품</option><option value="대과">대과</option><option value="소과">소과</option>
+            <option value="파치">파치</option><option value="재선별">재선별 ⭐</option>
+          </select>
+        </div>
+        <!-- 카테고리별 수량 — 한 차에 상품·대과·소과·파치가 섞여 오면 예전엔 카테고리마다 따로 등록해야 했다.
+             칸은 _ibRenderCatQty()가 IB_CAT_SORT_ORDER 순서로 만든다. 상품은 '총 수량 − 나머지'로 자동. -->
+        <div class="fg" style="margin-bottom:12px">
+          <label>카테고리별 수량 <small style="font-weight:400;color:var(--text-tertiary)">— 섞여 왔으면 각각 입력. 상품은 자동 계산</small></label>
+          <div id="ib-cat-qty" class="ib-catq"></div>
+          <div id="ib-cat-qty-hint" style="font-size:11px;margin-top:4px"></div>
         </div>
 
         <!-- 재선별 정보 (조건부) -->
@@ -1908,6 +1912,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=496"></script>
+<script src="src/app.js?v=497"></script>
 </body>
 </html>
