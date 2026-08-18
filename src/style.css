@@ -120,7 +120,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-seri
 .alert-item-name { font-weight: 500; }
 .alert-item-ctypes { display: flex; flex-wrap: wrap; gap: 4px; }
 .ct { font-size: 11px; padding: 1px 7px; border-radius: 12px; font-weight: 500; }
+/* 콘테이너 종류 배지 색 — 클래스 배정은 app.js의 _CT_CLASS 한 곳에서 관리. 아이콘(_CT_ICON)과 계열을 맞춘다.
+   우리것(황제 🟡 / 시트리앙 🟢 / 헌콘테이너 ⬜) — 기존 색 그대로. */
 .cty { background: #FFFDE7; color: #F57F17; } .ctg { background: #E8F5E9; color: #2E7D32; } .cto { background: #F5F5F5; color: #616161; }
+/* 농가것(농가 🟠 / 사각 🔲) · 농협·거래처것(콘테이너 🔵 / 파렛트 🟣) — 전부 앱에서 쓰던 색 재사용(신규 색 없음).
+   .ctf2는 .cto와 같은 무채색이라 명도를 달리해 구분한다. */
+.ctf { background: #FFF3E0; color: #C05800; } .ctf2 { background: #E5E7EB; color: #374151; }
+.ctn { background: #E3F2FD; color: #1565C0; } .ctn2 { background: #EDE7F6; color: #7C3AED; }
 .alert-cnt { font-weight: 500; font-size: 12px; padding: 2px 8px; border-radius: 12px; }
 .alert-cnt.w { background: #FFF3E0; color: #E65100; } .alert-cnt.g { background: #E8F5E9; color: #2E7D32; }
 .alert-none { font-size: 13px; color: var(--text-tertiary); padding: 6px 0; }

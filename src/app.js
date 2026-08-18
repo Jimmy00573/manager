@@ -37,6 +37,16 @@ const _CT_ICON = {
   노랑: '🟡', 초록: '🟢', 헌콘: '⬜',              // 옛 이름 호환(ctNorm 전 값이 들어와도 아이콘이 나오게)
 };
 function _ctIcon(v) { return _CT_ICON[ctNorm(v)] || _CT_ICON[v] || '📦'; }
+
+// ★배지 배경색 클래스 — 아이콘과 짝. 실제 색값은 style.css의 .cty/.ctg/.cto/.ctf/.ctf2/.ctn/.ctn2.
+//   맵에 없으면 빈 클래스(=.ct 기본 스타일만) — 색이 없을 뿐 배지 모양은 유지된다.
+const _CT_CLASS = {
+  황제: 'cty', 시트리앙: 'ctg', 헌콘테이너: 'cto',   // 우리것 — 기존 클래스 그대로
+  농가: 'ctf', 사각: 'ctf2',                          // 농가것
+  콘테이너: 'ctn', 파렛트: 'ctn2',                    // 농협·거래처것
+  노랑: 'cty', 초록: 'ctg', 헌콘: 'cto',              // 옛 이름 호환
+};
+function _ctClass(v) { return _CT_CLASS[ctNorm(v)] || _CT_CLASS[v] || ''; }
 // settings의 초기재고는 종류 이름을 키로 쓴다 — 옛 키가 남아 있어도 0으로 떨어지지 않게 읽는 시점에 흡수.
 function ctNormStockKeys(obj) {
   const out = {};
@@ -2449,7 +2459,7 @@ function getFCtypeMap(fn, targetType) {
 // 종류별 잔여 칩 HTML. targetType 생략=농가(기존 호출 그대로). '농협'/'거래처'면 해당 대상行만 집계.
 function getFCtypes(fn, targetType) {
   const remain = getFCtypeMap(fn, targetType);
-  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); const cl = { 황제: 'cty', 시트리앙: 'ctg', 헌콘테이너: 'cto' }[nt] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${_ctIcon(nt)} ${r}개</span>`; }).filter(Boolean).join('');
+  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); return `<span class="ct ${_ctClass(nt)}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${_ctIcon(nt)} ${r}개</span>`; }).filter(Boolean).join('');
 }
 
 // 회수 모달용 — 실제로 나가 있는 종류만(잔여 1개 이상), 잔여 많은 순.
