@@ -47,6 +47,10 @@ const _CT_CLASS = {
   노랑: 'cty', 초록: 'ctg', 헌콘: 'cto',              // 옛 이름 호환
 };
 function _ctClass(v) { return _CT_CLASS[ctNorm(v)] || _CT_CLASS[v] || ''; }
+
+// 종류 배지(아이콘 + 종류명) — 표의 '종류' 열용. 값이 없으면 빈 배지 대신 '-'.
+// ※ 비슷한 셋의 역할 구분: getFCtypes의 칩은 '아이콘 + 수량', ctB()는 배지 테두리 없는 '아이콘 + 이름'(배차 표 등).
+function _ctBadge(v) { return v ? `<span class="ct ${_ctClass(v)}">${_ctIcon(v)} ${esc(v)}</span>` : '-'; }
 // settings의 초기재고는 종류 이름을 키로 쓴다 — 옛 키가 남아 있어도 0으로 떨어지지 않게 읽는 시점에 흡수.
 function ctNormStockKeys(obj) {
   const out = {};
@@ -2028,7 +2032,7 @@ function renderOwn() {
   const ownRowHtml = (c, pending) => {
     const st = c.st, q = s => String(s).replace(/'/g, "&#39;"), bcl = pending ? 'b-warn' : 'b-ok';
     const retBtn = (pending && isAdm) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${q(c.farm)}','${q(c.ct)}')">↩ 반납</button>` : '';
-    return `<tr${pending ? '' : ' class="dr"'}><td class="nm">${esc(c.farm)}</td><td>${esc(c.ct || '-')}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge ${bcl}">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge ${bcl}">${pending ? '반납필요' : '정산완료'}</span>${retBtn}</td></tr>`;
+    return `<tr${pending ? '' : ' class="dr"'}><td class="nm">${esc(c.farm)}</td><td>${_ctBadge(c.ct)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge ${bcl}">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge ${bcl}">${pending ? '반납필요' : '정산완료'}</span>${retBtn}</td></tr>`;
   };
   let rows = '';
   if (pend.length) rows += pend.map(c => ownRowHtml(c, true)).join('');
@@ -2334,12 +2338,12 @@ function renderNhf() {
   const bg = document.getElementById('nhf-sum-badge');
   if (bg) { bg.textContent = pend.length > 0 ? `반납필요 ${pend.length}건` : '모두 정산완료'; bg.className = 'badge ' + (pend.length > 0 ? 'b-warn' : 'b-ok'); bg.style.textTransform = 'none'; bg.style.fontSize = '11px'; }
   let rows = '';
-  if (pend.length) rows += pend.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${nhf.replace(/'/g,"&#39;")}','${type.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td><span class="badge b-teal">${esc(type)}</span></td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
-  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return `<tr class="dr"><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td><span class="badge b-teal">${esc(type)}</span></td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
+  if (pend.length) rows += pend.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${nhf.replace(/'/g,"&#39;")}','${type.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td>${_ctBadge(type)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
+  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return `<tr class="dr"><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td>${_ctBadge(type)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
   document.getElementById('nhf-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...nhfIns.map(o => ({ ...o, dir: '반입', xt: 'nhfIn', dm: o.goods ? '반입(' + o.goods + ')' : '-' })), ...nhfOuts.map(o => ({ ...o, dir: '반납', xt: 'nhfOut', dm: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('nhf-tb-badge'); if (tb) tb.textContent = all.length + '건';
-  document.getElementById('nhf-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.nhf)}</td><td><span class="badge b-teal">${esc(o.type)}</span></td><td><span class="badge ${o.dir === '반입' ? 'b-teal' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.dm)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button><button class="btn del" onclick="delNhf(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button></td></tr>`).join('') : emr(9, '기록 없음');
+  document.getElementById('nhf-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.nhf)}</td><td>${_ctBadge(o.type)}</td><td><span class="badge ${o.dir === '반입' ? 'b-teal' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.dm)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button><button class="btn del" onclick="delNhf(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button></td></tr>`).join('') : emr(9, '기록 없음');
 }
 
 // ── 기사 화면
@@ -2553,7 +2557,7 @@ function renderContainerHistory() {
   if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>${kindHtml ? ' ' + kindHtml : ''}`;
   const tkBadge = t => t === '농협' ? '<span class="badge b-teal">농협</span>' : t === '거래처' ? '<span class="badge b-info">거래처</span>' : '<span class="badge" style="background:#F3E5F5;color:#6A1B9A">농가</span>';
   tb.innerHTML = list.length ? list.map(r =>
-    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${esc(r.category || '-')}</td><td>${r.qty}</td><td>${esc(r.staff || '—')}</td></tr>`
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.qty}</td><td>${esc(r.staff || '—')}</td></tr>`
   ).join('') : emr(6, '이력 없음');
 }
 
