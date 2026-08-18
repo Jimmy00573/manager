@@ -2401,8 +2401,9 @@ function getFCS(name) {
   const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
   return { out, pk, ret, hold: out - pk - ret };
 }
-// 종류별 잔여 칩 HTML. targetType 생략=농가(기존 호출 그대로). '농협'/'거래처'면 해당 대상行만 집계.
-function getFCtypes(fn, targetType) {
+// 종류별 잔여 수량 맵 {종류: 잔여}. 계산 본문은 getFCtypes에서 그대로 떼어낸 것 — 로직 변경 없음.
+// 칩 HTML(getFCtypes)과 회수 모달의 종류 옵션이 같은 숫자를 보도록 단일 소스로 쓴다.
+function getFCtypeMap(fn, targetType) {
   const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
   // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
   // ★집계 키는 ctNorm으로 통일 — 옛 이름(초록)과 새 이름(시트리앙)이 섞여 있어도 한 종류로 합쳐 칩이 둘로 갈리지 않게.
@@ -2416,7 +2417,7 @@ function getFCtypes(fn, targetType) {
   });
   // 배차·회수 종류 합집합 — 배차만/회수만/둘다 모든 케이스 종류별 표시
   const allTypes = [...new Set([...Object.keys(ob), ...Object.keys(recByType)])];
-  if (!allTypes.length && recNull === 0) return '';   // 배차·회수 아무것도 없으면 표시 없음
+  if (!allTypes.length && recNull === 0) return {};   // 배차·회수 아무것도 없으면 빈 맵
   // 1단계: 종류별 정확 차감(배차량 − 종류별 회수) — 배차 없으면 음수(과회수)로 표시
   const remain = {}; allTypes.forEach(t => { remain[t] = (ob[t] || 0) - (recByType[t] || 0); });
   // 2단계: 미지정(ctype null) 회수는 남은 양에 비율로 분배(하위호환)
@@ -2425,8 +2426,23 @@ function getFCtypes(fn, targetType) {
     const ratio = remTot > 0 ? Math.max(0, (remTot - recNull) / remTot) : 0;
     Object.keys(remain).forEach(t => { if (remain[t] > 0) remain[t] *= ratio; });
   }
+  return remain;
+}
+
+// 종류별 잔여 칩 HTML. targetType 생략=농가(기존 호출 그대로). '농협'/'거래처'면 해당 대상行만 집계.
+function getFCtypes(fn, targetType) {
+  const remain = getFCtypeMap(fn, targetType);
   return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); const cl = { 황제: 'cty', 시트리앙: 'ctg', 헌콘테이너: 'cto' }[nt] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${nt === '황제' ? '🟡' : nt === '시트리앙' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
 }
+
+// 회수 모달용 — 실제로 나가 있는 종류만(잔여 1개 이상), 잔여 많은 순.
+function _qrHoldTypes(fn, targetType) {
+  return Object.entries(getFCtypeMap(fn, targetType))
+    .map(([t, q]) => ({ t, q: Math.round(q) }))
+    .filter(x => x.q > 0)
+    .sort((a, b) => b.q - a.q);
+}
+const _CT_ICON = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜' };
 // 외부行 보유 집계(우리 콘테이너 농협/거래처行) — target_type 일치 picks만: 배출 − (원물수거+빈콘회수). getNhfContainerHold(C-1)를 대상 무관으로 일반화.
 function getTargetContainerHold(name, targetType) {
   const out = picks.filter(p => p.farm === name && p.type === '배출' && p.target_type === targetType).reduce((s, p) => s + p.qty, 0);
@@ -2503,6 +2519,16 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
   document.getElementById('modal-quick-recovery')?.remove();
   const defQty = Math.max(0, Math.round(hold || 0));
+  // ★콘테이너 종류 — 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인).
+  //   그 대상에 실제로 나가 있는 종류만 보여준다(getFCtypeMap = 현황판 칩과 같은 숫자).
+  const holdTypes = _qrHoldTypes(farm, targetType);
+  const single = holdTypes.length === 1;                       // 하나뿐이면 자동 선택
+  const qtyInit = single ? Math.min(defQty || holdTypes[0].q, holdTypes[0].q) : defQty;
+  const ctypeOpts = holdTypes.length
+    ? holdTypes.map(x => `<option value="${esc(x.t)}" data-hold="${x.q}"${single ? ' selected' : ''}>${_CT_ICON[x.t] || '📦'} ${esc(x.t)} — 잔여 ${x.q}개</option>`).join('')
+    // 폴백: 나가 있는 종류를 못 구한 경우. 잔여를 모르므로 자동 선택하지 않고 직접 고르게 한다.
+    : OT.map(t => `<option value="${esc(t)}">${_CT_ICON[t] || '📦'} ${esc(t)}</option>`).join('');
+  const needPick = !single;                                     // 여럿이거나 폴백이면 '선택' 안내 옵션을 앞에 둔다
   const m = document.createElement('div');
   m.id = 'modal-quick-recovery';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
@@ -2516,13 +2542,17 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
         <div style="font-size:12px;color:#6B7280">현재 ${targetType === '농가' ? '농가보유' : targetType + '보유(우리 콘테이너)'} <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">날짜</label>
           <input id="qr-date" type="date" value="${td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">콘테이너 종류 <span style="color:#DC2626">*</span></label>
+          <select id="qr-ctype" onchange="_qrSyncQty()" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+            ${needPick ? '<option value="">선택하세요</option>' : ''}${ctypeOpts}
+          </select></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">구분</label>
           <select id="qr-type" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
             <option value="빈콘회수" selected>⬜ 빈콘회수</option>
             <option value="원물수거">원물수거</option>
           </select></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">수량(개)</label>
-          <input id="qr-qty" type="number" min="1" value="${defQty}" style="${_qrInpS}"></div>
+          <input id="qr-qty" type="number" min="1" value="${qtyInit}" style="${_qrInpS}"></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">담당자(회수한 사람) <span style="color:#DC2626">*</span></label>
           <select id="qr-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
       </div>
@@ -2533,19 +2563,30 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(바깥클릭 X)
   document.body.appendChild(m);
-  setTimeout(() => document.getElementById('qr-qty')?.focus(), 30);
+  setTimeout(() => document.getElementById(single ? 'qr-qty' : 'qr-ctype')?.focus(), 30);
+}
+// 종류를 고르면 수량 기본값을 그 종류 잔여로 맞춘다(부분 회수는 그대로 줄여서 입력 가능).
+function _qrSyncQty() {
+  const sel = document.getElementById('qr-ctype'), q = document.getElementById('qr-qty');
+  if (!sel || !q) return;
+  const hold = sel.selectedOptions[0]?.dataset.hold;
+  if (hold === undefined) return;   // 폴백 옵션(잔여 모름)이면 건드리지 않음
+  q.value = hold;                   // 기본값만 맞춘다 — max는 걸지 않음(과회수는 음수로 표시하는 기존 동작 유지)
 }
 async function saveQuickRecovery(farm, targetType = '농가') {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const date = document.getElementById('qr-date')?.value || td();
   const type = document.getElementById('qr-type')?.value || '빈콘회수';
+  const ctype = document.getElementById('qr-ctype')?.value || '';
   const qty = parseInt(document.getElementById('qr-qty')?.value, 10) || 0;
   const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(필수)
+  // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
+  if (!ctype) return alert('콘테이너 종류를 선택하세요.');
   if (qty <= 0) return alert('수량을 입력하세요.');
   if (!driver) return alert('담당자를 선택하세요.');
   try {
     const car = driver ? (drivers.find(d => d.name === driver)?.car || null) : null;
-    const row = await dbInsertPick({ date, farm, type, qty, driver, car, auto: false, note: '현황판 회수', target_type: targetType });
+    const row = await dbInsertPick({ date, farm, type, qty, ctype, driver, car, auto: false, note: '현황판 회수', target_type: targetType });
     if (row) picks.unshift(row);
     document.getElementById('modal-quick-recovery')?.remove();
     renderDash();   // 농가보유 재계산·현황판 즉시 반영(renderFarmTbl 포함)
