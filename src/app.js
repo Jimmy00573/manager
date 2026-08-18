@@ -4628,26 +4628,48 @@ function _extNameSync(pre) {
 }
 
 // includeEtc=false(기본): 선과 무관 카테고리(NON_SORTING_CATEGORIES) 제외. true: 전체 품목 포함(수동 거래용)
-function buildProductOptgroupHTML(includeEtc = false) {
-  let html = '<option value="">선택</option>';
-  if (!itemDefs.length) return html;
-  // 카테고리 순서: id 순 (categories 배열 순서 유지)
-  categories.forEach(cat => {
-    if (!includeEtc && NON_SORTING_CATEGORIES.includes(cat.name)) return;
-    const catItems = itemDefs
-      .filter(i => i.category_id === cat.id)
-      .sort((a, b) => a.name.localeCompare(b.name));
-    if (!catItems.length) return;
-    html += `<optgroup label="${esc(cat.name)}">`;
-    catItems.forEach(i => { html += `<option value="${esc(i.name)}">${esc(i.name)}</option>`; });
-    html += '</optgroup>';
-  });
-  // 카테고리 미지정 품목 — 카테고리 '기타'와 혼동 방지 위해 라벨은 '미분류'
-  const uncategorized = itemDefs.filter(i => !i.category_id).sort((a, b) => a.name.localeCompare(b.name));
-  if (uncategorized.length) {
-    html += '<optgroup label="미분류">';
-    uncategorized.forEach(i => { html += `<option value="${esc(i.name)}">${esc(i.name)}</option>`; });
-    html += '</optgroup>';
+// opts(선택) — 기존 호출부는 안 넘기므로 동작 100% 동일. 조회 화면 필터용으로만 쓴다:
+//   firstOption : 맨 앞 옵션 HTML 교체(기본 '선택'). 필터는 '전체'가 필요해 빈 문자열로 넘겨 직접 붙인다.
+//   selected    : 이 값과 같은 option에 selected — 다시 그려도 선택이 유지돼야 하는 필터용.
+//   only(Set)   : 이 이름들만 남김(조회 화면은 데이터에 실제로 있는 품목만 보여주는 게 자연스러움).
+//                 ★마스터에 없는 이름도 '기타'로 반드시 내보낸다 — 옵션이 빠지면 그 품목을 못 거른다.
+function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
+  const { firstOption, selected, only } = opts;
+  let html = firstOption !== undefined ? firstOption : '<option value="">선택</option>';
+  const keep = name => !only || only.has(name);
+  const seen = new Set();
+  const optOf = name => {
+    seen.add(name);
+    return `<option value="${esc(name)}"${selected && name === selected ? ' selected' : ''}>${esc(name)}</option>`;
+  };
+  if (itemDefs.length) {
+    // 카테고리 순서: id 순 (categories 배열 순서 유지)
+    categories.forEach(cat => {
+      if (!includeEtc && NON_SORTING_CATEGORIES.includes(cat.name)) return;
+      const catItems = itemDefs
+        .filter(i => i.category_id === cat.id && keep(i.name))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (!catItems.length) return;
+      html += `<optgroup label="${esc(cat.name)}">`;
+      catItems.forEach(i => { html += optOf(i.name); });
+      html += '</optgroup>';
+    });
+    // 카테고리 미지정 품목 — 카테고리 '기타'와 혼동 방지 위해 라벨은 '미분류'
+    const uncategorized = itemDefs.filter(i => !i.category_id && keep(i.name)).sort((a, b) => a.name.localeCompare(b.name));
+    if (uncategorized.length) {
+      html += '<optgroup label="미분류">';
+      uncategorized.forEach(i => { html += optOf(i.name); });
+      html += '</optgroup>';
+    }
+  }
+  // only를 준 경우만 — 마스터에서 지워졌거나 옛 자유입력으로 남은 이름도 누락 없이 담는다.
+  if (only) {
+    const rest = [...only].filter(n => n && !seen.has(n)).sort((a, b) => a.localeCompare(b, 'ko'));
+    if (rest.length) {
+      html += '<optgroup label="기타">';
+      rest.forEach(n => { html += optOf(n); });
+      html += '</optgroup>';
+    }
   }
   return html;
 }
@@ -8554,6 +8576,22 @@ function exportOutboundCSV() {
 }
 
 // ── [화면: 재고관리 > 출고 이력] 입고·출고 통합 거래 목록(_obHistFilter 기간·거래처·구분 필터). CSV는 exportOutboundCSV.
+// 거래내역 정렬용 사이즈 순번 — 순서는 기존 상수(SIZES_감귤류 / SIZES_만감류)를 그대로 따른다(하드코딩 금지).
+//   사이즈 없는 행(입고·수동거래 등 size_code null)은 같은 날짜·품목 안에서 항상 맨 뒤로 일관되게 둔다.
+const _TX_SIZE_LAST = 9999;
+function _txSizeIdx(product, size) {
+  if (!size) return _TX_SIZE_LAST;
+  const isCitrus = (PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류';
+  const list = isCitrus ? SIZES_감귤류 : SIZES_만감류;
+  const i = list.indexOf(size);
+  if (i >= 0) return i;
+  if (!isCitrus) {
+    const su = /^(\d+)수$/.exec(size);   // 상수 범위(5~27수) 밖 N수 — 5를 빼 같은 순번 체계에 이어 붙임
+    if (su) return Number(su[1]) - 5;
+  }
+  return _TX_SIZE_LAST - 1;              // 알 수 없는 사이즈 — 사이즈 있는 행 뒤, 사이즈 없는 행 앞
+}
+
 function renderOutboundHistory() {
   const div = document.getElementById('inv-out-div');
   if (!div) return;
@@ -8600,7 +8638,11 @@ function renderOutboundHistory() {
     if (_obHistFilter.partner && t.partner !== _obHistFilter.partner)    return false;
     if (_obHistFilter.src     && t.source_type !== _obHistFilter.src)    return false;
     return true;
-  }).sort((a,b) => b.date.localeCompare(a.date));
+  }).sort((a,b) =>
+    b.date.localeCompare(a.date)                                                 // 1순위 날짜 내림차순(최신 위) — 기존 그대로
+    || a.product.localeCompare(b.product, 'ko')                                  // 2순위 품목 — 거래처 묶음에선 한 날짜에 품목이 섞여, 사이즈만으로 정렬하면 품목이 뒤엉킨다
+    || (_txSizeIdx(a.product, a.size_code) - _txSizeIdx(b.product, b.size_code)) // 3순위 사이즈(체계 순서)
+  );                                                                             // 위 셋이 모두 같으면 원래 순서 유지(안정 정렬)
 
   const totalIn  = filtered.filter(t => t.kind==='in').reduce((s,t) => s+t.amount, 0);
   const totalOut = filtered.filter(t => t.kind==='out').reduce((s,t) => s+t.amount, 0);
@@ -8705,7 +8747,7 @@ function renderOutboundHistory() {
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">품목</label>
           <select onchange="_obHistFilter.prod=this.value;renderOutboundHistory()" ${sel()}>
             <option value="">전체</option>
-            ${allProds.map(p=>`<option value="${esc(p)}"${_obHistFilter.prod===p?' selected':''}>${esc(p)}</option>`).join('')}
+            ${buildProductOptgroupHTML(true, { firstOption: '', selected: _obHistFilter.prod, only: new Set(allProds) })}
           </select></div>
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">거래처/농가</label>
           <select onchange="_obHistFilter.partner=this.value;renderOutboundHistory()" ${sel()}>
