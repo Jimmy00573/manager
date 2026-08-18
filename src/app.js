@@ -6670,8 +6670,11 @@ function _renderInvAuditBar() {
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
       <button onclick="toggleInvOutboundSub()" title="ON이면 값 있는 셀 클릭 = 부분출고" style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;cursor:pointer;${_invOutboundSub ? 'background:#059669;color:#fff;border:1px solid #059669' : 'background:#fff;color:#059669;border:1px solid #6EE7B7'}">📤 부분출고 ${_invOutboundSub ? 'ON' : 'OFF'}</button>
       <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
+      ${_invOutboundSub ? '' : `
+      <!-- ★부분출고 ON일 땐 안 그린다 — 부분출고는 셀 단위 작업이라 '확인' 개념을 안 쓰고,
+           잘못 누르면 미확인 전량이 한 번에 출고·삭제된다. OFF로 되돌리면 그대로 다시 나온다. -->
       <button onclick="outboundUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}건 출고</button>
-      <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>
+      <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>`}
     </div>
   </div>`;
 }
