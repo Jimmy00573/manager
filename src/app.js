@@ -2777,9 +2777,12 @@ function renderDash() {
   const ownReturns = _ownComboKeys().map(k => {
     const [farm, ct] = _splitOwnKey(k);
     const st = gOwnSt(farm, ct);
-    return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ct || '미지정'} ${st.left}개 반납필요`, total: st.left, bd: getOwnReturnBreakdown(farm, ct) } : null;
+    // ★detail은 이제 HTML(아래 arb 렌더에서 esc 없이 삽입) — 종류명은 _ctBadge가 내부에서 esc 처리한다.
+    //   종류 미지정 조합은 '-'(=_ctBadge의 빈값 반환)보다 '미지정'이 정보가 있어, 색 없는 기본 배지로 남긴다.
+    const ctHtml = ct ? _ctBadge(ct) : '<span class="ct">📦 미지정</span>';
+    return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ctHtml} ${st.left}개 반납필요`, total: st.left, bd: getOwnReturnBreakdown(farm, ct) } : null;
   }).filter(Boolean);
-  const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${type} ${st.left}개 반납필요`, total: st.left, bd: getNhfReturnBreakdown(nhf, type) } : null; }).filter(Boolean);
+  const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${_ctBadge(type)} ${st.left}개 반납필요`, total: st.left, bd: getNhfReturnBreakdown(nhf, type) } : null; }).filter(Boolean);
   const allReturns = [...ownReturns, ...ri];
   const tfTotal = fhi.reduce((s, i) => s + i.total, 0);
   const trTotal = allReturns.reduce((s, i) => s + i.total, 0);
@@ -2827,7 +2830,9 @@ function renderDash() {
           b.holding ? `<span class="ct cty">🟡 원물있음 ${b.holding}</span>` : '',
           b.unknown ? `<span class="ct cto">❓ 확인필요 ${b.unknown}</span>` : ''   // ⬜는 헌콘·빈콘회수 기호라 혼동 → ❓
         ].join('')}</div>` : '';
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888">${esc(i.detail)}</div>${bdHtml}</div>`;
+    // ★i.detail은 esc 없이 넣는다 — _ctBadge로 조립한 HTML이고, 사용자 입력(종류명)은 _ctBadge 내부에서 esc된다.
+    //   detail에 새 값을 넣을 땐 반드시 esc를 거친 것만 넣을 것.
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${i.detail}</div>${bdHtml}</div>`;
   }).join('') : '<div class="alert-none">반납 필요 없음</div>';
   document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 회수필요 ${fhi.length + nhfHoldList.length + ptHoldList.length}곳 · ${tfTotal + nhfHoldTotal + ptHoldTotal}개</span><span class="badge b-ok">🟢 반납필요 ${allReturns.length}건 · ${trTotal}개</span>`;
   renderDDash(); renderFarmTbl();
