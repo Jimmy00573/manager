@@ -7459,6 +7459,32 @@ function calcJbeTotal() {
   if (el) el.textContent = (bx * pb + ls) + (window._jbeUnit || '병');
 }
 
+// ★박스·낱개는 남은 수량(remaining_bottles)에서 파생 계산한다.
+//   box_count는 입고 시점 값이라 출고해도 줄지 않아 '354병인데 124박스'처럼 어긋난다. remaining_bottles가 단일 진실.
+//   목록과 수정 모달이 절대 어긋나지 않도록 양쪽 다 이 함수 하나만 쓴다.
+function _juiceBoxOf(b) {
+  const perBox = Number(b?.per_box) || 0;
+  const rem = Number(b?.remaining_bottles) || 0;
+  if (perBox <= 0) return { box: 0, loose: rem, perBox: 0 };
+  const box = Math.floor(rem / perBox);
+  return { box, loose: rem - box * perBox, perBox };
+}
+
+// 목록 '박스' 열 문구. unit이 '박스'인 품목(가공품)은 남은 수량 자체가 박스 단위로 세어져
+// 다시 per_box로 나누면 이중 계산이 된다 → 그 경우만 기존 표시(입고 시점 box_count)를 유지한다.
+function _juiceBoxCell(b, unit) {
+  if (unit === '박스') {
+    return b.box_count && b.per_box ? `${fmtN(b.box_count)}박스 (박스당 ${fmtN(b.per_box)}${unit})`
+         : b.box_count ? `${fmtN(b.box_count)}박스` : '-';
+  }
+  const { box, loose, perBox } = _juiceBoxOf(b);
+  if (!perBox) return '-';                                   // 박스당 수량 미등록 — 박스로 환산할 근거가 없음
+  const per = ` (박스당 ${fmtN(perBox)}${unit})`;
+  if (box > 0) return `${fmtN(box)}박스${loose > 0 ? ` + ${fmtN(loose)}${unit}` : ''}${per}`;
+  if (loose > 0) return `${fmtN(loose)}${unit}${per}`;        // 한 박스도 안 되는 낱개만 남음
+  return '-';
+}
+
 function openJuiceBatchEdit(id) {
   const b = invJuiceBatches.find(x => x.id === id);
   if (!b) return;
@@ -7467,9 +7493,7 @@ function openJuiceBatchEdit(id) {
   if (!modal || !body) return;
   const u = juiceUnitOf(b.product_name);
   window._jbeUnit = u;
-  const perBox  = b.per_box || 0;
-  const curBox  = perBox > 0 ? Math.floor((b.remaining_bottles || 0) / perBox) : 0;
-  const curLoose = perBox > 0 ? (b.remaining_bottles || 0) - curBox * perBox : (b.remaining_bottles || 0);
+  const { box: curBox, loose: curLoose, perBox } = _juiceBoxOf(b);   // 목록과 같은 계산(_juiceBoxOf 단일 소스)
   const remainingSection = perBox > 0
     ? `<div style="grid-column:1/-1">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 재고</label>
@@ -16551,11 +16575,7 @@ function renderJuiceSection() {
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
         <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
-        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">${
-          b.box_count && b.per_box
-            ? `${fmtN(b.box_count)}박스 (박스당 ${fmtN(b.per_box)}${juiceUnitOf(product)})`
-            : b.box_count ? `${fmtN(b.box_count)}박스` : '-'
-        }</td>
+        <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap">${_juiceBoxCell(b, juiceUnitOf(product))}</td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF">${esc(b.note || '')}</td>
         ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px;position:sticky;right:0;background:${stickyBg};z-index:1">
           <button class="juice-batch-kebab" onclick="toggleJuiceBatchMenu('${b.id}',this)"
