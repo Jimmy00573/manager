@@ -22,9 +22,21 @@ const PER = 7;
 const OT = ['황제', '시트리앙', '헌콘테이너'];
 // 옛 색 이름 → 새 이름 흡수 매핑. 이름만 바뀐 같은 물건이므로 집계는 합쳐야 맞다.
 // DB 일괄 갱신 전후의 과도기, 그리고 옛 백업을 복원했을 때를 위해 남겨 둔다(지우지 말 것).
-// ★'헌콘(농가)'는 농가것이라 대상이 아님 — 접두가 겹치므로 문자열 부분치환 금지, 반드시 완전일치로만 변환.
+// ★반드시 완전일치로만 변환할 것(부분치환 금지) — 예전에 '헌콘(농가)'가 있어 '헌콘' 부분치환이 농가것을 망가뜨렸다.
+//   그 종류는 2026-08-18 DB에서 제거됐지만, 접두가 겹치는 이름이 또 생길 수 있으므로 규칙은 유지한다.
 const OT_ALIAS = { '노랑': '황제', '초록': '시트리앙', '헌콘': '헌콘테이너' };
 function ctNorm(v) { return OT_ALIAS[v] || v || ''; }
+
+// ★콘테이너 종류 아이콘 — 전 화면 단일 소스. 종류가 늘면 여기만 고친다.
+//   실물 색이 각양각색이라 색으로는 못 맞추므로 소유별 계열로 구분한다.
+//   맵에 없는 종류는 _ctIcon()이 📦로 폴백 — 새 종류가 생겨도 아이콘이 비지 않는다.
+const _CT_ICON = {
+  황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜',   // 우리것 — 기존 색 유지(색으로 구분하던 습관 보존)
+  농가: '🟠', 사각: '🔲',                          // 농가것
+  콘테이너: '🔵', 파렛트: '🟣',                    // 농협·거래처것
+  노랑: '🟡', 초록: '🟢', 헌콘: '⬜',              // 옛 이름 호환(ctNorm 전 값이 들어와도 아이콘이 나오게)
+};
+function _ctIcon(v) { return _CT_ICON[ctNorm(v)] || _CT_ICON[v] || '📦'; }
 // settings의 초기재고는 종류 이름을 키로 쓴다 — 옛 키가 남아 있어도 0으로 떨어지지 않게 읽는 시점에 흡수.
 function ctNormStockKeys(obj) {
   const out = {};
@@ -732,16 +744,15 @@ function getSt(t) {
 
 function renderSC() {
   const el = document.getElementById('stock-cards');
-  // 색·아이콘은 그대로 유지(색으로 구분하던 습관 보존) — 키만 새 이름으로.
+  // 배경색 클래스는 그대로 유지(색으로 구분하던 습관 보존). 아이콘은 _CT_ICON 단일 소스.
   const cc = { 황제: 'yellow', 시트리앙: 'green', 헌콘테이너: 'old' };
-  const ic = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜' };
   el.innerHTML = OT.map(t => {
     const st = getSt(t);
     const p = st.init > 0 ? st.remain / st.init : 1;
     const rc = p > 0.3 ? 'sok' : p > 0.1 ? 'swarn' : 'sdanger';
     const ed = stockEd[t];
     return `<div class="stock-card ${cc[t]}">
-      <div style="font-size:20px;margin-bottom:4px">${ic[t]}</div>
+      <div style="font-size:20px;margin-bottom:4px">${_ctIcon(t)}</div>
       <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:500">${t}</div>
       <div class="stock-nums">
         <div class="stock-num-box"><div class="stock-num">${st.init.toLocaleString()}</div><div class="stock-sub">초기재고</div></div>
@@ -1648,8 +1659,8 @@ function onDrvTypeChange() {
 
 // ═══════════════════ 수확·수송 관리 (배차 · 콘테이너 · 현황판 · 수확 캘린더) ═══════════════════
 // ── 배차
-// 옛 이름 키도 남겨 둔다 — 아직 갱신 안 된 행이 있어도 아이콘이 빠지지 않게(표시는 저장된 값 그대로).
-function ctB(v) { const m = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜', 사각: '🔲', 노랑: '🟡', 초록: '🟢', 헌콘: '⬜' }; return `${m[v] || '📦'} ${esc(v || '-')}`; }
+// 아이콘 + 종류명 배지. 아이콘은 _CT_ICON 단일 소스(옛 이름·전 소유 종류 모두 커버), 이름은 저장된 값 그대로 표시.
+function ctB(v) { return `${_ctIcon(v)} ${esc(v || '-')}`; }
 
 async function addDisp() {
   const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv'), qty = n('dp-qty'), ctype = gv('dp-ctype');
@@ -2291,7 +2302,7 @@ function getNhfReturnBreakdown(nhf, type) {
   return _calcReturnBreakdown(nhfIns.filter(o => o.nhf === nhf && o.type === type), st);
 }
 // 농가것(own_ins). 농가 콘테이너도 물건이 담겨 오므로 농협과 같은 기준을 쓴다.
-// ★종류 제한 없음 — 농가것 종류는 사각·농가·헌콘(농가) 등 전부 콘테이너라 농협의 '콘테이너 포함' 조건을 가져오지 않음.
+// ★종류 제한 없음 — 농가것 종류는 사각·농가 등 전부 콘테이너라 농협의 '콘테이너 포함' 조건을 가져오지 않음.
 // ★필터는 gOwnSt의 hit와 동일하게(ctype 생략=농가 전체) — 그래야 ins 합 = st.inQ 가 되어 검산이 성립.
 function getOwnReturnBreakdown(farm, ctype) {
   const st = gOwnSt(farm, ctype);
@@ -2438,7 +2449,7 @@ function getFCtypeMap(fn, targetType) {
 // 종류별 잔여 칩 HTML. targetType 생략=농가(기존 호출 그대로). '농협'/'거래처'면 해당 대상行만 집계.
 function getFCtypes(fn, targetType) {
   const remain = getFCtypeMap(fn, targetType);
-  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); const cl = { 황제: 'cty', 시트리앙: 'ctg', 헌콘테이너: 'cto' }[nt] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${nt === '황제' ? '🟡' : nt === '시트리앙' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
+  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); const cl = { 황제: 'cty', 시트리앙: 'ctg', 헌콘테이너: 'cto' }[nt] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${_ctIcon(nt)} ${r}개</span>`; }).filter(Boolean).join('');
 }
 
 // 회수 모달용 — 실제로 나가 있는 종류만(잔여 1개 이상), 잔여 많은 순.
@@ -2448,7 +2459,6 @@ function _qrHoldTypes(fn, targetType) {
     .filter(x => x.q > 0)
     .sort((a, b) => b.q - a.q);
 }
-const _CT_ICON = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜' };
 
 // 회수 폼(수거·회수 탭 / 빈콘 회수)의 콘테이너 종류 옵션 — 현황판 회수 모달과 같은 소스(_qrHoldTypes)라 숫자가 어긋나지 않는다.
 // ★종류를 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인). 대상이 바뀌면 다시 부를 것.
@@ -2459,7 +2469,7 @@ function _syncRecoveryCtypeSel(selId, farm, targetType = '농가') {
   if (!farm) { sel.innerHTML = '<option value="">농가를 먼저 선택</option>'; sel.disabled = true; return; }
   sel.disabled = false;
   const holds = _qrHoldTypes(farm, targetType);
-  const opt = x => `<option value="${esc(x.t)}">${_CT_ICON[x.t] || '📦'} ${esc(x.t)} — 잔여 ${x.q}개</option>`;
+  const opt = x => `<option value="${esc(x.t)}">${_ctIcon(x.t)} ${esc(x.t)} — 잔여 ${x.q}개</option>`;
   if (holds.length === 1) {
     sel.innerHTML = opt(holds[0]);                     // 하나뿐이면 자동 선택
   } else if (holds.length) {
@@ -2467,7 +2477,7 @@ function _syncRecoveryCtypeSel(selId, farm, targetType = '농가') {
   } else {
     // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 자동 선택하지 않고 전체에서 직접 고르게 한다.
     sel.innerHTML = '<option value="">선택하세요</option>'
-      + OT.map(t => `<option value="${esc(t)}">${_CT_ICON[t] || '📦'} ${esc(t)}</option>`).join('');
+      + OT.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');
   }
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;   // 재구성 전에 고른 값은 유지
 }
@@ -2555,9 +2565,9 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
   const single = holdTypes.length === 1;                       // 하나뿐이면 자동 선택
   const qtyInit = single ? Math.min(defQty || holdTypes[0].q, holdTypes[0].q) : defQty;
   const ctypeOpts = holdTypes.length
-    ? holdTypes.map(x => `<option value="${esc(x.t)}" data-hold="${x.q}"${single ? ' selected' : ''}>${_CT_ICON[x.t] || '📦'} ${esc(x.t)} — 잔여 ${x.q}개</option>`).join('')
+    ? holdTypes.map(x => `<option value="${esc(x.t)}" data-hold="${x.q}"${single ? ' selected' : ''}>${_ctIcon(x.t)} ${esc(x.t)} — 잔여 ${x.q}개</option>`).join('')
     // 폴백: 나가 있는 종류를 못 구한 경우. 잔여를 모르므로 자동 선택하지 않고 직접 고르게 한다.
-    : OT.map(t => `<option value="${esc(t)}">${_CT_ICON[t] || '📦'} ${esc(t)}</option>`).join('');
+    : OT.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');
   const needPick = !single;                                     // 여럿이거나 폴백이면 '선택' 안내 옵션을 앞에 둔다
   const m = document.createElement('div');
   m.id = 'modal-quick-recovery';
@@ -3263,7 +3273,6 @@ function calSelectDay(dStr) {
   const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const d = new Date(dStr + 'T00:00:00');
   document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
-  const ctIcon = {황제:'🟡',시트리앙:'🟢',헌콘테이너:'⬜',노랑:'🟡',초록:'🟢',헌콘:'⬜'};   // 옛 이름 키도 유지 — 미갱신 행 아이콘 누락 방지
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
     // 수확 진행상태(수확전/중/완료) 일정 → harvestRow 재사용(▶시작·✅완료·✏️수정·🗑삭제, 미래 포함)
     if (e.status === '수확전' || e.status === '수확중' || e.status === '수확완료') {
@@ -3277,7 +3286,7 @@ function calSelectDay(dStr) {
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:${bg};margin-bottom:5px;gap:8px;flex-wrap:wrap">
       <div>
         <div style="font-weight:500;font-size:13px">${esc(e.farm)}${e.round?` <span style="font-weight:600;font-size:11px;color:#1565C0">${e.round}차</span>`:''} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
-        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?ctIcon[e.ctype]+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?_ctIcon(e.ctype)+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${detailBtns}</div>
     </div>`;
@@ -3309,7 +3318,6 @@ function renderCalUpcoming() {
   const pages = Math.ceil(total / CAL_PER);
   if (calUpPage > pages) calUpPage = 1;
   const page = all.slice((calUpPage - 1) * CAL_PER, calUpPage * CAL_PER);
-  const ctIcon = {황제:'🟡',시트리앙:'🟢',헌콘테이너:'⬜',노랑:'🟡',초록:'🟢',헌콘:'⬜'};   // 옛 이름 키도 유지 — 미갱신 행 아이콘 누락 방지
   el.innerHTML = page.map(e => {
     const lColor = e.status === '배출완료' ? '#43A047' : e.status === '배차없음' ? '#EF5350' : '#F28C28';
     const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
@@ -4887,7 +4895,7 @@ function renderContainerTypeCfg() {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
         <div style="font-size:14px;font-weight:700">콘테이너 종류 관리</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(황제·시트리앙·헌콘테이너), 농가것(사각·농가·헌콘(농가)), 농협을 구분해 관리합니다. 농가것은 농가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(황제·시트리앙·헌콘테이너), 농가것(사각·농가), 농협을 구분해 관리합니다. 농가것은 농가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.</div>
       </div>
     </div>
     ${isAdm ? `<div style="display:flex;gap:6px;align-items:end;margin-bottom:12px;flex-wrap:wrap">
