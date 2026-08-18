@@ -7470,18 +7470,17 @@ function _juiceBoxOf(b) {
   return { box, loose: rem - box * perBox, perBox };
 }
 
-// 목록 '박스' 열 문구. unit이 '박스'인 품목(가공품)은 남은 수량 자체가 박스 단위로 세어져
-// 다시 per_box로 나누면 이중 계산이 된다 → 그 경우만 기존 표시(입고 시점 box_count)를 유지한다.
+// 목록 '박스' 열 문구. 바깥 묶음은 항상 '박스', 안쪽 낱개 단위만 품목 단위에 맞춘다.
+// ★단위가 '박스'인 품목(가공품): 재고 단위가 '작은박스'이고 per_box는 '아웃박스당 작은박스 수'라
+//   그대로 쓰면 `(박스당 12박스)`처럼 박스가 두 번 나와 뜻이 안 통한다 → 낱개 단위를 '개'로 바꿔 표기한다.
+function _juiceLooseUnit(unit) { return unit === '박스' ? '개' : unit; }
 function _juiceBoxCell(b, unit) {
-  if (unit === '박스') {
-    return b.box_count && b.per_box ? `${fmtN(b.box_count)}박스 (박스당 ${fmtN(b.per_box)}${unit})`
-         : b.box_count ? `${fmtN(b.box_count)}박스` : '-';
-  }
   const { box, loose, perBox } = _juiceBoxOf(b);
   if (!perBox) return '-';                                   // 박스당 수량 미등록 — 박스로 환산할 근거가 없음
-  const per = ` (박스당 ${fmtN(perBox)}${unit})`;
-  if (box > 0) return `${fmtN(box)}박스${loose > 0 ? ` + ${fmtN(loose)}${unit}` : ''}${per}`;
-  if (loose > 0) return `${fmtN(loose)}${unit}${per}`;        // 한 박스도 안 되는 낱개만 남음
+  const lu = _juiceLooseUnit(unit);
+  const per = ` (박스당 ${fmtN(perBox)}${lu})`;
+  if (box > 0) return `${fmtN(box)}박스${loose > 0 ? ` + ${fmtN(loose)}${lu}` : ''}${per}`;
+  if (loose > 0) return `${fmtN(loose)}${lu}${per}`;          // 한 박스도 안 되는 낱개만 남음
   return '-';
 }
 
@@ -7492,7 +7491,9 @@ function openJuiceBatchEdit(id) {
   const body  = document.getElementById('juice-edit-body');
   if (!modal || !body) return;
   const u = juiceUnitOf(b.product_name);
-  window._jbeUnit = u;
+  // 낱개 단위는 목록과 같은 규칙(_juiceLooseUnit) — 가공품처럼 단위가 '박스'면 안쪽은 '개'로 읽어야 뜻이 통한다.
+  const lu = _juiceLooseUnit(u);
+  window._jbeUnit = lu;
   const { box: curBox, loose: curLoose, perBox } = _juiceBoxOf(b);   // 목록과 같은 계산(_juiceBoxOf 단일 소스)
   const remainingSection = perBox > 0
     ? `<div style="grid-column:1/-1">
@@ -7502,16 +7503,16 @@ function openJuiceBatchEdit(id) {
             <input id="jbe-box" type="number" min="0" step="1" value="${curBox}"
               oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
-          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스당 (${u})</label>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">박스당 (${lu})</label>
             <input id="jbe-per-box" type="number" min="0" step="1" value="${perBox}"
               oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
-          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">낱개 (${u})</label>
+          <div><label style="font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px">낱개 (${lu})</label>
             <input id="jbe-loose" type="number" min="0" step="1" value="${curLoose}"
               oninput="calcJbeTotal()"
               style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;text-align:right"></div>
         </div>
-        <div id="jbe-total-preview" style="font-size:12px;color:#6B7280;text-align:right;margin-top:4px">${b.remaining_bottles || 0}${u}</div>
+        <div id="jbe-total-preview" style="font-size:12px;color:#6B7280;text-align:right;margin-top:4px">${b.remaining_bottles || 0}${lu}</div>
       </div>`
     : `<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">남은 병수</label>
         <input id="jbe-remaining" type="number" min="0" value="${b.remaining_bottles || 0}"
