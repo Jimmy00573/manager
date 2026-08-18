@@ -281,10 +281,12 @@
 <!-- 수확·수송 하위 탭 바 -->
 <div id="transport-subtab" class="nav" style="display:none;background:#F0F4FF;border-bottom:2px solid #BFDBFE;padding-left:90px">
   <button class="tsub-btn nbtn" data-sub="dash" onclick="transportSub('dash')">현황판</button>
-  <button class="tsub-btn nbtn" data-sub="disp" onclick="transportSub('disp')">배차·배출</button>
+  <button class="tsub-btn nbtn" data-sub="disp" onclick="transportSub('disp')">콘테이너 배송</button>
   <button class="tsub-btn nbtn" data-sub="ext" onclick="transportSub('ext')">외부 용기</button>
   <button class="tsub-btn nbtn" data-sub="cal" onclick="transportSub('cal')">수확 캘린더</button>
-  <button class="tsub-btn nbtn" data-sub="dboard" onclick="transportSub('dboard')">🚛 기사별 배차</button>
+  <!-- ★기사별 배차: 외부 기사 전제 화면. 현재 기사 9명 전원 '내부'라 숨김(삭제 아님).
+       drivers에 type='외부'가 1명이라도 생기면 _extDrvTabSync()가 자동으로 다시 보여준다. -->
+  <button class="tsub-btn nbtn" data-sub="dboard" onclick="transportSub('dboard')" style="display:none">🚛 기사별 배차</button>
   <button class="tsub-btn nbtn" data-sub="chist" onclick="transportSub('chist')">📋 콘테이너 이력</button>
 </div>
 
@@ -324,7 +326,7 @@
 <!-- 배차·배출 + 수거 -->
 <div id="p-disp" class="panel">
   <div class="disp-tabs" style="margin-bottom:14px">
-    <button class="dtab active" id="ptab-disp" onclick="switchPT('disp')">🚛 배차·배출</button>
+    <button class="dtab active" id="ptab-disp" onclick="switchPT('disp')">🚛 콘테이너 배송</button>
     <button class="dtab" id="ptab-pick" onclick="switchPT('pick')">🔄 수거·회수</button>
   </div>
 
@@ -336,13 +338,17 @@
         <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
         <div class="fg"><label>대상 종류</label><select id="dp-target-type" onchange="refreshDpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
         <div class="fg"><label>대상명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
-        <div class="fg"><label>농가 연락처</label><input id="dp-ftel" class="auto" readonly></div>
-        <div class="fg"><label>주소</label><input id="dp-addr" class="auto" readonly></div>
+        <!-- ★내부 운영 단순화(2026-08-18): 아래 자동 채움 필드는 화면에서만 숨김. DOM은 그대로 둔다 —
+             afF/afD가 값을 채우고 addDisp가 그 값을 저장하며 문자 발송이 참조하므로, 지우면 오류가 난다.
+             외부 기사 도입 시 style="display:none"만 떼면 원복. -->
+        <div class="fg" style="display:none"><label>농가 연락처</label><input id="dp-ftel" class="auto" readonly></div>
+        <div class="fg" style="display:none"><label>주소</label><input id="dp-addr" class="auto" readonly></div>
         <div class="fg"><label>기사 *</label><select id="dp-drv" onchange="afD('dp')"><option value="">선택</option></select></div>
-        <div class="fg"><label>기사 연락처</label><input id="dp-dtel" class="auto" readonly></div>
-        <div class="fg"><label>차량</label><input id="dp-car" class="auto" readonly></div>
-        <div class="fg"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
-        <div class="fg"><label>시간대</label><select id="dp-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
+        <div class="fg" style="display:none"><label>기사 연락처</label><input id="dp-dtel" class="auto" readonly></div>
+        <div class="fg" style="display:none"><label>차량</label><input id="dp-car" class="auto" readonly></div>
+        <!-- 차수·시간대: 15건 중 5건만 입력해 실사용률이 낮아 숨김(값은 빈 채로 저장). 필요해지면 display:none 제거. -->
+        <div class="fg" style="display:none"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
+        <div class="fg" style="display:none"><label>시간대</label><select id="dp-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
         <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
         <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
         <div class="fg"><label>🍊 품목</label><select id="dp-item"></select></div>
@@ -1893,6 +1899,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=21"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=480"></script>
+<script src="src/app.js?v=481"></script>
 </body>
 </html>

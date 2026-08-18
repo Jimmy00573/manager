@@ -1411,7 +1411,16 @@ async function saveDispEdit() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
+// ★'🚛 기사별 배차' 서브탭 표시 여부 — 외부 기사 전제 화면이라 전원 '내부'면 숨긴다(화면·함수는 그대로 보존).
+//   외부 기사를 1명이라도 등록하면 자동으로 다시 나타나므로, 도입 시 코드를 손댈 필요가 없다.
+function _extDrvTabSync() {
+  const btn = document.querySelector('#transport-subtab .tsub-btn[data-sub="dboard"]');
+  if (!btn) return;
+  btn.style.display = drivers.some(d => d.type === '외부') ? '' : 'none';
+}
+
 function renderDrivers() {
+  _extDrvTabSync();
   document.getElementById('drv-cnt').textContent = drivers.length;
   const el = document.getElementById('drv-list');
   if (!drivers.length) { el.innerHTML = '<div class="note">등록된 기사가 없습니다</div>'; return; }
@@ -1530,11 +1539,15 @@ function renderVehicles() {
   }
 
   // 차량 번호 없는 배차 (등록 차량 외)
+  // ★2026-08-18 내부 운영 단순화로 렌더만 끔(코드는 원복용으로 보존).
+  //   배차 15건 전부 차량 미입력이라 이 경고가 상시 떠 경보 피로만 유발했다. 외부 기사·차량 배정을 도입하면
+  //   아래 SHOW_NO_CAR_WARN을 true로 되돌리면 그대로 살아난다.
+  const SHOW_NO_CAR_WARN = false;
   const regNums = new Set(vehicles.map(v => v.number));
   const noCarDisps = dispatches.filter(d => d.status === '배차완료' && (!d.car || !regNums.has(d.car)));
   const noCarEl = document.getElementById('vehicle-no-car-sec');
   if (noCarEl) {
-    if (noCarDisps.length) {
+    if (SHOW_NO_CAR_WARN && noCarDisps.length) {
       noCarEl.style.display = '';
       noCarEl.innerHTML = `<div style="background:#FFF8F0;border:1px solid #FFE0B2;border-radius:10px;padding:10px 14px">
         <div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">⚠️ 차량 미지정 배출 대기 (${noCarDisps.length}건)</div>
@@ -1620,18 +1633,30 @@ async function addDisp() {
   if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
   const d = gd(drv);
   try {
-    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배차완료', target_type: targetType });
+    // ★기본 상태 '배출완료'(2026-08-18) — 내부 직원이 갔다 온 뒤 기록하므로 '배차완료 → 배출완료' 2단계를 타지 않는다.
+    //   (기존 배차 16건 전부 배출완료였음.) 예약 배차가 필요하면 등록 후 '↩ 되돌리기'로 배출 대기로 보낼 수 있다.
+    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배출완료', target_type: targetType });
     dispatches.unshift(row);
     // 수량이 있을 때만 배출 자동 pick 생성(대상 종류 동일하게)
     if (qty > 0) {
       await dbInsertPick({ date, farm, type: '배출', qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
       picks = await dbGetPicks();
     }
+    // ★작업 보고 자동 생성 — 지금까지 '완료' 버튼(updDisp)이 만들어 주던 기록이다(reports 25건 중 24건이 이 경로).
+    //   등록 즉시 완료로 바뀌면서 그 버튼을 안 거치므로, 여기서 같은 조건·같은 내용으로 남긴다(중복 방지 조건도 동일).
+    if (!reports.find(r => r.driver === drv && r.farm === farm && r.date === date)) {
+      const rpt = await dbInsertReport({ driver: drv, date, farm, qty, note: '완료처리' });
+      reports.unshift(rpt);
+    }
     clr('dp-qty', 'dp-note', 'dp-harvest'); sv('dp-ctype', ''); sv('dp-trip', '');
     document.querySelectorAll('.ctype-btn').forEach(b => b.classList.remove('sel'));
     document.getElementById('dp-stw').style.display = 'none';
     openMsg(row);
-    renderSC(); renderDisp(); renderDDash(); renderDash();
+    // ★목록 탭 기본값이 '배출 대기'(_dt2='w')라 그대로 두면 방금 등록한 건이 안 보여 실패한 것처럼 읽힌다.
+    //   등록 결과가 '배출완료'이므로 그 탭으로 옮겨 보여준다(switchDT2가 renderDisp까지 호출).
+    renderSC(); switchDT2('d'); renderDDash(); renderDash();
+    const rc = document.getElementById('rep-cnt');   // 작업 보고 건수 배지 — updDisp와 동일하게 갱신
+    if (rc) rc.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
   } catch (e) { alert('오류: ' + e.message); }
 }
 
