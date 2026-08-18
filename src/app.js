@@ -4632,9 +4632,11 @@ function _extNameSync(pre) {
 //   firstOption : 맨 앞 옵션 HTML 교체(기본 '선택'). 필터는 '전체'가 필요해 빈 문자열로 넘겨 직접 붙인다.
 //   selected    : 이 값과 같은 option에 selected — 다시 그려도 선택이 유지돼야 하는 필터용.
 //   only(Set)   : 이 이름들만 남김(조회 화면은 데이터에 실제로 있는 품목만 보여주는 게 자연스러움).
-//                 ★마스터에 없는 이름도 '기타'로 반드시 내보낸다 — 옵션이 빠지면 그 품목을 못 거른다.
+//                 ★어느 마스터에도 없는 이름도 '마스터 없음'으로 반드시 내보낸다 — 옵션이 빠지면 그 품목을 못 거른다.
+//   extraGroups : [{label, names[]}] — items 밖에서 관리되는 품목군(주스·청·가공품 = juice_product_master).
+//                 items 그룹 다음, '마스터 없음' 앞에 붙는다. items에 중복 등록하지 않으려고 여기서 합친다.
 function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
-  const { firstOption, selected, only } = opts;
+  const { firstOption, selected, only, extraGroups } = opts;
   let html = firstOption !== undefined ? firstOption : '<option value="">선택</option>';
   const keep = name => !only || only.has(name);
   const seen = new Set();
@@ -4662,11 +4664,22 @@ function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
       html += '</optgroup>';
     }
   }
+  // items 밖 마스터 그룹 — 이미 나온 이름은 건너뛰어 중복 옵션을 만들지 않는다.
+  if (Array.isArray(extraGroups)) {
+    extraGroups.forEach(g => {
+      const names = (g.names || []).filter(n => n && keep(n) && !seen.has(n)).sort((a, b) => a.localeCompare(b, 'ko'));
+      if (!names.length) return;
+      html += `<optgroup label="${esc(g.label)}">`;
+      names.forEach(n => { html += optOf(n); });
+      html += '</optgroup>';
+    });
+  }
   // only를 준 경우만 — 마스터에서 지워졌거나 옛 자유입력으로 남은 이름도 누락 없이 담는다.
+  // 라벨이 '기타'면 카테고리 '기타'(풋귤 등)와 한 화면에 두 번 나와 헷갈리므로 '마스터 없음'으로 구분(위 '미분류'와 같은 이유).
   if (only) {
     const rest = [...only].filter(n => n && !seen.has(n)).sort((a, b) => a.localeCompare(b, 'ko'));
     if (rest.length) {
-      html += '<optgroup label="기타">';
+      html += '<optgroup label="마스터 없음">';
       rest.forEach(n => { html += optOf(n); });
       html += '</optgroup>';
     }
@@ -8630,6 +8643,19 @@ function renderOutboundHistory() {
   const allProds    = [...new Set(allTx.map(t => t.product).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
   const allPartners = [...new Set(allTx.map(t => t.partner).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
 
+  // 주스·청·가공품은 items가 아니라 juice_product_master가 관리(마스터 이원화 방지) — 그 category로 그룹을 만들어 넘긴다.
+  // ★invJuiceMasters가 비어 있으면(로드 실패 등) 그룹을 아예 만들지 않고 '마스터 없음'으로 폴백 — 없는 걸 있다고 오판하지 않는다.
+  const JUICE_CAT_ORDER = ['주스', '청', '가공품'];
+  const juiceByCat = {};
+  invJuiceMasters.forEach(m => {
+    if (!m?.category || !m?.product_name) return;
+    (juiceByCat[m.category] = juiceByCat[m.category] || []).push(m.product_name);
+  });
+  const juiceGroups = [
+    ...JUICE_CAT_ORDER,
+    ...Object.keys(juiceByCat).filter(c => !JUICE_CAT_ORDER.includes(c)).sort((a,b) => a.localeCompare(b,'ko')),   // 나중에 분류가 늘어도 빠지지 않게
+  ].filter(c => juiceByCat[c]).map(c => ({ label: c, names: juiceByCat[c] }));
+
   const filtered = allTx.filter(t => {
     if (_obHistFilter.kind    && t.kind !== _obHistFilter.kind)          return false;
     if (_obHistFilter.from    && t.date < _obHistFilter.from)            return false;
@@ -8747,7 +8773,7 @@ function renderOutboundHistory() {
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">품목</label>
           <select onchange="_obHistFilter.prod=this.value;renderOutboundHistory()" ${sel()}>
             <option value="">전체</option>
-            ${buildProductOptgroupHTML(true, { firstOption: '', selected: _obHistFilter.prod, only: new Set(allProds) })}
+            ${buildProductOptgroupHTML(true, { firstOption: '', selected: _obHistFilter.prod, only: new Set(allProds), extraGroups: juiceGroups })}
           </select></div>
         <div><label style="font-size:11px;color:#6B7280;display:block;margin-bottom:3px">거래처/농가</label>
           <select onchange="_obHistFilter.partner=this.value;renderOutboundHistory()" ${sel()}>
