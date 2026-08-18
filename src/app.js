@@ -447,6 +447,7 @@ async function initApp() {
   }
 
   setDates();
+  _fsAttachAll();   // 농가 select들을 검색형으로 전환(숨긴 select가 값의 주인) — popSels보다 먼저 붙여야 첫 동기화가 걸린다
   popSels();
   renderAll();
   
@@ -577,7 +578,7 @@ function checkPin() {
     const wel = document.getElementById('drv-welcome');
     if (wel) wel.innerHTML = `안녕하세요 <strong>${esc(drv.name)}</strong> 기사님! 🍊<br><span style="font-size:12px;color:#888">${typeLabel(drv.type)} · ${esc(drv.car || '차량 미등록')}</span>`;
     const rf = document.getElementById('rp-farm');
-    if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); }
+    if (rf) { rf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => rf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); fsSync('rp-farm'); }
   renderMyAssign(); renderMyPending();
     const myReports = reports.filter(r => r.driver === drv.name);
     const repCnt = document.getElementById('rep-cnt');
@@ -1007,7 +1008,6 @@ function popSels() {
     const v = ibf.value;
     ibf.innerHTML = buildSupplierOptHtml();
     ibf.value = v;
-    _ibFarmSyncInput();   // ib-farm은 숨겨져 있고 검색 입력칸이 화면 담당 — 옵션 재구성 후 표시도 맞춘다
   }
   const soFarm = document.getElementById('so-farm');
   if (soFarm) {
@@ -1045,6 +1045,7 @@ function popSels() {
   popOperatorSel();
   popItemSelects();   // 수확·배차 품목 select(items 마스터) 채우기
   ['ni', 'no'].forEach(pre => _extNameSync(pre));   // 외부용기 반입/반납 이름 드롭다운(소유별) — partners 변경 시 함께 갱신
+  fsSyncAll();   // 검색형으로 바꾼 select들 — 옵션을 다시 채웠으니 입력칸 표시도 맞춘다
 }
 
 function popOperatorSel() {
@@ -1072,7 +1073,7 @@ function setDates() {
 }
 
 function gv(id) { return document.getElementById(id)?.value?.trim() || ''; }
-function sv(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
+function sv(id, val) { const el = document.getElementById(id); if (el) { el.value = val; if (el.dataset.fsOn) fsSync(id); } }   // 검색형 select면 표시도 같이
 function n(id) { return parseInt(document.getElementById(id)?.value) || 0; }
 function clr(...ids) { ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); }
 function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -1420,6 +1421,7 @@ function openDispEdit(id) {
   ef.innerHTML = '<option value="">선택</option>';
   farms.forEach(f => ef.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
   ef.value = d.farm || '';
+  fsSync('ed-farm');   // 검색형 입력칸 표시도 이 값으로(모달은 열 때마다 값이 바뀐다)
   const edrv = document.getElementById('ed-drv');
   edrv.innerHTML = '<option value="">선택</option>';
   drivers.forEach(dr => edrv.innerHTML += `<option value="${esc(dr.name)}">${esc(dr.name)}</option>`);
@@ -3249,6 +3251,7 @@ function renderCal() {
       if (sf) {
         sf.innerHTML = '<option value="">농가 선택</option>';
         farms.forEach(f => sf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+        fsSync('cal-add-farm');
       }
     }
   }
@@ -3527,6 +3530,7 @@ function openHarvestEdit(id) {
   mhf.innerHTML = '<option value="">선택</option>';
   farms.forEach(f => mhf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
   mhf.value = h.farm || '';
+  fsSync('mh-farm');   // 검색형 입력칸 표시도 이 값으로
   document.getElementById('mh-item').value = h.item || '';
   document.getElementById('mh-note').value = h.note || '';
   document.getElementById('mh-round').value = h.round || 1;
@@ -3654,6 +3658,7 @@ async function addHarvest() {
     document.getElementById('cal-add-end').value = '';
     document.getElementById('cal-add-round').value = '1';
     document.getElementById('cal-add-farm').value = '';
+    fsSync('cal-add-farm');
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
     renderCal();
@@ -4623,88 +4628,135 @@ function buildSupplierOptHtml() {
   if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
   return html;
 }
-// ── [입고 등록] 공급처 검색형 선택 ─────────────────────────────
-// 농가 55곳 + 거래처라 드롭다운에서 못 찾고, 모바일 비중이 높아 datalist는 조작이 불편하다.
-// ★숨긴 <select id="ib-farm">이 여전히 값의 주인 — 이 UI는 고른 이름을 거기에 넣기만 한다.
-//   덕분에 gv('ib-farm')·popSels()·저장 로직을 하나도 안 건드렸다. 다른 농가 select 10여 곳도 그대로.
-const _ibQ = s => String(s).replace(/'/g, '&#39;');   // onclick 속성용(코드베이스 기존 방식과 동일)
+// ── 농가·공급처 검색형 선택 (공용) ─────────────────────────────
+// 농가가 55곳이라 드롭다운에서 못 찾고, 모바일 비중이 높아 datalist는 조작이 불편하다.
+// ★설계: 기존 <select>를 숨긴 채 '값의 주인'으로 남긴다. 검색 입력칸은 표시·선택만 하고 고른 이름을 select.value에 넣는다
+//   → gv()·저장·popSels() 등 값을 읽고 쓰는 기존 코드를 하나도 안 고쳐도 된다.
+// ★후보 목록은 그 select의 <option>에서 그대로 뽑는다 — 화면마다 옵션 구성이 달라도(거래처 포함, '(미지정)' 등)
+//   각자 자기 옵션만 보여주고, 옵션을 다시 채우는 기존 코드가 그대로 검색 목록에 반영된다.
+const _fsOpt = {};                                    // selectId -> { allowNew }
+const _fsQ = s => String(s).replace(/'/g, '&#39;');   // onclick 속성용(코드베이스 기존 방식)
 
-// 최근 입고한 공급처가 위로, 나머지는 가나다순.
-// ★inboundRecords는 재고 탭 진입 시에만 로드된다 — 비어 있으면 조용히 가나다순으로만 정렬(오판 금지).
-function _ibFarmCandidates() {
+function attachFarmSearch(selectId, opts = {}) {
+  const sel = document.getElementById(selectId);
+  if (!sel || sel.dataset.fsOn) return;               // 없거나 이미 붙었으면 무시(중복 부착 방지)
+  const host = sel.parentElement; if (!host) return;
+  sel.dataset.fsOn = '1';
+  sel.style.display = 'none';
+  host.classList.add('fs-wrap');                      // ★.fg의 overflow:hidden을 풀어야 목록이 안 잘린다(style.css)
+  _fsOpt[selectId] = { allowNew: !!opts.allowNew };
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.id = selectId + '-fs'; inp.autocomplete = 'off';
+  inp.placeholder = opts.placeholder || '이름 검색';
+  inp.addEventListener('focus', () => fsOpen(selectId));
+  inp.addEventListener('input', () => fsRender(selectId));
+  inp.addEventListener('blur',  () => fsBlur(selectId));
+  const box = document.createElement('div');
+  box.id = selectId + '-fs-list'; box.className = 'fs-list'; box.style.display = 'none';
+  sel.after(inp); inp.after(box);
+  fsSync(selectId);
+}
+
+// 최근 입고한 농가를 위로. ★inboundRecords는 재고 탭 진입 시에만 로드된다 —
+//   비어 있으면 조용히 가나다순만 쓴다(빈 배열을 '기록 없음'으로 오판하지 않기).
+function _fsItems(sel) {
   const last = {};
   (inboundRecords || []).forEach(r => {
     if (r.is_void || !r.farm_name) return;
     const d = r.date || '';
     if (!last[r.farm_name] || d > last[r.farm_name]) last[r.farm_name] = d;
   });
-  return [
-    ...farms.map(f => ({ name: f.name, kind: '농가' })),
-    ...partners.filter(p => p.is_active !== false).map(p => ({ name: p.name, kind: '거래처' })),
-  ].sort((a, b) => (last[b.name] || '').localeCompare(last[a.name] || '') || a.name.localeCompare(b.name, 'ko'));
+  return [...sel.options].filter(o => o.value !== '').map(o => ({
+    name: o.value,
+    group: (o.parentElement && o.parentElement.tagName === 'OPTGROUP') ? o.parentElement.label : '',
+  })).sort((a, b) => (last[b.name] || '').localeCompare(last[a.name] || '') || a.name.localeCompare(b.name, 'ko'));
 }
 
-function ibFarmRender() {
-  const inp = document.getElementById('ib-farm-search'), box = document.getElementById('ib-farm-list');
-  if (!inp || !box) return;
-  const picked = document.getElementById('ib-farm')?.value || '';
+function fsRender(selectId) {
+  const sel = document.getElementById(selectId);
+  const inp = document.getElementById(selectId + '-fs');
+  const box = document.getElementById(selectId + '-fs-list');
+  if (!sel || !inp || !box) return;
   const raw = inp.value.trim();
-  const q = raw === picked ? '' : raw;                   // 이미 고른 이름 그대로면 전체 목록을 보여준다(다시 눌러 재검색)
-  const all = _ibFarmCandidates();
+  const q = raw === sel.value ? '' : raw;             // 이미 고른 이름 그대로면 전체 목록(다시 눌러 재검색)
+  const all = _fsItems(sel);
   const hit = q ? all.filter(x => x.name.includes(q)) : all;
-  let html = hit.map(x => `<div class="ibf-row" onclick="ibFarmPick('${_ibQ(x.name)}')">
-      <span>${esc(x.name)}</span>${x.kind === '거래처' ? '<span class="ibf-tag">거래처</span>' : ''}
+  const blank = [...sel.options].find(o => o.value === '');   // '선택'·'(미지정)' — 선택 해제용으로 맨 위에
+  let html = (!q && blank) ? `<div class="fs-row fs-blank" onclick="fsPick('${selectId}','')">${esc(blank.textContent)}</div>` : '';
+  html += hit.map(x => `<div class="fs-row" onclick="fsPick('${selectId}','${_fsQ(x.name)}')">
+      <span>${esc(x.name)}</span>${x.group && x.group !== '농가' ? `<span class="fs-tag">${esc(x.group)}</span>` : ''}
     </div>`).join('');
-  // 목록에 정확히 같은 이름이 없을 때만 즉석 등록을 제안(부분일치가 있어도 새 이름일 수 있음)
-  if (q && !all.some(x => x.name === q)) {
-    html += `<div class="ibf-row ibf-new" onclick="ibFarmAddNew('${_ibQ(q)}')">+ "${esc(q)}" 새 농가로 등록</div>`;
+  // 즉석 등록은 allowNew를 준 화면에서만, 그리고 똑같은 이름이 없을 때만(부분일치가 있어도 새 이름일 수 있음)
+  if (q && _fsOpt[selectId] && _fsOpt[selectId].allowNew && !all.some(x => x.name === q)) {
+    html += `<div class="fs-row fs-new" onclick="fsAddNew('${selectId}','${_fsQ(q)}')">+ "${esc(q)}" 새 농가로 등록</div>`;
   }
-  box.innerHTML = html || '<div class="ibf-none">등록된 공급처가 없습니다</div>';
+  box.innerHTML = html || '<div class="fs-none">결과 없음</div>';
   box.style.display = '';
 }
 
-function ibFarmOpen() {
-  document.getElementById('ib-farm-search')?.select();   // 다시 누르면 전체 선택 → 바로 새로 입력 가능
-  ibFarmRender();
-  // ★모바일: 키보드가 올라오면 화면 아래쪽이 가려진다 → 입력칸을 위로 올려 목록이 보이게.
-  setTimeout(() => document.getElementById('ib-farm-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+function fsOpen(selectId) {
+  document.getElementById(selectId + '-fs')?.select();   // 다시 누르면 전체 선택 → 바로 새로 입력 가능
+  fsRender(selectId);
+  // ★모바일: 키보드가 올라오면 아래쪽이 가려진다 → 입력칸을 위로 올려 목록이 보이게.
+  //   모달(.modal)처럼 스크롤되는 조상 안에서도 그 컨테이너까지 같이 스크롤된다.
+  setTimeout(() => document.getElementById(selectId)?.parentElement
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
 }
-function ibFarmClose() { const box = document.getElementById('ib-farm-list'); if (box) box.style.display = 'none'; }
-// 목록 항목 클릭이 blur보다 늦게 잡히므로 조금 기다렸다 닫는다. 고르지 않고 나갔으면 입력칸을 선택값으로 되돌린다.
-function ibFarmBlur() { setTimeout(() => { _ibFarmSyncInput(); ibFarmClose(); }, 200); }
+function fsClose(selectId) { const box = document.getElementById(selectId + '-fs-list'); if (box) box.style.display = 'none'; }
+// 목록 클릭이 blur보다 늦게 잡히므로 조금 기다렸다 닫는다. 고르지 않고 나갔으면 입력칸을 선택값으로 되돌린다.
+function fsBlur(selectId) { setTimeout(() => { fsSync(selectId); fsClose(selectId); }, 200); }
 
-// 숨긴 select의 값을 검색 입력칸에 반영. popSels()가 옵션을 다시 채운 뒤에도 화면이 맞도록 거기서도 부른다.
-function _ibFarmSyncInput() {
-  const sel = document.getElementById('ib-farm'), inp = document.getElementById('ib-farm-search');
+// 숨긴 select의 값을 입력칸에 반영. 값을 코드로 바꾸는 곳(모달 열기 등)에서 반드시 불러야 표시가 맞는다.
+function fsSync(selectId) {
+  const sel = document.getElementById(selectId), inp = document.getElementById(selectId + '-fs');
   if (sel && inp) inp.value = sel.value || '';
 }
+function fsSyncAll() { Object.keys(_fsOpt).forEach(fsSync); }
 
-function ibFarmPick(name) {
-  const sel = document.getElementById('ib-farm');
+function fsPick(selectId, name) {
+  const sel = document.getElementById(selectId);
   if (sel) {
-    if (![...sel.options].some(o => o.value === name)) sel.innerHTML = buildSupplierOptHtml();   // 방금 추가된 농가 등
+    // 방금 등록한 농가처럼 아직 option에 없으면 붙여 준다(화면마다 옵션 구성이 달라 여기서 일반적으로 처리).
+    if (name && ![...sel.options].some(o => o.value === name)) {
+      sel.insertAdjacentHTML('beforeend', `<option value="${esc(name)}">${esc(name)}</option>`);
+    }
     sel.value = name;
-    sel.dispatchEvent(new Event('change'));   // 나중에 onchange(자동채움 등)가 붙어도 그대로 동작하도록
+    sel.dispatchEvent(new Event('change'));   // 나중에 onchange가 붙어도 그대로 동작하도록
   }
-  _ibFarmSyncInput();
-  ibFarmClose();
+  fsSync(selectId);
+  fsClose(selectId);
 }
 
 // 목록에 없는 이름 → 그 자리에서 농가 등록(이름만). 새 농가가 자주 생기는데 매번 농가 관리로 가는 게 번거로워서.
-async function ibFarmAddNew(name) {
+async function fsAddNew(selectId, name) {
   const nm = (name || '').trim();
   if (!nm) return;
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 농가를 등록할 수 있습니다.');
   if (farms.some(f => f.name === nm)) return alert('이미 등록된 농가입니다.');
   if (partners.some(p => p.name === nm)) return alert(`"${nm}"은(는) 거래처로 등록돼 있습니다. 목록에서 거래처를 선택하세요.`);
-  if (!confirm(`"${nm}"을(를) 새 농가로 등록할까요?\n\n이름만 먼저 등록됩니다. 연락처·주소는 [설정 > 농가 관리]에서 채워주세요.`)) return;
+  if (!confirm(`"${nm}"을(를) 새 농가로 등록할까요?
+
+이름만 먼저 등록됩니다. 연락처·주소는 [설정 > 농가 관리]에서 채워주세요.`)) return;
   try {
     const row = await dbInsertFarm({ name: nm });
     farms.push(row);
-    popSels(); renderFarm();          // 농가 목록 갱신 경로 — addFarm과 동일하게 재사용(다른 화면 드롭다운도 같이 갱신됨)
-    ibFarmPick(nm);
+    popSels(); renderFarm();          // 농가 목록 갱신 경로 — addFarm과 동일하게 재사용(다른 화면 드롭다운도 같이 갱신)
+    fsPick(selectId, nm);
     showToast(`"${nm}" 농가 등록 완료 — 연락처·주소는 농가 관리에서 채워주세요.`);
   } catch (e) { alert('농가 등록 오류: ' + e.message); }
+}
+
+// 검색형으로 바꿀 select 목록.
+// ★onchange가 걸린 5곳(dp·pk·oi·oo·bk)은 아직 대상 아님 — 자동채움·종류 동기화가 얽혀 있어 다음 단계로.
+// ★allowNew(즉석 농가 등록)는 새 농가가 실제로 생기는 입고 등록에만 — 수정 모달에서 새 농가를 만드는 건 맞지 않다.
+function _fsAttachAll() {
+  attachFarmSearch('ib-farm',      { allowNew: true, placeholder: '이름 검색 (예: 강, 정영)' });
+  attachFarmSearch('mp-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('mh-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('ed-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('cal-add-farm', { placeholder: '농가 검색' });
+  attachFarmSearch('rp-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('wa-farm',      { placeholder: '농가 검색 (선택 안 함 가능)' });
 }
 
 // ── 입고 당도/산도 범위(드롭다운) — 저장은 'min~max' 문자열(기존 필드·표시 호환) ──

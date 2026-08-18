@@ -225,19 +225,20 @@ textarea {
 }
 .fg input.auto { background: #E3F2FD; color: #1565C0; }
 
-/* 입고 등록 공급처 검색 — 목록은 입력칸 바로 아래 절대배치. 모바일 터치 우선(행 최소 42px). */
-/* ★.fg의 overflow:hidden이 목록을 잘라내므로 이 항목만 풀어준다(다른 .fg는 그대로). */
-#ib-farm-wrap { position: relative; overflow: visible; }
-#ib-farm-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 60; margin-top: 2px;
+/* 농가·공급처 검색형 선택(attachFarmSearch) — 목록은 입력칸 바로 아래 절대배치. 모바일 터치 우선(행 최소 42px). */
+/* ★.fg의 overflow:hidden이 목록을 잘라내므로 붙은 항목만 풀어준다(다른 .fg는 그대로). */
+.fs-wrap { position: relative; overflow: visible; }
+.fs-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 60; margin-top: 2px;
   background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
   max-height: min(46vh, 300px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-#ib-farm-list .ibf-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+.fs-list .fs-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   min-height: 42px; padding: 8px 12px; font-size: 14px; cursor: pointer; border-bottom: 1px solid #F3F4F6; }
-#ib-farm-list .ibf-row:last-child { border-bottom: none; }
-#ib-farm-list .ibf-row:active { background: #EFF6FF; }
-#ib-farm-list .ibf-new { color: #1565C0; font-weight: 600; }
-#ib-farm-list .ibf-tag { font-size: 10px; color: #1565C0; background: #E3F2FD; padding: 1px 6px; border-radius: 8px; flex-shrink: 0; }
-#ib-farm-list .ibf-none { padding: 10px 12px; font-size: 13px; color: var(--text-tertiary); }
+.fs-list .fs-row:last-child { border-bottom: none; }
+.fs-list .fs-row:active { background: #EFF6FF; }
+.fs-list .fs-blank { color: var(--text-tertiary); }
+.fs-list .fs-new { color: #1565C0; font-weight: 600; }
+.fs-list .fs-tag { font-size: 10px; color: #1565C0; background: #E3F2FD; padding: 1px 6px; border-radius: 8px; flex-shrink: 0; }
+.fs-list .fs-none { padding: 10px 12px; font-size: 13px; color: var(--text-tertiary); }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 
 /* ── 버튼 ── */

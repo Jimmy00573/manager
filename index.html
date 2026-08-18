@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🍊 시트리앙 통합관리</title>
-  <link rel="stylesheet" href="src/style.css?v=24">
+  <link rel="stylesheet" href="src/style.css?v=25">
 </head>
 <body>
 
@@ -911,15 +911,9 @@
               <option>하우스감귤</option><option>비가림</option><option>타이벡</option>
             </select>
           </div>
-          <!-- 공급처: 농가 55곳 + 거래처라 드롭다운으론 못 찾는다 → 검색형. 모바일 비중이 높아 datalist 대신 커스텀 목록.
-               ★기존 <select id="ib-farm">은 지우지 않고 숨겨 둔다 — gv('ib-farm')·popSels()·저장 로직이 전부 이 값을 그대로 읽는다.
-                 검색 입력은 고른 값을 이 select에 넣어주는 역할만 한다. -->
-          <div class="fg" id="ib-farm-wrap"><label>공급처 *</label>
-            <select id="ib-farm" style="display:none"><option value="">선택</option></select>
-            <input id="ib-farm-search" type="text" autocomplete="off" placeholder="이름 검색 (예: 강, 정영)"
-              onfocus="ibFarmOpen()" oninput="ibFarmRender()" onblur="ibFarmBlur()">
-            <div id="ib-farm-list" style="display:none"></div>
-          </div>
+          <!-- 공급처: attachFarmSearch('ib-farm')가 이 select를 숨기고 검색 입력칸·목록을 붙인다(_fsAttachAll 참고).
+               select는 그대로 값의 주인이라 gv('ib-farm')·popSels()·저장 로직은 손댈 게 없다. -->
+          <div class="fg"><label>공급처 *</label><select id="ib-farm"><option value="">선택</option></select></div>
           <div class="fg">
             <label>수송기사</label>
             <select id="inv-driver-select">
@@ -1914,6 +1908,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=495"></script>
+<script src="src/app.js?v=496"></script>
 </body>
 </html>
