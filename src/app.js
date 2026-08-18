@@ -956,6 +956,7 @@ function popSels() {
     el.value = v;
   });
   refreshDpFarmOpts();   // dp-farm은 대상 종류(농가/농협)에 따라 별도 채움
+  _syncPkCtype(); _syncBkCtype();   // 농가 목록이 새로 채워졌으니 종류 옵션도 현재 선택 기준으로 맞춤
 
   ['dp-drv', 'pk-drv', 'bk-drv'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
@@ -1871,13 +1872,15 @@ function renderDisp() {
 
 // ── 수거
 async function addPick() {
-  const date = gv('pk-date'), farm = gv('pk-farm'), type = gv('pk-type'), qty = n('pk-qty');
+  const date = gv('pk-date'), farm = gv('pk-farm'), type = gv('pk-type'), qty = n('pk-qty'), ctype = gv('pk-ctype');
   if (!date || !farm || !type || !qty) { alert('필수 항목을 입력하세요'); return; }
+  // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
+  if (!ctype) { alert('콘테이너 종류를 선택하세요.'); return; }
   const d = gd(gv('pk-drv'));
   try {
-    const row = await dbInsertPick({ date, farm, type, qty, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false });
+    const row = await dbInsertPick({ date, farm, type, qty, ctype, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false });
     picks.unshift(row);
-    clr('pk-qty', 'pk-note'); renderPick(); renderDash();
+    clr('pk-qty', 'pk-note'); _syncPkCtype(); renderPick(); renderDash();   // 잔여가 줄었으니 종류 옵션도 다시 계산
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delPick(id) {
@@ -2017,14 +2020,17 @@ function renderOwn() {
 
 // ── 빈콘 회수
 async function addBkCol() {
-  const date = gv('bk-date'), farm = gv('bk-farm'), qty = n('bk-qty');
+  const date = gv('bk-date'), farm = gv('bk-farm'), qty = n('bk-qty'), ctype = gv('bk-ctype');
   if (!date || !farm || !qty) { alert('날짜, 농가명, 수량을 입력하세요'); return; }
+  // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
+  if (!ctype) { alert('콘테이너 종류를 선택하세요.'); return; }
   try {
     const drvName = gv('bk-drv');
     const drv = drivers.find(d => d.name === drvName);
-    const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty, driver: drvName || null, car: drv?.car || null, note: gv('bk-note') || null });
+    const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty, ctype, driver: drvName || null, car: drv?.car || null, note: gv('bk-note') || null });
     picks.unshift(row);
     clr('bk-qty', 'bk-note');
+    _syncBkCtype();   // 잔여가 줄었으니 종류 옵션도 다시 계산
     renderBkCol(); renderDash();
     openBkMsg({ date, farm, driver: drvName, qty, note: gv('bk-note') });
   } catch (e) { alert('오류: ' + e.message); }
@@ -2443,6 +2449,30 @@ function _qrHoldTypes(fn, targetType) {
     .sort((a, b) => b.q - a.q);
 }
 const _CT_ICON = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜' };
+
+// 회수 폼(수거·회수 탭 / 빈콘 회수)의 콘테이너 종류 옵션 — 현황판 회수 모달과 같은 소스(_qrHoldTypes)라 숫자가 어긋나지 않는다.
+// ★종류를 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인). 대상이 바뀌면 다시 부를 것.
+// 두 폼 모두 대상은 농가만 다루므로(popSels가 farms로만 채움) targetType은 '농가' 고정.
+function _syncRecoveryCtypeSel(selId, farm, targetType = '농가') {
+  const sel = document.getElementById(selId); if (!sel) return;
+  const prev = sel.value;
+  if (!farm) { sel.innerHTML = '<option value="">농가를 먼저 선택</option>'; sel.disabled = true; return; }
+  sel.disabled = false;
+  const holds = _qrHoldTypes(farm, targetType);
+  const opt = x => `<option value="${esc(x.t)}">${_CT_ICON[x.t] || '📦'} ${esc(x.t)} — 잔여 ${x.q}개</option>`;
+  if (holds.length === 1) {
+    sel.innerHTML = opt(holds[0]);                     // 하나뿐이면 자동 선택
+  } else if (holds.length) {
+    sel.innerHTML = '<option value="">선택하세요</option>' + holds.map(opt).join('');
+  } else {
+    // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 자동 선택하지 않고 전체에서 직접 고르게 한다.
+    sel.innerHTML = '<option value="">선택하세요</option>'
+      + OT.map(t => `<option value="${esc(t)}">${_CT_ICON[t] || '📦'} ${esc(t)}</option>`).join('');
+  }
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;   // 재구성 전에 고른 값은 유지
+}
+function _syncPkCtype() { _syncRecoveryCtypeSel('pk-ctype', gv('pk-farm')); }
+function _syncBkCtype() { _syncRecoveryCtypeSel('bk-ctype', gv('bk-farm')); }
 // 외부行 보유 집계(우리 콘테이너 농협/거래처行) — target_type 일치 picks만: 배출 − (원물수거+빈콘회수). getNhfContainerHold(C-1)를 대상 무관으로 일반화.
 function getTargetContainerHold(name, targetType) {
   const out = picks.filter(p => p.farm === name && p.type === '배출' && p.target_type === targetType).reduce((s, p) => s + p.qty, 0);

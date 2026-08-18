@@ -375,9 +375,11 @@
     <div class="form-card"><div class="form-title">수거·회수 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
-        <div class="fg"><label>농가명 *</label><select id="pk-farm" onchange="afF('pk')"><option value="">선택</option></select></div>
+        <div class="fg"><label>농가명 *</label><select id="pk-farm" onchange="afF('pk');_syncPkCtype()"><option value="">선택</option></select></div>
         <div class="fg"><label>연락처</label><input id="pk-tel" class="auto" readonly></div>
         <div class="fg"><label>구분 *</label><select id="pk-type" onchange="onPickTypeChange()"><option value="">선택</option><option value="원물수거">원물수거</option><option value="빈콘회수">⬜ 빈콘회수</option></select></div>
+        <!-- ★콘테이너 종류: 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다. 옵션은 _syncPkCtype()가 농가별 잔여로 구성. -->
+        <div class="fg"><label>콘테이너 종류 *</label><select id="pk-ctype" disabled><option value="">농가를 먼저 선택</option></select></div>
         <div class="fg"><label>수량(개) *</label><input id="pk-qty" type="number" placeholder="0"></div>
         <div class="fg"><label>기사</label><select id="pk-drv" onchange="afD('pk')"><option value="">선택사항</option></select></div>
         <div class="fg"><label>차량</label><input id="pk-car" class="auto" readonly></div>
@@ -426,7 +428,9 @@
     <div class="form-card"><div class="form-title">⬜ 빈콘 회수 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="bk-date" type="date"></div>
-        <div class="fg"><label>농가명 *</label><select id="bk-farm"><option value="">선택</option></select></div>
+        <div class="fg"><label>농가명 *</label><select id="bk-farm" onchange="_syncBkCtype()"><option value="">선택</option></select></div>
+        <!-- ★콘테이너 종류: 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다. 옵션은 _syncBkCtype()가 농가별 잔여로 구성. -->
+        <div class="fg"><label>콘테이너 종류 *</label><select id="bk-ctype" disabled><option value="">농가를 먼저 선택</option></select></div>
         <div class="fg"><label>수량(개) *</label><input id="bk-qty" type="number" placeholder="0"></div>
         <div class="fg"><label>기사</label><select id="bk-drv"><option value="">선택사항</option></select></div>
         <div class="fg full"><label>비고</label><input id="bk-note" placeholder="메모"></div>
@@ -1902,6 +1906,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=483"></script>
+<script src="src/app.js?v=484"></script>
 </body>
 </html>
