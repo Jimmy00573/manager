@@ -17,7 +17,26 @@ function verifyPassword(plainPw, storedValue) {
 }
 
 const PER = 7;
-const OT = ['노랑', '초록', '헌콘'];
+// 우리 콘테이너 종류 — 2026-08-18 현장 명칭으로 변경(노랑→황제, 초록→시트리앙, 헌콘→헌콘테이너).
+// ★DB(container_types.name, dispatches.ctype, picks.ctype, settings.key='stock'의 JSON 키)와 값이 정확히 일치해야 한다.
+const OT = ['황제', '시트리앙', '헌콘테이너'];
+// 옛 색 이름 → 새 이름 흡수 매핑. 이름만 바뀐 같은 물건이므로 집계는 합쳐야 맞다.
+// DB 일괄 갱신 전후의 과도기, 그리고 옛 백업을 복원했을 때를 위해 남겨 둔다(지우지 말 것).
+// ★'헌콘(농가)'는 농가것이라 대상이 아님 — 접두가 겹치므로 문자열 부분치환 금지, 반드시 완전일치로만 변환.
+const OT_ALIAS = { '노랑': '황제', '초록': '시트리앙', '헌콘': '헌콘테이너' };
+function ctNorm(v) { return OT_ALIAS[v] || v || ''; }
+// settings의 초기재고는 종류 이름을 키로 쓴다 — 옛 키가 남아 있어도 0으로 떨어지지 않게 읽는 시점에 흡수.
+function ctNormStockKeys(obj) {
+  const out = {};
+  Object.entries(obj || {}).forEach(([k, v]) => { out[ctNorm(k)] = v; });
+  return out;
+}
+
+// ★배차 문자 발송 — 외부 기사에게 알리려던 기능이라 내부 직원만 쓰는 지금은 숨긴다(삭제 아님).
+//   외부 기사를 1명이라도 등록하면 미리보기 버튼·목록 문자 버튼·등록 후 팝업이 함께 되살아난다.
+//   외부 기사 없이 강제로 켜야 하면 아래를 true로.
+const FORCE_DISPATCH_SMS = false;
+function _extDrvOn() { return FORCE_DISPATCH_SMS || drivers.some(d => d.type === '외부'); }
 // 선과하지 않는 품목 카테고리 — 공용 품목 드롭다운(입고·수확·재고 등)에서 기본 제외.
 // 수동 거래처럼 전체가 필요한 곳만 buildProductOptgroupHTML(true) 호출. 카테고리 추가 시 여기에 이름만 추가.
 const NON_SORTING_CATEGORIES = ['기타'];
@@ -117,8 +136,8 @@ const AUDIT_PAGE_SIZE = 100;
 let auditLogPage = 1;
 const AUDIT_PER_PAGE = 15;
 let sortedView = 'list';
-let stock = { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
-let stockEd = { 노랑: false, 초록: false, 헌콘: false };
+let stock = { 황제: { init: 500 }, 시트리앙: { init: 300 }, 헌콘테이너: { init: 200 } };
+let stockEd = { 황제: false, 시트리앙: false, 헌콘테이너: false };
 
 let _msgTxt = '', _msgDrvTel = '';
 let _editFarmId = null, _editDrvId = null, _editPickId = null, _editPartnerId = null;
@@ -381,7 +400,7 @@ async function initApp() {
     nhfIns = data.nhfIns;
     nhfOuts = data.nhfOuts;
     reports = data.reports;
-    stock = data.stockData;
+    stock = ctNormStockKeys(data.stockData);   // 옛 색 이름 키(노랑/초록/헌콘)가 남아 있어도 초기재고가 0으로 안 떨어지게
     harvests = data.harvests || [];
     vehicles = data.vehicles || [];
     qualityCriteria = qcData || [];
@@ -704,16 +723,18 @@ function switchMsgTab(t) {
 // ── 재고
 function getSt(t) {
   const init = stock[t]?.init || 0;
-  const disp = dispatches.filter(d => d.ctype === t).reduce((s, d) => s + d.qty, 0);   // 총배출
-  const back = picks.filter(p => p.ctype === t && (p.type === '원물수거' || p.type === '빈콘회수')).reduce((s, p) => s + p.qty, 0);   // 회수(공장 복귀)
+  // ctNorm — 옛 이름(노랑/초록/헌콘)으로 저장된 기존 행도 같은 종류로 합산한다. 이름만 바뀐 같은 물건이므로 수량은 변하지 않는다.
+  const disp = dispatches.filter(d => ctNorm(d.ctype) === t).reduce((s, d) => s + d.qty, 0);   // 총배출
+  const back = picks.filter(p => ctNorm(p.ctype) === t && (p.type === '원물수거' || p.type === '빈콘회수')).reduce((s, p) => s + p.qty, 0);   // 회수(공장 복귀)
   const out = Math.max(0, disp - back);   // 순배출(현재 나가있는 = 농가보유)
   return { init, out, disp, back, remain: init - out };   // remain = init − 순배출(회수분 복귀 반영)
 }
 
 function renderSC() {
   const el = document.getElementById('stock-cards');
-  const cc = { 노랑: 'yellow', 초록: 'green', 헌콘: 'old' };
-  const ic = { 노랑: '🟡', 초록: '🟢', 헌콘: '⬜' };
+  // 색·아이콘은 그대로 유지(색으로 구분하던 습관 보존) — 키만 새 이름으로.
+  const cc = { 황제: 'yellow', 시트리앙: 'green', 헌콘테이너: 'old' };
+  const ic = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜' };
   el.innerHTML = OT.map(t => {
     const st = getSt(t);
     const p = st.init > 0 ? st.remain / st.init : 1;
@@ -721,7 +742,7 @@ function renderSC() {
     const ed = stockEd[t];
     return `<div class="stock-card ${cc[t]}">
       <div style="font-size:20px;margin-bottom:4px">${ic[t]}</div>
-      <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:500">${t} 콘테이너</div>
+      <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:500">${t}</div>
       <div class="stock-nums">
         <div class="stock-num-box"><div class="stock-num">${st.init.toLocaleString()}</div><div class="stock-sub">초기재고</div></div>
         <div class="stock-divider"></div>
@@ -1377,7 +1398,7 @@ function openDispEdit(id) {
   drivers.forEach(dr => edrv.innerHTML += `<option value="${esc(dr.name)}">${esc(dr.name)}</option>`);
   edrv.value = d.driver || '';
   document.getElementById('ed-qty').value = d.qty || '';
-  document.getElementById('ed-ctype').value = d.ctype || '노랑';
+  document.getElementById('ed-ctype').value = ctNorm(d.ctype) || '황제';   // 옛 이름으로 저장된 행도 새 옵션에 맞춰 선택되게
   document.getElementById('ed-harvest').value = d.harvest || '';
   document.getElementById('ed-item').value = d.item || '';
   document.getElementById('ed-note').value = d.note || '';
@@ -1411,16 +1432,18 @@ async function saveDispEdit() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
-// ★'🚛 기사별 배차' 서브탭 표시 여부 — 외부 기사 전제 화면이라 전원 '내부'면 숨긴다(화면·함수는 그대로 보존).
-//   외부 기사를 1명이라도 등록하면 자동으로 다시 나타나므로, 도입 시 코드를 손댈 필요가 없다.
-function _extDrvTabSync() {
-  const btn = document.querySelector('#transport-subtab .tsub-btn[data-sub="dboard"]');
-  if (!btn) return;
-  btn.style.display = drivers.some(d => d.type === '외부') ? '' : 'none';
+// ★외부 기사 전제 UI를 한 조건(_extDrvOn)으로 묶어 표시/숨김 — 화면·함수는 전부 보존한다.
+//   대상: '🚛 기사별 배차' 서브탭, 배차 폼의 '📋 문자 미리보기' 버튼, 배차 목록의 '문자' 열.
+//   외부 기사를 1명이라도 등록하면 셋 다 자동으로 되살아나므로, 도입 시 코드를 손댈 필요가 없다.
+function _extDrvUISync() {
+  const on = _extDrvOn();
+  const tab = document.querySelector('#transport-subtab .tsub-btn[data-sub="dboard"]');
+  if (tab) tab.style.display = on ? '' : 'none';
+  document.querySelectorAll('.disp-sms-col').forEach(el => { el.style.display = on ? '' : 'none'; });
 }
 
 function renderDrivers() {
-  _extDrvTabSync();
+  _extDrvUISync();
   document.getElementById('drv-cnt').textContent = drivers.length;
   const el = document.getElementById('drv-list');
   if (!drivers.length) { el.innerHTML = '<div class="note">등록된 기사가 없습니다</div>'; return; }
@@ -1624,7 +1647,8 @@ function onDrvTypeChange() {
 
 // ═══════════════════ 수확·수송 관리 (배차 · 콘테이너 · 현황판 · 수확 캘린더) ═══════════════════
 // ── 배차
-function ctB(v) { const m = { 노랑: '🟡', 초록: '🟢', 헌콘: '⬜', 사각: '🔲' }; return `${m[v] || '📦'} ${esc(v || '-')}`; }
+// 옛 이름 키도 남겨 둔다 — 아직 갱신 안 된 행이 있어도 아이콘이 빠지지 않게(표시는 저장된 값 그대로).
+function ctB(v) { const m = { 황제: '🟡', 시트리앙: '🟢', 헌콘테이너: '⬜', 사각: '🔲', 노랑: '🟡', 초록: '🟢', 헌콘: '⬜' }; return `${m[v] || '📦'} ${esc(v || '-')}`; }
 
 async function addDisp() {
   const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv'), qty = n('dp-qty'), ctype = gv('dp-ctype');
@@ -1651,7 +1675,7 @@ async function addDisp() {
     clr('dp-qty', 'dp-note', 'dp-harvest'); sv('dp-ctype', ''); sv('dp-trip', '');
     document.querySelectorAll('.ctype-btn').forEach(b => b.classList.remove('sel'));
     document.getElementById('dp-stw').style.display = 'none';
-    openMsg(row);
+    if (_extDrvOn()) openMsg(row);   // ★내부 직원만 쓰는 동안은 문자 팝업을 띄우지 않는다(기능은 보존).
     // ★목록 탭 기본값이 '배출 대기'(_dt2='w')라 그대로 두면 방금 등록한 건이 안 보여 실패한 것처럼 읽힌다.
     //   등록 결과가 '배출완료'이므로 그 탭으로 옮겨 보여준다(switchDT2가 renderDisp까지 호출).
     renderSC(); switchDT2('d'); renderDDash(); renderDash();
@@ -1832,7 +1856,7 @@ function renderDisp() {
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
     <td>${d.qty > 0 ? d.qty+'개' : '<span class="badge b-warn">미정</span>'}</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td><td>${esc(d.car || '-')}</td>
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
-    <td><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
+    <td class="disp-sms-col"><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
     <td><div style="display:flex;gap:4px;align-items:center">
       ${d.status !== '배출완료'
         ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>`
@@ -1842,6 +1866,7 @@ function renderDisp() {
     </div></td>
   </tr>`).join('') : emr(14, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
   mkPg('disp2-pg', f.length, _d2p, 'goD2P');
+  _extDrvUISync();   // 방금 만든 '문자' 열 td에도 표시/숨김을 적용(행을 다시 그릴 때마다 필요)
 }
 
 // ── 수거
@@ -2380,13 +2405,14 @@ function getFCS(name) {
 function getFCtypes(fn, targetType) {
   const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
   // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
-  const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { ob[d.ctype] = (ob[d.ctype] || 0) + d.qty; });
+  // ★집계 키는 ctNorm으로 통일 — 옛 이름(초록)과 새 이름(시트리앙)이 섞여 있어도 한 종류로 합쳐 칩이 둘로 갈리지 않게.
+  const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { const k = ctNorm(d.ctype); ob[k] = (ob[k] || 0) + d.qty; });
   // 납품 콘테이너(D-1 출고 / D-1b 수동거래) 배출 — outbound_id·manual_tx_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
-  picks.filter(p => p.farm === fn && p.type === '배출' && (p.outbound_id || p.manual_tx_id) && p.ctype && tgtOk(p)).forEach(p => { ob[p.ctype] = (ob[p.ctype] || 0) + p.qty; });
+  picks.filter(p => p.farm === fn && p.type === '배출' && (p.outbound_id || p.manual_tx_id) && p.ctype && tgtOk(p)).forEach(p => { const k = ctNorm(p.ctype); ob[k] = (ob[k] || 0) + p.qty; });
   // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
   let recNull = 0; const recByType = {};
   picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && tgtOk(p)).forEach(p => {
-    if (p.ctype) recByType[p.ctype] = (recByType[p.ctype] || 0) + p.qty; else recNull += p.qty;
+    if (p.ctype) { const k = ctNorm(p.ctype); recByType[k] = (recByType[k] || 0) + p.qty; } else recNull += p.qty;
   });
   // 배차·회수 종류 합집합 — 배차만/회수만/둘다 모든 케이스 종류별 표시
   const allTypes = [...new Set([...Object.keys(ob), ...Object.keys(recByType)])];
@@ -2399,7 +2425,7 @@ function getFCtypes(fn, targetType) {
     const ratio = remTot > 0 ? Math.max(0, (remTot - recNull) / remTot) : 0;
     Object.keys(remain).forEach(t => { if (remain[t] > 0) remain[t] *= ratio; });
   }
-  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const cl = { 노랑: 'cty', 초록: 'ctg', 헌콘: 'cto' }[t] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${t === '노랑' ? '🟡' : t === '초록' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
+  return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); const cl = { 황제: 'cty', 시트리앙: 'ctg', 헌콘테이너: 'cto' }[nt] || ''; return `<span class="ct ${cl}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${nt === '황제' ? '🟡' : nt === '시트리앙' ? '🟢' : '⬜'} ${r}개</span>`; }).filter(Boolean).join('');
 }
 // 외부行 보유 집계(우리 콘테이너 농협/거래처行) — target_type 일치 picks만: 배출 − (원물수거+빈콘회수). getNhfContainerHold(C-1)를 대상 무관으로 일반화.
 function getTargetContainerHold(name, targetType) {
@@ -3166,7 +3192,7 @@ function calSelectDay(dStr) {
   const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const d = new Date(dStr + 'T00:00:00');
   document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
-  const ctIcon = {노랑:'🟡',초록:'🟢',헌콘:'⬜'};
+  const ctIcon = {황제:'🟡',시트리앙:'🟢',헌콘테이너:'⬜',노랑:'🟡',초록:'🟢',헌콘:'⬜'};   // 옛 이름 키도 유지 — 미갱신 행 아이콘 누락 방지
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
     // 수확 진행상태(수확전/중/완료) 일정 → harvestRow 재사용(▶시작·✅완료·✏️수정·🗑삭제, 미래 포함)
     if (e.status === '수확전' || e.status === '수확중' || e.status === '수확완료') {
@@ -3212,7 +3238,7 @@ function renderCalUpcoming() {
   const pages = Math.ceil(total / CAL_PER);
   if (calUpPage > pages) calUpPage = 1;
   const page = all.slice((calUpPage - 1) * CAL_PER, calUpPage * CAL_PER);
-  const ctIcon = {노랑:'🟡',초록:'🟢',헌콘:'⬜'};
+  const ctIcon = {황제:'🟡',시트리앙:'🟢',헌콘테이너:'⬜',노랑:'🟡',초록:'🟢',헌콘:'⬜'};   // 옛 이름 키도 유지 — 미갱신 행 아이콘 누락 방지
   el.innerHTML = page.map(e => {
     const lColor = e.status === '배출완료' ? '#43A047' : e.status === '배차없음' ? '#EF5350' : '#F28C28';
     const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
@@ -4790,7 +4816,7 @@ function renderContainerTypeCfg() {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
         <div style="font-size:14px;font-weight:700">콘테이너 종류 관리</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(노랑·초록·헌콘), 농가것(사각·농가·헌콘농가), 농협을 구분해 관리합니다. 농가것은 농가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(황제·시트리앙·헌콘테이너), 농가것(사각·농가·헌콘(농가)), 농협을 구분해 관리합니다. 농가것은 농가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.</div>
       </div>
     </div>
     ${isAdm ? `<div style="display:flex;gap:6px;align-items:end;margin-bottom:12px;flex-wrap:wrap">

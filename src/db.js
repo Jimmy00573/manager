@@ -7,7 +7,7 @@ async function getStockSettings() {
     const rows = await sbGet('settings', 'key=eq.stock');
     if (rows && rows.length > 0) return rows[0].value;
   } catch (e) {}
-  return { 노랑: { init: 500 }, 초록: { init: 300 }, 헌콘: { init: 200 } };
+  return { 황제: { init: 500 }, 시트리앙: { init: 300 }, 헌콘테이너: { init: 200 } };   // 종류 이름 = container_types.name과 일치해야 함
 }
 
 async function saveStockSettings(data) {
