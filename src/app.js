@@ -960,20 +960,32 @@ function afF(p) {
 }
 function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv(p + '-car', d.car || ''); }
 
-// 배차 대상 종류(dp-target-type: 농가/농협/거래처)에 따라 dp-farm 옵션 전환 — 농가면 farms 목록, 농협이면 _nhfOptHtml(category='농협'), 거래처면 _extNameOptHtml(거래처+공판장)
+// 배차 대상 종류(농가/농협/거래처)별 대상명 <option> HTML — 농가면 farms, 농협이면 _nhfOptHtml(category='농협'),
+// 거래처면 _extNameOptHtml(거래처+공판장).
+// ★등록 폼(dp-farm)과 수정 모달(ed-farm)이 같은 소스를 쓰도록 분리했다. 한쪽만 농가 목록을 쓰다가
+//   농협·거래처 배차를 수정할 수 없던 버그(2026-08-20)가 났다 — 목록 구성은 여기 한 곳에서만 정한다.
+function _dispTargetOptHtml(tt) {
+  if (tt === '농협') return _nhfOptHtml();
+  if (tt === '거래처') return _extNameOptHtml('거래처');
+  return '<option value="">선택</option>' + farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+}
 function refreshDpFarmOpts() {
   const el = document.getElementById('dp-farm'); if (!el) return;
-  const tt = gv('dp-target-type') || '농가';
   const prev = el.value;
-  if (tt === '농협') el.innerHTML = _nhfOptHtml();
-  else if (tt === '거래처') el.innerHTML = _extNameOptHtml('거래처');
-  else {
-    el.innerHTML = '<option value="">선택</option>';
-    farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
-  }
+  el.innerHTML = _dispTargetOptHtml(gv('dp-target-type') || '농가');
   el.value = prev;
   if (el.value !== prev) { el.value = ''; afF('dp'); }   // 종류 전환으로 기존 선택이 없으면 초기화(자동값도 비움)
   fsSync('dp-farm');   // 검색형 입력칸 표시 — 옵션을 갈아끼웠으니(값이 비워졌을 수도) 여기서 한 번에 맞춘다
+}
+// 수정 모달(ed-target-type → ed-farm) — 등록 폼과 같은 소스, 다른 select.
+// ★afF()는 안 부른다: 수정 모달엔 연락처·주소 자동채움 칸이 아예 없다(등록 폼에만 있는 숨김 필드).
+function refreshEdFarmOpts() {
+  const el = document.getElementById('ed-farm'); if (!el) return;
+  const prev = el.value;
+  el.innerHTML = _dispTargetOptHtml(gv('ed-target-type') || '농가');
+  el.value = prev;
+  if (el.value !== prev) el.value = '';                  // 종류를 바꿔 기존 대상이 목록에 없으면 비운다
+  fsSync('ed-farm');
 }
 
 function popSels() {
@@ -1419,9 +1431,15 @@ function openDispEdit(id) {
   const d = dispatches.find(x => x.id === id); if (!d) return;
   _editDispId = id;
   document.getElementById('ed-date').value = d.date || '';
+  // 대상 종류 → 대상명 순서로 채운다. ★옛 배차엔 target_type이 없다 → '농가'로 본다(addDisp 기본값과 동일).
+  sv('ed-target-type', d.target_type || '농가');
+  refreshEdFarmOpts();
   const ef = document.getElementById('ed-farm');
-  ef.innerHTML = '<option value="">선택</option>';
-  farms.forEach(f => ef.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+  // ★목록에 없는 대상이면 그 이름을 옵션으로 붙인다 — 없으면 select.value가 조용히 ''이 되어 저장 시
+  //   '필수 항목을 입력하세요'로 막힌다(농협·거래처 배차가 수정 불가였던 원인). 비활성 거래처·삭제된 농가도 같은 함정.
+  if (d.farm && ![...ef.options].some(o => o.value === d.farm)) {
+    ef.insertAdjacentHTML('beforeend', `<option value="${esc(d.farm)}">${esc(d.farm)}</option>`);
+  }
   ef.value = d.farm || '';
   fsSync('ed-farm');   // 검색형 입력칸 표시도 이 값으로(모달은 열 때마다 값이 바뀐다)
   const edrv = document.getElementById('ed-drv');
@@ -1451,6 +1469,9 @@ async function saveDispEdit() {
   const d = gd(driver);
   const data = {
     date, farm, driver,
+    // ★대상 종류도 함께 저장한다 — 이제 모달에서 바꿀 수 있으므로 안 넣으면 이름만 바뀌고 종류는 옛 값으로 남는다.
+    //   (sbUpdate는 PATCH라 지금까지 target_type이 '유실'되진 않았고, 그냥 손대지 않은 채였다.)
+    target_type: gv('ed-target-type') || '농가',
     dtel: d.tel || '', car: d.car || '', qty,
     ctype: document.getElementById('ed-ctype').value,
     harvest: document.getElementById('ed-harvest').value || null,
@@ -4876,7 +4897,7 @@ function _fsAttachAll() {
   attachFarmSearch('ib-farm',      { allowNew: true, placeholder: '이름 검색 (예: 강, 정영)' });
   attachFarmSearch('mp-farm',      { placeholder: '농가 검색' });
   attachFarmSearch('mh-farm',      { placeholder: '농가 검색' });
-  attachFarmSearch('ed-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('ed-farm',      { placeholder: '대상 검색' });   // 배차 수정 — 농가뿐 아니라 농협·거래처도 고른다
   attachFarmSearch('cal-add-farm', { placeholder: '농가 검색' });
   attachFarmSearch('rp-farm',      { placeholder: '농가 검색' });
   attachFarmSearch('wa-farm',      { placeholder: '농가 검색 (선택 안 함 가능)' });

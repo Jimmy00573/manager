@@ -217,7 +217,8 @@
     <div class="modal-hdr"><div class="modal-title">✏️ 배차 수정</div><button class="modal-close" onclick="CM('disp')">✕</button></div>
     <div class="modal-grid">
       <div class="fg"><label>날짜 *</label><input id="ed-date" type="date"></div>
-      <div class="fg"><label>농가명 *</label><select id="ed-farm"><option value="">선택</option></select></div>
+      <div class="fg"><label>대상 종류</label><select id="ed-target-type" onchange="refreshEdFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
+      <div class="fg"><label>대상명 *</label><select id="ed-farm"><option value="">선택</option></select></div>
       <div class="fg"><label>기사 *</label><select id="ed-drv"><option value="">선택</option></select></div>
       <div class="fg"><label>차수</label><select id="ed-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
       <div class="fg"><label>시간대</label><select id="ed-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
@@ -1913,6 +1914,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=500"></script>
+<script src="src/app.js?v=501"></script>
 </body>
 </html>
