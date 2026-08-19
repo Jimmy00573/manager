@@ -973,6 +973,7 @@ function refreshDpFarmOpts() {
   }
   el.value = prev;
   if (el.value !== prev) { el.value = ''; afF('dp'); }   // 종류 전환으로 기존 선택이 없으면 초기화(자동값도 비움)
+  fsSync('dp-farm');   // 검색형 입력칸 표시 — 옵션을 갈아끼웠으니(값이 비워졌을 수도) 여기서 한 번에 맞춘다
 }
 
 function popSels() {
@@ -1865,7 +1866,7 @@ function renderHarvestNoDisp() {
 function fillDispForm(farm, harvestDate, item) {
   sv('dp-target-type', '농가'); refreshDpFarmOpts();   // 농가 배차 폼으로(농협 모드였으면 옵션 복원)
   const fd = document.getElementById('dp-farm');
-  if (fd) { fd.value = farm; afF('dp'); }
+  if (fd) { fd.value = farm; afF('dp'); fsSync('dp-farm'); }   // 값을 코드로 넣었으니 검색형 입력칸도 맞춤
   const hd = document.getElementById('dp-harvest');
   if (hd) hd.value = harvestDate || '';
   const it = document.getElementById('dp-item');
@@ -3039,7 +3040,7 @@ function calGoDisp(farm, harvestDate, item) {
   T('disp'); switchPT('disp');
   sv('dp-target-type', '농가'); refreshDpFarmOpts();   // 농가 배차 폼으로(농협 모드였으면 옵션 복원)
   const fd = document.getElementById('dp-farm');
-  if (fd) { fd.value = farm; afF('dp'); }
+  if (fd) { fd.value = farm; afF('dp'); fsSync('dp-farm'); }   // 값을 코드로 넣었으니 검색형 입력칸도 맞춤
   const hd = document.getElementById('dp-harvest');
   if (hd) hd.value = harvestDate || '';
   const it = document.getElementById('dp-item');
@@ -4749,7 +4750,8 @@ async function fsAddNew(selectId, name) {
 }
 
 // 검색형으로 바꿀 select 목록.
-// ★onchange가 걸린 5곳(dp·pk·oi·oo·bk)은 아직 대상 아님 — 자동채움·종류 동기화가 얽혀 있어 다음 단계로.
+// ★onchange가 걸린 5곳(dp·pk·oi·oo·bk)도 포함(2차) — fsPick이 change 이벤트를 직접 쏘므로
+//   기존 onchange(afF 자동채움 / _syncPkCtype·_syncBkCtype 종류 옵션)가 그대로 돈다. 핸들러는 하나도 안 고쳤다.
 // ★allowNew(즉석 농가 등록)는 새 농가가 실제로 생기는 입고 등록에만 — 수정 모달에서 새 농가를 만드는 건 맞지 않다.
 function _fsAttachAll() {
   attachFarmSearch('ib-farm',      { allowNew: true, placeholder: '이름 검색 (예: 강, 정영)' });
@@ -4759,6 +4761,12 @@ function _fsAttachAll() {
   attachFarmSearch('cal-add-farm', { placeholder: '농가 검색' });
   attachFarmSearch('rp-farm',      { placeholder: '농가 검색' });
   attachFarmSearch('wa-farm',      { placeholder: '농가 검색 (선택 안 함 가능)' });
+  // 2차 — onchange가 걸린 곳. dp는 대상 종류에 따라 농가/농협/거래처로 목록이 바뀐다(refreshDpFarmOpts가 fsSync까지 함).
+  attachFarmSearch('dp-farm',      { placeholder: '대상 검색' });
+  attachFarmSearch('pk-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('oi-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('oo-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('bk-farm',      { placeholder: '농가 검색' });
 }
 
 // ── 입고 당도/산도 범위(드롭다운) — 저장은 'min~max' 문자열(기존 필드·표시 호환) ──
