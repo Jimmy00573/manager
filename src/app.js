@@ -3258,7 +3258,112 @@ function renderCal() {
     }
   }
   renderCalUpcoming();
+  renderHarvestProgress();
   renderHarvestActive();
+}
+
+// ── [화면: 수확·수송 > 수확 캘린더 > 농가별 진행 현황] renderCal에서 호출.
+// 캘린더·이번달 목록은 전부 '날짜' 중심이라 "이 농가 몇 차까지 했나 / 끝났나 / 중간에 멈춘 건 아닌가"가 안 보인다.
+// 그걸 농가 단위로 모아 세 갈래로 나눠 보여주는 섹션. 표시 전용 — 액션은 기존 harvestRow/harvestActBtns 그대로 쓴다.
+//
+// ★그룹 단위 = farm(농가). 품목까지 쪼개지 않는 이유: 차수(round)와 전체 종료(is_final)가 이미 농가 단위로 돈다 —
+//   startNextRound는 `harvests.filter(x => x.farm === h.farm)`의 max round + 1을 쓰고, finishAllHarvest·
+//   renderHarvestActive도 농가로 판단한다. 품목으로 더 쪼개면 카드가 말하는 차수와 [＋다음 차수] 버튼이
+//   만드는 차수가 어긋난다. 품목은 카드에 함께 적어 구분한다(한 농가에 두 품목이면 둘 다 표시).
+// ★한정효(의귀리230)/한정효(신풍리460)처럼 밭이 다르면 farm 값 자체가 달라 자동으로 별개 그룹이 된다. 억지로 안 묶는다.
+//
+// ★상태 판정 — 아래 순서대로 검사한다. 세 갈래가 서로 겹치지 않고 빠지는 농가도 없다.
+//   1. 🏁 종료      : 차수 중 하나라도 is_final=true (renderHarvestActive의 '전체 종료 농가' 판정과 같은 규칙)
+//   2. ⚠️ 확인 필요 : 마지막 차수가 '수확완료'인데 전체 종료가 아니고, 그 뒤로 HV_STALE_DAYS일이 지나도록
+//                     다음 차수도 전체 종료도 없음 → 잊고 넘어간 것으로 보고 확인 요청
+//   3. 🌱 진행중    : 나머지(수확전·수확중이거나, 완료했지만 아직 기준일이 안 지난 것)
+//
+// ★HV_STALE_DAYS 근거: 밭떼기는 보통 1~2주 간격으로 차수를 이어간다(김태순 1차 7/15 → 2차 7/27 = 12일).
+//   2주가 지나도 아무 움직임이 없으면 정상 간격을 벗어난 것으로 본다. 기준을 바꾸려면 이 숫자만 고치면 된다.
+const HV_STALE_DAYS = 14;
+const _HV_PROG_KIND = {
+  stale:  { icon: '⚠️', label: '확인 필요', bg: '#FFEBEE', bd: '#FFCDD2', fg: '#C62828' },
+  active: { icon: '🌱', label: '진행중',    bg: '#EFF8FF', bd: '#BBDEFB', fg: '#1565C0' },
+  done:   { icon: '🏁', label: '종료',      bg: '#F5F5F5', bd: '#E0E0E0', fg: '#616161' },
+};
+const _HV_PROG_ORDER = ['stale', 'active', 'done'];   // 방치 의심을 맨 위에 — 먼저 보라고 만든 섹션이다
+const _hvProgOpen = {};   // farm -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 상태별 기본값(확인 필요만 펼침).
+
+// 농가별로 차수를 모아 상태를 매긴다. 렌더와 토글이 같은 판정을 쓰도록 순수 함수로 분리.
+function _hvProgGroups() {
+  const byFarm = {};
+  harvests.forEach(h => { (byFarm[h.farm] = byFarm[h.farm] || []).push(h); });
+  const today = new Date(td() + 'T00:00:00');   // 로컬 자정 기준(td()=ymd) — toISOString 안 씀
+  return Object.keys(byFarm).map(farm => {
+    // 차수 오름차순(같으면 날짜순) → 마지막 원소가 '마지막 차수'. 1차가 없고 2차만 있어도 그대로 동작한다.
+    const rounds = byFarm[farm].slice().sort((a, b) => (a.round || 1) - (b.round || 1) || (a.date || '').localeCompare(b.date || ''));
+    const last = rounds[rounds.length - 1];
+    const fin = rounds.find(h => h.is_final);
+    // 경과일 기준: 완료일이 있으면 그것, 없으면 시작일. ★옛 기록엔 end_date가 없어 시작일로 재는 게 유일한 방법이다.
+    const base = last.end_date || last.date;
+    const days = base ? Math.floor((today - new Date(base + 'T00:00:00')) / 86400000) : 0;
+    const kind = fin ? 'done' : ((last.status === '수확완료' && days >= HV_STALE_DAYS) ? 'stale' : 'active');
+    return { farm, rounds, last, days, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
+  }).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+}
+
+function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : g.kind === 'stale'; }
+
+function _hvProgToggle(farm) {
+  const g = _hvProgGroups().find(x => x.farm === farm);
+  if (!g) return;
+  _hvProgOpen[farm] = !_hvProgIsOpen(g);
+  renderHarvestProgress();   // 이 섹션만 다시 그린다 — 캘린더 전체를 다시 그릴 이유가 없다
+}
+
+function _hvProgCard(g) {
+  const k = _HV_PROG_KIND[g.kind];
+  const open = _hvProgIsOpen(g);
+  const st = g.last.status || '수확전';
+  const rd = g.last.round || 1;
+  const dstr = (g.last.end_date || g.last.date || '').slice(5).replace('-', '/');
+  const sub = g.kind === 'done' ? `${rd}차까지 · ${dstr} 종료`
+    : (st === '수확완료' ? `${rd}차 ${dstr} 완료 · ${g.days}일 경과` : `${rd}차 ${dstr} ${st}`);
+  return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
+      <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
+        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>
+        ${g.items.length ? `<span style="font-size:11px;color:#888">${esc(g.items.join('·'))}</span>` : ''}
+        <span style="margin-left:auto;font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
+      </div>
+      ${open ? `<div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:#fff">
+        ${g.rounds.map(h => harvestRow(h, true)).join('')}
+      </div>` : ''}
+    </div>`;
+}
+
+function renderHarvestProgress() {
+  const el = document.getElementById('cal-harvest-progress');
+  if (!el) return;
+  const groups = _hvProgGroups();
+  if (!groups.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const cnt = { stale: 0, active: 0, done: 0 };
+  groups.forEach(g => cnt[g.kind]++);
+  el.style.display = '';
+  el.innerHTML = `
+    <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🗂 농가별 진행 현황</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
+          const k = _HV_PROG_KIND[kd];
+          return `<span style="font-size:11px;font-weight:600;color:${k.fg};background:${k.bg};border:0.5px solid ${k.bd};border-radius:10px;padding:1px 8px">${k.icon} ${k.label} ${cnt[kd]}</span>`;
+        }).join('')}
+      </div>
+    </div>
+    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:10px">
+      ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
+        const k = _HV_PROG_KIND[kd];
+        return `<div>
+          <div style="font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}</div>
+          <div style="display:flex;flex-direction:column;gap:6px">${groups.filter(g => g.kind === kd).map(_hvProgCard).join('')}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 // ── [화면: 수확·수송 > 수확 캘린더 > 진행중 농가] renderCal에서 호출. 예정 목록은 renderCalUpcoming.
@@ -3582,11 +3687,19 @@ async function autoDelHarvest(farm, date) {
 }
 
 async function setHarvestStatus(id, status) {
+  const cur = harvests.find(h => h.id === id);
+  // ★완료 처리할 때 종료일을 오늘로 자동 기록 — '며칠 경과'(농가별 진행 현황)를 재려면 완료 시점이 있어야 한다.
+  //   비어 있을 때만 채운다: end_date는 등록 폼·수정 모달에서 사용자가 직접 넣는 필드라 있는 값을 덮으면 안 된다.
+  // ★되돌리기(수확완료→수확중)에는 지우지 않는다. 같은 이유로 사용자가 손으로 넣었을 수 있는 값이고,
+  //   지우면 입력 손실이다. 되돌린 농가는 '진행중'으로 분류돼 경과일 자체를 안 쓰므로 남아 있어도 판정이 안 흔들린다.
+  //   잘못 들어간 종료일은 ✏️ 수정 모달에서 지울 수 있다.
+  const patch = { status };
+  if (status === '수확완료' && cur && !cur.end_date) patch.end_date = td();
   // 우선 로컬 상태 먼저 반영 (DB 성공 여부 무관하게 화면 즉시 업데이트)
-  harvests = harvests.map(h => h.id === id ? { ...h, status } : h);
+  harvests = harvests.map(h => h.id === id ? { ...h, ...patch } : h);
   renderCal();
   try {
-    await dbUpdateHarvest(id, { status });
+    await dbUpdateHarvest(id, patch);
   } catch (e) {
     if (e.message.includes('status') || e.message.includes('column')) {
       // 컬럼 없어도 화면은 동작, 새로고침 시 초기화됨을 안내
