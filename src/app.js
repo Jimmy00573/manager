@@ -1445,6 +1445,9 @@ async function saveDispEdit() {
   const qtyRaw = document.getElementById('ed-qty').value.trim();
   const qty = qtyRaw === '' ? 0 : parseInt(qtyRaw) || 0;
   if (!date || !farm || !driver) { alert('필수 항목을 입력하세요'); return; }
+  // ★등록(addDisp)에서 수량 0을 막으므로 수정에서도 막는다 — 여기만 열어 두면 등록 후 0으로 바꿔 유령 배차를 만들 수 있다.
+  //   옛 '미정'(수량 0) 기록은 목록에 그대로 보이고(미정 뱃지) 삭제도 되지만, 저장하려면 수량을 채워야 한다.
+  if (!qty || qty <= 0) { alert('수량을 입력하세요'); return; }
   const d = gd(driver);
   const data = {
     date, farm, driver,
@@ -1686,6 +1689,9 @@ async function addDisp() {
   const targetType = gv('dp-target-type') || '농가';   // 배차 대상 종류(농가/농협/거래처)
   if (!date || !farm || !drv) { alert('날짜, 대상명, 기사명을 입력하세요'); return; }
   if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
+  // ★수량 0으로 저장되면 아래 `if (qty > 0)`에 걸려 picks '배출' 행이 안 생긴다 → 콘테이너 보유 집계엔
+  //   안 잡히면서 배차 목록에만 남는 '유령 배차'가 된다. 애초에 못 만들게 여기서 막는다(수정도 saveDispEdit에서 동일).
+  if (!qty || qty <= 0) { alert('수량을 입력하세요'); return; }
   const d = gd(drv);
   try {
     // ★기본 상태 '배출완료'(2026-08-18) — 내부 직원이 갔다 온 뒤 기록하므로 '배차완료 → 배출완료' 2단계를 타지 않는다.
