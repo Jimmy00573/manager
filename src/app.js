@@ -3433,11 +3433,8 @@ function renderUpcomingHarvest() {
         <span style="font-size:12px;font-weight:700;color:#374151;min-width:74px">${LBL[di] || ''} ${dateTxt}</span>
         <span style="font-size:12px;color:#C7CBD1">수확 예정 없음</span></div>`;
     }
-    // 그날 나가는 콘테이너 합(신규 배송) + 그 농가들이 지금 갖고 있는 합(현재 보유) — 인원·차량 가늠용
-    // ★두 숫자는 뜻이 다르다. 신규 배송 = 그 수확일로 잡힌 배차, 현재 보유 = 지금 그 농가에 나가 있는 총량.
-    //   같은 '개'라 라벨을 안 붙이면 헷갈린다(실제로 헷갈렸던 지점).
-    const dayCt = day.list.reduce((sum, h) => sum + _dispForHarvest(h.farm, h.date).total, 0);
-    const dayHold = day.list.reduce((sum, h) => sum + (getFCS(h.farm).hold || 0), 0);
+    // ★날짜별 소계는 두지 않는다(2026-08-20 Jimmy 판단) — 농가가 다르면 콘테이너가 놓인 위치도 달라서
+    //   여러 농가를 더한 값은 배차·인원 판단에 안 쓰인다. 숫자는 농가별 항목에만 둔다.
     const rows = day.list.map(h => {
       const st = h.status || '수확전';
       const dp = _dispForHarvest(h.farm, h.date);
@@ -3474,10 +3471,6 @@ function renderUpcomingHarvest() {
       <div style="padding:7px 14px;background:#FAFAFA;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:700;color:${di === 0 ? '#C05800' : '#374151'};min-width:74px">${LBL[di] || ''} ${dateTxt}</span>
         <span style="font-size:11px;color:#9CA3AF">${day.list.length}건</span>
-        <span style="margin-left:auto;font-size:11px;color:#9CA3AF;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-          ${dayCt > 0 ? `<span>신규 배송 <strong style="color:#C05800">${fmtN(dayCt)}개</strong></span>` : ''}
-          ${dayHold > 0 ? `<span>현재 보유 <strong style="color:#374151">${fmtN(dayHold)}개</strong></span>` : ''}
-        </span>
       </div>${rows}</div>`;
   }).join('');
 
