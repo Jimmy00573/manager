@@ -14463,14 +14463,37 @@ function _renderScDoneTable() {
 // ── [화면: 재고관리 > 선과 처리 센터 > 미선과(pending) 탭] 목록 테이블
 //    ※열 폭 colgroup은 이 함수 안 인라인(sc-table-wrap). 입고내역 목록은 renderInboundList — 혼동 주의.
 //    ※같은 센터의 다른 탭: 진행중 _renderScDoingTable, 완료 _renderScDoneTable.
+// ====================================================================
+// _renderScTable 구획 안내 (바로 위 [화면:...] 주석과 함께 볼 것)
+// ====================================================================
+// ★★입고내역(renderInboundList)과 헷갈리기 쉽다. 2026-07-24에 실제로 잘못 고친 적이 있다.
+//   구분점:
+//     renderInboundList  입고 기록 "전부"를 보여준다. 표는 index.html의 .ib-list-tbl.
+//     _renderScTable     그중 "아직 선과할 게 남은 것"만. 표·열 폭은 이 함수 안 인라인.
+//   공유하는 것: _isUnsortedTarget(대상 판정) · IB_CAT_SORT_ORDER(카테고리 정렬 순서).
+//   ★이 둘은 반드시 같이 움직여야 한다. 한쪽에만 새 판정 조건을 만들면 목록이 어긋난다.
+//
+// 흐름: 1 기준 데이터 → 2 경과일 등급 → 3 대상·잔여 → 4 필터 → 5 정렬 → 6 출력
+//
+// 읽는 전역: inboundRecords, processingRecords, _scSearch, _scProduct, _scCategory,
+//            _scPriOnly, _scSortCol 계열, URGENCY_THRESHOLD_HIGH/MID
 function _renderScTable() {
   const wrap = document.getElementById('sc-table-wrap');
   if (!wrap) return;
 
+  // ==================================================================
+  // 1. 기준 데이터 (처리량 맵 · 오늘 날짜)
+  // ==================================================================
+  // _ibProcessedMap() = 입고건별 처리량 합. 아래 3번의 잔여 계산에 쓴다.
   const pm = _ibProcessedMap();
   const today = td();
   const todayMs = new Date(today).getTime();
 
+  // ==================================================================
+  // 2. 경과일 등급 (🔴 / 🟡 / 🟢)
+  // ==================================================================
+  // URGENCY_THRESHOLD_HIGH·MID 상수 기준. 색과 level(3/2/1)을 함께 돌려준다.
+  // ★level은 아래 4번의 "우선처리만" 필터(level>=2)에서도 쓰인다 — 기준을 바꾸면 그 필터도 같이 움직인다.
   const urgency = date => {
     const days = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
     if (days >= URGENCY_THRESHOLD_HIGH) return { icon: '🔴', label: `${days}일`, color: '#DC2626', level: 3 };
@@ -14483,6 +14506,12 @@ function _renderScTable() {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
 
+  // ==================================================================
+  // 3. ★대상 행 + 잔여 계산 — 이 탭의 정의
+  // ==================================================================
+  // 대상 = _isUnsortedTarget(r)이면서 잔여(입고량 − 처리량) > 0인 입고건.
+  // ★즉 "아직 선과할 게 남은 입고"만 나온다. 잔여가 0이 되면 이 탭에서 사라지고 완료 탭으로 넘어간다.
+  // ★_isUnsortedTarget은 입고내역 행 색·재고 요약 미선과 집계와 **같은 함수**를 쓴다 — 새로 만들지 말 것.
   let rows = inboundRecords
     .filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
     .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
@@ -14495,6 +14524,10 @@ function _renderScTable() {
   if (_scCategory) rows = rows.filter(r => (r.inbound_category || '상품') === _scCategory);
   if (_scPriOnly)  rows = rows.filter(r => r.is_priority || urgency(r.date).level >= 2);
 
+  // ==================================================================
+  // 4. 필터 (검색·품목·카테고리·우선처리) + 버튼 렌더
+  // ==================================================================
+  // _scSearch / _scProduct / _scCategory / _scPriOnly — 전부 전역이라 탭을 옮겨도 유지된다.
   // 카테고리 필터 버튼 렌더
   const catBtnEl = document.getElementById('sc-cat-btns');
   if (catBtnEl) {
@@ -14511,6 +14544,12 @@ function _renderScTable() {
     }).join('');
   }
 
+  // ==================================================================
+  // 5. 정렬
+  // ==================================================================
+  // ★기본(입고일순)일 때만 카테고리 1순위 → 날짜 순으로 간다.
+  //  그 카테고리 순서 IB_CAT_SORT_ORDER는 입고내역(_applyIbStatusSort)과 **공유**한다.
+  // ★헤더 클릭(농가·경과·잔여, 날짜 내림차순)은 사용자가 명시적으로 고른 것이라 카테고리를 끼워 넣지 않는다.
   // 정렬 토글 버튼 렌더
   const sortBtnEl = document.getElementById('sc-sort-btns');
   if (sortBtnEl) {
@@ -14551,6 +14590,10 @@ function _renderScTable() {
     });
   }
 
+  // ==================================================================
+  // 6. 건수 표시 + 표 출력
+  // ==================================================================
+  // ★열 폭 colgroup이 이 함수 안 인라인에 있다(입고내역은 index.html에 있음 — 위 주석 참고).
   const countEl = document.getElementById('sc-row-count');
   if (countEl) {
     const newCnt   = rows.filter(r => (srtCntMap[r.id] || 0) === 0).length;
