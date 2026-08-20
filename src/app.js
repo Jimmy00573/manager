@@ -7048,6 +7048,8 @@ function toggleInvSzSel(product, sz) {
   renderInventoryStatus();
 }
 function clearInvSzSel(product) { delete _invSzSel[product]; renderInventoryStatus(); }
+// 모드가 바뀔 때 전부 비운다 — 렌더는 부르지 않는다(모드 토글 쪽에서 어차피 다시 그린다).
+function _clearAllInvSzSel() { Object.keys(_invSzSel).forEach(k => delete _invSzSel[k]); }
 
 // ── [화면: 재고관리 > 선과품 재고] 농가×사이즈 매트릭스 본체(CSS Grid). 호출부는 renderInventoryStatus.
 function _renderInvMatrix(product, recs, auditMode) {
@@ -7226,17 +7228,21 @@ function _renderInvMatrix(product, recs, auditMode) {
   const Hr = 'display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px;'
     + 'border-right:1px solid #D1D5DB;border-top:2px solid #CBD5E1;color:#374151;padding:4px 2px;';
   // ★이 헤더의 사이즈를 누르면 선택/해제 — 선택분 CT·kg 합계를 아래 바에 보여 준다(임시 계산용).
-  //   맨 위 헤더는 실사·부분출고 모드 동작(toggleInvAuditCol/outboundInvCol)을 그대로 갖는다.
-  //   서로 다른 요소라 모드와 충돌하지 않고, 이쪽은 어느 모드에서든 항상 '선택'으로 동작한다.
-  const _sel = _invSzSel[product];
+  //   ★단 조회 모드에서만. 실사(_invAuditMode)·부분출고(_invOutboundSub)는 셀을 눌러 확인/출고하는 작업이라
+  //     헤더까지 눌리면 조작이 헷갈린다(2026-08-20 Jimmy 확정). 그 모드에선 그냥 라벨 줄로만 둔다.
+  //   ※맨 위 헤더는 그대로 모드 동작(toggleInvAuditCol/outboundInvCol)을 갖는다 — 서로 다른 요소.
+  const szSelOn = !audit && !_invOutboundSub;
+  const _sel = szSelOn ? _invSzSel[product] : null;
   const _selN = _sel ? _sel.size : 0;
   h += `<div style="${Hr}background:#E2E8F0;justify-content:flex-start;padding:4px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2;color:#64748B">사이즈${_selN ? ` <span style="color:#1E3A5F;font-weight:700">${_selN}</span>` : ''}</div>`;
   displaySizes.forEach(sz => {
     const on = !!(_sel && _sel.has(sz));
-    const bg = on ? '#1E3A5F' : GC[szGI[sz]].c;
+    const bg = on ? '#1E3A5F' : GC[szGI[sz]].c;   // 선택색은 조회 모드에서만 (_sel이 null이면 항상 그룹 색)
     const fg = on ? ';color:#fff' : '';
-    h += `<div onclick="toggleInvSzSel('${_fsQ(product)}','${_fsQ(sz)}')" title="클릭: 중량 합계에 넣기/빼기"
-      style="${Hr}background:${bg}${fg};cursor:pointer;user-select:none">${esc(sz)}${on ? '' : fruitNoBadge(sz)}</div>`;
+    const clk = szSelOn
+      ? ` onclick="toggleInvSzSel('${_fsQ(product)}','${_fsQ(sz)}')" title="클릭: 중량 합계에 넣기/빼기"`
+      : '';
+    h += `<div${clk} style="${Hr}background:${bg}${fg}${szSelOn ? ';cursor:pointer;user-select:none' : ''}">${esc(sz)}${on ? '' : fruitNoBadge(sz)}</div>`;
   });
   h += `<div style="${Hr}background:#E2E8F0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2"></div>`;
   if (isAdm) h += `<div style="${Hr}background:#E2E8F0;border-right:none;position:sticky;right:0;z-index:2"></div>`;
@@ -7271,7 +7277,7 @@ function _renderInvMatrix(product, recs, auditMode) {
   // ★그리드 "바깥"(가로 스크롤 컨테이너 밖)에 붙인다. 그리드 안에 넣으면 표 폭을 따라 같이 밀려
   //   오른쪽 끝의 합계 숫자가 화면 밖으로 나간다. 아침에 훑어보는 값이라 항상 보여야 한다.
   let selBar = '';
-  if (_selN) {
+  if (szSelOn && _selN) {   // ★_selN은 조회 모드에서만 0보다 크지만, 조건을 명시해 둔다
     const selSizes = displaySizes.filter(sz => _sel.has(sz));   // 표시 순서대로
     const selCt = selSizes.reduce((a, sz) => a + (colTotals[sz] || 0), 0);
     const selKg = Math.round(selCt * kgPer);
@@ -13473,6 +13479,9 @@ function ibRatioBadge(r) {
 function toggleInvAuditMode() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invAuditMode = !_invAuditMode;
+  // ★모드가 바뀌면 사이즈 선택을 비운다 — 안 그러면 합계 바만 남아 떠 있어 혼란스럽다.
+  //   끄고 돌아왔을 때도 초기화된 상태로 시작하게 되어 예측이 쉽다.
+  _clearAllInvSzSel();
   if (_invAuditMode && _invGrade === 'all') _invGrade = '일반';   // 실사는 등급별만(전체 탭 숨김) → 전체였으면 일반으로
   // 실사 ON & 품목 미선택 → 현재 등급에 재고 있는 첫 품목 자동 선택(품목 카드와 동일 정렬). 재고 없으면 그대로 둠.
   if (_invAuditMode && !_invFilter.product) {
@@ -13491,6 +13500,7 @@ function toggleInvAuditMode() {
 function toggleInvOutboundSub() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _invOutboundSub = !_invOutboundSub;
+  _clearAllInvSzSel();   // ★실사 토글과 같은 이유 — 모드 전환 시 선택 초기화
   renderInventoryStatus();
 }
 // 셀(배치·사이즈) 부분출고 모달 — 현재고에서 부분/전량 출고. 거래처 기본 온라인, 수량 기본 현재고.
