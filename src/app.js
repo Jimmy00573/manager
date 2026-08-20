@@ -6909,6 +6909,19 @@ function renderInventoryStatus() {
   }
 }
 
+// ── 사이즈 선택 중량 합계 (아침 물량 계산용, 임시)
+// ★메모리에만 둔다 — DB·localStorage 저장 안 함. 새로고침하면 초기화되는 게 의도다.
+// ★품목별로 따로 담는다({품목: Set(사이즈)}) — kg 환산율(productWeights)이 품목마다 달라
+//   여러 품목을 한 통에 섞으면 합계가 뜻을 잃는다. 매트릭스도 품목별로 그려진다.
+const _invSzSel = {};
+function _invSzSelSet(product) { return (_invSzSel[product] = _invSzSel[product] || new Set()); }
+function toggleInvSzSel(product, sz) {
+  const set = _invSzSelSet(product);
+  if (set.has(sz)) set.delete(sz); else set.add(sz);
+  renderInventoryStatus();
+}
+function clearInvSzSel(product) { delete _invSzSel[product]; renderInventoryStatus(); }
+
 // ── [화면: 재고관리 > 선과품 재고] 농가×사이즈 매트릭스 본체(CSS Grid). 호출부는 renderInventoryStatus.
 function _renderInvMatrix(product, recs, auditMode) {
   const audit    = !!auditMode;
@@ -7080,9 +7093,18 @@ function _renderInvMatrix(product, recs, auditMode) {
   //   그래서 헤더를 한 줄 더 그린다. 값·계산은 건드리지 않는 표시 전용이다.
   const Hr = 'display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px;'
     + 'border-right:1px solid #D1D5DB;border-top:2px solid #CBD5E1;color:#374151;padding:4px 2px;';
-  h += `<div style="${Hr}background:#E2E8F0;justify-content:flex-start;padding:4px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2;color:#64748B">사이즈</div>`;
+  // ★이 헤더의 사이즈를 누르면 선택/해제 — 선택분 CT·kg 합계를 아래 바에 보여 준다(임시 계산용).
+  //   맨 위 헤더는 실사·부분출고 모드 동작(toggleInvAuditCol/outboundInvCol)을 그대로 갖는다.
+  //   서로 다른 요소라 모드와 충돌하지 않고, 이쪽은 어느 모드에서든 항상 '선택'으로 동작한다.
+  const _sel = _invSzSel[product];
+  const _selN = _sel ? _sel.size : 0;
+  h += `<div style="${Hr}background:#E2E8F0;justify-content:flex-start;padding:4px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2;color:#64748B">사이즈${_selN ? ` <span style="color:#1E3A5F;font-weight:700">${_selN}</span>` : ''}</div>`;
   displaySizes.forEach(sz => {
-    h += `<div style="${Hr}background:${GC[szGI[sz]].c}">${esc(sz)}${fruitNoBadge(sz)}</div>`;
+    const on = !!(_sel && _sel.has(sz));
+    const bg = on ? '#1E3A5F' : GC[szGI[sz]].c;
+    const fg = on ? ';color:#fff' : '';
+    h += `<div onclick="toggleInvSzSel('${_fsQ(product)}','${_fsQ(sz)}')" title="클릭: 중량 합계에 넣기/빼기"
+      style="${Hr}background:${bg}${fg};cursor:pointer;user-select:none">${esc(sz)}${on ? '' : fruitNoBadge(sz)}</div>`;
   });
   h += `<div style="${Hr}background:#E2E8F0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2"></div>`;
   if (isAdm) h += `<div style="${Hr}background:#E2E8F0;border-right:none;position:sticky;right:0;z-index:2"></div>`;
@@ -7106,6 +7128,26 @@ function _renderInvMatrix(product, recs, auditMode) {
   });
   h += `<div style="${Fk}justify-content:flex-end;padding:5px 8px;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2">${fmtN(Math.round(grandTotal * kgPer))}</div>`;
   if (isAdm) h += `<div style="${Fk}border-right:none;position:sticky;right:0;z-index:2"></div>`;
+
+  // ── 선택 합계 바 — 고른 사이즈가 있을 때만.
+  // ★그리드 "바깥"(가로 스크롤 컨테이너 밖)에 붙인다. 그리드 안에 넣으면 표 폭을 따라 같이 밀려
+  //   오른쪽 끝의 합계 숫자가 화면 밖으로 나간다. 아침에 훑어보는 값이라 항상 보여야 한다.
+  let selBar = '';
+  if (_selN) {
+    const selSizes = displaySizes.filter(sz => _sel.has(sz));   // 표시 순서대로
+    const selCt = selSizes.reduce((a, sz) => a + (colTotals[sz] || 0), 0);
+    const selKg = Math.round(selCt * kgPer);
+    selBar = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;
+        padding:8px 12px;background:#1E3A5F;color:#fff;font-size:12px">
+      <span style="font-weight:700">선택 ${selSizes.length}개</span>
+      <span style="opacity:.85">${selSizes.map(esc).join(' · ')}</span>
+      <span style="margin-left:auto;font-size:14px;font-weight:700;white-space:nowrap">${fmtCT(selCt)} CT
+        <span style="opacity:.6;font-weight:400">·</span> ${fmtN(selKg)} kg</span>
+      <button onclick="clearInvSzSel('${_fsQ(product)}')"
+        style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:6px;
+               padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">전체 해제</button>
+    </div>`;
+  }
 
   const groupTotals = groups.map(g => ({
     name: g.group,
@@ -7134,7 +7176,8 @@ function _renderInvMatrix(product, recs, auditMode) {
           ${h}
         </div>
       </div>
-      <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '⋮ 메뉴 → 수정 / 삭제' : ''}</div>
+      ${selBar}
+      <div style="font-size:11px;color:#9CA3AF;padding:4px 10px;text-align:right;border-top:1px solid #F3F4F6">${isAdm ? '⋮ 메뉴 → 수정 / 삭제 · ' : ''}사이즈 헤더를 눌러 중량 합계</div>
     </div>`;
 }
 
