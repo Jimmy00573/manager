@@ -3523,8 +3523,25 @@ function _hvProgGroups() {
     const base = last.end_date || last.date;
     const days = base ? Math.floor((today - new Date(base + 'T00:00:00')) / 86400000) : 0;
     const kind = fin ? 'done' : ((last.status === '수확완료' && days >= HV_STALE_DAYS) ? 'stale' : 'active');
-    return { farm, rounds, last, days, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
+    // ★D-day와 진행일수는 '시작일(last.date)' 기준이다 — 위 days는 end_date를 먼저 보므로 여기 쓰면 안 된다.
+    //   dday  : +면 남은 날, 0이면 오늘, -면 예정일이 지났는데 아직 시작 안 한 것
+    //   onDay : 수확중일 때 '진행 N일째'. 시작 당일이 1일째다.
+    //   ※로컬 자정끼리 빼므로 KST에서 하루 밀리지 않는다(toISOString 금지).
+    const dday  = last.date ? Math.round((new Date(last.date + 'T00:00:00') - today) / 86400000) : 0;
+    const onDay = last.date ? Math.max(1, Math.floor((today - new Date(last.date + 'T00:00:00')) / 86400000) + 1) : 1;
+    return { farm, rounds, last, days, dday, onDay, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
   }).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+}
+
+// 임박도 색 — ★새 색을 만들지 않는다. 앱이 이미 쓰는 세 조합만 골라 쓴다.
+//   오늘·D-1 : #C62828/#FFEBEE (확인 필요 배지·경고 스트립과 같은 빨강)
+//   D-2~D-3  : #C05800/#FFF3E0 (수확전 배지·금일 스트립과 같은 주황)
+//   그 외    : #6B7280/#F3F4F6 (앱 공통 회색)
+// ★칩에만 쓴다 — 카드 부제 나머지 글자는 그룹 색(k.fg) 그대로라 그룹 구분이 안 흐려진다.
+function _hvDdayTone(dd) {
+  if (dd <= 1) return { fg: '#C62828', bg: '#FFEBEE', bd: '#FFCDD2' };
+  if (dd <= 3) return { fg: '#C05800', bg: '#FFF3E0', bd: '#FFE0B2' };
+  return { fg: '#6B7280', bg: '#F3F4F6', bd: '#E5E7EB' };
 }
 
 function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : g.kind === 'stale'; }
@@ -3542,14 +3559,28 @@ function _hvProgCard(g) {
   const st = g.last.status || '수확전';
   const rd = g.last.round || 1;
   const dstr = (g.last.end_date || g.last.date || '').slice(5).replace('-', '/');
+  // ★수확전·수확중만 앞에 칩을 붙인다(임박도 파악용). 완료·전체종료는 기존 표현 그대로.
+  //   수확전: D-N / 오늘 / D+N 지남(예정일이 지났는데 아직 시작 안 함)
+  //   수확중: 진행 N일째(시작 당일이 1일째)
+  let chip = '';
+  if (g.kind !== 'done' && (st === '수확전' || st === '수확중')) {
+    const txt = st === '수확중'
+      ? `진행 ${g.onDay}일째`
+      : (g.dday > 0 ? `D-${g.dday}` : g.dday === 0 ? '오늘' : `D+${-g.dday} 지남`);
+    // 진행중은 이미 시작한 것이라 '오늘'과 같은 급으로 본다(dd=0 취급).
+    const t = _hvDdayTone(st === '수확중' ? 0 : g.dday);
+    chip = `<span style="font-size:10px;font-weight:700;color:${t.fg};background:${t.bg};border:1px solid ${t.bd};border-radius:10px;padding:1px 7px;white-space:nowrap">${txt}</span>`;
+  }
   const sub = g.kind === 'done' ? `${rd}차까지 · ${dstr} 종료`
-    : (st === '수확완료' ? `${rd}차 ${dstr} 완료 · ${g.days}일 경과` : `${rd}차 ${dstr} ${st}`);
+    : (st === '수확완료' ? `${rd}차 ${dstr} 완료 · ${g.days}일 경과` : `${rd}차 · ${dstr} ${st}`);
   return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
       <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
         <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>
         ${g.items.length ? `<span style="font-size:11px;color:#888">${esc(g.items.join('·'))}</span>` : ''}
-        <span style="margin-left:auto;font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          ${chip}<span style="font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
+        </span>
       </div>
       ${open ? `<div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:#fff">
         ${g.rounds.map(h => harvestRow(h, true)).join('')}
