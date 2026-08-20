@@ -14499,15 +14499,24 @@ function renderInboundList() {
     if (processed > 0 || outbound > 0) _qtyParts.push(`잔여 ${fmtN(remaining)}CT`);
     const qtyTitle = (processed > 0 || outbound > 0) ? _qtyParts.join(' · ') : `입고 ${fmtN(r.quantity)}CT`;
     const srtCount = _sortingCountMap[r.id] || 0;
+    // ★✂️N차는 '선과 이력 팝오버 → 차수별 📋 공유'로 들어가는 유일한 입구다. 모바일에서 눌려야 한다.
+    //   수량 열은 colgroup 70px(패딩 20px 빼면 내용 50px)인데 '잔여 128'과 한 줄에 두면 넘쳐서 잘렸다
+    //   (.ib-list-tbl은 table-layout:fixed + overflow:hidden). 그래서 아래 qtyDisplay에서 독립 줄로 내린다.
+    //   ★표 폭은 안 건드린다 — colgroup 합계(919px)와 .ib-list-tbl min-width가 어긋나면
+    //   모바일에서 전 열이 비례 축소돼 다른 열이 잘린다(2026-07-24 사고).
+    //   배경·패딩을 준 이유: 글자만 있으면 터치 영역이 10px 높이라 손가락으로 못 누른다.
+    //   모양은 같은 표의 '선과완료 🔍'·'선과품 🔍' 배지와 맞췄다.
     const srtBadge = srtCount > 0
-      ? `<button onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" style="background:none;border:none;padding:0;cursor:pointer;font-size:10px;color:#7C3AED;font-weight:700;white-space:nowrap;display:inline-block;margin-left:3px" title="선과 이력 보기">✂️${srtCount}차</button>`
+      ? `<button onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" style="background:#F3E8FF;border:none;padding:3px 6px;border-radius:9px;cursor:pointer;font-size:10px;color:#7C3AED;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px" title="선과 이력 보기">✂️${srtCount}차</button>`
       : '';
     const remBadge = remaining <= 0
       ? `<span style="background:#E8F5E9;color:#2E7D32;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap;display:inline-block;margin-top:2px">✓ 완료</span>`
       : `<span style="${remaining < 20 ? 'color:#C62828;font-weight:700' : 'color:#E65100;font-weight:700'}">잔여 ${fmtN(remaining)}</span>`;
+    // 수량 칸은 최대 3줄: 수량 / 잔여(또는 ✓완료) / ✂️N차. 차수가 없으면 예전과 똑같이 2줄·1줄.
+    const srtLine = srtBadge ? `<br>${srtBadge}` : '';
     const qtyDisplay = processed > 0
-      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtBadge}</span>`
-      : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}${srtBadge}</span>`;
+      ? `<span title="${qtyTitle}" style="cursor:default;display:inline-block">${fmtN(r.quantity)}<br>${remBadge}${srtLine}</span>`
+      : `<span title="${qtyTitle}" style="cursor:default">${fmtN(r.quantity)}${srtLine}</span>`;
     const priorityStyle = r.is_priority ? 'background:#FFFDE7' : '';
     const isDone = r.inbound_category !== '선과품' && remaining <= 0 && processed > 0;
     const isSorted = r.inbound_category === '선과품';
