@@ -13198,13 +13198,22 @@ async function _execInvBulkOutbound() {
   try {
     for (const c of cells) {
       const kgPerCt = productWeights[c.product] != null ? productWeights[c.product] : 17;
+      // ★취소(cancelOutbound) 복구용 차감 내역 — 셀 단위 부분출고(saveInvOutbound)와 같은 형태.
+      //   이게 비어 있으면 거래내역에 취소 버튼 자체가 안 뜬다(renderOutboundHistory의 cancelable 판정).
+      //   ★여기는 셀의 재고 행을 전량 소진시키므로 amount는 그 행의 수량 전부, voided는 항상 true.
+      //   ★★반드시 아래 소진 루프보다 "먼저" 읽어야 한다 — 0으로 만든 뒤 읽으면 amount가 전부 0이 되어
+      //     취소해도 재고가 하나도 안 돌아온다. 출고 기록을 먼저 넣는 현재 순서를 바꿀 때도 이 점을 지킬 것.
+      const detail = c.recs
+        .map(rec => ({ table: 'inventory_records', id: rec.id, amount: Number(rec.quantity) || 0, voided: true }))
+        .filter(d => d.amount > 0);
       const ob = await dbInsertOutboundRecord({
         date, product: c.product, size_code: c.sz, quantity: c.qty, unit: 'CT',
         partner_name: partner, source_type: 'inventory_partial',
         farm_name: c.farm, quality_grade: c.grade,
         weight_kg: Math.round(c.qty * kgPerCt * 10) / 10,
         note: '전량 출고(행/열)', is_void: false,
-        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+        ref_detail: detail
       });
       if (ob) invOutbounds.unshift(ob);
       for (const rec of c.recs) { await sbUpdate('inventory_records', rec.id, { is_void: true, quantity: 0 }); rec.is_void = true; rec.quantity = 0; }
