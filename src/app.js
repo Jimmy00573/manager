@@ -2808,11 +2808,13 @@ function renderDash() {
   const partnerLeft = nk.filter(k => { const [n, t] = k.split('||'); return nhfOwner(n, t) === '거래처'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
   // 농협行(우리 콘테이너가 농협에 나감) 회수 목록 — target_type='농협' 배차/픽의 농협명 distinct, hold>0만. getNhfContainerHold(C-1). ※'농협 콘테이너'(농협것)와 다름.
   const nhfHoldList = [...new Set([...dispatches.filter(d => d.target_type === '농협').map(d => d.farm), ...picks.filter(p => p.target_type === '농협').map(p => p.farm)])]
-    .map(nhf => ({ nhf, ...getNhfContainerHold(nhf), ctypes: getFCtypes(nhf, '농협') })).filter(x => x.hold > 0);
+    // ★hold !== 0 — 음수(과회수)도 보여야 한다. 농가는 [농가 관리] 목록이 '음수(확인필요)'로 잡아 주지만
+    //   농협·거래처는 이 목록 말고 보유를 보여 주는 곳이 없어, 양수만 걸러내면 오류가 화면에서 통째로 사라진다.
+    .map(nhf => ({ nhf, ...getNhfContainerHold(nhf), ctypes: getFCtypes(nhf, '농협') })).filter(x => x.hold !== 0);
   const nhfHoldTotal = nhfHoldList.reduce((s, x) => s + x.hold, 0);
   // 거래처行(우리 콘테이너가 거래처에 나감) 회수 목록 — 농협行과 대칭(getTargetContainerHold). 출고 내용(outbound)과는 연결 안 함.
   const ptHoldList = [...new Set([...dispatches.filter(d => d.target_type === '거래처').map(d => d.farm), ...picks.filter(p => p.target_type === '거래처').map(p => p.farm)])]
-    .map(nm => ({ nm, ...getTargetContainerHold(nm, '거래처'), ctypes: getFCtypes(nm, '거래처') })).filter(x => x.hold > 0);
+    .map(nm => ({ nm, ...getTargetContainerHold(nm, '거래처'), ctypes: getFCtypes(nm, '거래처') })).filter(x => x.hold !== 0);   // ★음수도 표시(위 농협行과 같은 이유)
   const ptHoldTotal = ptHoldList.reduce((s, x) => s + x.hold, 0);
   document.getElementById('kpi').innerHTML = `<div class="kpi"><div class="kpi-label">배출 대기</div><div class="kpi-val kv-pu">${dw}</div></div><div class="kpi"><div class="kpi-label">배출 완료</div><div class="kpi-val kv-gr">${dd}</div></div><div class="kpi"><div class="kpi-label">농가보유</div><div class="kpi-val kv-bl">${th}개</div></div><div class="kpi"><div class="kpi-label">농협行 우리콘</div><div class="kpi-val kv-bl">${nhfHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">거래처行 우리콘</div><div class="kpi-val kv-bl">${ptHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">농가 콘테이너</div><div class="kpi-val kv-pu">${to}개</div></div><div class="kpi"><div class="kpi-label">농협 콘테이너</div><div class="kpi-val kv-teal">${nc}개</div></div><div class="kpi"><div class="kpi-label">농협 파렛트</div><div class="kpi-val kv-teal">${np}개</div></div><div class="kpi"><div class="kpi-label">거래처 용기</div><div class="kpi-val kv-bl">${partnerLeft}개</div></div>`;
   renderSC();
@@ -2836,16 +2838,20 @@ function renderDash() {
   document.getElementById('arc').textContent = allReturns.length + '건 · ' + trTotal + '개';
   // 농협行 회수 항목(농협 배지로 구분) — 🧺 회수 버튼: openQuickRecovery 농협 확장(target_type='농협', C-2b-1). 관리자만.
   const nhfHoldHtml = nhfHoldList.map(x => {
-    const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nhf.replace(/'/g,"&#39;")}', ${x.hold}, '농협')">🧺 회수</button>` : '';
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-teal">농협</span> ${esc(x.nhf)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${recBtn}</div></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div>
+    // ★회수 버튼은 실제로 나가 있을 때(양수)만. 음수는 회수할 게 아니라 기록이 틀린 것이라 확인 배지로 알린다(농가 목록과 동일 규칙).
+    const recBtn = (isAdm && x.hold > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nhf.replace(/'/g,"&#39;")}', ${x.hold}, '농협')">🧺 회수</button>` : '';
+    const negTag = x.hold < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-teal">농협</span> ${esc(x.nhf)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${negTag}${recBtn}</div></div>
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:${x.hold < 0 ? '#C62828' : '#C05800'}">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div>
     <div class="alert-item-ctypes">${x.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}</div></div>`;
   }).join('');
   // 거래처行 회수 항목(거래처 배지 파랑으로 구분) — 농협行과 대칭. 관리자만 회수 버튼.
   const ptHoldHtml = ptHoldList.map(x => {
-    const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nm.replace(/'/g,"&#39;")}', ${x.hold}, '거래처')">🧺 회수</button>` : '';
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-info">거래처</span> ${esc(x.nm)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${recBtn}</div></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:#C05800">${x.hold}개</strong> 보유 (우리 콘테이너 거래처行)</div>
+    // ★위 농협行과 같은 규칙 — 회수 버튼은 양수일 때만, 음수는 확인 배지.
+    const recBtn = (isAdm && x.hold > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nm.replace(/'/g,"&#39;")}', ${x.hold}, '거래처')">🧺 회수</button>` : '';
+    const negTag = x.hold < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-info">거래처</span> ${esc(x.nm)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${negTag}${recBtn}</div></div>
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:${x.hold < 0 ? '#C62828' : '#C05800'}">${x.hold}개</strong> 보유 (우리 콘테이너 거래처行)</div>
     <div class="alert-item-ctypes">${x.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}</div></div>`;
   }).join('');
   document.getElementById('afb').innerHTML = (fhi.length || nhfHoldList.length || ptHoldList.length) ? fhi.map(i => {
