@@ -10110,10 +10110,35 @@ function drvHtml(drv) {
     : '<span style="color:#9CA3AF">—</span>';
 }
 // ── [화면: 재고관리 > 재고 요약(입출고 요약)] 날짜 선택(_summaryDate) 기준 입고·출고 집계 카드.
+// ====================================================================
+// [화면: 재고관리 > 재고 요약]  renderInvSummary — 현장 재고 전체 현황 한 장
+// ====================================================================
+// 639줄 단일 함수(앱 최장). 쪼개면 운영 리스크가 커서 구획 주석으로 길을 낸다.
+// 아래 0~16번 구분선을 따라가면 "어디를 고쳐야 하는지"를 찾을 수 있다.
+//
+// 큰 흐름:  집계(1~8) → 하루치 입출고(9~11) → HTML 조립(12~16)
+//   1~8   전역 배열을 읽어 맵으로 접는다. 화면 문자열을 만들지 않는다.
+//   9~11  _summaryDate 하루치 입고·출고. 재고가 아니라 "그날 오간 양"이다.
+//   12~16 앞에서 만든 맵만 읽어 HTML을 만든다. 여기서 새로 집계하지 않는다.
+//
+// 읽는 전역: inboundRecords, processingRecords, inventoryRecords, invSorted,
+//            invWaste, invJuiceBatches, invJuiceMasters, invOutbounds,
+//            pachiUsages, brixGrades, productWeights, PRODUCT_TYPE_MAP,
+//            SIZE_GROUPS_감귤류/만감류, _summaryDate/_summaryKind/_summaryOpen
+// ★inboundRecords·sortingResults 등은 재고 탭에 들어와야 채워진다 —
+//  다른 탭에서 이 함수를 호출하면 빈 배열을 "데이터 없음"으로 오판할 수 있다.
+//
+// 단위 주의: 미선과=CT · 선과=kg · 파치=CT(표시는 kg) · 주스=병 · 가공품=박스
 function renderInvSummary() {
   const el = document.getElementById('inv-summary-cards');
   if (!el) return;
 
+  // ==================================================================
+  // 0. 공통 헬퍼 · 스타일 상수
+  // ==================================================================
+  // 읽는 데이터: productWeights(품목별 kg/CT 마스터)
+  // kgPerCt(p) — 마스터에 없으면 17kg. 이 함수 전체에서 CT→kg 환산의 단일 기준이다.
+  // secHdr/CARD/TH_*/T* 는 표시용 상수뿐 — 집계와 무관하다.
   // ── 공통 헬퍼
   const kgPerCt = p => (productWeights && productWeights[p] != null) ? Number(productWeights[p]) : 17;
   const [y, mo, d] = td().split('-');
@@ -10145,12 +10170,39 @@ function renderInvSummary() {
         ${sub ? `<span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF">${sub}</span>` : ''}
        </div>`;
 
+  // ==================================================================
+  // 1. 처리 집계 — 입고건별 처리량 합계
+  // ==================================================================
+  // 읽는 데이터: processingRecords (processing_records)
+  // processedByInbound[inbound_id] = 그 입고건에 달린 처리 기록 quantity의 합.
+  // ★process_type을 가리지 않고 전부 더한다 — 선과/출고/폐기 등 모든 종류 포함.
+  // 아래 2번(미선과)과 7번(우선처리) 두 곳에서 이 맵을 잔여 계산에 쓴다.
   // ── 처리 집계
   const processedByInbound = {};
   processingRecords.forEach(r => {
     processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
   });
 
+  // ==================================================================
+  // 2. 미선과 재고 집계
+  // ==================================================================
+  // 읽는 데이터: inboundRecords (+ 위 1번의 processedByInbound)
+  // 대상: _isUnsortedTarget — is_void/exclude_from_unsorted 제외, 카테고리 선과품·파치 제외.
+  //
+  // ★★잔여 계산식(여기서 쓰는 것):
+  //      잔여 = r.quantity − processedByInbound[r.id]
+  //           = 입고량 − processing_records 전체 합(선과 포함)
+  //
+  // ★같은 뜻의 정식 헬퍼가 따로 있다 — getRemainingCT(r) (app.js 내 아래쪽):
+  //      잔여 = 입고량 − processing_records(process_type ≠ '선과') − sorting_results.input_ct
+  //
+  // ★두 식은 "선과 processing 행의 quantity == sorting_results.input_ct"일 때만 같은 값이다.
+  //  선과 저장(saveSortingResult)이 두 행을 함께 쓰므로 보통 성립한다.
+  //  2026-08-20 SQL 확인: 대상 101건 전부 두 식의 결과가 동일(불일치 0건).
+  // ★진단할 때 processing_records를 빼먹으면 잔여가 부풀려진다(2026-08-17 오진단 원인).
+  //  데이터 상태를 물어볼 땐 이 두 식을 같이 계산해 비교할 것.
+  //
+  // unsMap[품목] = { raw: 원물 CT, small: 소과 CT } — inbound_category=='소과'면 small, 그 외 raw.
   // ── 섹션 1: 미선과 재고 (원물 / 소과 분리)
   const unsMap = {};
   inboundRecords.filter(_isUnsortedTarget).forEach(r => {
@@ -10161,6 +10213,12 @@ function renderInvSummary() {
     else unsMap[r.product].raw += rem;
   });
 
+  // ==================================================================
+  // 3. 만감류 사이즈 → 대/중/소과 그룹 매핑
+  // ==================================================================
+  // 읽는 데이터: SIZE_GROUPS_만감류 상수 (한라봉만 HALLA_SIZES로 별도)
+  // ★한라봉은 같은 "12수"라도 다른 만감류와 그룹이 다르다 — 품목명에 '한라봉' 포함 여부로 분기.
+  // 아래 4번 선과 집계에서만 쓴다(감귤류는 SIZE_GROUPS_감귤류를 직접 찾는다).
   // ── 만감류 품목별 사이즈 그룹 매핑 (한라봉 별도 기준)
   const HALLA_SIZES = {
     '대과': new Set(['7수','8수','9수','10수']),
@@ -10178,6 +10236,20 @@ function renderInvSummary() {
     return '기타';
   };
 
+  // ==================================================================
+  // 4. 선과품 재고 집계 (등급별) — 화면 섹션 2·3의 원본 데이터
+  // ==================================================================
+  // 읽는 데이터: inventoryRecords(source_type: sorting/manual/adjustment/inbound_sorted) + invSorted
+  // ★두 소스를 각각 순회해 같은 맵에 누적한다. 한쪽만 고치면 숫자가 갈린다 — 항상 같이 볼 것.
+  //
+  // 만드는 것:
+  //   manGamMap[품목][그룹] / citrusMap[품목][그룹] = kg  (PRODUCT_TYPE_MAP으로 만감/감귤 분류)
+  //   sortDetail[품목][등급][사이즈] = {ct, kg}  ← 행 펼침(▸) 상세용
+  //   manGamHighKg/NormalKg, citrusHighKg/NormalKg  ← KPI의 고당/일반 분리
+  //
+  // ★등급은 gradeOf(r)(quality_grade||'일반')·isGraded(r)로 판정 — '고당' 하드코딩이 아니라
+  //  브릭스 등급(11.5br 등)도 자동으로 잡힌다. 등급 표시 순서는 아래 13번 빌더에서 정한다.
+  // ★kg = quantity(CT) × kgPerCt(품목). 선과 재고는 kg, 미선과·파치는 CT가 기본 단위다.
   // ── 섹션 2 & 3: 선과 재고
   const manGamMap = {}, citrusMap = {}, sortDetail = {};
   let manGamHighKg=0, manGamNormalKg=0, citrusHighKg=0, citrusNormalKg=0;
@@ -10225,6 +10297,19 @@ function renderInvSummary() {
     sortDetail[r.product][gd][r.count_num].kg += kg;
   });
 
+  // ==================================================================
+  // 5. 파치 재고 집계
+  // ==================================================================
+  // 읽는 데이터: pachiUsages(용도 마스터) + inventoryRecords(파치 6종) + invWaste
+  //
+  // ★파치 source_type 6종 — 하나라도 빠지면 그만큼 재고가 덜 잡힌다:
+  //    pachi          (일반 파치)        pachi_highacid (고산)
+  //    pachi_lowbrix  (저당)             pachi_tiny     (소과)
+  //    pachi_green    (녹색)             pachi_manual   (수동 입력)
+  //
+  // ★용도(usage)별로 재고 포함 여부가 다르다 — pachi_usages.include_in_stock=false면 집계 제외.
+  //  usage가 비어 있으면 '미분류'로 보고 항상 포함한다(누락 방지).
+  // pachiMap[품목]=CT 합, pachiDetail[품목][용도]=CT (행 펼침 상세용).
   // ── 섹션 4: 파치 재고
   const usageInclude = {};
   pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
@@ -10244,6 +10329,16 @@ function renderInvSummary() {
     pachiDetail[p][_u] = (pachiDetail[p][_u] || 0) + (Number(r.quantity) || 0);
   });
 
+  // ==================================================================
+  // 6. 주스 · 청 재고 집계
+  // ==================================================================
+  // 읽는 데이터: invJuiceBatches(배치) + invJuiceMasters(품목 마스터)
+  //
+  // ★주스·청은 juice_batches로 별도 관리한다 — 단위가 병/박스라 CT와 절대 섞지 않는다.
+  //  재고 = 살아있는 배치의 remaining_bottles 합 (is_void거나 잔여 0 이하인 배치는 제외).
+  // ★표시 단위(병/박스)와 박스당 개수는 배치 값이 아니라 마스터(invJuiceMasters) 값을 우선한다
+  //  — 배치마다 단위가 달라도 화면은 마스터 기준 하나로 통일된다.
+  // unit==='박스'는 가공품으로 따로 센다(KPI의 boxTotalNet, 아래 15번의 boxGroup).
   // ── 섹션 5: 주스/청 재고 (배치 기반)
   const juiceMap = {};
   invJuiceBatches.forEach(b => {
@@ -10260,6 +10355,13 @@ function renderInvSummary() {
     if (master?.default_per_box) juiceMap[p].perBox = master.default_per_box;
   });
 
+  // ==================================================================
+  // 7. 우선처리(경과일) 집계
+  // ==================================================================
+  // 읽는 데이터: inboundRecords + 1번의 processedByInbound
+  // 잔여가 남아 있으면서 입고일로부터 URGENCY_THRESHOLD_MID일 이상 지난 건을 센다.
+  // ★기준일 계산은 로컬 자정(new Date(ds+'T00:00:00')) — toISOString 쓰지 말 것.
+  // ★미선과 탭 priList와 같은 기준이어야 한다. 한쪽만 바꾸면 KPI와 목록 건수가 어긋난다.
   // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준)
   const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
   const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
@@ -10273,6 +10375,11 @@ function renderInvSummary() {
     }
   });
 
+  // ==================================================================
+  // 8. KPI 집계 — 위 2·4·5·6번 결과를 화면 상단 카드용 숫자로 요약
+  // ==================================================================
+  // 새로 읽는 데이터 없음. 앞에서 만든 맵만 합산한다.
+  // ★미선과=CT, 선과=kg, 파치=kg(CT×kgPerCt), 주스=병, 가공품=박스 — 단위가 전부 다르다.
   // ── KPI 집계
   const unsTotalCt    = Object.values(unsMap).reduce((s, v) => s + v.raw + v.small, 0);
   const manGamTotalKg = Object.values(manGamMap).reduce((s, m) => s + Object.values(m).reduce((a, b) => a + b, 0), 0);
@@ -10322,6 +10429,13 @@ function renderInvSummary() {
       '', true, 'juice') : ''}
   </div>`;
 
+  // ==================================================================
+  // 9. 입출고 요약 — 입고 탭 (하루치, _summaryDate 기준)
+  // ==================================================================
+  // 읽는 데이터: inboundRecords 중 date === _summaryDate
+  // ★여기부터는 "현재 재고"가 아니라 "그 하루에 오간 양"이다 — 위 집계와 목적이 다르다.
+  // 같은 원본을 네 가지로 묶는다: 목록 / 카테고리별(3단 계층) / 품목별 / 기사별.
+  // ★카테고리별 탭만 catProd* 접두사를 쓴다 — 품목별 탭의 prodMap/prodRows와 이름이 겹치기 때문.
   // ── 입출고 요약 (날짜 조회, 입고/출고 탭)
   if (!_summaryDate) _summaryDate = td();
   const summaryDate = _summaryDate;
@@ -10432,6 +10546,14 @@ function renderInvSummary() {
     inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
   }
 
+  // ==================================================================
+  // 10. 입출고 요약 — 출고 탭
+  // ==================================================================
+  // 읽는 데이터: invOutbounds 중 date === _summaryDate
+  // ★출고량은 weight_kg가 있으면 그대로 쓰고, 없을 때만 quantity × kgPerCt로 환산한다
+  //  (실측 무게가 있으면 환산값보다 우선).
+  // source_type별로 나눈다: pachi/pachi_manual=파치, juice=주스·가공품(단위로 구분),
+  // unsorted=미선과, sorting=선과품(품목→등급→그룹 3단으로 쌓아 카드로 그린다).
   // ── 출고 탭 집계
   const summaryOuts = invOutbounds.filter(o => !o.is_void && o.date === summaryDate);
 
@@ -10516,6 +10638,10 @@ function renderInvSummary() {
       </div>`
     : `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">출고 없음</div>`;
 
+  // ==================================================================
+  // 11. 입출고 카드 조립 (접이식 바 + 날짜 이동 + 입고/출고 탭 전환)
+  // ==================================================================
+  // 위 9·10번 결과를 하나의 카드 HTML(todayHtml)로 묶는다. 집계는 하지 않는다.
   // ── 접이식 요약 바 텍스트
   const sortingTotalKg = sortingProds.reduce((s, p) =>
     s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0), 0);
@@ -10553,6 +10679,11 @@ function renderInvSummary() {
     </div>` : ''}
   </div>`;
 
+  // ==================================================================
+  // 12. HTML 조립: 미선과 섹션 (화면 섹션 1)
+  // ==================================================================
+  // 쓰는 데이터: 2번 unsMap + 7번 priorityByProduct. 새 집계 없음.
+  // 품목별 비중 막대 + 원물/소과/합계 표.
   // ── 비중 막대 (미선과 섹션용)
   const unsEntries = Object.entries(unsMap).filter(([, v]) => v.raw + v.small > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const barEntriesSorted = [...unsEntries].sort((a, b) => (b[1].raw + b[1].small) - (a[1].raw + a[1].small));
@@ -10591,6 +10722,13 @@ function renderInvSummary() {
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
 
+  // ==================================================================
+  // 13. HTML 조립: 선과 섹션 빌더 (화면 섹션 2·3 공용)
+  // ==================================================================
+  // 쓰는 데이터: 4번 manGamMap/citrusMap + sortDetail. 새 집계 없음.
+  // ★n===2면 만감(사이즈 숫자순), 아니면 감귤(SIZE_GROUPS_감귤류 정의 순서)로 갈린다.
+  // ★등급 표시 순서: 일반 → 활성 브릭스(sort_order) → 남은 기타 등급. 재고 있는 등급만 그린다.
+  //  이 순서 규칙은 10번 출고 탭에도 같은 모양으로 한 번 더 나온다 — 바꿀 땐 두 곳 다 볼 것.
   // 섹션 2 & 3: 선과 빌더
   const citrusOrder = SIZE_GROUPS_감귤류.flatMap(g => g.sizes);
   const buildSortSection = (n, title, sub, dataMap, groups, detailMap) => {
@@ -10676,6 +10814,11 @@ function renderInvSummary() {
   const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~27수 기준)', manGamMap, ['대과', '중과', '소과'], sortDetail);
   const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(3L,왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과'], sortDetail);
 
+  // ==================================================================
+  // 14. HTML 조립: 파치 섹션 (화면 섹션 4)
+  // ==================================================================
+  // 쓰는 데이터: 5번 pachiMap/pachiDetail. 새 집계 없음.
+  // 용도 정렬은 pachi_usages.sort_order를 따르고 '미분류'는 항상 마지막(빨강 표시).
   // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
   const pachiUsageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
@@ -10706,6 +10849,11 @@ function renderInvSummary() {
         : EMPTY(4, '파치 재고 없음')}</tbody>
     </table></div>`;
 
+  // ==================================================================
+  // 15. HTML 조립: 주스 · 청 섹션 (화면 섹션 5)
+  // ==================================================================
+  // 쓰는 데이터: 6번 juiceMap. 새 집계 없음.
+  // ★분류 규칙은 이름·단위로만 정한다: 단위 '박스'=가공품 / 이름이 '청'으로 끝남=청 / 나머지=주스.
   // 섹션 5: 주스/청/가공품 (unit===박스=가공품, 청으로 끝남=청, 나머지=주스)
   const isCheong = name => (name || '').trim().endsWith('청');
   const juiceEntries = Object.entries(juiceMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
@@ -10736,6 +10884,10 @@ function renderInvSummary() {
         : EMPTY(3, '주스/청 재고 없음')}</tbody>
     </table></div>`;
 
+  // ==================================================================
+  // 16. 최종 출력 — 위에서 만든 조각을 화면 순서대로 붙인다
+  // ==================================================================
+  // 순서: KPI → 입출고 → 1.미선과 → 2.만감선과 → 3.감귤선과 → (4.파치 + 5.주스·청 2열)
   el.innerHTML = `<div>
     <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
       <div>
