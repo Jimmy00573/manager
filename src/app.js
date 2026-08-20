@@ -163,7 +163,6 @@ let auditLogPage = 1;
 const AUDIT_PER_PAGE = 15;
 let sortedView = 'list';
 let stock = { 황제: { init: 500 }, 시트리앙: { init: 300 }, 헌콘테이너: { init: 200 } };
-let stockEd = { 황제: false, 시트리앙: false, 헌콘테이너: false };
 
 let _msgTxt = '', _msgDrvTel = '';
 let _editFarmId = null, _editDrvId = null, _editPickId = null, _editPartnerId = null;
@@ -792,7 +791,6 @@ function renderSC() {
     const outTxt = over ? `+${(-st.out).toLocaleString()}` : `-${st.out.toLocaleString()}`;
     const p = st.init > 0 ? st.remain / st.init : 1;
     const rc = p > 0.3 ? 'sok' : p > 0.1 ? 'swarn' : 'sdanger';
-    const ed = stockEd[t];
     return `<div class="stock-card ${cc[t]}">
       <div style="font-size:20px;margin-bottom:4px">${_ctIcon(t)}</div>
       <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:500">${t}</div>
@@ -805,25 +803,50 @@ function renderSC() {
       </div>
       ${over ? `<div style="font-size:11px;color:#1565C0;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:4px 8px;margin:-4px 0 10px;line-height:1.45">회수가 배출보다 <strong>${(-st.out).toLocaleString()}개</strong> 많습니다.<br>기록에 없던 콘테이너가 돌아왔다면 초기재고를 올려 주세요.</div>` : ''}
       <div class="stock-edit-area">
-        ${ed
-          ? `<div class="stock-input-row" style="display:flex"><input type="number" id="si-${t}" value="${st.init}" min="0" onkeydown="if(event.key==='Enter'){event.preventDefault();saveStock('${t}');}else if(event.key==='Escape'){cancelStock('${t}');}"><button class="ssave" onclick="saveStock('${t}')">저장</button><button class="scancel" onclick="cancelStock('${t}')">취소</button></div>`
-          : `<div class="stock-display"><span>초기 <span class="val">${st.init.toLocaleString()}개</span></span><button class="sedit" onclick="editStock('${t}')">✏️ 수정</button></div>`
-        }
+        <div class="stock-display"><span>초기 <span class="val">${st.init.toLocaleString()}개</span></span></div>
       </div>
     </div>`;
   }).join('');
 }
 
-function editStock(t) { stockEd[t] = true; renderSC(); }
-function cancelStock(t) { stockEd[t] = false; renderSC(); }
+// 콘테이너 초기재고 저장 — 입력칸은 [설정 > 콘테이너 종류]에 있다(현황판은 표시 전용).
+// ★2026-08-20 이동: 현황판 첫 화면에 권한 검사 없는 '✏️ 수정' 버튼이 있어 누구나 바꿀 수 있었다.
+//   초기재고는 잔여 계산의 출발점(remain = init − 순배출)이라 바꾸면 재고 화면 숫자가 전부 달라진다.
+//   실사 때나 손대는 값이므로 매일 보는 화면에서 뺐다.
 async function saveStock(t) {
-  const v = parseInt(document.getElementById('si-' + t)?.value) || 0;
+  // ★함수 레벨에서 막는다 — 버튼만 숨기면 콘솔에서 직접 부를 수 있다.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 초기재고를 바꿀 수 있습니다.');
+  const el = document.getElementById('si-' + t);
+  if (!el) return;
+  const v = parseInt(el.value, 10);
+  if (isNaN(v) || v < 0) return alert('0 이상의 숫자를 입력하세요.');
+  const before = Number(stock[t]?.init) || 0;
+  if (v === before) return showToast('변경 사항이 없습니다.');
+  const st = getSt(t);
+  const msg = `${t} 초기재고를 ${before.toLocaleString()} → ${v.toLocaleString()}개로 바꿉니다.\n\n잔여가 ${st.remain.toLocaleString()} → ${(v - st.out).toLocaleString()}개로 바뀝니다.\n실사로 직접 센 값일 때만 바꾸세요.`;
+  if (!(await showConfirmEdit('초기재고 변경', msg))) return;
+
+  const prev = { ...(stock[t] || {}) };
   stock[t] = { init: v };
-  stockEd[t] = false;
   try {
     await saveStockSettings(stock);
-    renderSC(); chkStW();
-  } catch (e) { alert('재고 설정 저장 오류: ' + e.message); }
+  } catch (e) {
+    stock[t] = prev; renderContainerTypeCfg();
+    return alert('재고 설정 저장 오류: ' + e.message);
+  }
+  // ★이력은 저장에 성공한 뒤에 남긴다. 이력 실패로 되돌리면 DB와 화면이 갈린다.
+  //   ★audit_logs.target_id는 NOT NULL(text) — null을 넣으면 저장이 실패한다. 종류명을 식별자로 쓴다.
+  try {
+    await dbInsertAuditLog({
+      target_table: 'settings', target_id: t,
+      before_val: { init: before }, after_val: { init: v },
+      reason: `콘테이너 초기재고 변경 [${t}]`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    });
+  } catch (e) { console.warn('초기재고 변경 이력 기록 실패:', e.message); }
+
+  renderSC(); chkStW(); renderContainerTypeCfg();
+  showToast(`${t} 초기재고 ${v.toLocaleString()}개로 변경`);
 }
 
 function chkStW() {
@@ -5255,7 +5278,39 @@ function renderContainerTypeCfg() {
     </div>` : ''}
     ${list.length ? `<div class="tbl-wrap"><table>
       <thead><tr><th>종류명</th><th>소유</th><th>순서</th><th>사용</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>` : `<div class="empty">등록된 종류가 없습니다.</div>`}`;
+      <tbody>${rows}</tbody></table></div>` : `<div class="empty">등록된 종류가 없습니다.</div>`}
+    ${_stockInitCfgHtml(isAdm)}`;
+}
+
+// 초기재고 설정 — 우리 콘테이너(OT 3종)만. 남의것(농가것·농협것)은 우리가 보유량을 세는 대상이 아니라 초기재고 개념이 없다.
+// ★2026-08-20에 현황판에서 여기로 옮겼다. 현황판은 표시 전용, 수정은 설정에서(관리자만·이력 남김).
+// ★입력칸 id는 si-{종류}로 예전과 같다 — saveStock이 그대로 읽는다(현황판엔 더 이상 같은 id가 없어 충돌 없음).
+function _stockInitCfgHtml(isAdm) {
+  const inp = 'padding:5px 7px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
+  const rows = OT.map(t => {
+    const st = getSt(t);
+    return `<tr>
+      <td style="white-space:nowrap">${_ctBadge(t)}</td>
+      <td>${isAdm
+        ? `<input id="si-${t}" type="number" min="0" value="${st.init}" style="${inp};width:110px"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();saveStock('${t}');}">`
+        : `<strong>${st.init.toLocaleString()}</strong>`}</td>
+      <td style="text-align:right;color:#6B7280;white-space:nowrap">${st.out.toLocaleString()}</td>
+      <td style="text-align:right;font-weight:600;white-space:nowrap">${st.remain.toLocaleString()}</td>
+      <td style="text-align:right">${isAdm ? `<button class="btn edt" onclick="saveStock('${t}')">저장</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
+    <div style="font-size:14px;font-weight:700">초기재고 (우리 콘테이너)</div>
+    <div style="font-size:12px;color:var(--text-secondary);margin:2px 0 10px;line-height:1.5">
+      공장이 원래 보유한 총량입니다. <strong>잔여 = 초기재고 − 순배출</strong> 이라, 바꾸면 재고 화면 숫자가 전부 달라집니다.<br>
+      실사로 직접 센 값일 때만 바꾸세요. 변경 내용은 <strong>[변경 이력]</strong>에 남습니다.
+      ${isAdm ? '' : '<br><span style="color:#C05800">※ 관리자만 바꿀 수 있습니다.</span>'}
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>종류</th><th>초기재고</th><th style="text-align:right">순배출</th><th style="text-align:right">잔여</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+  </div>`;
 }
 async function addContainerType() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
@@ -11684,7 +11739,8 @@ const AUDIT_FIELD_LABELS = {
   brix_grade: '당도등급', acidity_grade: '산도등급', appearance_grade: '외관등급', defect_tags: '특이사항',
   brix_range: '당도범위', acidity_range: '산도범위', size_distribution: '크기분포',
   is_void: '무효여부', exclude_from_unsorted: '선과 안 함',
-  reclassification_source: '재선별출처', reclassification_reason: '재선별사유', original_work_date: '원본작업일'
+  reclassification_source: '재선별출처', reclassification_reason: '재선별사유', original_work_date: '원본작업일',
+  init: '초기재고'   // 콘테이너 초기재고(settings) — 라벨이 없으면 getAuditDiff가 걸러내 이력에 내용이 안 보인다
 };
 
 function getAuditDiff(log) {
@@ -11707,7 +11763,7 @@ function getAuditTableLabel(t) {
     inventory_sorted: '선과 재고', inventory_waste: '파치', inventory_juice: '주스',
     inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업',
     juice_batches: '주스·청', outbound_records: '출고',
-    inventory_records: '선과품 재고', sorting_results: '선과 차수' })[t] || t;
+    inventory_records: '선과품 재고', sorting_results: '선과 차수', settings: '설정' })[t] || t;
 }
 
 const AUDIT_ACTION_STYLE = {
