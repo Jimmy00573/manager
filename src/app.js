@@ -12403,10 +12403,15 @@ function _applyIbSort(arr) {
   });
 }
 
-// 기본 정렬 3단: ①선과 대기 여부(대기 위) → ②카테고리 순서(IB_CAT_SORT_ORDER) → ③날짜.
-//   대기는 오래된 입고 위, 그 외(완료·파치·선과품·선과 안 함)는 최신 입고 위.
+// 기본 정렬: ①선과 대기 여부(대기 위) → 그 다음은 ★그룹마다 기준이 다르다.
+//   · 대기 그룹  : 카테고리(IB_CAT_SORT_ORDER) → 날짜 오름차순(오래된 것 위)
+//   · 그 외 그룹 : 날짜 내림차순(최근 것 위) → 같은 날짜면 카테고리
 // ★①을 0순위로 두는 이유: 카테고리를 1순위로 올리면 '완료된 상품'이 '미완료 대과'보다 위로 온다.
-//   대기 건들 안에서 카테고리 순 → 날짜 순, 그 외 건들도 같은 규칙.
+// ★그룹마다 2·3순위를 뒤집는 이유(2026-08-21):
+//   대기 건은 관심사가 "무엇부터 처리할까"라 카테고리가 먼저다(상품부터, 오래된 것부터).
+//   끝난 건은 관심사가 "언제 뭐가 들어왔나"라 날짜가 먼저다.
+//   예전엔 그 외 그룹도 카테고리가 날짜보다 우선이라, 상품 85건이 전부 앞을 채우고
+//   방금 등록한 청과·파치가 4페이지 뒤로 밀렸다(필터를 걸어야만 찾을 수 있었음).
 function _applyIbStatusSort(arr, cntMap) {
   // 선과 대기=0(위) / 그 외=1(아래).
   // ★판정은 _isUnsortedTarget 재사용 — 행 색 로직과 같은 기준이어야 함.
@@ -12417,11 +12422,16 @@ function _applyIbStatusSort(arr, cntMap) {
     const ra = statusRank(a), rb = statusRank(b);
     if (ra !== rb) return ra - rb;            // ① 대기 위, 그 외 아래
     const ca = _ibCatRank(a.inbound_category), cb = _ibCatRank(b.inbound_category);
-    if (ca !== cb) return ca - cb;            // ② 상품→대과→소과→재선별→파치
     const da = a.date || '', db = b.date || '';
-    if (da === db) return 0;
-    if (ra === 0) return da < db ? -1 : 1;    // ③ 대기: 입고날짜 오름차순(오래된 것 위)
-    return da < db ? 1 : -1;                  // ③ 그 외: 입고날짜 내림차순(최신 것 위)
+    if (ra === 0) {
+      // 대기 그룹 — ★기존 동작 유지. 상품→대과→소과→청과→파치, 같은 카테고리면 오래된 입고부터.
+      if (ca !== cb) return ca - cb;
+      if (da !== db) return da < db ? -1 : 1;
+      return 0;
+    }
+    // 그 외 그룹 — 최근 입고가 위. 같은 날짜 안에서만 카테고리 순으로 묶는다.
+    if (da !== db) return da < db ? 1 : -1;
+    return ca - cb;
   });
 }
 
