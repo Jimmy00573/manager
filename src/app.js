@@ -13082,6 +13082,10 @@ async function saveInvOutbound(regId, sz) {
   try {
     // FIFO 차감(첫 레코드부터). 남은 수량 0되면 소진(is_void)
     let remaining = qty;
+    // ★취소(cancelOutbound) 복구용 차감 내역 — 파치(pachi)·선과(sorting) 출고와 같은 형태.
+    //   이게 비어 있으면 거래내역에 취소 버튼 자체가 안 뜬다(renderOutboundHistory의 cancelable 판정).
+    //   ★amount는 "그 행에서 실제로 뺀 양"이다. 전체 출고량(qty)을 넣으면 취소 시 재고가 부풀려진다.
+    const detail = [];
     for (const rec of recs) {
       if (remaining <= 1e-6) break;
       const rq = Number(rec.quantity) || 0;
@@ -13089,6 +13093,10 @@ async function saveInvOutbound(regId, sz) {
       const nq = Math.round((rq - take) * 100) / 100;
       if (nq <= 0) { await sbUpdate('inventory_records', rec.id, { is_void: true, quantity: 0 }); rec.is_void = true; rec.quantity = 0; }
       else { await sbUpdate('inventory_records', rec.id, { quantity: nq }); rec.quantity = nq; }
+      // ★기록하는 값은 take가 아니라 rq−nq(반올림 후 실제로 줄어든 양) — 그래야 되돌렸을 때 rq로 정확히 돌아온다.
+      //   voided=true면 cancelOutbound가 is_void도 함께 풀어 그 행을 되살린다.
+      const applied = Math.round((rq - (nq <= 0 ? 0 : nq)) * 100) / 100;
+      if (applied > 0) detail.push({ table: 'inventory_records', id: rec.id, amount: applied, voided: nq <= 0 });
       remaining -= take;
     }
     const ob = await dbInsertOutboundRecord({
@@ -13097,7 +13105,8 @@ async function saveInvOutbound(regId, sz) {
       farm_name: info.farm || null, quality_grade: grade,
       weight_kg: Math.round(qty * kgPerCt * 10) / 10,
       note: '부분 출고', is_void: false,
-      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      ref_detail: detail
     });
     if (ob) invOutbounds.unshift(ob);
     // 납품 콘테이너 자동 기록 — ctype 선택 시 출고 CT(1CT=콘테이너 1개)만큼 배출 pick. 배차가 만드는 pick과 동일 형태 → 집계·회수·이력 자동 반영.
