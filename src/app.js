@@ -749,10 +749,24 @@ function switchMsgTab(t) {
 }
 
 // ── 재고
+// ★★"나간 콘테이너"를 세는 규칙 — 공장 재고(getSt)와 대상별 종류 칩(getFCtypeMap)이 같이 쓴다.
+//   콘테이너가 밖으로 나가는 길은 둘이다:
+//     ① 배차(dispatches) — 종류가 dispatches.ctype에 있다. 이때 함께 생기는 auto pick은 ctype이 비어 있다.
+//     ② 배차 없이 나감 — 부분출고의 납품 콘테이너(outbound_id) · 수동거래 콘테이너(manual_tx_id).
+//        이쪽은 배차 행이 없어 종류가 picks.ctype에만 있다.
+//   ★그래서 ①은 dispatches에서, ②는 picks에서 세야 총량이 맞는다.
+//   ★배차 auto pick을 제외하는 조건이 (outbound_id || manual_tx_id)다 — 빼먹으면 배차분이 두 번 계산된다.
+//   ※2026-08-20 이 규칙이 getFCtypeMap에만 있고 getSt엔 없어서, 수동거래로 나간 시트리앙 25개가
+//     공장 재고의 '배출'에서 빠졌다. 회수는 세면서 배출은 안 세니 한 바퀴 돌 때마다 잔여가 부풀었다.
+//     같은 실수가 또 나지 않게 판정을 이 함수 하나로 모았다 — 새로 세는 곳이 생기면 여기를 쓸 것.
+function _isExtraOutPick(p) { return p.type === '배출' && (p.outbound_id || p.manual_tx_id) && !!p.ctype; }
+
 function getSt(t) {
   const init = stock[t]?.init || 0;
   // ctNorm — 옛 이름(노랑/초록/헌콘)으로 저장된 기존 행도 같은 종류로 합산한다. 이름만 바뀐 같은 물건이므로 수량은 변하지 않는다.
-  const disp = dispatches.filter(d => ctNorm(d.ctype) === t).reduce((s, d) => s + d.qty, 0);   // 총배출
+  const dispD = dispatches.filter(d => ctNorm(d.ctype) === t).reduce((s, d) => s + d.qty, 0);           // ① 배차로 나간 것
+  const dispP = picks.filter(p => _isExtraOutPick(p) && ctNorm(p.ctype) === t).reduce((s, p) => s + p.qty, 0);   // ② 배차 없이 나간 것(납품·수동거래)
+  const disp = dispD + dispP;   // 총배출
   const back = picks.filter(p => ctNorm(p.ctype) === t && (p.type === '원물수거' || p.type === '빈콘회수')).reduce((s, p) => s + p.qty, 0);   // 회수(공장 복귀)
   const out = Math.max(0, disp - back);   // 순배출(현재 나가있는 = 농가보유)
   return { init, out, disp, back, remain: init - out };   // remain = init − 순배출(회수분 복귀 반영)
@@ -2472,7 +2486,7 @@ function getFCtypeMap(fn, targetType) {
   // ★집계 키는 ctNorm으로 통일 — 옛 이름(초록)과 새 이름(시트리앙)이 섞여 있어도 한 종류로 합쳐 칩이 둘로 갈리지 않게.
   const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { const k = ctNorm(d.ctype); ob[k] = (ob[k] || 0) + d.qty; });
   // 납품 콘테이너(D-1 출고 / D-1b 수동거래) 배출 — outbound_id·manual_tx_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
-  picks.filter(p => p.farm === fn && p.type === '배출' && (p.outbound_id || p.manual_tx_id) && p.ctype && tgtOk(p)).forEach(p => { const k = ctNorm(p.ctype); ob[k] = (ob[k] || 0) + p.qty; });
+  picks.filter(p => p.farm === fn && _isExtraOutPick(p) && tgtOk(p)).forEach(p => { const k = ctNorm(p.ctype); ob[k] = (ob[k] || 0) + p.qty; });
   // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
   let recNull = 0; const recByType = {};
   picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && tgtOk(p)).forEach(p => {
