@@ -13799,10 +13799,28 @@ async function deleteUncheckedAudit() {
 // ── [화면: 재고관리 > 입고내역] 기본 목록 테이블(날짜/농가명/품목/비율/카테고리/수량/위치/기사/품질/메모/⋮)
 //    ※열 폭 colgroup은 이 파일이 아니라 index.html의 <table class="ib-list-tbl"> 안에 있음(폭 합 = style.css .ib-list-tbl min-width와 일치시킬 것).
 //    ※비슷한 목록: 선과 처리 센터는 _renderScTable, 뷰 모드는 renderIbFarmView/renderIbCatView/renderIbDoneView — 혼동 주의.
+// ====================================================================
+// renderInboundList 구획 안내 (바로 위 [화면:...] 주석과 함께 볼 것)
+// ====================================================================
+// 흐름: 1 뷰 모드 위임 → 2 선과 이력 → 3 필터 체인 → 4 필터 UI → 5 실사 모드
+//       → 6 정렬 → 7 페이지네이션 → 8 행 렌더
+//
+// ★1번에서 다른 뷰로 위임하면 그 아래는 아예 안 돈다. 필터·정렬을 고칠 때
+//  renderIbFarmView / renderIbCatView / renderIbDoneView도 같이 봐야 한다.
+//
+// 읽는 전역: inboundRecords, processingRecords, ibViewMode, ibFilterCat/Src/Product/Driver,
+//            ibFilterDateFrom/To, ibSearch, ibSortCol, _ibAuditMode
+// 쓰는 전역: _ibAuditVisible(실사 진행률·미확인 삭제가 참조), _expandedMemoId
 function renderInboundList() {
   _expandedMemoId = null;
   renderIbCatSummary();
 
+  // ==================================================================
+  // 1. ★뷰 모드 위임 — 여기서 갈라진다
+  // ==================================================================
+  // ibViewMode가 'farm'/'cat'/'done'이면 renderIbFarmView/renderIbCatView/renderIbDoneView로 넘기고 끝낸다.
+  // ★즉 아래 2~8번은 **기본(목록) 뷰에서만** 돈다. 필터·정렬을 고쳐도 다른 뷰엔 반영되지 않는다
+  //  — 네 곳을 같이 봐야 하는 이유다.
   // 농가별/카테고리별/선과완료 뷰 모드면 해당 함수에 위임
   if (ibViewMode === 'farm') { renderIbFarmView(); return; }
   if (ibViewMode === 'cat')  { renderIbCatView();  return; }
@@ -13812,12 +13830,25 @@ function renderInboundList() {
   if (!tbody) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
+  // ==================================================================
+  // 2. 선과 이력 카운트 맵
+  // ==================================================================
+  // 읽는 데이터: processingRecords 중 process_type === '선과'
+  // 입고건별로 몇 번 선과했는지. 아래 6번 상태 정렬(미선과→선과중→완료)의 판단 근거가 된다.
   // 선과 이력 카운트 맵 (processingRecords 기반, '선과' 타입만)
   const _sortingCountMap = {};
   processingRecords.filter(p => p.process_type === '선과').forEach(p => {
     _sortingCountMap[p.inbound_id] = (_sortingCountMap[p.inbound_id] || 0) + 1;
   });
 
+  // ==================================================================
+  // 3. ★필터 체인 — 순서대로 좁혀 나간다
+  // ==================================================================
+  //   !is_void → 카테고리(ibFilterCat) → 재선별 출처(ibFilterSrc, 카테고리가 재선별일 때만)
+  //   → 농가명 검색(ibSearch) → 품목(ibFilterProduct) → 수송기사(ibFilterDriver)
+  //   → 기간(ibFilterDateFrom/To) → [5번] 실사 모드면 잔여>0만
+  // ★수송기사 필터의 '__null__'은 기사 미입력 건을 뜻한다(빈 문자열과 구분).
+  // ★필터 상태는 전부 전역이라 화면을 나갔다 와도 유지된다. 초기화는 ibClearNewFilters.
   let visible = inboundRecords.filter(r => !r.is_void);
 
   // 카테고리·출처 필터 적용
@@ -13841,6 +13872,10 @@ function renderInboundList() {
   if (ibFilterDateFrom) visible = visible.filter(r => (r.date || '') >= ibFilterDateFrom);
   if (ibFilterDateTo) visible = visible.filter(r => (r.date || '') <= ibFilterDateTo);
 
+  // ==================================================================
+  // 4. 필터 UI 동기화 (칩·옵션·건수·버튼·정렬 아이콘)
+  // ==================================================================
+  // ★필터로 좁힌 결과(visible)를 기준으로 다시 그린다 — 순서를 3번 앞으로 옮기면 건수가 어긋난다.
   // 품목 옵션 갱신 + 필터 칩 + 카운트
   _refreshIbProductOptions();
   _renderIbProductChips();   // 1단 품목 칩(동적)
@@ -13853,6 +13888,14 @@ function renderInboundList() {
   _updateIbFilterBtns();
   _updateIbSortIcons();
 
+  // ==================================================================
+  // 5. 실사 모드 (_ibAuditMode)
+  // ==================================================================
+  // ★실사 모드에서는 잔여>0인 행만 남기고 페이지네이션도 끈다(전체를 한 화면에).
+  // ★잔여 판정은 getRemainingCT(r) — 입고량 − processing_records(선과 제외) − sorting_results.input_ct.
+  //  재고 요약(renderInvSummary)은 같은 뜻을 다른 식으로 계산한다. 숫자가 어긋나면 그 두 식을 비교할 것.
+  // ★_ibAuditVisible에 담아 두면 진행률·미확인 삭제가 그 배열을 본다.
+  // ★재고현황 실사(_invAuditMode)와는 완전히 별개다 — 이쪽은 inbound_records, 그쪽은 inventory_records.
   // 실사 모드 토글 버튼 상태 동기화
   const _auditBtn = document.getElementById('btn-ib-audit');
   if (_auditBtn) {
@@ -13879,9 +13922,18 @@ function renderInboundList() {
     return;
   }
 
+  // ==================================================================
+  // 6. 정렬
+  // ==================================================================
+  // 헤더를 클릭했으면(ibSortCol) 그 열로, 아니면 기본 상태 정렬(_applyIbStatusSort).
+  // ★기본 정렬 3단: 처리 대기 여부 → IB_CAT_SORT_ORDER(카테고리) → 날짜.
+  //  ★IB_CAT_SORT_ORDER는 선과 처리 센터(_renderScTable)와 **공유**한다 — 순서를 바꾸려면 상수 한 곳만 고칠 것.
   // 정렬 적용: 헤더 클릭 시 컬럼 정렬, 기본은 상태 우선 정렬(미선과→선과중→완료)
   visible = ibSortCol ? _applyIbSort(visible) : _applyIbStatusSort(visible, _sortingCountMap);
 
+  // ==================================================================
+  // 7. 페이지네이션 (실사 모드면 건너뜀)
+  // ==================================================================
   // 페이지네이션 계산
   const totalFiltered = visible.length;
   let pageRows;
@@ -13919,6 +13971,17 @@ function renderInboundList() {
 
   const IS = 'width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;box-sizing:border-box';
   const hasLegacy = pageRows.some(r => r._legacy);
+  // ==================================================================
+  // 8. 행 렌더 — ★행 색 규칙과 품질 열
+  // ==================================================================
+  //
+  // ★행 배경 우선순위(아래 코드 주석과 같은 순서):
+  //    실사 체크 > 완료·선과품(회색) > 선과 대상 아님(연보라) > 우선처리(노랑) > 기본(흰색)
+  // ★"선과 대상 아님" 판정은 반드시 _isUnsortedTarget을 재사용한다 — 색이 목록 판정과 어긋나지 않게.
+  //  여기서 새 조건을 만들면 "목록엔 있는데 색은 제외"처럼 보이는 어긋남이 생긴다.
+  // ★회색(#F3F4F6)을 안 쓰는 이유도 코드 주석에 있다 — 선과완료와 같은 색이라 "끝난 것"으로 읽히기 때문.
+  //
+  // 품질 열은 당도·산도 범위(brix/acid)를 문자열로 합쳐 보여준다. 저장 형식은 'min~max'.
   tbody.innerHTML = (hasLegacy ? [`<tr><td colspan="10" style="background:#FFF8E1;color:#E65100;font-size:12px;padding:6px 10px;text-align:center">
     ⚠️ 아래는 기존 데이터(inventory_unsorted)입니다. Supabase에서 마이그레이션 SQL을 실행하면 수정/삭제 기능이 활성화됩니다.
   </td></tr>`] : []).concat(pageRows.map(r => {
