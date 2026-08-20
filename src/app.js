@@ -8106,25 +8106,54 @@ async function saveJuiceOutbound(id) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
+    // ★★저장 순서 = 출고 기록 먼저 → 배치 차감 (2026-08-20, feea016·선과품·파치 출고와 같은 패턴).
+    //   옛 순서(차감 → 삽입)는 삽입이 실패하면 재고만 줄고 기록이 없어 복구 단서가 0이었다.
+    //   ★실패 방향 기준: 삽입 실패 → 배치 그대로, 기록 없음(아무 일도 안 일어난 것과 같다).
+    //                    차감 실패 → 기록만 남지만 배치 잔여가 화면에 그대로 보인다. → "기록이 먼저"가 덜 위험하다.
+
+    // 1) 차감 "계획"만 계산 — DB 접근 없는 순수 계산.
+    //    ★대상이 inventory_records가 아니라 juice_batches다(단위도 병/박스). 다른 출고와 달리 배치 1건뿐이라
+    //      FIFO가 없고 계획도 한 줄이다. ref_detail의 table도 'juice_batches'로 나간다
+    //      — cancelOutbound가 그 분기에서 remaining_bottles를 되돌린다.
     const newRem = b.remaining_bottles - qty;
     const voided = newRem <= 0;
     const patch  = voided ? { remaining_bottles: 0, is_void: true } : { remaining_bottles: newRem };
-    await sbUpdate('juice_batches', b.id, patch);
-    b.remaining_bottles = newRem;
-    if (voided) b.is_void = true;
+    // ★amount는 이 배치에서 실제로 뺀 양(qty). voided면 취소 시 is_void도 함께 풀어 배치를 되살린다.
+    const detail = [{ table: 'juice_batches', id: b.id, amount: qty, voided }];
 
     const price  = parseFloat(document.getElementById('job-price')?.value) || null;
     const amount = (price && qty) ? qty * price : null;
+    // 2) 출고 기록 먼저(기록이 우선 — 실패 시 배치는 그대로라 안전)
     const row = await dbInsertOutboundRecord({
       date, product: b.product_name, size_code: null, quantity: qty, unit: '병',
       partner_name: partner, source_type: 'juice',
       inventory_ref_id: b.id, box_count: box || null,
       expiry_date: b.expiry_date || null,
       farm_name: null, note, is_void: false, created_by: adm,
-      ref_detail: [{ table: 'juice_batches', id: b.id, amount: qty, voided }],
+      ref_detail: detail,
       unit_price: price, amount
     });
     if (row) invOutbounds.unshift(row);
+
+    // 3) 계획대로 배치 차감
+    try {
+      await sbUpdate('juice_batches', b.id, patch);
+      b.remaining_bottles = newRem;
+      if (voided) b.is_void = true;
+    } catch (e) {
+      // ★차감 대상이 1건뿐이라 "부분 적용"이 없다 → 방금 넣은 출고 기록을 무효화해 원상태로 되돌린다.
+      //   (FIFO로 여러 행을 건드리는 다른 출고 경로는 앞부분이 이미 적용됐을 수 있어 되돌리지 못하고,
+      //    대신 ref_detail을 적용분만 남기게 정정한다. 여기는 되돌릴 수 있으니 되돌리는 편이 깨끗하다.)
+      try {
+        if (row) {
+          await sbUpdate('outbound_records', row.id, { is_void: true });
+          const i = invOutbounds.findIndex(x => String(x.id) === String(row.id));
+          if (i >= 0) invOutbounds.splice(i, 1);
+        }
+      } catch (e2) {}
+      renderJuiceSection(); renderInvSummary();
+      throw new Error(`배치 차감에 실패해 출고를 취소했습니다.\n주스·청 재고가 그대로인지 확인해주세요.\n\n${e.message}`);
+    }
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
