@@ -7125,12 +7125,13 @@ function _renderInvMatrix(product, recs, auditMode) {
 
   // 중량(kg) row — 사이즈별 합계 CT × 품목 중량. kgPerCt는 이 스코프에 없어 productWeights 인라인.
   const kgPer = (productWeights && productWeights[product] != null) ? Number(productWeights[product]) : 17;
-  // 중량 row — 합계와 같은 파랑 계열로 한 덩어리처럼 보이게(합계보다 한 톤 연하게).
-  // ※예전 #F8FAFC는 회청색이라 합계와 따로 노는 두 줄처럼 보였다.
-  // ★#EFF6FF도 쓰지 않는다 — 그룹 색 GC[1](소과)과 같은 값이라, 나중에 합계 row를 지우거나
+  // 중량 row — 합계에 딸린 '부가 정보' 줄. 합계(CT)가 주값이고 중량은 거기서 환산한 값이라
+  //   같은 무게로 보이면 안 된다. 그래서 합계는 파랑(#DBEAFE), 중량은 연회색(#F1F5F9)으로 위계를 준다.
+  // ※한때 합계와 같은 #DBEAFE로 뒀더니 두 줄이 구분이 안 됐다(2026-08-20 Jimmy 지적). 색을 갈라 놓는다.
+  // ★#EFF6FF는 쓰지 않는다 — 그룹 색 GC[1](소과)과 같은 값이라, 나중에 합계 row를 지우거나
   //   순서를 바꾸면 소과 구간에서 다시 이어져 보인다. 함정을 남기지 않으려고 아예 안 겹치는 값으로 둔다.
-  // → 합계와 같은 #DBEAFE에 글자만 연하게. 색이 같으니 '합계+중량 한 덩어리'가 확실하다.
-  const Fk = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border-right:1px solid #D1D5DB;border-top:1px solid #BFDBFE;background:#DBEAFE;padding:5px 2px;color:#5A7184;';
+  // ※윗줄은 파란 실선(#BFDBFE)으로 남긴다 — 색이 갈라져도 '합계 블록에 이어지는 줄'이라는 신호.
+  const Fk = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border-right:1px solid #D1D5DB;border-top:1px solid #BFDBFE;background:#F1F5F9;padding:5px 2px;color:#64748B;';
   h += `<div style="${Fk}justify-content:flex-start;padding:5px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">중량(kg)</div>`;
   displaySizes.forEach(sz => {
     const kg = Math.round((colTotals[sz] || 0) * kgPer);
