@@ -9106,7 +9106,8 @@ function renderInvAll() {
 }
 
 function exportOutboundCSV() {
-  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스', inbound: '입고', manual_tx: '수동' };
+  // ★거래내역 화면의 srcMap·'출고 종류' 드롭다운과 같은 목록이어야 한다(세 곳 동시 수정).
+  const srcLabel = { sorting: '선과', pachi: '파치', unsorted: '미선과', juice: '주스', inventory_partial: '부분출고', inbound: '입고', manual_tx: '수동' };
   const txOut = invOutbounds.filter(r => !r.is_void).map(r => ({
     kind: 'out', date: r.date, product: r.product||'', size_code: r.size_code||'',
     qty: Number(r.quantity)||0, unit: r.unit||'CT', partner: r.partner_name||'',
@@ -9285,7 +9286,10 @@ function renderOutboundHistory() {
   function kindBadge(t) {
     const manualTag = t.manual ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:#E5E7EB;color:#6B7280;font-weight:600;margin-right:3px">수동</span>` : '';
     if (t.kind === 'in') return manualTag + `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#DBEAFE;color:#1D4ED8;font-weight:600">입고</span>`;
-    const srcMap = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'] };
+    // ★source_type 라벨은 이 화면 말고도 두 곳에 더 있다 — 늘릴 땐 셋 다 고칠 것:
+    //   ① 여기(배지)  ② 아래 '출고 종류' 드롭다운  ③ exportOutboundCSV의 srcLabel
+    //   inventory_partial = 재고현황에서 직접 내보낸 것(셀 부분출고 + 행/열 전량출고). 색은 그 화면의 #059669와 맞춤.
+    const srcMap = { sorting: ['선과','#3B82F6'], pachi: ['파치','#EC4899'], unsorted: ['미선과','#6B7280'], juice: ['주스','#F97316'], inventory_partial: ['부분출고','#059669'] };
     const [label, color] = srcMap[t.source_type] || ['출고','#EF4444'];
     return manualTag + `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:${color}20;color:${color};font-weight:600">${label}</span>`;
   }
@@ -9434,6 +9438,7 @@ function renderOutboundHistory() {
             <option value="sorting"${_obHistFilter.src==='sorting'?' selected':''}>선과</option>
             <option value="pachi"${_obHistFilter.src==='pachi'?' selected':''}>파치</option>
             <option value="unsorted"${_obHistFilter.src==='unsorted'?' selected':''}>미선과</option>
+            <option value="inventory_partial"${_obHistFilter.src==='inventory_partial'?' selected':''}>부분출고</option>
             <option value="juice"${_obHistFilter.src==='juice'?' selected':''}>주스</option>
             <option value="manual_tx"${_obHistFilter.src==='manual_tx'?' selected':''}>수동</option>
           </select></div>`:''}
