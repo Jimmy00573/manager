@@ -12206,7 +12206,18 @@ function getSizeGroupsFor(product) {
 // ── 품목 규칙 범위 사이즈(표시 전용) — 만감류 5~27수 고정 테이블이 과하게 넓은 문제.
 //    item_size_rules(min_su~max_su) 범위만 표시하되, 데이터에 실존하는 범위 밖 사이즈는 합집합으로 추가(누락 절대 방지).
 //    감귤류는 SIZES_감귤류 그대로(불변). 규칙 없는 만감류는 5~27 폴백. 계산·저장 무변.
-function sizesForProduct(product, dataSizes) {
+//
+// ★opts.overRule (2026-08-21) — 규칙 최소값보다 "더 큰 과일"(=작은 N수)까지 미리 열어 준다. ★입력 화면 전용.
+//   왜 옵션으로 두나: extras는 dataSizes에 실존하는 사이즈만 살려 주는데, 선과처리 그리드는 입력 '전'이라
+//   dataSizes가 비어 있다. 그래서 황금향 5·6·7수(규칙 대과 8~11의 바깥)를 적을 칸 자체가 없었다.
+//   반대로 표시 화면(재고현황 매트릭스·농가 결과표·선과이력)은 '데이터 있는 것만' 이 원칙이라 이 옵션을 안 쓴다 —
+//   전역으로 켜면 그 표들이 늘 빈 열 3~5개만큼 넓어진다(그래서 화면별로 다르게 처리).
+//   ★큰 쪽만 넓힌다(작은 쪽 max는 규칙 그대로). 하한은 SIZES_만감류 첫 값 = getSizeGroupsFor의 루프 하한(n=5)과
+//   같은 값을 쓴다 — 세 곳이 같은 경계를 공유해야 어긋나지 않는다.
+//   ★품목별로 다르게 두지 않는 이유: 규칙 최소가 황금향·천혜향·한라봉 8수, 카라향 10수라
+//   '규칙 최소 −3' 식으로 하면 카라향 5·6수가 또 막힌다.
+//   규칙 밖 사이즈의 그룹 배정은 getSizeGroupsFor가 이미 '기타'로 처리한다(대과에 섞이지 않음).
+function sizesForProduct(product, dataSizes, opts) {
   const pt = PRODUCT_TYPE_MAP[product] || '만감류';
   if (pt === '감귤류') return SIZES_감귤류;   // 감귤류 불변
   let base;
@@ -12214,8 +12225,11 @@ function sizesForProduct(product, dataSizes) {
   const rules = item ? itemSizeRules.filter(r => r.item_id === item.id) : [];
   if (!rules.length) base = SIZES_만감류;   // 규칙 없으면 5~27 전체 폴백
   else {
-    const min = Math.min(...rules.map(r => Number(r.min_su)));
+    const ruleMin = Math.min(...rules.map(r => Number(r.min_su)));
     const max = Math.max(...rules.map(r => Number(r.max_su)));
+    const min = (opts && opts.overRule)
+      ? Math.min(ruleMin, parseInt(SIZES_만감류[0], 10))   // 5수까지 확장 — 초과분은 '기타' 그룹으로 표시된다
+      : ruleMin;
     base = Array.from({ length: max - min + 1 }, (_, i) => `${min + i}수`);
   }
   const extras = [...new Set(dataSizes || [])].filter(sz => sz && !base.includes(sz));
@@ -15589,8 +15603,10 @@ function _srtExcelSizes() {
 
 function srtRenderSizeGrid(productType) {
   // 품목 규칙 범위(item_size_rules) + 엑셀 실존 사이즈 합집합. 품목 불명이면 타입 전체 폴백(기존 동작).
+  // ★overRule: 여긴 '입력' 화면이라 규칙 밖 큰 사이즈(예: 황금향 5·6·7수)도 값이 없어도 칸이 있어야 한다.
+  //   결과 표시 화면들(재고현황·농가 결과표·선과이력)은 이 옵션을 안 쓴다 — 값 없으면 열이 안 생기는 기존 동작 유지.
   const _r0 = inboundRecords.find(x => x.id === _sortingInboundId);
-  const sizes = _r0 ? sizesForProduct(_r0.product, _srtExcelSizes())
+  const sizes = _r0 ? sizesForProduct(_r0.product, _srtExcelSizes(), { overRule: true })
     : ((productType || '만감류') === '감귤류' ? SIZES_감귤류 : SIZES_만감류);
 
   const grades = _srtGradeLabels();
