@@ -13169,25 +13169,38 @@ async function saveInvOutbound(regId, sz) {
   const grade = recs[0]?.quality_grade || '일반';
   const kgPerCt = productWeights[info.product] != null ? productWeights[info.product] : 17;
   try {
-    // FIFO 차감(첫 레코드부터). 남은 수량 0되면 소진(is_void)
+    // ★★저장 순서 = 출고 기록 먼저 → 재고 차감 (2026-08-20에 뒤집음. 실사출고·행/열 일괄과 같은 순서).
+    //   옛 순서(차감 → 삽입)는 삽입이 실패하면 재고만 사라지고 기록이 없어 복구 단서가 0이었다.
+    //   ★어느 쪽 실패가 덜 위험한가 — 이 파일의 기준:
+    //     · 기록 삽입 실패 → 재고 그대로, 기록 없음. 아무 일도 안 일어난 것과 같다(안전).
+    //     · 재고 차감 실패 → 기록은 있는데 재고가 안 줄었다. 재고현황에 그대로 보여 눈에 띄고,
+    //                        ref_detail이 있으니 취소 버튼으로 되돌릴 수도 있다(복구 가능).
+    //   → "기록이 먼저"가 항상 덜 위험하다. REST만으로는 트랜잭션을 못 걸어서, 이 순서 규칙과
+    //     아래 3)의 정정 처리가 그 역할을 대신한다.
+
+    // 1) 차감 "계획"만 먼저 계산한다 — DB 접근 없는 순수 계산이다.
+    //    ★FIFO를 미리 확정할 수 있으므로 ref_detail을 삽입 시점에 바로 넣을 수 있다.
+    //    (삽입 후 sbUpdate로 ref_detail을 채우는 방식은, 그 갱신이 실패하면 ref_detail 없는 출고가
+    //     다시 생겨 취소 버튼이 안 뜬다 — 2026-08-20에 고친 그 문제가 재발한다. 그래서 안 쓴다.)
     let remaining = qty;
-    // ★취소(cancelOutbound) 복구용 차감 내역 — 파치(pachi)·선과(sorting) 출고와 같은 형태.
-    //   이게 비어 있으면 거래내역에 취소 버튼 자체가 안 뜬다(renderOutboundHistory의 cancelable 판정).
-    //   ★amount는 "그 행에서 실제로 뺀 양"이다. 전체 출고량(qty)을 넣으면 취소 시 재고가 부풀려진다.
-    const detail = [];
+    const plan = [];
     for (const rec of recs) {
       if (remaining <= 1e-6) break;
       const rq = Number(rec.quantity) || 0;
       const take = Math.min(rq, remaining);
       const nq = Math.round((rq - take) * 100) / 100;
-      if (nq <= 0) { await sbUpdate('inventory_records', rec.id, { is_void: true, quantity: 0 }); rec.is_void = true; rec.quantity = 0; }
-      else { await sbUpdate('inventory_records', rec.id, { quantity: nq }); rec.quantity = nq; }
-      // ★기록하는 값은 take가 아니라 rq−nq(반올림 후 실제로 줄어든 양) — 그래야 되돌렸을 때 rq로 정확히 돌아온다.
-      //   voided=true면 cancelOutbound가 is_void도 함께 풀어 그 행을 되살린다.
+      // ★기록하는 값은 take가 아니라 rq−nq(반올림 후 실제로 줄어들 양) — 그래야 되돌렸을 때 rq로 정확히 돌아온다.
       const applied = Math.round((rq - (nq <= 0 ? 0 : nq)) * 100) / 100;
-      if (applied > 0) detail.push({ table: 'inventory_records', id: rec.id, amount: applied, voided: nq <= 0 });
+      if (applied > 0) plan.push({ rec, nq, applied });
       remaining -= take;
     }
+    // ★취소(cancelOutbound) 복구용 차감 내역 — 파치(pachi)·선과(sorting) 출고와 같은 형태.
+    //   이게 비어 있으면 거래내역에 취소 버튼 자체가 안 뜬다(renderOutboundHistory의 cancelable 판정).
+    //   ★amount는 "그 행에서 실제로 뺀 양"이다. 전체 출고량(qty)을 넣으면 취소 시 재고가 부풀려진다.
+    //   voided=true면 cancelOutbound가 is_void도 함께 풀어 그 행을 되살린다.
+    const detail = plan.map(p => ({ table: 'inventory_records', id: p.rec.id, amount: p.applied, voided: p.nq <= 0 }));
+
+    // 2) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
     const ob = await dbInsertOutboundRecord({
       date, product: info.product, size_code: sz, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'inventory_partial',
@@ -13198,6 +13211,24 @@ async function saveInvOutbound(regId, sz) {
       ref_detail: detail
     });
     if (ob) invOutbounds.unshift(ob);
+
+    // 3) 계획대로 재고 차감. 남은 수량 0이 되는 행은 소진(is_void).
+    let done = 0;
+    try {
+      for (const p of plan) {
+        if (p.nq <= 0) { await sbUpdate('inventory_records', p.rec.id, { is_void: true, quantity: 0 }); p.rec.is_void = true; p.rec.quantity = 0; }
+        else { await sbUpdate('inventory_records', p.rec.id, { quantity: p.nq }); p.rec.quantity = p.nq; }
+        done++;
+      }
+    } catch (e) {
+      // ★차감이 중간에 끊기면 ref_detail이 실제 차감분보다 많아진다 → 그대로 두면 취소 시 재고가 부풀려진다.
+      //   실제로 적용된 앞쪽 done건만 남기도록 정정한다(plan과 detail은 같은 순서라 slice로 맞는다).
+      //   정정까지 실패하면 손댈 방법이 없으므로 아래 알림으로 사람이 재고를 확인하게 한다.
+      const applied = detail.slice(0, done);
+      try { if (ob) { await sbUpdate('outbound_records', ob.id, { ref_detail: applied }); ob.ref_detail = applied; } } catch (e2) {}
+      renderInventoryStatus();
+      throw new Error(`재고 차감이 ${done}/${plan.length}건에서 중단됐습니다.\n출고 기록은 저장됐으니 재고 수량을 확인해주세요.\n\n${e.message}`);
+    }
     // 납품 콘테이너 자동 기록 — ctype 선택 시 출고 CT(1CT=콘테이너 1개)만큼 배출 pick. 배차가 만드는 pick과 동일 형태 → 집계·회수·이력 자동 반영.
     if (ob && ctype) {
       try {
