@@ -3433,8 +3433,11 @@ function renderUpcomingHarvest() {
         <span style="font-size:12px;font-weight:700;color:#374151;min-width:74px">${LBL[di] || ''} ${dateTxt}</span>
         <span style="font-size:12px;color:#C7CBD1">수확 예정 없음</span></div>`;
     }
-    // 그날 나가는 콘테이너 합 — 인원·차량 가늠용
+    // 그날 나가는 콘테이너 합(신규 배송) + 그 농가들이 지금 갖고 있는 합(현재 보유) — 인원·차량 가늠용
+    // ★두 숫자는 뜻이 다르다. 신규 배송 = 그 수확일로 잡힌 배차, 현재 보유 = 지금 그 농가에 나가 있는 총량.
+    //   같은 '개'라 라벨을 안 붙이면 헷갈린다(실제로 헷갈렸던 지점).
     const dayCt = day.list.reduce((sum, h) => sum + _dispForHarvest(h.farm, h.date).total, 0);
+    const dayHold = day.list.reduce((sum, h) => sum + (getFCS(h.farm).hold || 0), 0);
     const rows = day.list.map(h => {
       const st = h.status || '수확전';
       const dp = _dispForHarvest(h.farm, h.date);
@@ -3443,8 +3446,18 @@ function renderUpcomingHarvest() {
       const stBadge = ongoing
         ? `<span class="badge b-info" style="font-size:10px">▶ 진행중 (${h.date.slice(5).replace('-','/')}~)</span>`
         : `<span class="badge ${_hvStBadge[st] || 'b-warn'}" style="font-size:10px">${st}</span>`;
+      // ★현재 보유 — getFCS(농가 총 보유)를 그대로 쓴다. 현황판 '처리필요'와 같은 헬퍼라 숫자가 반드시 일치한다.
+      //   ★신규 배송(dp.total)과 뜻이 다르다: 신규는 이번 수확일로 잡힌 배차, 보유는 지금 그 농가에 나가 있는 총량.
+      //     예) 한정효(의귀리230) 8/21 — 신규 70인데 보유 180(1차 때 나가서 안 돌아온 110이 포함).
+      //   ★종류별로 안 쪼갠다 — 신규 배송이 이미 종류 칩이라 보유까지 칩이면 한 줄에 칩이 대여섯 개가 되어
+      //     좁은 화면에서 밀린다. 종류별 내역은 현황판·농가별 진행 현황에서 본다.
+      const holdN = getFCS(h.farm).hold || 0;
+      const holdHtml = holdN !== 0
+        ? `<span style="font-size:11px;color:#9CA3AF;white-space:nowrap">현재 보유 <strong style="color:#374151">${fmtN(holdN)}</strong></span>`
+        : '';
       const dpHtml = dp.total > 0
-        ? Object.entries(dp.byType).map(([t, q]) => `<span class="ct ${_ctClass(t)}">${_ctIcon(t)} ${fmtN(q)}</span>`).join(' ')
+        ? `<span style="font-size:11px;color:#9CA3AF;white-space:nowrap">신규 배송</span> `
+          + Object.entries(dp.byType).map(([t, q]) => `<span class="ct ${_ctClass(t)}">${_ctIcon(t)} ${fmtN(q)}</span>`).join(' ')
         : (st === '수확완료'
             ? '<span style="font-size:11px;color:#C7CBD1">—</span>'
             : (noDispCnt++, '<span class="badge b-red" style="font-size:10px">⚠ 배차 없음</span>'));
@@ -3454,14 +3467,17 @@ function renderUpcomingHarvest() {
         ${h.item ? `<span style="font-size:11px;color:#6B7280">${esc(h.item)}</span>` : ''}
         <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round || 1}차</span>
         ${stBadge}
-        <span style="margin-left:auto;display:flex;gap:3px;align-items:center;flex-wrap:wrap">${dpHtml}</span>
+        <span style="margin-left:auto;display:flex;gap:3px 8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${dpHtml}${holdHtml}</span>
       </div>`;
     }).join('');
     return `<div style="border-top:1px solid #F3F4F6">
       <div style="padding:7px 14px;background:#FAFAFA;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:700;color:${di === 0 ? '#C05800' : '#374151'};min-width:74px">${LBL[di] || ''} ${dateTxt}</span>
         <span style="font-size:11px;color:#9CA3AF">${day.list.length}건</span>
-        ${dayCt > 0 ? `<span style="margin-left:auto;font-size:11px;color:#6B7280">콘테이너 <strong style="color:#C05800">${fmtN(dayCt)}개</strong></span>` : ''}
+        <span style="margin-left:auto;font-size:11px;color:#9CA3AF;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+          ${dayCt > 0 ? `<span>신규 배송 <strong style="color:#C05800">${fmtN(dayCt)}개</strong></span>` : ''}
+          ${dayHold > 0 ? `<span>현재 보유 <strong style="color:#374151">${fmtN(dayHold)}개</strong></span>` : ''}
+        </span>
       </div>${rows}</div>`;
   }).join('');
 
