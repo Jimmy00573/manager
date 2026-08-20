@@ -16653,6 +16653,25 @@ function togglePachiProduct(pi) {
 }
 
 // ── [화면: 재고관리 > 파치] 파치 재고 목록·집계. 파치 사용처/크기/상태 마스터는 위쪽 설정 구획 참고.
+// ====================================================================
+// [화면: 재고관리 > 파치] renderPachiSection — 파치 내역 표(348줄)
+// ====================================================================
+// 한 화면에 세 소스를 합쳐 그린다. 어느 소스에서 온 행이냐에 따라
+// 실사·일괄수정 대상 여부가 갈리는 것이 이 함수에서 가장 헷갈리는 지점이다.
+//
+//   Source 1  inventory_records (파치 6종)  … 주 데이터. 실사·일괄수정 대상.
+//   Source 2  invWaste (레거시)             … 표시만. 실사·일괄수정 제외.
+//   Source 3  inbound_records 파치(미전환)  … 표시만. 실사·일괄수정 제외.
+//
+// 흐름: 1~4 소스별 수집 → 5 합치기 → 6~8 규칙·축 정하기 → 9~12 화면 조립
+//
+// 읽는 전역: inventoryRecords, invWaste, inboundRecords, pachiUsages,
+//            pachiSizes, pachiConditions, storageLocations, productWeights,
+//            _pachiViewMode, _pachiCollapsed, _pachiAuditMode, _pachiRowRegistry
+// 쓰는 전역(다른 함수가 참조): _pachiAuditVisible, _pachiProdKeysNow,
+//            _pachiGroupKeysNow, _pachiRowRegistry
+//
+// 단위: CT가 원본. kg = CT x kgPerCt(품목) 환산값이며 마스터에 없으면 17kg.
 function renderPachiSection() {
   const el = document.getElementById('inv-pachi-section');
   if (!el) return;
@@ -16661,6 +16680,33 @@ function renderPachiSection() {
   const kgPerCt = p => (productWeights && productWeights[p] != null) ? Number(productWeights[p]) : 17;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
+  // ==================================================================
+  // 1. Source 1 — inventory_records 파치 (주 데이터)
+  // ==================================================================
+  // is_void 아닌 행 중 source_type이 파치 6종인 것.
+  //
+  // ★source_type 6종 = "왜 파치가 됐는지"(사유). 2026-08-20 DB 실사용 건수:
+  //    pachi          일반 파치   119행   ← 선과 중 정상품에서 빠진 것
+  //    pachi_highacid 고산도       48행   ← 산도 높아 제외
+  //    pachi_lowbrix  저당도       29행   ← 당도 낮아 제외
+  //    pachi_green    청과         26행   ← 덜 익어 제외
+  //    pachi_tiny     극소과       16행   ← 너무 작아 제외
+  //    pachi_manual   수동        160행   ← 사람이 직접 등록(선과 경로 아님)
+  // ★6종 중 하나라도 빠뜨리면 그만큼 재고가 통째로 덜 잡힌다. 목록은 여기와
+  //  renderInvSummary 5번 구획 두 곳에 있다 — 늘리거나 줄일 땐 두 곳 다 고칠 것.
+  // ★pachiKindLabel은 화면 라벨일 뿐이고, pachi_manual도 '파치'로 표시된다
+  //  (출처 구분은 아래 isSorting/fromInbound 배지가 맡는다).
+  //
+  // ★혼동 주의 — pachi_size_group · pachi_condition은 source_type이 아니라
+  //  inventory_records의 "컬럼"이다. source_type으로 찾으면 0건이라 없는 줄 알기 쉽다.
+  //  2026-08-20 DB 실제: pachi_condition 123행, pachi_size_group 105행이 채워져 있다.
+  //  마스터도 따로 있다 — pachi_sizes 5종(대과/혼합/극소과/중과/로얄소과),
+  //  pachi_conditions 6종(싸비/약해/청과/고산도/저당도/꼭지 갈변).
+  //  아래 7번 뷰 전환의 크기별·상태별 축이 이 두 컬럼을 읽는다.
+  //
+  // ★묶는 단위(key): 선과 파치는 sorting_result_id + source_type으로 묶어 한 줄
+  //  (한 선과 결과에서 나온 같은 사유의 파치는 한 건으로 본다). 그 외는 행마다 한 줄.
+  //  그래서 화면의 1건이 inventory_records 여러 행일 수 있다 — ids 배열에 원본 id가 다 들어 있다.
   // Source 1: inventory_records (선과 자동 + 수동 등록)
   const irRecs = inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_lowbrix','pachi_tiny','pachi_green'].includes(r.source_type));
   const isSortingPachi = (st) => ['pachi','pachi_highacid','pachi_lowbrix','pachi_tiny','pachi_green'].includes(st);
@@ -16686,9 +16732,20 @@ function renderPachiSection() {
     irGrouped[key].ids.push(r.id);
   });
   Object.values(irGrouped).forEach(b => { b.kg = Math.round(b.ct * kgPerCt(b.product)); });
+  // ==================================================================
+  // 2. 파치 실사 대상 확정 (_pachiAuditVisible)
+  // ==================================================================
+  // ★실사 대상 = Source 1(inventory_records)만. Source 2(레거시)·Source 3(입고)는 제외한다.
+  //  그 둘은 inventory_records 행이 아니라 audit_checked_at을 쓸 자리가 없기 때문.
+  //  실사 진행률·초기화·미확인 삭제가 전부 이 배열을 기준으로 돈다.
   // 파치 실사 대상 = inventory_records 파치 그룹 행(레거시 invWaste·입고 제외). 진행률·초기화·미확인삭제가 참조.
   _pachiAuditVisible = Object.values(irGrouped);
 
+  // ==================================================================
+  // 3. Source 2 — invWaste (레거시 수동 데이터)
+  // ==================================================================
+  // source_type 개념이 생기기 전에 쌓인 옛 파치. 전부 isLegacy=true.
+  // ★실사 대상 아님, 일괄 지정(체크박스) 대상도 아님 — makeDataRow에서 리딩 셀이 빈다.
   // Source 2: invWaste (레거시 수동 데이터)
   const wasteRows = invWaste.map(r => ({
     date: r.date, farm: null, product: r.product || '기타',
@@ -16699,6 +16756,22 @@ function renderPachiSection() {
     sizeGroup: null, condition: null
   }));
 
+  // ==================================================================
+  // 4. Source 3 — 입고 파치 중 아직 재고로 전환 안 된 것
+  // ==================================================================
+  // 읽는 데이터: inboundRecords 중 inbound_category === '파치'
+  //
+  // ★파치가 생기는 경로는 둘이다:
+  //    ① 선과 결과의 비정상품 → inventory_records(source_type=파치 6종) … Source 1
+  //    ② 입고 자체가 파치 → inbound_records(inbound_category='파치') … 여기
+  //
+  // ★②는 나중에 inventory_records로 전환되며 inbound_record_id로 연결된다.
+  //  전환된 건은 Source 1에 이미 잡히므로 여기서 제외해야 한다 — 안 그러면 이중 계상.
+  //  그 제외 조건이 아래 필터의 `!inventoryRecords.some(...)` 이다.
+  //
+  // ★"입고" 배지가 붙는 경로가 두 가지라 헷갈린다 — 플래그가 다르다:
+  //    isInbound=true   … 여기 Source 3(미전환). 실사·일괄수정 대상 아님.
+  //    fromInbound=true … Source 1의 전환된 입고 파치. 표시 전용이고 실사·수정은 된다.
   // Source 3: inbound_records category=파치 — 단, inventory_records로 전환(source_type='pachi', inbound_record_id 연결)된 건은
   // Source 1(irGrouped)에서 이미 표시되므로 제외(중복 방지). 아직 전환 안 된 레거시 입고 파치만 여기서 표시.
   const inboundPachi = inboundRecords
@@ -16714,12 +16787,29 @@ function renderPachiSection() {
       sizeGroup: null, condition: null
     }));
 
+  // ==================================================================
+  // 5. 세 소스 합치기 + 정렬
+  // ==================================================================
+  // 이후 모든 집계·그룹핑은 여기서 만든 allRows 하나만 본다.
   // 통합 정렬: 품목명 가나다 → 날짜 최신순
   const allRows = [...Object.values(irGrouped), ...wasteRows, ...inboundPachi].sort((a, b) => {
     const pc = (a.product || '').localeCompare(b.product || '', 'ko');
     return pc !== 0 ? pc : (b.date || '').localeCompare(a.date || '');
   });
 
+  // ==================================================================
+  // 6. ★사용처(usage)별 재고 포함/제외 규칙
+  // ==================================================================
+  // 읽는 데이터: pachiUsages (pachi_usages 마스터)
+  //
+  // ★규칙: include_in_stock === false 인 사용처만 합계에서 뺀다.
+  //  usage가 비어 있으면 '미분류'로 보고 '항상 포함'한다 — 분류 안 했다고 재고가 사라지면 안 되니까.
+  // ★제외돼도 목록에는 그대로 보인다. 행이 흐려지고(opacity .55) 재고제외 배지가 붙을 뿐,
+  //  빠지는 건 합계(totalCt/totalKg)와 품목·하위그룹 소계뿐이다.
+  //
+  // 2026-08-20 DB: pachi_usages 12종 중 제외 대상은 1종뿐 —
+  //    "올탑예정(9브릭스 이하)" (include_in_stock=false)
+  // ★renderInvSummary 5번 구획도 같은 규칙을 따로 구현해 두었다(isUsageIncluded). 바꿀 땐 두 곳 다.
   // 사용처 재고포함 여부 맵
   const usageInclude = {};
   pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
@@ -16728,6 +16818,11 @@ function renderPachiSection() {
   const totalCt = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
   const totalKg = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
 
+  // ==================================================================
+  // 7. 축 순서 만들기 (사용처 / 위치)
+  // ==================================================================
+  // 공통 규칙: 마스터 sort_order 순 → 마스터에 없는데 데이터에만 있는 값 → 미분류·미지정은 맨 뒤.
+  // ★마스터에서 지운 값이 옛 데이터에 남아 있어도 목록에서 사라지지 않게 하는 장치다.
   // 사용처 순서(마스터 sort_order + 미분류 + 데이터 잔여) — 그룹핑/요약용
   const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
   usageOrder.push('미분류');
@@ -16741,6 +16836,12 @@ function renderPachiSection() {
   allRows.forEach(r => { const ln = r.location || '미지정'; if (ln !== '미지정' && !locOrder.includes(ln)) locOrder.push(ln); });
   locOrder.push('미지정');
 
+  // ==================================================================
+  // 8. 뷰 모드 — 품목(고정) 아래 하위 축 선택
+  // ==================================================================
+  // _pachiViewMode: 'none'(품목만) | 'size' | 'condition' | 'usage' | 'location'
+  // ★품목은 항상 최상위다. 어떤 축을 골라도 서로 다른 품목이 한 줄에 섞이지 않는다.
+  // 읽는 컬럼: size→pachi_size_group, condition→pachi_condition, location→location, usage→usage.
   // 품목 항상 최상위 고정 + 하위 축(_pachiViewMode)으로 세분화 — 3단계 수정
   const _pvMode = _pachiViewMode;   // 'none'(품목만) | 'size' | 'condition' | 'usage' | 'location'
   const _subKeyOf = r =>
@@ -16765,6 +16866,15 @@ function renderPachiSection() {
   else if (_pvMode === 'location')  _subMasterLabels = locOrder;      // 위치 마스터 + 잔여 + 미지정(맨 뒤)
   else if (_pvMode === 'usage')     _subMasterLabels = usageOrder;   // 이미 pachiUsages sort_order + 미분류 + 잔여 포함
 
+  // ==================================================================
+  // 9. 행 렌더 (배지 · 실사 체크 · 일괄지정 체크박스)
+  // ==================================================================
+  //
+  // ★출처 배지 우선순위: isSorting(선과·파랑) → isInbound 또는 fromInbound(입고·노랑) → 나머지(수동·보라).
+  // ★실사 대상 판정: auditable = !isLegacy && !isInbound — 4번의 두 플래그 설명과 같은 기준.
+  //  확인 여부는 그 행의 ids 전부가 audit_checked_at을 가져야 "확인"이다(일부만이면 미확인).
+  // ★_pachiRowRegistry[regId]에 행 객체를 담아 두고 onclick에 regId만 넘긴다
+  //  — 행 데이터가 여러 원본 id의 묶음이라 id 하나로는 되짚을 수 없기 때문.
   const makeDataRow = r => {
     const regId = ++_pachiRowRegCounter;
     _pachiRowRegistry[regId] = r;
@@ -16843,6 +16953,11 @@ function renderPachiSection() {
   const _subGroupKeys = [];   // 접이식 하위그룹 키(렌더 순서 = togglePachiGroup 인덱스)
   _pachiProdKeysNow = [];     // 품목 키(렌더 순서 = togglePachiProduct 인덱스)
 
+  // ==================================================================
+  // 10. 품목 헤더 요약 줄
+  // ==================================================================
+  // 접어 놔도 그 품목이 어느 축에 얼마씩 있는지 보이게 한다.
+  // ★여기서도 isIncluded로 재고제외분을 빼고 센다(6번 규칙과 동일). 미분류·미지정은 빨강.
   // 품목 헤더 요약: 현재 축(_pvMode) 분포 (접혀도 뭐가 얼마인지 보임). 미분류/미지정 빨강.
   const _axisSummaryParts = pRows => {
     const keyOf = r =>
@@ -16879,6 +16994,13 @@ function renderPachiSection() {
     _pachiViewJustChanged = false;
   }
 
+  // ==================================================================
+  // 11. 표 본문 조립 (품목 → 하위그룹 → 행)
+  // ==================================================================
+  // 접힘 상태는 전역 _pachiCollapsed(Set)에 키로 보관 —
+  //    품목: 'PROD::품목'   하위그룹: '품목||하위키'
+  // ★토글 함수는 인덱스로 부르므로(togglePachiProduct/Group), 여기서 쌓는
+  //  _pachiProdKeysNow·_pachiGroupKeysNow의 순서가 곧 그 인덱스다. 렌더 순서를 바꾸면 같이 깨진다.
   const groupedHtml = prodOrder.map((product, pi) => {
     const pRows = prodGroups[product];
     const pCt = pRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
@@ -16945,6 +17067,12 @@ function renderPachiSection() {
   }).join('');
   _pachiGroupKeysNow = _subGroupKeys;
 
+  // ==================================================================
+  // 12. 뷰 전환 탭 · 일괄 지정 바 · 최종 출력
+  // ==================================================================
+  // 집계는 하지 않는다. 위에서 만든 조각을 붙이기만 한다.
+  // ★일괄 지정 바와 ⋮ 메뉴, 실사 버튼은 admin에게만 나온다(isAdm).
+  // ★열 개수 _pachiColspan은 admin이면 13, 아니면 11 — 열을 늘리면 이 값도 같이 고칠 것.
   // 하위 분류축 전환 탭 (품목 안 분류: 전체/크기별/상태별/사용처별) — 3단계 수정
   const _VB = (active) => `padding:4px 14px;border-radius:14px;border:1.5px solid ${active ? '#1E3A5F' : '#D1D5DB'};background:${active ? '#1E3A5F' : '#fff'};color:${active ? '#fff' : '#374151'};font-size:12px;font-weight:600;cursor:pointer;font-family:inherit`;
   const viewTabs = `
