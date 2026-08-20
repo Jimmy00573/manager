@@ -768,8 +768,14 @@ function getSt(t) {
   const dispP = picks.filter(p => _isExtraOutPick(p) && ctNorm(p.ctype) === t).reduce((s, p) => s + p.qty, 0);   // ② 배차 없이 나간 것(납품·수동거래)
   const disp = dispD + dispP;   // 총배출
   const back = picks.filter(p => ctNorm(p.ctype) === t && (p.type === '원물수거' || p.type === '빈콘회수')).reduce((s, p) => s + p.qty, 0);   // 회수(공장 복귀)
-  const out = Math.max(0, disp - back);   // 순배출(현재 나가있는 = 농가보유)
-  return { init, out, disp, back, remain: init - out };   // remain = init − 순배출(회수분 복귀 반영)
+  // 순배출(현재 나가있는 = 대상들이 보유 중인 양). ★음수를 0으로 누르지 않는다.
+  //   음수 = 회수가 배출보다 많다는 뜻인데, 이건 오류가 아닐 수 있다 —
+  //   ★이 프로그램 도입 전부터 농가에 있던 '기록에 없는 콘테이너'가 돌아오면 배출 없이 회수만 생긴다(Jimmy 확인).
+  //   그래서 회수 입력 자체도 막지 않는다(과회수 검증을 안 넣기로 확정, 2026-08-20).
+  //   ★0으로 누르면 잔여가 초기재고와 같아져 "정상"으로 보인다 — 이상 상태를 알아챌 방법이 사라진다.
+  //   숨기지 말고 보이게 한다. 농협·거래처 보유를 hold !== 0으로 바꾼 것(b71c704)과 같은 원칙.
+  const out = disp - back;
+  return { init, out, disp, back, remain: init - out };   // remain = init − 순배출(음수면 초기재고보다 커진다 = 기록에 없던 것이 들어옴)
 }
 
 function renderSC() {
@@ -778,6 +784,12 @@ function renderSC() {
   const cc = { 황제: 'yellow', 시트리앙: 'green', 헌콘테이너: 'old' };
   el.innerHTML = OT.map(t => {
     const st = getSt(t);
+    // ★순배출이 음수 = 회수가 배출보다 많다. 기록에 없던 콘테이너가 돌아온 경우일 수 있어 오류로 단정하지 않는다(getSt 주석 참고).
+    //   ※이때 잔여가 초기재고를 넘는다. 비율 p는 색상 클래스 고르는 데만 쓰이므로(폭을 쓰는 막대 없음)
+    //     100%를 넘어도 레이아웃은 깨지지 않고 'sok'(초록)이 된다.
+    const over = st.out < 0;
+    // ★배출 칸은 '-' 를 앞에 붙여 쓰던 자리다. 음수를 그대로 넣으면 '--50'이 되므로 부호를 직접 만든다.
+    const outTxt = over ? `+${(-st.out).toLocaleString()}` : `-${st.out.toLocaleString()}`;
     const p = st.init > 0 ? st.remain / st.init : 1;
     const rc = p > 0.3 ? 'sok' : p > 0.1 ? 'swarn' : 'sdanger';
     const ed = stockEd[t];
@@ -787,10 +799,11 @@ function renderSC() {
       <div class="stock-nums">
         <div class="stock-num-box"><div class="stock-num">${st.init.toLocaleString()}</div><div class="stock-sub">초기재고</div></div>
         <div class="stock-divider"></div>
-        <div class="stock-num-box"><div class="stock-num out">-${st.out.toLocaleString()}</div><div class="stock-sub">배출</div></div>
+        <div class="stock-num-box"><div class="stock-num out"${over ? ' style="color:#1565C0"' : ''}>${outTxt}</div><div class="stock-sub">${over ? '회수 초과' : '배출'}</div></div>
         <div class="stock-divider"></div>
         <div class="stock-num-box"><div class="stock-num remain ${rc}">${st.remain.toLocaleString()}</div><div class="stock-sub">잔여</div></div>
       </div>
+      ${over ? `<div style="font-size:11px;color:#1565C0;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:4px 8px;margin:-4px 0 10px;line-height:1.45">회수가 배출보다 <strong>${(-st.out).toLocaleString()}개</strong> 많습니다.<br>기록에 없던 콘테이너가 돌아왔다면 초기재고를 올려 주세요.</div>` : ''}
       <div class="stock-edit-area">
         ${ed
           ? `<div class="stock-input-row" style="display:flex"><input type="number" id="si-${t}" value="${st.init}" min="0" onkeydown="if(event.key==='Enter'){event.preventDefault();saveStock('${t}');}else if(event.key==='Escape'){cancelStock('${t}');}"><button class="ssave" onclick="saveStock('${t}')">저장</button><button class="scancel" onclick="cancelStock('${t}')">취소</button></div>`
