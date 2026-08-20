@@ -1132,6 +1132,7 @@
             <button class="ib-fcat" data-cat="상품"  onclick="setIbFilter('상품')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">상품</button>
             <button class="ib-fcat" data-cat="대과"  onclick="setIbFilter('대과')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">대과</button>
             <button class="ib-fcat" data-cat="소과"  onclick="setIbFilter('소과')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">소과</button>
+            <button class="ib-fcat" data-cat="청과"  onclick="setIbFilter('청과')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">청과</button>
             <button class="ib-fcat" data-cat="파치"  onclick="setIbFilter('파치')"  style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">파치</button>
             <button class="ib-fcat" data-cat="재선별" onclick="setIbFilter('재선별')" style="font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit">재선별 ⭐</button>
             <!-- 3단: 재선별 선택 시 출처 필터 -->
@@ -1471,7 +1472,9 @@
           <option value="상품">상품</option>
           <option value="대과">대과</option>
           <option value="소과">소과</option>
+          <option value="청과">청과</option>
           <option value="파치">파치</option>
+          <!-- ★재선별은 신규 등록에선 빠졌지만 기존 2건을 수정할 때 필요해 수정 모달에는 남긴다. -->
           <option value="재선별">재선별 ⭐</option>
         </select>
       </div>
@@ -1917,6 +1920,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=527"></script>
+<script src="src/app.js?v=528"></script>
 </body>
 </html>

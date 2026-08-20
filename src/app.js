@@ -5719,6 +5719,8 @@ function _ibRecalcCatQty() {
     } else { hint.textContent = ''; }
   }
   // 재선별 칸에 값이 있으면 기존 재선별 섹션 토글을 그대로 태운다(숨긴 ib-category가 스위치 역할)
+  // ★2026-08-21 재선별이 IB_CAT_SORT_ORDER에서 빠져 reIdx는 늘 -1 — 아래 블록은 동작하지 않는다(기능만 OFF).
+  //   배열에 '재선별'을 다시 넣으면 이 토글이 그대로 되살아난다. 지우지 말 것.
   const reIdx = IB_CAT_SORT_ORDER.indexOf('재선별');
   const catEl = document.getElementById('ib-category');
   if (catEl && reIdx >= 0) {
@@ -11432,7 +11434,7 @@ function todayTabSwitch(tab) {
 }
 
 // 입출고 요약 '카테고리별' 탭: 3단 계층(품목→카테고리→농가·기사). 접기/펼치기 2레벨, 전체 재렌더 없이 이 탭 내부만 갱신.
-const _INOUT_CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '파치'];
+const _INOUT_CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '청과', '파치'];
 // 전체 펼침 여부: 모든 품목 + 모든 (품목|카테고리)가 펼쳐졌는지
 function _inoutAllExpanded(prodRows) {
   if (!prodRows.length) return false;
@@ -11532,6 +11534,8 @@ function moveSummaryDate(n) {
 //  · 파치              : 입고 즉시 inventory_records(source_type='pachi')로 전환돼 파치 재고에서 관리됨.
 //                       미선과 목록에도 두면 같은 물건이 두 곳에 중복 표시됨.
 //                       ★"선과를 안 해서"가 아니라 "이미 다른 경로로 관리되어서" 제외.
+//  · 청과              : 파치와 같은 이유로 제외. 입고 즉시 inventory_records(source_type='pachi_green')로
+//                       전환돼 파치 화면에서 관리된다. 선과에서 나온 청과와는 '입고' 배지(fromInbound)로 구분.
 //  · exclude_from_unsorted : 소과·대과처럼 선과 여부가 그때그때 다른 건을 관리자가 수동 제외한 것
 //                            (toggleInboundSortExclude). 되돌리면 다시 대상이 됨.
 //  ※ 재선별·상품은 선과 대상. 잔여(remaining) 조건은 호출부에서 따로 판단.
@@ -11540,7 +11544,8 @@ function _isUnsortedTarget(r) {
     && !r.is_void
     && !r.exclude_from_unsorted
     && r.inbound_category !== '선과품'
-    && r.inbound_category !== '파치';
+    && r.inbound_category !== '파치'
+    && r.inbound_category !== '청과';
 }
 
 function getProcessedForInbound(id) {
@@ -11728,6 +11733,7 @@ function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   if (!cat || cat === '상품') return `<span class="badge" style="background:#E3F2FD;color:#1565C0">상품</span>`;
   if (cat === '대과') return `<span class="badge" style="background:#FFF3E0;color:#E65100">대과</span>`;
   if (cat === '소과') return `<span class="badge" style="background:#E0F2F1;color:#00695C">소과</span>`;
+  if (cat === '청과') return `<span class="badge" style="background:#E8F5E9;color:#2E7D32">청과</span>`;
   if (cat === '파치') return `<span class="badge" style="background:#F5F5F5;color:#757575">파치</span>`;
   if (cat === '재선별') {
     const srcLabel = { '신규입고': '신규입고', '선과결과': '선과결과', '포장라인': '포장라인', '반품': '반품', '기타': '기타' }[reclassSource] || '';
@@ -12281,7 +12287,9 @@ const IB_CATS = [
   { key: '상품',  color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },
   { key: '대과',  color: '#E65100', bg: '#FFF3E0', border: '#FFCC80' },
   { key: '소과',  color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
+  { key: '청과',  color: '#2E7D32', bg: '#E8F5E9', border: '#A5D6A7' },   // 초록 — 덜 익은 것. 소과(청록)·파치(회색)와 구분
   { key: '파치',  color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
+  // ★재선별은 신규 등록에서 빠졌지만 기존 데이터가 있어 집계·필터에 그대로 남긴다.
   { key: '재선별', color: '#7C3AED', bg: '#F3E8FF', border: '#C4B5FD' },
 ];
 
@@ -12315,8 +12323,11 @@ const RECLASS_REASONS = {
 
 // ── 목록 정렬용 카테고리 순서 (뒤로 갈수록 아래).
 // ★입고내역(_applyIbStatusSort)과 선과처리센터(_renderScTable 기본 정렬)가 공유 — 순서를 바꾸려면 여기만.
-// 목록에 없는 값('선과품' 등)은 indexOf -1 → 맨 뒤로.
-const IB_CAT_SORT_ORDER = ['상품', '대과', '소과', '재선별', '파치'];
+// ★이 배열은 [입고 등록]의 카테고리별 수량칸 목록이기도 하다(_ibRenderCatQty) — 여기 있는 것만 새로 등록된다.
+// 목록에 없는 값('선과품'·'재선별' 등)은 indexOf -1 → 맨 뒤로(_ibCatRank). 기존 재선별 데이터도 그대로 정렬된다.
+// ★2026-08-21 '재선별'을 신규 등록 대상에서 뺐다(기존 2건 데이터·코드·필터·배지는 전부 유지 — 지우지 말 것).
+//   대신 '청과'를 넣었다. 청과 = 덜 익어 지금은 못 파는 것 — 불량인 파치보다는 위라 소과 다음·파치 앞에 둔다.
+const IB_CAT_SORT_ORDER = ['상품', '대과', '소과', '청과', '파치'];
 function _ibCatRank(cat) {
   const i = IB_CAT_SORT_ORDER.indexOf(cat || '상품');
   return i < 0 ? IB_CAT_SORT_ORDER.length : i;
@@ -12327,6 +12338,7 @@ const IB_FILTER_STYLES = {
   '상품':  { bg: '#E3F2FD', color: '#1565C0', border: '#90CAF9' },
   '대과':  { bg: '#FFF3E0', color: '#E65100', border: '#FFCC80' },
   '소과':  { bg: '#E0F2F1', color: '#00695C', border: '#80CBC4' },
+  '청과':  { bg: '#E8F5E9', color: '#2E7D32', border: '#A5D6A7' },
   '파치':  { bg: '#F5F5F5', color: '#757575', border: '#BDBDBD' },
   '재선별': { bg: '#F3E8FF', color: '#7C3AED', border: '#C4B5FD' },
 };
@@ -14486,7 +14498,7 @@ function renderInboundList() {
     // ※회색(#F3F4F6)을 안 쓰는 이유: '선과완료'와 같은 색이라 "처리해서 끝난 것"으로 읽힘.
     //   파치는 완료가 아니라 애초에 선과 대상이 아닌 것.
     const isNotSrtTarget = !isSorted && !_isUnsortedTarget(r);
-    const _srtExcludable = isSrtExcluded || !['선과품', '파치'].includes(r.inbound_category || '상품');
+    const _srtExcludable = isSrtExcluded || !['선과품', '파치', '청과'].includes(r.inbound_category || '상품');
     const srtExBadge = isSrtExcluded
       ? ` <span style="background:#EDE9FE;color:#6D28D9;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;display:inline-block" title="'선과 안 함'으로 지정됨 — 미선과 목록·우선처리 집계에서 제외">🚫 선과 안 함</span>`
       : '';
@@ -16840,7 +16852,7 @@ async function _addInboundCore(keepOpen) {
   if (!isDistributed) {
     const catSum = catQtys.reduce((s, c) => s + c.qty, 0);
     if (catSum !== qty) {
-      return alert(`카테고리 합계(${fmtN(catSum)})와 콘테이너 합계(${fmtN(qty)})가 맞지 않습니다.\n\n대과·소과·재선별·파치 수량을 줄이거나 콘테이너 개수를 확인해 주세요.`);
+      return alert(`카테고리 합계(${fmtN(catSum)})와 콘테이너 합계(${fmtN(qty)})가 맞지 않습니다.\n\n대과·소과·청과·파치 수량을 줄이거나 콘테이너 개수를 확인해 주세요.`);
     }
   }
 
@@ -16912,20 +16924,24 @@ async function _addInboundCore(keepOpen) {
         // 입고를 지우면 붙은 콘테이너도 함께 지워진다(cascade). 잘못 넣어 지우는 건 대개 수량 적은 줄이라 큰 쪽에 붙인다.
         if (c.qty > ibIdQty && _newInbounds[0]) { ibIdQty = c.qty; ibId = _newInbounds[0].id; }
 
-        // 입고 파치 → inventory_records 파치 재고 전환(사용처 지정·출고·실사 가능).
+        // 입고 파치·청과 → inventory_records 파치 재고 전환(사용처 지정·출고·실사 가능).
         // ★inbound_record_id 연결 필수 — 입고 삭제 시 cascade(9482 b-2 자동). usage=null(미지정) → 파치 목록에서 지정.
-        if (c.cat === '파치') {
+        // ★source_type은 "왜 파치가 됐는지"라 사유별로 다르다 — 청과는 선과 결과의 청과와 같은 'pachi_green'.
+        //   그래야 파치 목록 종류 라벨이 '청과'로 뜬다(pachiKindLabel). 'pachi'로 넣으면 그냥 '파치'로 보인다.
+        //   선과에서 나온 청과와의 구분은 fromInbound(=inbound_record_id 有) '입고' 배지가 맡는다.
+        if (c.cat === '파치' || c.cat === '청과') {
+          const _pachiSrcType = c.cat === '청과' ? 'pachi_green' : 'pachi';
           for (const row of _newInbounds) {
             if (!row || !row.id || !(Number(row.quantity) > 0)) continue;
             try {
               const pr = await sbInsert('inventory_records', {
                 date, farm_name, product, size_code: null,
                 quantity: row.quantity, location: row.location || null,
-                source_type: 'pachi', inbound_record_id: row.id,
+                source_type: _pachiSrcType, inbound_record_id: row.id,
                 usage: null, is_void: false, note: null, created_by: 'admin'
               });
               if (pr && pr[0]) inventoryRecords.push(pr[0]);
-            } catch (pErr) { console.warn('입고 파치 재고 생성 실패(무시):', pErr.message); }
+            } catch (pErr) { console.warn(`입고 ${c.cat} 재고 생성 실패(무시):`, pErr.message); }
           }
         }
       }
@@ -17442,7 +17458,7 @@ function renderPachiSection() {
   // ==================================================================
   // 4. Source 3 — 입고 파치 중 아직 재고로 전환 안 된 것
   // ==================================================================
-  // 읽는 데이터: inboundRecords 중 inbound_category === '파치'
+  // 읽는 데이터: inboundRecords 중 inbound_category === '파치' 또는 '청과'
   //
   // ★파치가 생기는 경로는 둘이다:
   //    ① 선과 결과의 비정상품 → inventory_records(source_type=파치 6종) … Source 1
@@ -17455,18 +17471,21 @@ function renderPachiSection() {
   // ★"입고" 배지가 붙는 경로가 두 가지라 헷갈린다 — 플래그가 다르다:
   //    isInbound=true   … 여기 Source 3(미전환). 실사·일괄수정 대상 아님.
   //    fromInbound=true … Source 1의 전환된 입고 파치. 표시 전용이고 실사·수정은 된다.
-  // Source 3: inbound_records category=파치 — 단, inventory_records로 전환(source_type='pachi', inbound_record_id 연결)된 건은
-  // Source 1(irGrouped)에서 이미 표시되므로 제외(중복 방지). 아직 전환 안 된 레거시 입고 파치만 여기서 표시.
+  // Source 3: inbound_records category=파치·청과 — 단, inventory_records로 전환(inbound_record_id 연결)된 건은
+  // Source 1(irGrouped)에서 이미 표시되므로 제외(중복 방지). 아직 전환 안 된 레거시·전환실패 입고분만 여기서 표시.
+  // ★대조 source_type은 카테고리별로 정확히 하나씩(파치→'pachi', 청과→'pachi_green') — 저장 쪽과 같은 짝이어야
+  //  중복 계상도, 누락도 안 생긴다. 선과에서 나온 파치는 sorting_result_id만 있고 inbound_record_id가 없어 안 섞인다.
+  const _IB_PACHI_SRC = { '파치': 'pachi', '청과': 'pachi_green' };
   const inboundPachi = inboundRecords
-    .filter(r => !r.is_void && r.inbound_category === '파치'
-      && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === 'pachi' && ir.inbound_record_id === r.id))
+    .filter(r => !r.is_void && _IB_PACHI_SRC[r.inbound_category]
+      && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === _IB_PACHI_SRC[r.inbound_category] && ir.inbound_record_id === r.id))
     .map(r => ({
       date: r.date, farm: r.farm_name || null, product: r.product || '기타',
       ct: Number(r.quantity) || 0,
       kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
       ids: [r.id], memo: r.note || '',
       isSorting: false, isLegacy: false, isInbound: true,
-      pachiKind: '파치', usage: r.usage || '미분류', location: r.location || null,
+      pachiKind: r.inbound_category === '청과' ? '청과' : '파치', usage: r.usage || '미분류', location: r.location || null,
       sizeGroup: null, condition: null
     }));
 
