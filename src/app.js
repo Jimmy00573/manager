@@ -2800,6 +2800,9 @@ async function saveQuickReturnNhf(nhf, type) {
 function renderDash() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const dw = dispatches.filter(d => d.status === '배차완료').length, dd = dispatches.filter(d => d.status === '배출완료').length;
+  // 농가行 보유 — 아래 nhfHoldTotal·ptHoldTotal과 합쳐 '우리콘 총보유'(totalHold)가 된다.
+  // ★대상은 target_type으로 배타 분할된다(농가·null / 농협 / 거래처) — 셋을 더해도 중복 계상이 없다.
+  //   ★농가는 farms 마스터를 훑으므로, 마스터에 없는 이름으로 배차하면 여기서 빠진다(2026-08-20 기준 그런 이름 0건).
   const th = farms.reduce((s, f) => s + getFCS(f.name).hold, 0);
   const on = [...new Set(ownIns.map(o => o.farm))]; const to = on.reduce((s, n) => s + gOwnSt(n).left, 0);
   const nk = [...new Set([...nhfIns.map(o => o.nhf + '||' + o.type), ...nhfOuts.map(o => o.nhf + '||' + o.type)])];
@@ -2816,7 +2819,14 @@ function renderDash() {
   const ptHoldList = [...new Set([...dispatches.filter(d => d.target_type === '거래처').map(d => d.farm), ...picks.filter(p => p.target_type === '거래처').map(p => p.farm)])]
     .map(nm => ({ nm, ...getTargetContainerHold(nm, '거래처'), ctypes: getFCtypes(nm, '거래처') })).filter(x => x.hold !== 0);   // ★음수도 표시(위 농협行과 같은 이유)
   const ptHoldTotal = ptHoldList.reduce((s, x) => s + x.hold, 0);
-  document.getElementById('kpi').innerHTML = `<div class="kpi"><div class="kpi-label">배출 대기</div><div class="kpi-val kv-pu">${dw}</div></div><div class="kpi"><div class="kpi-label">배출 완료</div><div class="kpi-val kv-gr">${dd}</div></div><div class="kpi"><div class="kpi-label">농가보유</div><div class="kpi-val kv-bl">${th}개</div></div><div class="kpi"><div class="kpi-label">농협行 우리콘</div><div class="kpi-val kv-bl">${nhfHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">거래처行 우리콘</div><div class="kpi-val kv-bl">${ptHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">농가 콘테이너</div><div class="kpi-val kv-pu">${to}개</div></div><div class="kpi"><div class="kpi-label">농협 콘테이너</div><div class="kpi-val kv-teal">${nc}개</div></div><div class="kpi"><div class="kpi-label">농협 파렛트</div><div class="kpi-val kv-teal">${np}개</div></div><div class="kpi"><div class="kpi-label">거래처 용기</div><div class="kpi-val kv-bl">${partnerLeft}개</div></div>`;
+  // ★우리 콘테이너 총보유 = 농가 + 농협行 + 거래처行. 밖에 나가 있는 우리 콘테이너 전부.
+  //   ★nhfHoldTotal·ptHoldTotal은 바로 위 목록(nhfHoldList/ptHoldList)의 합 그대로다 —
+  //     총계를 따로 다시 세지 않으므로 목록과 총계가 구조적으로 어긋날 수 없다. 새로 세지 말 것.
+  //   ★음수(과회수)도 그대로 더한다 — 목록의 hold !== 0 기준(b71c704)과 같은 셈법이어야 한다.
+  //   ※이 값은 재고카드(getSt)의 순배출 합과 일치해야 한다. 어긋나면 배출·회수를 세는 기준이
+  //     한쪽에서만 바뀐 것이다(2026-08-20에 실제로 그랬다 — _isExtraOutPick 주석 참고).
+  const totalHold = th + nhfHoldTotal + ptHoldTotal;
+  document.getElementById('kpi').innerHTML = `<div class="kpi"><div class="kpi-label">배출 대기</div><div class="kpi-val kv-pu">${dw}</div></div><div class="kpi"><div class="kpi-label">배출 완료</div><div class="kpi-val kv-gr">${dd}</div></div><div class="kpi"><div class="kpi-label">우리콘 총보유</div><div class="kpi-val kv-bl">${totalHold}개</div></div><div class="kpi"><div class="kpi-label">농협行 우리콘</div><div class="kpi-val kv-bl">${nhfHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">거래처行 우리콘</div><div class="kpi-val kv-bl">${ptHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">농가 콘테이너</div><div class="kpi-val kv-pu">${to}개</div></div><div class="kpi"><div class="kpi-label">농협 콘테이너</div><div class="kpi-val kv-teal">${nc}개</div></div><div class="kpi"><div class="kpi-label">농협 파렛트</div><div class="kpi-val kv-teal">${np}개</div></div><div class="kpi"><div class="kpi-label">거래처 용기</div><div class="kpi-val kv-bl">${partnerLeft}개</div></div>`;
   renderSC();
   // 🟡 회수 필요: 우리 콘테이너 농가보유(hold>0)만. 농가것 반납은 🟢로 이동(회수/반납 분리).
   const fhi = farms.map(f => { const st = getFCS(f.name); if (st.hold <= 0) return null; return { name: f.name, ctypes: getFCtypes(f.name), total: st.hold }; }).filter(Boolean);
