@@ -1000,6 +1000,9 @@ function goRP(p) { _rp = p; renderRep(); }
 // ── 유틸
 function gf(n) { return farms.find(f => f.name === n) || {}; }
 function gd(n) { return drivers.find(d => d.name === n) || {}; }
+// 기사 id → 이름. 셀렉트 option의 value가 d.id라 저장할 때 이름으로 바꾸는 자리가 필요하다.
+// ※gd()는 이름으로 찾는 함수 — 서로 다르다. 못 찾으면 undefined를 돌려 호출부가 폴백하게 한다.
+function _drvNameById(id) { if (id == null || id === '') return undefined; return drivers.find(d => String(d.id) === String(id))?.name || undefined; }
 function afF(p) {
   const f = gf(gv(p + '-farm'));
   sv(p + '-tel', f.tel || ''); sv(p + '-ftel', f.tel || ''); sv(p + '-addr', f.addr || '');
@@ -5633,6 +5636,10 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
   const link = opts.manualTxId ? { manual_tx_id: opts.manualTxId } : {};
   const inbId = opts.manualTxId ? null : (inboundId || null);
   const pickNote = opts.note || '입고 회수';
+  // 담당자 — 입고 폼의 수송기사 이름(opts.staff)을 쓴다. 없으면 지금 로그인한 계정, 그리고 마지막이 'admin'.
+  //   ★이전엔 'admin' 하드코딩이라 누가 받았는지 알 수 없었다(2026-08-20 기준 nhf_ins 46건·own_ins 1건이 전부 admin).
+  //   ★수동거래(mtx) 경로엔 기사 필드가 없어 opts.staff가 비어 있다 → 로그인 계정으로 떨어진다.
+  const staff = opts.staff || sessionStorage.getItem('citrus_adm_user') || 'admin';
   for (const j of jobs) {
     // 농협 콘테이너는 농협명 필수(농협별 관리). 없으면 이 항목만 건너뜀(own 폴백 금지).
     // ★이중 안전장치 — 정상 흐름에선 저장 전 _validateInboundContainers가 막으므로 여기 도달하지 않음.
@@ -5645,11 +5652,11 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
         const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...link });
         if (row) picks.unshift(row);
       } else if (j.t.owner === 'nhf') {
-        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff: 'admin', inbound_id: inbId, ...link });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
+        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff, inbound_id: inbId, ...link });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
         if (row) nhfIns.unshift(row);
       } else {
         // 농가것(farm) → own_ins(반납대기)
-        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, inbound_id: inbId, staff: 'admin', ...link });
+        const row = await dbInsertOwnIn({ date, farm, ctype: j.t.name, qty: j.qty, feature: j.feature, inbound_id: inbId, staff, ...link });
         if (row) ownIns.unshift(row);
       }
     } catch (e) {
@@ -16483,7 +16490,8 @@ async function saveInboundSorted(keepOpen) {
       }
     }
     inventoryRecords.push(...inserted);
-    await _saveInboundContainers(date, supplier, ibId);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
+    // ★담당자 = 이 입고의 수송기사. select 값은 기사 id라 이름으로 바꿔 넘긴다(미선택이면 undefined → 로그인 계정).
+    await _saveInboundContainers(date, supplier, ibId, { staff: _drvNameById(driver_id) });   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
     renderInvSummary(); renderInboundList();
 
     const clearSorted = () => {
@@ -16677,7 +16685,8 @@ async function _addInboundCore(keepOpen) {
       }
       // ★콘테이너는 차 단위 — 카테고리 수와 무관하게 반드시 한 번만 저장한다(루프 밖).
       //   여기서 카테고리마다 부르면 콘테이너가 카테고리 수만큼 중복 기록된다.
-      await _saveInboundContainers(date, farm_name, ibId);   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
+      // ★담당자 = 이 입고의 수송기사(위 saveInboundSorted와 동일 규칙).
+      await _saveInboundContainers(date, farm_name, ibId, { staff: _drvNameById(driver_id) });   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
       renderInvSummary(); renderInboundList();
       const _catSummary = catQtys.map(c => `${c.cat} ${fmtN(c.qty)}`).join(' · ');   // 예: 상품 133 · 대과 4 · 소과 1 · 파치 2
       if (keepOpen) {
