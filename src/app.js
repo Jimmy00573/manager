@@ -9163,10 +9163,29 @@ function _txSizeIdx(product, size) {
   return _TX_SIZE_LAST - 1;              // 알 수 없는 사이즈 — 사이즈 있는 행 뒤, 사이즈 없는 행 앞
 }
 
+// ====================================================================
+// [화면: 재고관리 > 거래내역] renderOutboundHistory — 입출고 통합 이력(215줄)
+// ====================================================================
+// 이름은 "출고 이력"이지만 실제로는 출고·입고·수동거래 세 소스를 한 표에 합쳐 보여준다.
+//
+// 흐름: 1 필터상태 → 2 세 소스 병합 → 3~4 선택지·필터·정렬 → 5~7 행/묶음 조립 → 8 출력
+//
+// ★이 화면에서 가장 중요한 규칙 두 가지(자세한 내용은 6번·7번 구획):
+//   · 취소 버튼은 outbound_records.ref_detail이 비어 있지 않을 때만 그려진다.
+//   · 표에 CT와 병이 섞여 있어 수량 합계를 한 숫자로 내면 안 된다.
+//
+// 읽는 전역: invOutbounds, inboundRecords, manualTransactions, invJuiceMasters,
+//            _obHistFilter(필터 상태, 화면 나갔다 와도 유지)
+// 연결 함수: cancelOutbound(취소 복구) · openOutboundEdit · openTxPriceEdit ·
+//            openManualTxModal · exportOutboundCSV
 function renderOutboundHistory() {
   const div = document.getElementById('inv-out-div');
   if (!div) return;
 
+  // ==================================================================
+  // 1. 필터 상태 초기화 (_obHistFilter, 전역이라 화면을 나갔다 와도 유지)
+  // ==================================================================
+  // 첫 진입에만 이번 달 1일~오늘로 잡는다. 이후에는 사용자가 고른 값을 그대로 쓴다.
   if (!_obHistFilter.initialized) {
     const now = new Date();
     _obHistFilter.from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
@@ -9180,6 +9199,18 @@ function renderOutboundHistory() {
   }
   if (_obHistFilter.kind === undefined) _obHistFilter.kind = '';
 
+  // ==================================================================
+  // 2. ★세 소스 병합 — 이 화면의 핵심 구조
+  // ==================================================================
+  // "출고 이력"이라는 이름과 달리 입고·수동거래까지 한 표에 섞어 보여준다.
+  //
+  //   txOut    invOutbounds       kind='out'  source_type = 실제 값(sorting/juice/pachi/unsorted/inventory_partial)
+  //   txIn     inboundRecords     kind='in'   source_type = 'inbound'로 고정
+  //   txManual manualTransactions kind = direction에 따라 in/out, source_type = 'manual_tx'로 고정
+  //
+  // ★in/out 구분은 source_type이 아니라 kind로 한다. 소스마다 source_type을 다르게 채우기 때문.
+  // ★세 소스 모두 !is_void만 담는다 — 취소된 출고(cancelOutbound가 is_void=true)는 여기서 자동으로 빠진다.
+  // ★_raw에 원본 행을 통째로 물려 둔다. 아래 6번의 취소 판정이 _raw.ref_detail을 봐야 하기 때문.
   // ── 통합 거래 배열
   const txOut = invOutbounds.filter(r => !r.is_void).map(r => ({
     kind: 'out', date: r.date||'', product: r.product||'', size_code: r.size_code||null,
@@ -9198,6 +9229,11 @@ function renderOutboundHistory() {
   }));
   const allTx = [...txOut, ...txIn, ...txManual];
 
+  // ==================================================================
+  // 3. 필터 드롭다운 선택지 만들기
+  // ==================================================================
+  // 품목·거래처는 화면에 실제로 있는 값에서만 뽑는다(빈 선택지 방지).
+  // ★주스·청·가공품은 items가 아니라 juice_product_master가 관리한다 — 그 category로 그룹을 따로 만들어 넘긴다.
   const allProds    = [...new Set(allTx.map(t => t.product).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
   const allPartners = [...new Set(allTx.map(t => t.partner).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ko'));
 
@@ -9214,6 +9250,13 @@ function renderOutboundHistory() {
     ...Object.keys(juiceByCat).filter(c => !JUICE_CAT_ORDER.includes(c)).sort((a,b) => a.localeCompare(b,'ko')),   // 나중에 분류가 늘어도 빠지지 않게
   ].filter(c => juiceByCat[c]).map(c => ({ label: c, names: juiceByCat[c] }));
 
+  // ==================================================================
+  // 4. 필터 적용 + ★3단 정렬
+  // ==================================================================
+  // 정렬: 날짜 내림차순(최신 위) → 품목 가나다 → 사이즈(_txSizeIdx = 품목별 사이즈 체계 순서).
+  // ★품목이 2순위인 이유: 거래처로 묶으면 한 날짜에 여러 품목이 섞이는데,
+  //  사이즈만으로 정렬하면 서로 다른 품목의 사이즈가 뒤엉켜 읽을 수 없게 된다.
+  // 셋 다 같으면 원래 순서를 유지한다(안정 정렬).
   const filtered = allTx.filter(t => {
     if (_obHistFilter.kind    && t.kind !== _obHistFilter.kind)          return false;
     if (_obHistFilter.from    && t.date < _obHistFilter.from)            return false;
@@ -9231,6 +9274,13 @@ function renderOutboundHistory() {
   const totalIn  = filtered.filter(t => t.kind==='in').reduce((s,t) => s+t.amount, 0);
   const totalOut = filtered.filter(t => t.kind==='out').reduce((s,t) => s+t.amount, 0);
 
+  // ==================================================================
+  // 5. 구분 배지
+  // ==================================================================
+  // kind='in'이면 파란 '입고', out이면 source_type별 색(선과/파치/미선과/주스).
+  // ★srcMap에 없는 source_type은 전부 빨간 '출고'로 떨어진다 — inventory_partial(부분출고)이 여기 해당.
+  //  아래 화면(8번)의 '출고 종류' 드롭다운에도 inventory_partial 항목이 없다.
+  //  부분출고를 따로 구분해 보고 싶으면 두 곳을 같이 손봐야 한다.
   // ── 뱃지
   function kindBadge(t) {
     const manualTag = t.manual ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:#E5E7EB;color:#6B7280;font-weight:600;margin-right:3px">수동</span>` : '';
@@ -9242,6 +9292,29 @@ function renderOutboundHistory() {
 
   const isAdmin = sessionStorage.getItem('citrus_role') === 'admin';
 
+  // ==================================================================
+  // 6. 행 렌더 + ★★취소(되돌리기) 가능 판정
+  // ==================================================================
+  //
+  // ★판정은 이 한 줄이다:
+  //      const cancelable = Array.isArray(r.ref_detail) && r.ref_detail.length > 0;
+  //  ref_detail이 비었거나 없으면 **취소 버튼 자체가 안 그려진다.** 화면엔 아무 표시도 없어서
+  //  "왜 이 건만 취소가 안 되지?"로 보인다 — 원인은 저장할 때 ref_detail을 안 넣은 것이다.
+  //  (2026-08-20 실제 사고: 부분출고 224건이 전부 이 상태였다. d636b00·dce6568에서 수정.)
+  //
+  // ★ref_detail 형태 — 출고 저장부가 만들고 cancelOutbound가 읽는다:
+  //      [{ table, id, amount, voided }, ...]
+  //    amount : ★그 행에서 "실제로 뺀 양". 전체 출고량을 넣으면 취소 시 재고가 부풀려진다.
+  //             한 출고가 재고 행 여러 개에 걸치면 원소도 여러 개가 된다(FIFO 차감).
+  //    voided : 그 행이 소진돼 is_void=true가 됐는지. true면 취소 시 is_void를 함께 푼다.
+  //
+  // ★cancelOutbound의 복구 분기(table별):
+  //    inventory_records  quantity += amount, voided면 is_void=false   … sorting/pachi/inventory_partial
+  //    juice_batches      remaining_bottles += amount, voided면 되살림 … juice
+  //    processing_records 그 행을 삭제                                  … unsorted
+  //
+  // ★수동거래(t.manual)는 취소가 아니라 수정·삭제 버튼이 붙는다 — 재고와 무관한 정산용 기록이라
+  //  되돌릴 재고가 없다. 단가 수정 버튼도 수동거래엔 안 붙는다.
   function txRowHtml(t) {
     const r = t._raw;
     const size   = t.size_code ? ` <span style="color:#9CA3AF;font-size:11px">${esc(t.size_code)}</span>` : '';
@@ -9279,6 +9352,15 @@ function renderOutboundHistory() {
     </tr>`;
   }
 
+  // ==================================================================
+  // 7. 묶음(거래처별/품목별) + 소계
+  // ==================================================================
+  //
+  // ★★단위 혼재 주의 — 이 표에는 CT와 병이 함께 있다(주스·청은 병/박스, 나머지는 CT).
+  //  그래서 소계를 unit==='CT'와 unit==='병'으로 나눠 따로 더한 뒤 ' · '로 이어 붙인다.
+  //  한 숫자로 합치면 안 된다 — 3 CT + 2 병 = 5 라는 뜻 없는 값이 된다.
+  // ★금액(amount)은 단위와 무관해 그냥 더해도 된다. 다만 매입(kind=in)과 매출(out)은 부호가 달라
+  //  서로 빼지 않고 각각 따로 집계한다(화면에도 −/+로 나눠 표시).
   const groupField = (_obHistFilter.group||'partner') === 'partner' ? 'partner' : 'product';
   const groups = {};
   filtered.forEach(t => { const k = t[groupField]||'미분류'; if(!groups[k]) groups[k]=[]; groups[k].push(t); });
@@ -9314,6 +9396,13 @@ function renderOutboundHistory() {
     return `style="padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid ${on?'#2563EB':'#D1D5DB'};background:${on?'#EFF6FF':'#fff'};color:${on?'#2563EB':'#374151'};font-weight:${on?'700':'400'}"`;
   };
 
+  // ==================================================================
+  // 8. 화면 출력 (검색 폼 + 합계 + 표)
+  // ==================================================================
+  // 집계는 하지 않는다. 위에서 만든 조각을 붙이기만 한다.
+  // ★'출고 종류' 드롭다운은 입고 필터일 때(kind='in') 통째로 숨긴다.
+  // ★수동 등록 버튼은 admin만. 내보내기(exportOutboundCSV)는 이 화면의 필터를 따로 다시 계산한다 —
+  //  필터 조건을 바꾸면 그쪽도 같이 봐야 한다.
   div.innerHTML = `
     <div class="form-card" style="margin-bottom:12px">
       <div class="form-title">🔄 거래내역 검색</div>
