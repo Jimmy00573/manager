@@ -802,9 +802,6 @@ function renderSC() {
         <div class="stock-num-box"><div class="stock-num remain ${rc}">${st.remain.toLocaleString()}</div><div class="stock-sub">잔여</div></div>
       </div>
       ${over ? `<div style="font-size:11px;color:#1565C0;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:4px 8px;margin:-4px 0 10px;line-height:1.45">회수가 배출보다 <strong>${(-st.out).toLocaleString()}개</strong> 많습니다.<br>기록에 없던 콘테이너가 돌아왔다면 초기재고를 올려 주세요.</div>` : ''}
-      <div class="stock-edit-area">
-        <div class="stock-display"><span>초기 <span class="val">${st.init.toLocaleString()}개</span></span></div>
-      </div>
     </div>`;
   }).join('');
 }

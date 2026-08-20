@@ -91,14 +91,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-seri
 .sok { color: #2E7D32; } .swarn { color: #E65100; } .sdanger { color: #c62828; }
 .stock-sub { font-size: 10px; color: var(--text-tertiary); }
 .stock-divider { width: 0.5px; background: var(--border); align-self: stretch; }
-.stock-edit-area { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px; }
-.stock-display { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
-.stock-display .val { font-size: 13px; font-weight: 500; color: var(--text); }
-.stock-input-row { display: none; align-items: center; justify-content: center; gap: 6px; }
-.stock-input-row input { width: 65px; padding: 4px 8px; border: 1px solid var(--orange-light); border-radius: 6px; text-align: center; font-size: 13px; font-family: inherit; }
-.sedit { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--blue); cursor: pointer; font-size: 11px; font-family: inherit; }
-.ssave { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--orange); background: var(--orange); color: #fff; cursor: pointer; font-size: 11px; font-family: inherit; }
-.scancel { padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-family: inherit; }
 
 /* ── 섹션 헤더 ── */
 .sec-hdr { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 8px; }
