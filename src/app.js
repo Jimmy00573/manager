@@ -6988,8 +6988,13 @@ function _renderInvMatrix(product, recs, auditMode) {
   const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
   const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
   const C  = 'display:flex;align-items:center;justify-content:center;font-size:13px;border-right:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding:5px 2px;';
-  // ※합계 row의 윗 경계는 바로 위에 그리는 '사이즈' 헤더 row가 갖는다(이중선 방지).
-  const F  = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border-right:1px solid #D1D5DB;background:#EFF6FF;padding:5px 2px;';
+  // 합계 row — 바로 위 사이즈 헤더와 확실히 갈라져야 한다.
+  // ★예전엔 배경이 #EFF6FF였는데, 이건 그룹 색 GC[1](소과)와 **완전히 같은 값**이라
+  //   소과 구간에서 사이즈 헤더와 합계가 한 덩어리로 이어져 보였다(0e487a5로 두 행이 붙으면서 드러남).
+  //   → 한 단계 진한 파랑(#DBEAFE) + 윗줄 2px 구분선으로 분리한다.
+  //   ※그룹 색(GC)은 그룹 구분이라는 뜻이 있어 안 건드린다.
+  //   ※#E2E8F0은 안 쓴다 — 사이즈 헤더의 좌·우 고정 칸이 이미 그 색이라 왼쪽 열이 이어져 보인다.
+  const F  = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border-right:1px solid #D1D5DB;border-top:2px solid #94A3B8;background:#DBEAFE;padding:5px 2px;';
 
   let h = '';
 
@@ -7120,7 +7125,12 @@ function _renderInvMatrix(product, recs, auditMode) {
 
   // 중량(kg) row — 사이즈별 합계 CT × 품목 중량. kgPerCt는 이 스코프에 없어 productWeights 인라인.
   const kgPer = (productWeights && productWeights[product] != null) ? Number(productWeights[product]) : 17;
-  const Fk = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border-right:1px solid #D1D5DB;border-top:1px solid #E5E7EB;background:#F8FAFC;padding:5px 2px;color:#6B7280;';
+  // 중량 row — 합계와 같은 파랑 계열로 한 덩어리처럼 보이게(합계보다 한 톤 연하게).
+  // ※예전 #F8FAFC는 회청색이라 합계와 따로 노는 두 줄처럼 보였다.
+  // ★#EFF6FF도 쓰지 않는다 — 그룹 색 GC[1](소과)과 같은 값이라, 나중에 합계 row를 지우거나
+  //   순서를 바꾸면 소과 구간에서 다시 이어져 보인다. 함정을 남기지 않으려고 아예 안 겹치는 값으로 둔다.
+  // → 합계와 같은 #DBEAFE에 글자만 연하게. 색이 같으니 '합계+중량 한 덩어리'가 확실하다.
+  const Fk = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border-right:1px solid #D1D5DB;border-top:1px solid #BFDBFE;background:#DBEAFE;padding:5px 2px;color:#5A7184;';
   h += `<div style="${Fk}justify-content:flex-start;padding:5px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">중량(kg)</div>`;
   displaySizes.forEach(sz => {
     const kg = Math.round((colTotals[sz] || 0) * kgPer);
