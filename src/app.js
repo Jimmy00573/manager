@@ -6975,7 +6975,8 @@ function _renderInvMatrix(product, recs, auditMode) {
   const H  = 'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border-right:1px solid #D1D5DB;border-bottom:1px solid #D1D5DB;';
   const HD = `${H}background:#1E3A5F;color:#fff;padding:6px 4px;`;
   const C  = 'display:flex;align-items:center;justify-content:center;font-size:13px;border-right:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding:5px 2px;';
-  const F  = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border-right:1px solid #D1D5DB;border-top:2px solid #CBD5E1;background:#EFF6FF;padding:5px 2px;';
+  // ※합계 row의 윗 경계는 바로 위에 그리는 '사이즈' 헤더 row가 갖는다(이중선 방지).
+  const F  = 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border-right:1px solid #D1D5DB;background:#EFF6FF;padding:5px 2px;';
 
   let h = '';
 
@@ -7071,6 +7072,20 @@ function _renderInvMatrix(product, recs, auditMode) {
       h += `<div style="${C}background:${rowBg};justify-content:center;padding:0;border-right:none;position:sticky;right:0;z-index:2"><button class="inv-kebab" data-regid="${regId}" onclick="toggleInvRowMenu(${regId},this)" style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit" title="메뉴">⋮</button></div>`;
     }
   });
+
+  // ── 사이즈 헤더 되풀이 row (합계 바로 위)
+  // ★배치가 많으면 합계·중량 행에서 "이 열이 무슨 사이즈였지"를 보려고 맨 위까지 스크롤해야 했다.
+  //   ※맨 위 헤더를 sticky로 고정하는 방법은 못 쓴다 — 이 표를 감싼 카드에 overflow:hidden이 있어
+  //     sticky가 카드 안에 갇히고, 카드 자체는 세로 스크롤을 안 하므로 붙어 있을 자리가 없다.
+  //   그래서 헤더를 한 줄 더 그린다. 값·계산은 건드리지 않는 표시 전용이다.
+  const Hr = 'display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px;'
+    + 'border-right:1px solid #D1D5DB;border-top:2px solid #CBD5E1;color:#374151;padding:4px 2px;';
+  h += `<div style="${Hr}background:#E2E8F0;justify-content:flex-start;padding:4px 10px;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2;color:#64748B">사이즈</div>`;
+  displaySizes.forEach(sz => {
+    h += `<div style="${Hr}background:${GC[szGI[sz]].c}">${esc(sz)}${fruitNoBadge(sz)}</div>`;
+  });
+  h += `<div style="${Hr}background:#E2E8F0;border-right:${isAdm ? '1px solid #D1D5DB' : 'none'};position:sticky;right:${totRight}px;z-index:2"></div>`;
+  if (isAdm) h += `<div style="${Hr}background:#E2E8F0;border-right:none;position:sticky;right:0;z-index:2"></div>`;
 
   // 합계 row
   h += `<div style="${F}justify-content:flex-start;padding:5px 10px;color:#1565C0;border-right:1px solid #D1D5DB;position:sticky;left:0;z-index:2">합계</div>`;
