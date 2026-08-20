@@ -1088,7 +1088,7 @@ function popSels() {
   }
   const _fillDrvSel = (id, keepVal) => {
     const el = document.getElementById(id); if (!el) return;
-    el.innerHTML = '<option value="">선택 안 함</option>';
+    el.innerHTML = '<option value="">선택</option>';   // ★필수 항목 — '선택 안 함'은 안 골라도 되는 것처럼 읽힌다
     drivers.filter(d => d.pin_active !== false).forEach(d => {
       el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${typeLabel(d.type)})</option>`;
     });
@@ -15391,6 +15391,11 @@ async function saveInboundModal() {
   if (!_eibVal.ok) { await showConfirmEdit('위치 저장 불가', _eibVal.msg); return; }
   const eibDrvSelVal = document.getElementById('eib-driver-sel')?.value || '';
   const driver_id = eibDrvSelVal ? Number(eibDrvSelVal) : null;
+  // ★수정에서는 "있던 기사를 비우는 것"만 막는다 — 등록은 필수로 바뀌었지만, 기사 정보가 없던 옛 입고
+  //  (2026-08-21 기준 4건)는 메모·수량만 고치려 할 때 그대로 저장돼야 한다. 하드 필수로 하면 그 4건이 아예 수정 불가가 된다.
+  if ((_eibPrevRec?.driver_id || null) && !driver_id) {
+    return alert('수송기사는 비울 수 없습니다.\n\n다른 기사를 선택하거나 그대로 두세요.');
+  }
 
   const prev = inboundRecords.find(r => r.id === id);
   const changed =
@@ -16694,6 +16699,9 @@ async function saveInboundSorted(keepOpen) {
   const driverSelect = document.getElementById('inv-driver-select');
   const drvSelVal = driverSelect?.value || '';
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
+  // ★선과품도 같은 폼·같은 inv-driver-select를 쓰고, 콘테이너 담당자도 이 기사로 저장된다(아래 _saveInboundContainers).
+  //  원물(_addInboundCore)과 규칙을 어긋나게 두면 선과품으로만 기사 없는 입고가 계속 생긴다.
+  if (!driver_id) return alert('수송기사를 선택하세요.');
 
   const groups = getSizeGroupsFor(product);
   const sizeEntries = [];
@@ -16796,12 +16804,16 @@ async function _addInboundCore(keepOpen) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
-  // 미선과(원물)는 항상 콘테이너로 입고 — 콘테이너 개수 필수(수량=콘테이너 합산 자동, 수기입력 없음)
-  if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.');
-  if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
+  // ★수송기사 필수 — 입고 콘테이너의 담당자(staff)를 이 기사 이름으로 저장하므로(55e10a0),
+  //  비워 두면 콘테이너 담당자까지 빈칸이 돼 회수·반납 추적이 끊긴다.
+  //  검증 위치는 폼 순서(날짜·품목·공급처 → 수송기사 → 콘테이너)에 맞춘다. 선과품 경로(saveInboundSorted)도 같은 규칙.
   const driverSelect = document.getElementById('inv-driver-select');
   const drvSelVal = driverSelect?.value || '';
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
+  if (!driver_id) return alert('수송기사를 선택하세요.');
+  // 미선과(원물)는 항상 콘테이너로 입고 — 콘테이너 개수 필수(수량=콘테이너 합산 자동, 수기입력 없음)
+  if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.');
+  if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
   // ★카테고리별 수량 — 입력된 것만 각각 inbound_records 행이 된다(한 차에 섞여 온 경우 한 번에 등록).
   //   상품칸은 '총 수량 − 나머지' 자동이라, 카테고리가 하나뿐이면 예전과 완전히 같은 1행 등록이 된다.
   const catQtys = _ibCatQtyList();
