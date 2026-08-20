@@ -7266,25 +7266,33 @@ async function savePachiOutbound(regId) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
+    // ★★저장 순서 = 출고 기록 먼저 → 재고 차감 (2026-08-20, feea016(부분출고)·선과품 출고와 같은 패턴).
+    //   옛 순서(차감 → 삽입)는 삽입이 실패하면 재고만 사라지고 기록이 없어 복구 단서가 0이었다.
+    //   ★실패 방향 기준: 삽입 실패 → 재고 그대로, 기록 없음(아무 일도 안 일어난 것과 같다).
+    //                    차감 실패 → 기록만 남지만 재고가 화면에 그대로 보이고, ref_detail이 있어
+    //                                취소 버튼으로 되돌릴 수 있다. → "기록이 먼저"가 항상 덜 위험하다.
+
+    // 1) 차감 "계획"만 계산 — DB 접근 없는 순수 계산. FIFO 순서·차감 규칙은 그대로, 시점만 앞당겼다.
+    //    ★파치 행 하나가 inventory_records 여러 행의 묶음이라(row.ids) 계획도 여러 건이 된다.
+    //      이미 소진됐거나 사라진 id는 건너뛴다(remaining을 줄이지 않는다) — 기존 동작 그대로.
     let remaining = qty;
-    const detail = [];
+    const plan = [];
     for (const id of row.ids) {
       if (remaining <= 0) break;
       const rec = inventoryRecords.find(r => String(r.id) === String(id) && !r.is_void);
       if (!rec) continue;
       const take   = Math.min(Number(rec.quantity) || 0, remaining);
       const newQty = Math.max(0, Math.round(((Number(rec.quantity) || 0) - take) * 10) / 10);
-      const voided = newQty <= 0;
-      const patch  = voided ? { quantity: 0, is_void: true } : { quantity: newQty };
-      await sbUpdate('inventory_records', id, patch);
-      rec.quantity = newQty;
-      if (voided) rec.is_void = true;
-      if (take > 0) detail.push({ table: 'inventory_records', id, amount: take, voided });
+      if (take > 0) plan.push({ id, rec, newQty, take, voided: newQty <= 0 });
       remaining -= take;
     }
+    // ★amount는 "그 행에서 실제로 뺀 양"(take)이다. 전체 출고량을 넣으면 취소 시 재고가 부풀려진다.
+    const detail = plan.map(x => ({ table: 'inventory_records', id: x.id, amount: x.take, voided: x.voided }));
+
     const weight = parseFloat(document.getElementById('ob-weight')?.value) || null;
     const price  = parseFloat(document.getElementById('ob-price')?.value) || null;
     const amount = (weight && price) ? weight * price : null;
+    // 2) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
     const ob = await dbInsertOutboundRecord({
       date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'pachi',
@@ -7294,6 +7302,24 @@ async function savePachiOutbound(regId) {
       weight_kg: weight, unit_price: price, amount
     });
     if (ob) invOutbounds.unshift(ob);
+
+    // 3) 계획대로 재고 차감. 남은 수량 0이 되는 행은 소진(is_void).
+    let done = 0;
+    try {
+      for (const pl of plan) {
+        await sbUpdate('inventory_records', pl.id, pl.voided ? { quantity: 0, is_void: true } : { quantity: pl.newQty });
+        pl.rec.quantity = pl.newQty;
+        if (pl.voided) pl.rec.is_void = true;
+        done++;
+      }
+    } catch (e) {
+      // ★차감이 중간에 끊기면 ref_detail이 실제 차감분보다 많아진다 → 취소 시 재고가 부풀려진다.
+      //   실제로 적용된 앞쪽 done건만 남기도록 정정한다(plan과 detail은 같은 순서).
+      const applied = detail.slice(0, done);
+      try { if (ob) { await sbUpdate('outbound_records', ob.id, { ref_detail: applied }); ob.ref_detail = applied; } } catch (e2) {}
+      renderInvSummary(); renderPachiSection();
+      throw new Error(`재고 차감이 ${done}/${plan.length}건에서 중단됐습니다.\n출고 기록은 저장됐으니 파치 재고를 확인해주세요.\n\n${e.message}`);
+    }
 
     document.getElementById('modal-outbound').style.display = 'none';
     showToast('출고 완료');
