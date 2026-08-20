@@ -3324,7 +3324,13 @@ function renderCal() {
       // 좁은 셀이라 기호만: 전체종료 🏁 > 수확완료 ✓ > 수확중 ▶ (수확전은 색으로만). 배차 이벤트엔 해당 status 없어 기존과 동일.
       const mark = e.is_final ? ' 🏁' : e.status === '수확완료' ? ' ✓' : e.status === '수확중' ? ' ▶' : '';
       // 차수는 1차부터 표시(월간 목록·상세와 동일 규칙). 배차 이벤트엔 round·is_final 없어 기존과 동일.
-      return `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${esc(e.farm)}${e.round?' '+e.round+'차':''}${mark}</div>`;
+      // ★품목 표시 — 셀 폭이 모바일에서 45px 남짓이라 글자를 더 넣으면 농가명이 잘린다.
+      //   그래서 앞에 품목 색 점만 찍고(6px), 무슨 색인지는 달력 위 범례가 알려 준다(이 달에 있는 품목만).
+      //   title에 품목명을 넣어 PC에선 올려두면 바로 보인다.
+      const dot = _isHarvestEv(e) && e.item
+        ? `<span style="width:6px;height:6px;border-radius:50%;background:${_hvItemColor(e.item)};display:inline-block;margin-right:3px;vertical-align:middle;flex-shrink:0"></span>`
+        : '';
+      return `<div title="${esc(e.farm)}${e.item ? ' · ' + esc(e.item) : ''}" style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${dot}${esc(e.farm)}${e.round?' '+e.round+'차':''}${mark}</div>`;
     }).join('');
     if (evs.length > 2) pills += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
     const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
@@ -3336,6 +3342,19 @@ function renderCal() {
   const rem = 7 - ((startDay + last.getDate()) % 7);
   if (rem < 7) for (let i = 1; i <= rem; i++) cells += `<div style="${otherStyle}"><div style="font-size:11px;color:#aaa">${i}</div></div>`;
   document.getElementById('cal-body-grid').innerHTML = cells;
+
+  // 품목 범례 — 이 달 수확에 실제로 있는 품목만. 셀의 색 점이 무슨 뜻인지 알려 준다.
+  // ★달마다 품목이 달라 고정 목록으로 두면 안 맞는다(안 나오는 품목이 범례에 남거나, 새 품목이 빠진다).
+  const legEl = document.getElementById('cal-item-legend');
+  if (legEl) {
+    const mPrefix = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
+    const items = [...new Set(harvests
+      .filter(x => (x.date || '').startsWith(mPrefix) || (x.end_date || '').startsWith(mPrefix))
+      .map(x => x.item).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+    legEl.innerHTML = items.map(it =>
+      `<span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888"><span style="width:9px;height:9px;border-radius:50%;background:${_hvItemColor(it)};display:inline-block"></span>${esc(it)}</span>`
+    ).join('');
+  }
 
   // 수확 일정 등록 폼
   const formEl = document.getElementById('cal-add-form');
@@ -3351,8 +3370,116 @@ function renderCal() {
     }
   }
   renderCalUpcoming();
+  renderUpcomingHarvest();
   renderHarvestProgress();
   renderHarvestActive();
+}
+
+// ── [화면: 수확·수송 > 수확 캘린더 > 다가오는 수확] renderCal에서 호출.
+// ★목적(Jimmy): 내일·모레 배차와 근무 인원을 조정하려면 "언제 어느 농가에서 무슨 품목을 얼마나 따는지"와
+//   "그날 콘테이너가 나가 있는지"를 같이 봐야 한다. 캘린더 셀은 좁아서 그걸 다 못 담는다.
+//
+// ★표시 대상 판정 — 그날(dStr)에 걸치는 수확:
+//   ① 그날 시작       h.date === dStr
+//   ② 기간에 포함     h.date <= dStr <= h.end_date   (종료일이 잡힌 여러 날 수확)
+//   ③ 끝나지 않은 진행 h.status === '수확중' && h.date < dStr && !h.end_date
+//   ★③이 "수확이 며칠 걸리는 경우"를 받는다 — 종료일을 안 넣고 진행 중이면 계속 따라온다.
+//   ★'수확완료'는 ③에 안 걸리므로 끝난 날 이후로는 사라진다(①②로만 남는다).
+//   ※calGetEvents에도 비슷한 식이 있지만 그쪽은 `dStr <= td()` 제한이 있어 내일·모레엔 안 맞는다. 그래서 따로 둔다.
+//
+// ★배차 매칭은 dispatches.harvest(수확 예정일) === 그 수확일 AND 농가 일치.
+//   ※dispatches.date(배차한 날)와 헷갈리지 말 것 — 배차는 미리 잡아 두므로 두 날짜가 다르다.
+const UPCOMING_DAYS = 3;   // 오늘 ~ D+2. 늘리려면 여기만.
+
+function _upcomingHarvestsOn(dStr) {
+  return harvests.filter(h =>
+    h.date === dStr
+    || (h.date <= dStr && h.end_date && h.end_date >= dStr)
+    || (h.status === '수확중' && h.date < dStr && !h.end_date)
+  );
+}
+// 그 수확(농가+수확일)에 잡힌 배차 — 종류별로 합친다. 한 농가에 여러 배차가 있을 수 있다.
+function _dispForHarvest(farm, dStr) {
+  const rows = dispatches.filter(d => d.harvest === dStr && d.farm === farm);
+  const byType = {};
+  rows.forEach(d => { const k = ctNorm(d.ctype) || '미지정'; byType[k] = (byType[k] || 0) + (Number(d.qty) || 0); });
+  const total = Object.values(byType).reduce((a, b) => a + b, 0);
+  return { byType, total, cnt: rows.length };
+}
+
+function renderUpcomingHarvest() {
+  const el = document.getElementById('cal-upcoming-harvest');
+  if (!el) return;
+  const today = td();
+  const base = new Date(today + 'T00:00:00');   // 로컬 자정 기준 — toISOString 안 씀
+  const days = [];
+  for (let i = 0; i < UPCOMING_DAYS; i++) {
+    const d = new Date(base); d.setDate(base.getDate() + i);
+    const dStr = ymd(d);
+    const list = _upcomingHarvestsOn(dStr).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+    days.push({ dStr, d, list });
+  }
+  const totalCnt = days.reduce((s, x) => s + x.list.length, 0);
+  if (!totalCnt) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  const DOW = ['일','월','화','수','목','금','토'];
+  const LBL = ['오늘', '내일', '모레'];
+  let noDispCnt = 0;
+
+  const body = days.map((day, di) => {
+    const dateTxt = `${day.d.getMonth() + 1}/${day.d.getDate()} (${DOW[day.d.getDay()]})`;
+    if (!day.list.length) {
+      return `<div style="padding:7px 14px;border-top:1px solid #F3F4F6;display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700;color:#374151;min-width:74px">${LBL[di] || ''} ${dateTxt}</span>
+        <span style="font-size:12px;color:#C7CBD1">수확 예정 없음</span></div>`;
+    }
+    // 그날 나가는 콘테이너 합 — 인원·차량 가늠용
+    const dayCt = day.list.reduce((sum, h) => sum + _dispForHarvest(h.farm, h.date).total, 0);
+    const rows = day.list.map(h => {
+      const st = h.status || '수확전';
+      const dp = _dispForHarvest(h.farm, h.date);
+      // ★진행중인데 시작일이 오늘 이전이면 '진행중'으로 표시(며칠 걸리는 수확)
+      const ongoing = st === '수확중' && h.date < day.dStr;
+      const stBadge = ongoing
+        ? `<span class="badge b-info" style="font-size:10px">▶ 진행중 (${h.date.slice(5).replace('-','/')}~)</span>`
+        : `<span class="badge ${_hvStBadge[st] || 'b-warn'}" style="font-size:10px">${st}</span>`;
+      const dpHtml = dp.total > 0
+        ? Object.entries(dp.byType).map(([t, q]) => `<span class="ct ${_ctClass(t)}">${_ctIcon(t)} ${fmtN(q)}</span>`).join(' ')
+        : (st === '수확완료'
+            ? '<span style="font-size:11px;color:#C7CBD1">—</span>'
+            : (noDispCnt++, '<span class="badge b-red" style="font-size:10px">⚠ 배차 없음</span>'));
+      return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 14px 5px 26px;border-top:1px solid #FAFAFA">
+        <span style="width:8px;height:8px;border-radius:50%;background:${_hvItemColor(h.item)};flex-shrink:0"></span>
+        <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
+        ${h.item ? `<span style="font-size:11px;color:#6B7280">${esc(h.item)}</span>` : ''}
+        <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round || 1}차</span>
+        ${stBadge}
+        <span style="margin-left:auto;display:flex;gap:3px;align-items:center;flex-wrap:wrap">${dpHtml}</span>
+      </div>`;
+    }).join('');
+    return `<div style="border-top:1px solid #F3F4F6">
+      <div style="padding:7px 14px;background:#FAFAFA;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:700;color:${di === 0 ? '#C05800' : '#374151'};min-width:74px">${LBL[di] || ''} ${dateTxt}</span>
+        <span style="font-size:11px;color:#9CA3AF">${day.list.length}건</span>
+        ${dayCt > 0 ? `<span style="margin-left:auto;font-size:11px;color:#6B7280">콘테이너 <strong style="color:#C05800">${fmtN(dayCt)}개</strong></span>` : ''}
+      </div>${rows}</div>`;
+  }).join('');
+
+  el.style.display = '';
+  el.innerHTML = `
+    <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🔭 다가오는 수확 (오늘~모레)</div>
+      <div style="font-size:11px;color:#aaa">${totalCnt}건${noDispCnt ? ` · <span style="color:#C62828;font-weight:600">배차 없음 ${noDispCnt}건</span>` : ''}</div>
+    </div>${body}`;
+}
+
+// 품목 색 — 캘린더 셀 점·다가오는 수확 점에 공통. PRODUCT_COLORS의 border(진한 쪽)를 쓴다.
+// ★마스터 키가 '비가림'인데 실제 품목명은 '비가림감귤'처럼 뒤가 붙는 경우가 있어, 정확일치 → 접두일치 순으로 찾는다.
+function _hvItemColor(item) {
+  if (!item) return '#CBD5E1';
+  if (PRODUCT_COLORS[item]) return PRODUCT_COLORS[item].border;
+  const k = Object.keys(PRODUCT_COLORS).find(x => item.startsWith(x) || x.startsWith(item));
+  return k ? PRODUCT_COLORS[k].border : '#9CA3AF';
 }
 
 // ── [화면: 수확·수송 > 수확 캘린더 > 농가별 진행 현황] renderCal에서 호출.
