@@ -764,6 +764,14 @@
           </div>
           <button class="set-item-btn" onclick="T('export')">열기</button>
         </div>
+        <div class="set-item" id="set-item-backup">
+          <div class="set-item-info">
+            <div class="set-item-title">💾 전체 백업</div>
+            <div class="set-item-desc">전 테이블을 JSON 파일 하나로 내려받습니다 (조회 전용 · 관리자)</div>
+            <div id="bk-status" style="font-size:11px;color:var(--text-tertiary);margin-top:3px"></div>
+          </div>
+          <button class="set-item-btn" id="bk-run-btn" onclick="runFullBackup()">백업</button>
+        </div>
         <div class="set-item">
           <div class="set-item-info">
             <div class="set-item-title">🔍 데이터 점검</div>
@@ -1921,6 +1929,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=538"></script>
+<script src="src/app.js?v=539"></script>
 </body>
 </html>

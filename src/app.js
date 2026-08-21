@@ -885,6 +885,7 @@ function _applyEditRestrictions(canEdit) {
     document.getElementById('ib-form-toggle'),
     document.getElementById('btn-inv-entry'),
     document.getElementById('inv-pachi-form'),
+    document.getElementById('set-item-backup'),   // 💾 전체 백업 — 정적 HTML이라 여기서 가린다(함수에도 가드 있음)
   ];
   els.forEach(el => { if (el) el.style.display = canEdit ? '' : 'none'; });
 }
@@ -6979,6 +6980,151 @@ function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
+
+// ══════════════════════════════════════════════════════════════════
+// 전체 데이터 백업 (JSON 내보내기)
+// ══════════════════════════════════════════════════════════════════
+// ★왜 필요한가: Supabase 무료 플랜은 자동 백업·PITR이 없다. git은 코드만 지킨다 —
+//   입고·재고·출고·콘테이너 데이터는 Supabase에만 있고, 대량 삭제나 DB 사고가 나면 되돌릴 방법이 없다.
+// ★조회 전용이다. 어떤 데이터도 쓰지 않는다. 복구 기능은 일부러 만들지 않았다(잘못 되돌리면 더 큰 사고).
+//   복구는 Supabase 대시보드 > SQL Editor에서 사람이 판단해 하는 게 맞다.
+//
+// ★테이블 목록: PostgREST 스펙(/rest/v1/)에서 자동으로 읽고, 아래 고정 목록과 합집합을 쓴다.
+//   자동 발견만 쓰면 스펙 형식이 바뀔 때 통째로 비고, 고정 목록만 쓰면 새로 만든 테이블이 조용히 빠진다.
+//   ★새 테이블을 만들면 아래에 추가해 둘 것(자동 발견이 실패해도 빠지지 않게).
+const _BK_TABLES = [
+  'admin_accounts', 'audit_logs', 'brix_grades', 'categories', 'container_types',
+  'dispatches', 'drivers', 'farms', 'harvests', 'inbound_records',
+  'inventory_juice', 'inventory_records', 'inventory_sorted', 'inventory_unsorted', 'inventory_waste',
+  'item_size_rules', 'items', 'juice_batches', 'juice_product_master', 'juice_records',
+  'manual_transactions', 'nhf_ins', 'nhf_outs', 'outbound_records', 'own_ins',
+  'own_outs', 'pachi_conditions', 'pachi_sizes', 'pachi_usages', 'partners',
+  'picks', 'processing_records', 'product_category_map', 'product_size_master', 'product_weight_master',
+  'quality_criteria', 'reports', 'settings', 'size_grades', 'sorting_details',
+  'sorting_details_backup_before_inventory', 'sorting_results', 'sorting_results_backup_before_inventory',
+  'storage_locations', 'vehicles',
+];
+// ★백업 파일에서 지울 컬럼 — 비밀번호는 파일에 남기지 않는다.
+//   계정 행 자체는 담는다(복구 때 어떤 계정이 있었는지 알아야 함). 비밀번호는 복구 후 설정에서 다시 정하면 된다.
+//   백업 파일은 다운로드 폴더·메일·클라우드로 흘러다니므로 해시라도 넣지 않는 편이 안전하다.
+const _BK_REDACT = { admin_accounts: ['password'] };
+
+function _bkSetStatus(msg) {
+  const el = document.getElementById('bk-status');
+  if (el) el.textContent = msg || '';
+}
+
+// PostgREST 스펙에서 테이블 이름 읽기(실패해도 조용히 빈 배열 — 고정 목록으로 진행)
+async function _bkDiscoverTables() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/`, { headers: SB_HEADERS, cache: 'no-store' });
+    if (!res.ok) return [];
+    const spec = await res.json();
+    const defs = spec.definitions || (spec.components && spec.components.schemas) || null;
+    return defs ? Object.keys(defs) : [];
+  } catch (e) { return []; }
+}
+
+// 한 테이블 전량 조회. ★1,000행 제한이 걸려 있을 수 있어 반드시 페이지로 나눠 끝까지 가져온다.
+//   offset 페이지네이션은 정렬이 없으면 중복·누락이 생기므로 order=id를 붙인다.
+//   id 컬럼이 없는 테이블(settings·product_category_map)은 400이 나므로 정렬 없이 처음부터 다시(둘 다 아주 작다).
+async function _bkFetchTable(table) {
+  const PAGE = 1000;
+  let rows = [], off = 0, useOrder = true;
+  while (true) {
+    let page;
+    try {
+      page = await sbGet(table, `${useOrder ? 'order=id&' : ''}limit=${PAGE}&offset=${off}`);
+    } catch (e) {
+      if (useOrder) { useOrder = false; off = 0; rows = []; continue; }   // id 없는 테이블 → 정렬 빼고 재시도
+      throw e;
+    }
+    if (!Array.isArray(page)) throw new Error('배열이 아닌 응답');
+    rows = rows.concat(page);
+    if (page.length < PAGE) break;
+    off += PAGE;
+  }
+  const drop = _BK_REDACT[table];
+  if (drop && rows.length) {
+    rows = rows.map(r => { const o = { ...r }; drop.forEach(k => { if (k in o) o[k] = '***백업에서 제외됨***'; }); return o; });
+  }
+  return rows;
+}
+
+function _bkStamp(d) {
+  const p = x => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+function _bkAppVersion() {
+  const src = document.querySelector('script[src*="app.js"]')?.getAttribute('src') || '';
+  return src.split('?v=')[1] || '(불명)';
+}
+
+// ★테이블을 하나씩 순차로 가져온다(병렬 아님) — 진행 표시가 정확하고, 모바일에서 한꺼번에 수십 요청을 띄우지 않는다.
+//   전체 약 18,000행이라 JSON은 수 MB 수준. 한 테이블씩 쌓으므로 순간 메모리도 페이지 하나 + 누적분이면 된다.
+async function runFullBackup() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 백업할 수 있습니다.');
+  const btn = document.getElementById('bk-run-btn');
+  if (btn && btn.disabled) return;   // 중복 실행 방지
+  if (btn) { btn.disabled = true; btn.textContent = '백업 중...'; }
+  _bkSetStatus('테이블 목록 확인 중...');
+  try {
+    const found = await _bkDiscoverTables();
+    const tables = [...new Set([..._BK_TABLES, ...found])].sort();
+    const data = {}, counts = {}, failed = [];
+    let total = 0;
+    for (let i = 0; i < tables.length; i++) {
+      const t = tables[i];
+      _bkSetStatus(`${i + 1}/${tables.length} — ${t} 조회 중...`);
+      await new Promise(r => setTimeout(r, 0));   // 화면이 갱신될 틈을 준다(백업 중 앱이 멈춘 것처럼 보이지 않게)
+      try {
+        const rows = await _bkFetchTable(t);
+        data[t] = rows; counts[t] = rows.length; total += rows.length;
+      } catch (e) {
+        // ★조용히 빠뜨리지 않는다 — 파일과 화면 양쪽에 남긴다.
+        data[t] = null; counts[t] = null;
+        failed.push({ table: t, error: String(e && e.message || e).slice(0, 300) });
+      }
+    }
+    const now = new Date();
+    const payload = {
+      _meta: {
+        app: 'manager (제주 감귤 선과장 관리)',
+        app_version: 'app.js?v=' + _bkAppVersion(),
+        supabase_url: SUPABASE_URL,
+        created_at: now.toISOString(),
+        created_at_local: `${_bkStamp(now).slice(0, 10)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        table_count: tables.length,
+        total_rows: total,
+        row_counts: counts,
+        failed_tables: failed,
+        redacted_columns: _BK_REDACT,
+        note: '조회 전용 내보내기입니다. row_counts가 null인 테이블은 조회에 실패한 것이니 failed_tables를 확인하세요.',
+        restore_hint: '앱에는 복구 기능이 없습니다(의도적). 복구는 Supabase 대시보드 > SQL Editor에서 이 파일의 tables 내용을 보고 사람이 판단해 INSERT 하세요. admin_accounts.password는 제외돼 있으니 복구 후 설정에서 다시 지정해야 합니다.',
+      },
+      tables: data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `citriang-backup-${_bkStamp(now)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);   // 다운로드가 시작될 시간을 주고 해제
+    const mb = (blob.size / 1024 / 1024).toFixed(1);
+    if (failed.length) {
+      _bkSetStatus(`⚠ ${tables.length - failed.length}/${tables.length}개 · ${fmtN(total)}행 · ${mb}MB — 실패 ${failed.length}개: ${failed.map(f => f.table).join(', ')}`);
+      alert(`백업 파일을 내려받았지만 ${failed.length}개 테이블을 못 읽었습니다.\n\n${failed.map(f => '· ' + f.table).join('\n')}\n\n자세한 사유는 파일의 _meta.failed_tables에 있습니다.`);
+    } else {
+      _bkSetStatus(`✅ ${tables.length}개 테이블 · ${fmtN(total)}행 · ${mb}MB — ${payload._meta.created_at_local} 내려받음`);
+      showToast(`💾 백업 완료 — ${tables.length}개 테이블 ${fmtN(total)}행`);
+    }
+  } catch (e) {
+    _bkSetStatus('❌ 백업 실패: ' + (e && e.message || e));
+    alert('백업 실패: ' + (e && e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '백업'; }
+  }
+}
 
 // ── 재고 매트릭스 가로 스크롤 위치 보존 ──────────────────────────
 // renderInventoryStatus는 #inv-matrix-wrap의 innerHTML을 통째로 갈아끼운다 →
