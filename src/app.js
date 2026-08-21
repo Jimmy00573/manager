@@ -6960,11 +6960,43 @@ let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초�
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
 
+// ── 재고 매트릭스 가로 스크롤 위치 보존 ──────────────────────────
+// renderInventoryStatus는 #inv-matrix-wrap의 innerHTML을 통째로 갈아끼운다 →
+// 품목별 가로 스크롤 컨테이너가 새 DOM으로 바뀌며 scrollLeft가 0으로 리셋된다.
+// 사이즈 선택은 S1·S2·L처럼 여러 개를 연달아 누르는 동작이라, 오른쪽 사이즈를 하나 고를 때마다
+// 맨 왼쪽으로 튀면 모바일에서 아예 쓸 수가 없다(매번 다시 밀어야 함).
+// ★품목별로 따로 담는다 — 매트릭스가 품목마다 하나씩이고 스크롤도 각각이다.
+//   짝을 맞추는 열쇠는 _renderInvMatrix가 스크롤 div에 붙이는 data-invmx(=품목명).
+// ★세로(window.scrollY)는 건드리지 않는다 — innerHTML 교체로 리셋되지 않고(문서 높이가 유지되는 한
+//   브라우저가 그대로 둔다), 선택 시 늘고 주는 건 합계 바 한 줄뿐이다. 억지로 되돌리면 오히려 튄다.
+// ★renderInventoryStatus 안에 넣은 이유: 호출부가 30곳이 넘는다(사이즈 토글·전체 해제·실사 체크·
+//   부분출고·날짜 변경·등급 탭…). 호출부마다 감싸면 빠뜨리는 곳이 생긴다.
+function _invMxScrollSave() {
+  const wrap = document.getElementById('inv-matrix-wrap');
+  if (!wrap) return null;
+  const pos = {};
+  wrap.querySelectorAll('[data-invmx]').forEach(el => {
+    if (el.scrollLeft > 0) pos[el.dataset.invmx] = el.scrollLeft;
+  });
+  return Object.keys(pos).length ? pos : null;   // 전부 0이면 복원할 것도 없다
+}
+function _invMxScrollRestore(pos) {
+  if (!pos) return;
+  const wrap = document.getElementById('inv-matrix-wrap');
+  if (!wrap) return;
+  // ★innerHTML 교체 직후 동기 복원 — requestAnimationFrame으로 미루면 0에서 한 번 깜빡인다.
+  wrap.querySelectorAll('[data-invmx]').forEach(el => {
+    const v = pos[el.dataset.invmx];
+    if (v) el.scrollLeft = v;   // 열이 줄어 v가 최대치를 넘으면 브라우저가 알아서 끝으로 맞춘다
+  });
+}
+
 // ── [화면: 재고관리 > 선과품 재고] 품목별 섹션 + 등급 탭. 매트릭스 본체는 _renderInvMatrix.
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
   const matrixEl = document.getElementById('inv-matrix-wrap');
   if (!statusEl || !matrixEl) return;
+  const _mxScroll = _invMxScrollSave();   // ★matrixEl.innerHTML을 덮기 전에 담아 둘 것
   _renderInvDateCtrl();
 
   // 더블클릭 비활성화 — [수정] 버튼 사용
@@ -7076,6 +7108,7 @@ function renderInventoryStatus() {
   } else {
     matrixEl.innerHTML = matrixHtml;
   }
+  _invMxScrollRestore(_mxScroll);   // 새로 그린 매트릭스에 이전 가로 스크롤 위치를 되돌려 준다
 }
 
 // ── 사이즈 선택 중량 합계 (아침 물량 계산용, 임시)
@@ -7349,6 +7382,7 @@ function _renderInvMatrix(product, recs, auditMode) {
       ? '<span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">일반</span>'
       : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">${esc(_invGrade)}</span>`;
 
+  // ★가로 스크롤 div의 data-invmx는 재렌더 때 스크롤 위치를 되찾는 열쇠다(_invMxScrollSave/Restore). 지우면 스크롤이 튄다.
   return `
     <div style="width:fit-content;max-width:100%;border:1px solid #E5E7EB;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:24px">
       <div style="padding:10px 14px 8px;border-bottom:2px solid #1E3A5F;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#1E3A5F">
@@ -7357,7 +7391,7 @@ function _renderInvMatrix(product, recs, auditMode) {
         ${gradeBadge}
         <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:auto">${new Set(batches.map(b => b.farm)).size}농가 ${batches.length}배치 · 총 <strong>${fmtCT(grandTotal)} CT</strong>${groupTotalsStr}</span>
       </div>
-      <div style="overflow-x:auto">
+      <div data-invmx="${esc(product)}" style="overflow-x:auto">
         <div style="display:grid;grid-template-columns:${gCols};min-width:${minW}px;border-left:1px solid #D1D5DB">
           ${h}
         </div>
