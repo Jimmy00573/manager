@@ -9498,8 +9498,9 @@ function invSgExcelRenderBody() {
         </select>
       </div>
       <div>
-        <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">농가</label>
-        <input id="sg-farm" type="text" value="${esc(_invSgExcel.farm)}" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
+        <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">농가 *</label>
+        <div><select id="sg-farm" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">${buildSupplierOptHtml()}</select></div>
+        <div id="sg-farm-note" style="font-size:11px;margin-top:3px;line-height:1.35"></div>
       </div>
       <div>
         <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">날짜</label>
@@ -9520,7 +9521,41 @@ function invSgExcelRenderBody() {
     </div>
     <button id="sg-register-btn" onclick="invSgExcelRegister()" style="width:100%;padding:11px;background:#1565C0;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">✅ 등록</button>`;
 
+  // ★이 모달은 열 때마다 통째로 새로 그려진다 → select 요소가 매번 새로 만들어지므로 검색형도 매번 다시 붙여야 한다
+  //   (attachFarmSearch는 sel.dataset.fsOn으로 중복 부착을 막는데, 새 요소엔 그 표시가 없어 정상 부착된다).
+  _sgFarmSetup();
   invSgExcelRecalc();
+}
+
+// ── 선과기 엑셀에서 읽은 농가명을 마스터와 맞춘다 ─────────────────
+// ★자유 입력이던 것을 검색형 선택으로 바꾼 이유: 선과기 엑셀의 표기가 우리 마스터와 다를 수 있고
+//   (예: '남원농협(김철수)' vs '남원농협 김철수'), 그대로 저장되면 그 농가 집계가 둘로 갈린다.
+// ★옵션 소스는 buildSupplierOptHtml() — 입고 등록(ib-farm)과 같은 농가+활성 거래처다.
+//   실데이터에 거래처 '생귤탱귤'로 저장된 선과 재고가 있어 농가만 담으면 그 이름을 못 고른다.
+// ★정확히 일치할 때만 자동 선택한다 — 부분 일치로 골라 주면 엉뚱한 농가에 재고가 붙고, 되돌리기 어렵다.
+//   일치하지 않으면 값은 비워 두고 검색칸에 엑셀 원본 이름만 넣어 후보를 좁혀 준다(고르는 건 사람이).
+// ★allowNew는 켜지 않는다 — 이 작업의 목적이 오타·표기 차이 차단인데 즉석 등록을 열면 오타가 새 농가로 굳는다.
+//   새 농가는 입고 등록에서 만든다(선과품은 그 뒤 단계).
+function _sgFarmSetup() {
+  const sel = document.getElementById('sg-farm');
+  if (!sel) return;
+  attachFarmSearch('sg-farm', { placeholder: '농가·거래처 검색' });
+  const note = document.getElementById('sg-farm-note');
+  const raw = ((_invSgExcel && _invSgExcel.farm) || '').trim();
+  const exact = !!raw && [...sel.options].some(o => o.value === raw);
+  if (exact) {
+    sel.value = raw;
+    fsSync('sg-farm');
+    if (note) note.innerHTML = `<span style="color:#2E7D32">엑셀: ${esc(raw)} — 목록에서 자동 선택됨</span>`;
+    return;
+  }
+  sel.value = '';
+  fsSync('sg-farm');   // 검색칸을 먼저 비운 뒤 엑셀 원본 이름을 넣는다(순서 바뀌면 fsSync가 지운다)
+  const inp = document.getElementById('sg-farm-fs');
+  if (inp) inp.value = raw;   // 값이 아니라 '검색어'로만 남는다 — 눌러 보면 이 이름으로 후보가 걸러진다
+  if (note) note.innerHTML = raw
+    ? `<span style="color:#C05800">엑셀: <b>${esc(raw)}</b> — 목록에 없는 이름입니다. 눌러서 골라 주세요.</span>`
+    : `<span style="color:#C05800">엑셀에서 농가명을 읽지 못했습니다. 목록에서 골라 주세요.</span>`;
 }
 
 function invSgExcelRecalc() {
@@ -9547,7 +9582,7 @@ async function invSgExcelRegister() {
   const farm    = document.getElementById('sg-farm')?.value?.trim();
   const date    = document.getElementById('sg-date')?.value;
   if (!product) return alert('품목을 선택해주세요.');
-  if (!farm)    return alert('농가를 입력해주세요.');
+  if (!farm)    return alert('농가를 선택해주세요.');
   if (!date)    return alert('날짜를 선택해주세요.');
 
   const kgPer = (productWeights && productWeights[product] != null) ? Number(productWeights[product]) : 17;
@@ -9560,7 +9595,9 @@ async function invSgExcelRegister() {
     Object.keys(sizes).forEach(sz => {
       const ct = Math.round((sizes[sz] / kgPer) * 10) / 10;
       if (ct <= 0) return;
-      const g = (grade !== '일반' && !_isBrixAllowedSize(sz, product)) ? '일반' : grade;   // 브릭스 분리 최대 사이즈 초과 → 일반 합산
+      // ★합산 대상 등급만 전환 — 선과 저장(_applyBrixMaxSize)과 같은 규칙(74cfc65).
+      //   여긴 _applyBrixMaxSize를 안 거치는 별도 경로라 같은 판정을 따로 불러 준다. 저당도까지 합치면 정상 재고에 섞인다.
+      const g = (_isBrixMergeGrade(grade) && !_isBrixAllowedSize(sz, product)) ? '일반' : grade;
       const k = g + '||' + sz;
       if (!recMap[k]) { recMap[k] = { date, farm_name: farm, product, location: null, source_type: 'manual', note: '선과기 엑셀', quality_grade: g, size_code: sz, quantity: 0 }; recs.push(recMap[k]); }
       recMap[k].quantity = Math.round((recMap[k].quantity + ct) * 10) / 10;
