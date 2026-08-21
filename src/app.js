@@ -2155,15 +2155,22 @@ function renderDisp() {
 
 // ── 수거
 async function addPick() {
-  const date = gv('pk-date'), farm = gv('pk-farm'), type = gv('pk-type'), qty = n('pk-qty'), ctype = gv('pk-ctype');
-  if (!date || !farm || !type || !qty) { alert('필수 항목을 입력하세요'); return; }
+  const date = gv('pk-date'), farm = gv('pk-farm'), type = gv('pk-type');
+  if (!date || !farm || !type) { alert('필수 항목을 입력하세요'); return; }
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
-  if (!ctype) { alert('콘테이너 종류를 선택하세요.'); return; }
+  //   _rcList가 0을 걸러내므로 비었으면 '종류도 수량도 없음'이다(예전 두 검사를 하나로).
+  const list = _rcList('pk');
+  if (!list.length) { alert('콘테이너 종류별 수량을 입력하세요.'); return; }
   const d = gd(gv('pk-drv'));
   try {
-    const row = await dbInsertPick({ date, farm, type, qty, ctype, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false });
-    picks.unshift(row);
-    clr('pk-qty', 'pk-note'); _syncPkCtype(); renderPick(); renderDash();   // 잔여가 줄었으니 종류 옵션도 다시 계산
+    // ★종류마다 pick 행을 따로 만든다 — picks.ctype이 단일 값이라 한 행에 여러 종류를 담을 수 없다.
+    //   한 종류만 넣으면 예전과 완전히 같은 1행 등록이 된다.
+    for (const c of list) {
+      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false });
+      picks.unshift(row);
+    }
+    clr('pk-note'); _syncPkCtype(); renderPick(); renderDash();   // 잔여가 줄었으니 종류 칸도 다시 계산(수량 칸도 초기화됨)
+    showToast(`${farm} ${type} ${list.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} 등록`);
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delPick(id) {
@@ -2303,19 +2310,26 @@ function renderOwn() {
 
 // ── 빈콘 회수
 async function addBkCol() {
-  const date = gv('bk-date'), farm = gv('bk-farm'), qty = n('bk-qty'), ctype = gv('bk-ctype');
-  if (!date || !farm || !qty) { alert('날짜, 농가명, 수량을 입력하세요'); return; }
+  const date = gv('bk-date'), farm = gv('bk-farm');
+  if (!date || !farm) { alert('날짜, 농가명을 입력하세요'); return; }
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
-  if (!ctype) { alert('콘테이너 종류를 선택하세요.'); return; }
+  const list = _rcList('bk');
+  if (!list.length) { alert('콘테이너 종류별 수량을 입력하세요.'); return; }
+  const totalQty = list.reduce((a, x) => a + x.qty, 0);
   try {
     const drvName = gv('bk-drv');
     const drv = drivers.find(d => d.name === drvName);
-    const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty, ctype, driver: drvName || null, car: drv?.car || null, note: gv('bk-note') || null });
-    picks.unshift(row);
-    clr('bk-qty', 'bk-note');
-    _syncBkCtype();   // 잔여가 줄었으니 종류 옵션도 다시 계산
+    const note = gv('bk-note') || null;   // ★지우기 전에 잡아 둔다 — 예전엔 clr 뒤에 읽어 문자에 비고가 늘 비어 있었다
+    // ★종류마다 pick 행을 따로 만든다(배차·빠른 회수와 같은 규칙). 한 종류면 예전과 같은 1행.
+    for (const c of list) {
+      const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, driver: drvName || null, car: drv?.car || null, note });
+      picks.unshift(row);
+    }
+    clr('bk-note');
+    _syncBkCtype();   // 잔여가 줄었으니 종류 칸도 다시 계산(수량 칸도 초기화됨)
     renderBkCol(); renderDash();
-    openBkMsg({ date, farm, driver: drvName, qty, note: gv('bk-note') });
+    // ★문자는 합계 1건으로 — 농가에 보내는 안내라 종류별로 쪼갤 이유가 없다.
+    openBkMsg({ date, farm, driver: drvName, qty: totalQty, note });
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delBkCol(id) {
@@ -2732,29 +2746,62 @@ function _qrHoldTypes(fn, targetType) {
     .sort((a, b) => b.q - a.q);
 }
 
-// 회수 폼(수거·회수 탭 / 빈콘 회수)의 콘테이너 종류 옵션 — 현황판 회수 모달과 같은 소스(_qrHoldTypes)라 숫자가 어긋나지 않는다.
+// 회수 폼(수거·회수 탭 / 빈콘 회수)의 콘테이너 종류·수량 칸 — 현황판 회수 모달과 같은 소스(_qrHoldTypes)라 숫자가 어긋나지 않는다.
 // ★종류를 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인). 대상이 바뀌면 다시 부를 것.
 // 두 폼 모두 대상은 농가만 다루므로(popSels가 farms로만 채움) targetType은 '농가' 고정.
-function _syncRecoveryCtypeSel(selId, farm, targetType = '농가') {
-  const sel = document.getElementById(selId); if (!sel) return;
-  const prev = sel.value;
-  if (!farm) { sel.innerHTML = '<option value="">농가를 먼저 선택</option>'; sel.disabled = true; return; }
-  sel.disabled = false;
-  const holds = _qrHoldTypes(farm, targetType);
-  const opt = x => `<option value="${esc(x.t)}">${_ctIcon(x.t)} ${esc(x.t)} — 잔여 ${x.q}개</option>`;
-  if (holds.length === 1) {
-    sel.innerHTML = opt(holds[0]);                     // 하나뿐이면 자동 선택
-  } else if (holds.length) {
-    sel.innerHTML = '<option value="">선택하세요</option>' + holds.map(opt).join('');
-  } else {
-    // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 자동 선택하지 않고 전체에서 직접 고르게 한다.
-    sel.innerHTML = '<option value="">선택하세요</option>'
-      + OT_ACTIVE.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');   // ★새로 고르는 자리라 비활성 제외
-  }
-  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;   // 재구성 전에 고른 값은 유지
+//
+// ★2026-08-21 종류 select 하나 → 종류별 수량 칸으로. 한 농가에 여러 종류가 나가 있으면 예전엔 폼을 두 번 채워야 했다.
+//   picks.ctype이 단일 값이라 저장은 종류마다 행을 따로 만든다(배차 2eda9fc·빠른 회수 d840cbd와 같은 접근).
+// ★수거·회수 탭(pk)과 빈콘 회수(bk)가 이 함수 하나를 공유한다 — 한쪽만 바꾸면 헬퍼를 복제해야 하므로 같은 커밋에서 함께 바꿨다.
+// ★잔여는 칸 라벨에 표시하고, 초과는 막지 않고 경고만 한다 —
+//   과회수는 기록에 없던 콘테이너가 돌아오는 정상 경우가 있어 허용하는 게 확정된 정책이다(getSt 주석).
+// ★기본값은 전부 빈칸이다. 예전에도 종류가 하나뿐일 때 select만 자동 선택되고 수량은 사람이 쳤다 — 그 동작을 유지한다.
+const _RC_STATE = {};   // pre('pk'|'bk') → [{t, q}] (q=잔여, 폴백이면 null)
+const _RC_CQ = (pre, i) => document.getElementById(`${pre}-cq-${i}`);
+
+// 입력된 종류만 [{ct, qty}]로. 저장·합계·초과경고가 이 하나를 쓴다.
+function _rcList(pre) {
+  return (_RC_STATE[pre] || []).map((x, i) => ({ ct: x.t, qty: parseInt(_RC_CQ(pre, i)?.value, 10) || 0 })).filter(x => x.qty > 0);
 }
-function _syncPkCtype() { _syncRecoveryCtypeSel('pk-ctype', gv('pk-farm')); }
-function _syncBkCtype() { _syncRecoveryCtypeSel('bk-ctype', gv('bk-farm')); }
+function _rcQtyChanged(pre) {
+  const list = _rcList(pre);
+  const total = list.reduce((a, x) => a + x.qty, 0);
+  const q = document.getElementById(`${pre}-qty`);
+  if (q) q.value = total > 0 ? total : '';   // 수량 칸은 합계 자동(배차 dp-qty와 같은 규칙)
+  const hint = document.getElementById(`${pre}-ctype-hint`);
+  if (!hint) return;
+  const sum = list.length
+    ? `${list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ')} = 합계 <strong>${fmtN(total)}</strong>개`
+    : '';
+  const over = list.map(x => {
+    const t = (_RC_STATE[pre] || []).find(y => y.t === x.ct);
+    return (t && t.q != null && x.qty > t.q) ? `${esc(x.ct)} 잔여 ${fmtN(t.q)}개보다 ${fmtN(x.qty - t.q)}개 많음` : null;
+  }).filter(Boolean);
+  hint.innerHTML = sum + (over.length ? `<div style="color:#C05800;margin-top:3px">⚠ ${over.join(' · ')} — 그래도 등록 가능</div>` : '');
+}
+// pre = 'pk' | 'bk'. 농가가 바뀌거나 저장 직후에 부른다(잔여가 달라지므로 매번 새로 그린다 = 입력값도 초기화).
+function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
+  const wrap = document.getElementById(`${pre}-ctype-grid`);
+  if (!wrap) return;
+  const hint = document.getElementById(`${pre}-ctype-hint`);
+  const q = document.getElementById(`${pre}-qty`);
+  if (q) q.value = '';
+  if (!farm) {
+    _RC_STATE[pre] = [];
+    wrap.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:6px 2px">농가를 먼저 선택하세요</div>';
+    if (hint) hint.innerHTML = '';
+    return;
+  }
+  const holds = _qrHoldTypes(farm, targetType);
+  // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 잔여를 모르므로 전체 활성 종류를 잔여 없이 보여준다.
+  _RC_STATE[pre] = holds.length ? holds.map(x => ({ t: x.t, q: x.q })) : OT_ACTIVE.map(t => ({ t, q: null }));
+  wrap.innerHTML = _RC_STATE[pre].map((x, i) =>
+    `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
+      <input id="${pre}-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" oninput="_rcQtyChanged('${pre}')"></label>`).join('');
+  _rcQtyChanged(pre);
+}
+function _syncPkCtype() { _syncRecoveryCtypeSel('pk', gv('pk-farm')); }
+function _syncBkCtype() { _syncRecoveryCtypeSel('bk', gv('bk-farm')); }
 // 외부行 보유 집계(우리 콘테이너 농협/거래처行) — target_type 일치 picks만: 배출 − (원물수거+빈콘회수). getNhfContainerHold(C-1)를 대상 무관으로 일반화.
 function getTargetContainerHold(name, targetType) {
   const out = picks.filter(p => p.farm === name && p.type === '배출' && p.target_type === targetType).reduce((s, p) => s + p.qty, 0);
