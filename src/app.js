@@ -1167,6 +1167,85 @@ async function cDel(m) {
   return await showConfirmDanger({ title: m, subtitle: '삭제된 데이터는 복구할 수 없습니다', confirmText: '삭제' });
 }
 
+// ══ 마스터 삭제 전 '연결된 기록' 확인 ══════════════════════════════
+// ★목적은 막는 게 아니라 보여주는 것 — 무엇이 딸려 있는지 알고 지우게 한다. 삭제 자체는 그대로 된다.
+// ★참조가 이름 문자열이라(farm_name·partner_name·driver·car) 마스터를 지워도 과거 기록은 남는다.
+//   대신 드롭다운에서 그 이름을 다시 못 고르고 이름 정정도 못 하게 된다 — 그 사실을 확인창에 적는다.
+// ★건수는 반드시 DB에 물어본다. 전역 배열(inboundRecords 등)로 세면 안 된다 —
+//   그것들은 재고 탭에 들어가야 로드되므로, 설정에서 바로 지우면 0건으로 오판한다.
+//   "연결 없음"을 잘못 알려 주는 건 이 기능이 없느니만 못하다.
+// ★eq.는 정확 일치다. 실데이터로 확인: '한정효'(0건) vs '한정효(의귀리230)'(배차 2·입고 4),
+//   '남원농협'(배차 1·입고 25) vs '남원농협(정익수)'(입고 4) — 서로 안 섞인다.
+//   값에 괄호가 들어가도 encodeURIComponent만으로 맞는다(따옴표로 감싸면 오히려 0건이 된다 — 확인함).
+
+// 한 곳의 참조 건수. ★행을 받아오지 않고 count=exact 헤더만 읽는다(출고 151건짜리도 가볍다).
+async function _refCount(table, column, value) {
+  if (value === undefined || value === null || value === '') return 0;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${table}?${column}=eq.${encodeURIComponent(value)}&select=id&limit=1`,
+      { headers: { ...SB_HEADERS, 'Prefer': 'count=exact' }, cache: 'no-store' });
+    if (!res.ok) return null;   // ★실패는 0이 아니라 null — 모르면 모른다고 표시한다
+    const num = parseInt((res.headers.get('content-range') || '').split('/')[1], 10);
+    return isNaN(num) ? null : num;
+  } catch (e) { return null; }
+}
+
+// refs: [{ label, table, column, key }] — key는 vals에서 꺼낼 값('name' 기본, 기사 driver_id처럼 숫자면 'id').
+// 0건은 결과에서 뺀다(확인창이 길어지기만 한다). null(확인 실패)은 남긴다.
+async function _collectRefs(vals, refs) {
+  const nums = await Promise.all(refs.map(r => _refCount(r.table, r.column, vals[r.key || 'name'])));
+  return refs.map((r, i) => ({ label: r.label, n: nums[i] })).filter(x => x.n === null || x.n > 0);
+}
+
+// 마스터 삭제 확인창. ★연결이 없으면 기존과 똑같은 간단한 창이 뜬다(불필요한 단계 추가 금지).
+async function _confirmMasterDelete(title, vals, refs) {
+  showToast('연결된 기록 확인 중...');
+  const hits = await _collectRefs(vals, refs);
+  const name = vals.name;
+  if (!hits.length) return await showConfirmDanger({ title, items: [name], confirmText: '삭제' });
+  const unknown = hits.some(x => x.n === null);
+  const summary = hits.map(x => x.n === null ? `${x.label} 확인실패` : `${x.label} ${fmtN(x.n)}건`).join(' · ');
+  return await showConfirmDanger({
+    title,
+    subtitle: `연결된 기록: ${summary}`,
+    items: [name],   // ★영구 삭제되는 건 마스터 한 줄뿐 — 위 기록들은 지워지지 않는다
+    resultNote: `삭제해도 위 기록은 그대로 남습니다. 다만 목록에서 "${name}"을(를) 다시 고를 수 없어 이름 정정도 못 하게 됩니다.`
+      + (unknown ? ' (일부는 건수를 확인하지 못했습니다)' : ''),
+    confirmText: '삭제',
+  });
+}
+
+// 마스터별 참조 위치. ★새 테이블이 이 이름을 참조하게 되면 여기 한 줄 추가할 것.
+const _REF_FARM = [
+  { label: '입고',         table: 'inbound_records',     column: 'farm_name' },
+  { label: '재고',         table: 'inventory_records',   column: 'farm_name' },
+  { label: '출고',         table: 'outbound_records',    column: 'farm_name' },
+  { label: '배차',         table: 'dispatches',          column: 'farm' },
+  { label: '회수',         table: 'picks',               column: 'farm' },
+  { label: '콘테이너 반입', table: 'own_ins',             column: 'farm' },
+  { label: '콘테이너 반출', table: 'own_outs',            column: 'farm' },
+  { label: '수확',         table: 'harvests',            column: 'farm' },
+  { label: '수동거래',      table: 'manual_transactions', column: 'farm_name' },
+  { label: '작업보고',      table: 'reports',             column: 'farm' },
+];
+const _REF_PARTNER = [
+  { label: '출고',         table: 'outbound_records',    column: 'partner_name' },
+  { label: '수동거래',      table: 'manual_transactions', column: 'partner_name' },
+];
+// ★기사는 이름과 id 두 갈래로 참조된다 — 입고는 55e10a0 이후 driver_id(숫자)를 쓴다. 둘 다 세야 한다.
+const _REF_DRIVER = [
+  { label: '입고(수송기사)', table: 'inbound_records',    column: 'driver_id', key: 'id' },
+  { label: '배차',          table: 'dispatches',         column: 'driver' },
+  { label: '회수',          table: 'picks',              column: 'driver' },
+  { label: '작업보고',       table: 'reports',            column: 'driver' },
+  { label: '입고(수기 기사명)', table: 'inbound_records', column: 'driver_name_manual' },
+];
+const _REF_VEHICLE = [
+  { label: '배차',         table: 'dispatches',          column: 'car' },
+  { label: '회수',         table: 'picks',               column: 'car' },
+];
+
 // ── 문자
 function buildMsg(d) {
   const f = gf(d.farm);
@@ -1384,8 +1463,10 @@ async function addFarm() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delFarm(id) {
-  if (!(await cDel('농가 삭제'))) return;
-  try { await dbDeleteFarm(id); farms = farms.filter(f => f.id !== id); popSels(); renderFarm(); }
+  const f = farms.find(x => x.id === id);
+  if (!f) return;
+  if (!(await _confirmMasterDelete('농가 삭제', { name: f.name, id }, _REF_FARM))) return;
+  try { await dbDeleteFarm(id); farms = farms.filter(x => x.id !== id); popSels(); renderFarm(); }
   catch (e) { alert('오류: ' + e.message); }
 }
 // 농가 폼(등록 f-*, 수정 mf-*) select 옵션 채우기 — 품종=items 마스터, 담당직원=drivers. 현재값 보존.
@@ -1454,8 +1535,10 @@ async function addDriver() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delDriver(id) {
-  if (!(await cDel('기사 삭제'))) return;
-  try { await dbDeleteDriver(id); drivers = drivers.filter(d => d.id !== id); popSels(); renderDrivers(); }
+  const d0 = drivers.find(x => x.id === id);
+  if (!d0) return;
+  if (!(await _confirmMasterDelete('기사 삭제', { name: d0.name, id }, _REF_DRIVER))) return;
+  try { await dbDeleteDriver(id); drivers = drivers.filter(x => x.id !== id); popSels(); renderDrivers(); }
   catch (e) { alert('오류: ' + e.message); }
 }
 // 목록 순서 변경 — 인접 항목과 display_order 스왑 후 재로드(모든 드롭다운·목록에 반영)
@@ -1738,8 +1821,11 @@ async function saveVehicleEdit() {
 }
 
 async function delVehicle(id) {
-  if (!(await cDel('차량 삭제'))) return;
-  try { await dbDeleteVehicle(id); vehicles = vehicles.filter(v => v.id !== id); renderVehicles(); }
+  const v0 = vehicles.find(x => x.id === id);
+  if (!v0) return;
+  // 차량은 이름이 아니라 번호(number)로 배차·회수에 남는다
+  if (!(await _confirmMasterDelete('차량 삭제', { name: v0.number, id }, _REF_VEHICLE))) return;
+  try { await dbDeleteVehicle(id); vehicles = vehicles.filter(x => x.id !== id); renderVehicles(); }
   catch(e) { alert('오류: ' + e.message); }
 }
 
@@ -6498,7 +6584,7 @@ async function deletePartner(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const p = partners.find(x => x.id === id);
   if (!p) return;
-  if (!(await showConfirmDanger({ title: '거래처 삭제', items: [p.name], confirmText: '삭제' }))) return;
+  if (!(await _confirmMasterDelete('거래처 삭제', { name: p.name, id }, _REF_PARTNER))) return;
   try {
     await dbDeletePartner(id);
     partners = partners.filter(x => x.id !== id);
