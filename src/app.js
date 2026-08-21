@@ -3509,7 +3509,9 @@ function _dispForHarvest(farm, dStr) {
 // ★날짜별 소계: 2026-08-20엔 "농가마다 콘테이너 놓인 위치가 달라 합이 뜻이 없다"고 뺐으나,
 //   카드가 좁아 농가별 숫자만으로는 그날 규모가 안 잡혀 2026-08-21 헤더 요약으로 되살렸다.
 //   ★단 농가 중복은 뺀다 — getFCS는 '농가 총 보유'라 같은 농가가 두 줄이면 두 번 더해진다.
-// ★'신규 배송'(그 수확일로 잡힌 배차)은 카드가 좁아 뺐다. 배차 유무는 '배차 없음' 배지와 상단 배너가 맡는다.
+// ★'신규 배송'(그 수확일로 잡힌 배차) 수치는 카드가 좁아 뺐다.
+// ★경고는 '그날 배차가 없음'이 아니라 '콘테이너가 아예 없음'(신규 0 + 보유 0)일 때만 한다 —
+//   이전 차수에서 남은 콘테이너로 수확하는 게 정상 운영이라, 배차 유무만 보면 멀쩡한 건을 계속 경고한다.
 function renderUpcomingHarvest() {
   const el = document.getElementById('cal-upcoming-harvest');
   if (!el) return;
@@ -3527,9 +3529,14 @@ function renderUpcomingHarvest() {
     const farmSet = new Set(list.map(x => x.farm));
     let hold = 0;
     farmSet.forEach(f => { hold += getFCS(f).hold || 0; });   // ★getFCS 재사용 — 현황판 '처리필요'와 같은 헬퍼
+    // ★경고 기준(2026-08-21 수정): '그 날짜 배차가 없음'이 아니라 '콘테이너가 아예 없음'.
+    //   이전 차수에서 남은 콘테이너로 수확하는 게 정상 운영이다 —
+    //   예) 김광호 2차(8/22)는 그날 배차가 없지만 1차 때 나간 200개 중 147개가 농가에 남아 있어 문제없다.
+    //   신규 배송이 없더라도 보유가 있으면 경고가 아니고, 보유까지 0이면 콘테이너를 안 보내면 수확을 못 한다.
     list.forEach(x => {
       if ((x.status || '수확전') === '수확완료') return;
-      if (_dispForHarvest(x.farm, x.date).total > 0) return;
+      if (_dispForHarvest(x.farm, x.date).total > 0) return;   // 신규 배송 있음
+      if ((getFCS(x.farm).hold || 0) > 0) return;              // ★남은 콘테이너로 진행 — 정상
       if (!needDisp.has(x.id)) needDisp.set(x.id, x);
     });
     days.push({ dStr, d, list, farmCnt: farmSet.size, hold });
@@ -3553,16 +3560,21 @@ function renderUpcomingHarvest() {
       const stBadge = st === '수확중'
         ? `<span class="badge b-info" style="font-size:10px">▶ 진행 ${dayNo}일째</span>`
         : `<span class="badge ${_hvStBadge[st] || 'b-warn'}" style="font-size:10px">${esc(st)}</span>`;
-      const noDisp = st !== '수확완료' && dp.total <= 0;
       const holdN = getFCS(x.farm).hold || 0;
+      // ★세 갈래로 나눈다:
+      //   신규 배송 있음        → 보유만 담담히
+      //   신규 없음 + 보유 있음  → '보유 N개로 진행'(경고 아님 — 이전 차수 잔량으로 하는 정상 운영)
+      //   신규 없음 + 보유 0     → '콘테이너 없음'(danger) — 안 보내면 수확 자체를 못 한다
+      const noContainer = st !== '수확완료' && dp.total <= 0 && holdN <= 0;
+      const carryOver   = st !== '수확완료' && dp.total <= 0 && holdN > 0;
       return `<div style="padding:6px 8px;border-top:1px solid #F3F4F6">
         <div style="display:flex;align-items:center;gap:5px;min-width:0">
           <span style="width:7px;height:7px;border-radius:50%;background:${_hvItemColor(x.item)};flex-shrink:0"></span>
           <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
-        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${noDisp ? '<span class="badge b-red" style="font-size:10px">배차 없음</span>' : ''}</div>
-        ${holdN !== 0 ? `<div style="font-size:11px;color:#9CA3AF;padding-left:12px;margin-top:3px">보유 <strong style="color:#374151">${fmtN(holdN)}</strong></div>` : ''}
+        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}</div>
+        ${holdN !== 0 ? `<div style="font-size:11px;color:#9CA3AF;padding-left:12px;margin-top:3px">보유 <strong style="color:#374151">${fmtN(holdN)}</strong>${carryOver ? '개로 진행' : ''}</div>` : ''}
       </div>`;
     }).join('') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
@@ -3581,7 +3593,8 @@ function renderUpcomingHarvest() {
   const MAX_CHIP = 6;
   const banner = nd.length ? `
     <div style="margin:10px 12px 0;padding:8px 10px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px">
-      <div style="font-size:12px;font-weight:700;color:#B91C1C;margin-bottom:5px">⚠ 배차 없는 수확 ${nd.length}건 — 눌러서 배차 등록</div>
+      <div style="font-size:12px;font-weight:700;color:#B91C1C;margin-bottom:5px">⚠ 콘테이너 없는 수확 ${nd.length}건 — 눌러서 배차 등록</div>
+      <div style="font-size:11px;color:#B91C1C;opacity:.85;margin-bottom:5px">신규 배차도 없고 농가에 남은 콘테이너도 없어, 안 보내면 수확을 못 합니다.</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px">
         ${nd.slice(0, MAX_CHIP).map(x => `<button type="button" onclick="_hvGoDispatch('${_fsQ(x.farm)}','${esc(x.date)}')" style="font-size:11px;padding:3px 9px;border-radius:12px;border:1px solid #FCA5A5;background:#fff;color:#B91C1C;cursor:pointer;font-family:inherit;white-space:nowrap">${esc(String(x.date).slice(5).replace('-', '/'))} ${esc(x.farm)} →</button>`).join('')}
         ${nd.length > MAX_CHIP ? `<span style="font-size:11px;color:#B91C1C;align-self:center">외 ${nd.length - MAX_CHIP}건</span>` : ''}
@@ -3592,7 +3605,7 @@ function renderUpcomingHarvest() {
   el.innerHTML = `
     <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
       <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🔭 다가오는 수확 (${UPCOMING_DAYS}일)</div>
-      <div style="font-size:11px;color:#aaa">${totalCnt}건${nd.length ? ' · <span style="color:#C62828;font-weight:600">배차 없음 ' + nd.length + '건</span>' : ''}</div>
+      <div style="font-size:11px;color:#aaa">${totalCnt}건${nd.length ? ' · <span style="color:#C62828;font-weight:600">콘테이너 없음 ' + nd.length + '건</span>' : ''}</div>
     </div>
     ${banner}
     <div style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:10px 12px;align-items:stretch">${cards}</div>`;
