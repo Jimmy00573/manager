@@ -19,7 +19,32 @@ function verifyPassword(plainPw, storedValue) {
 const PER = 7;
 // 우리 콘테이너 종류 — 2026-08-18 현장 명칭으로 변경(노랑→황제, 초록→시트리앙, 헌콘→헌콘테이너).
 // ★DB(container_types.name, dispatches.ctype, picks.ctype, settings.key='stock'의 JSON 키)와 값이 정확히 일치해야 한다.
-const OT = ['황제', '시트리앙', '헌콘테이너'];
+//
+// ★2026-08-21: 하드코딩을 걷어내고 container_types 마스터(owner='ours')에서 파생시킨다.
+//   설정에서 새 종류를 넣어도 공장 재고 카드·회수 옵션·초기재고 칸에 안 나오던 문제.
+// ★배열 '객체'는 그대로 두고 내용만 갈아끼운다(_syncOT의 length=0 + push) —
+//   호출부 5곳이 배열을 기대하고 있고, 어딘가 참조를 잡아 뒀더라도 같이 갱신되게 하려는 것이다.
+// ★두 벌로 나눈 이유(비활성 처리):
+//   OT        = 표시·집계·초기재고·검증용. 비활성(is_active=false)도 포함한다 —
+//               쓰지 않기로 한 종류라도 창고에 남은 물량은 재고 카드에서 계속 보여야 한다.
+//               여기서 빼면 그 종류 재고가 화면에서 통째로 사라진다.
+//   OT_ACTIVE = 새로 '고르는' 자리(회수 종류 폴백 옵션)용. 비활성은 뺀다 — 그게 비활성화의 목적이다.
+// ★마스터가 비었거나 로드에 실패하면 OT_FALLBACK(기존 3종)으로 되돌아간다 — 화면이 텅 비지 않게.
+const OT_FALLBACK = ['황제', '시트리앙', '헌콘테이너'];
+const OT = [...OT_FALLBACK];          // 표시·집계용(비활성 포함)
+const OT_ACTIVE = [...OT_FALLBACK];   // 선택 옵션용(비활성 제외)
+function _syncOT() {
+  const ours = (containerTypes || [])
+    .filter(t => t && t.owner === 'ours')
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  // ctNorm — 마스터에 옛 이름(노랑 등)이 남아 있어도 새 이름으로 흡수해 집계가 갈리지 않게.
+  const all = [...new Set(ours.map(t => ctNorm(t.name)).filter(Boolean))];
+  const act = [...new Set(ours.filter(t => t.is_active !== false).map(t => ctNorm(t.name)).filter(Boolean))];
+  OT.length = 0;
+  OT.push(...(all.length ? all : OT_FALLBACK));
+  OT_ACTIVE.length = 0;
+  OT_ACTIVE.push(...(act.length ? act : OT.slice()));   // 전부 비활성이면 선택지가 비지 않게 OT로 폴백
+}
 // 옛 색 이름 → 새 이름 흡수 매핑. 이름만 바뀐 같은 물건이므로 집계는 합쳐야 맞다.
 // DB 일괄 갱신 전후의 과도기, 그리고 옛 백업을 복원했을 때를 위해 남겨 둔다(지우지 말 것).
 // ★반드시 완전일치로만 변환할 것(부분치환 금지) — 예전에 '헌콘(농가)'가 있어 '헌콘' 부분치환이 농가것을 망가뜨렸다.
@@ -440,6 +465,7 @@ async function initApp() {
     partners = await dbGetPartners().catch(() => []);
     manualTransactions = await dbGetManualTransactions().catch(() => []);
     containerTypes = await dbGetContainerTypes().catch(() => []);
+    _syncOT();   // ★OT/OT_ACTIVE는 이 마스터에서 나온다 — 로드 실패 시엔 기본 3종이 그대로 남는다
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);
@@ -780,6 +806,7 @@ function getSt(t) {
 function renderSC() {
   const el = document.getElementById('stock-cards');
   // 배경색 클래스는 그대로 유지(색으로 구분하던 습관 보존). 아이콘은 _CT_ICON 단일 소스.
+  // ★맵에 없는 새 종류는 빈 문자열 — 'stock-card undefined'가 되지 않게. 위쪽 테두리 색만 없고 카드는 정상.
   const cc = { 황제: 'yellow', 시트리앙: 'green', 헌콘테이너: 'old' };
   el.innerHTML = OT.map(t => {
     const st = getSt(t);
@@ -791,7 +818,7 @@ function renderSC() {
     const outTxt = over ? `+${(-st.out).toLocaleString()}` : `-${st.out.toLocaleString()}`;
     const p = st.init > 0 ? st.remain / st.init : 1;
     const rc = p > 0.3 ? 'sok' : p > 0.1 ? 'swarn' : 'sdanger';
-    return `<div class="stock-card ${cc[t]}">
+    return `<div class="stock-card ${cc[t] || ''}">
       <div style="font-size:20px;margin-bottom:4px">${_ctIcon(t)}</div>
       <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:500">${t}</div>
       <div class="stock-nums">
@@ -2660,7 +2687,7 @@ function _syncRecoveryCtypeSel(selId, farm, targetType = '농가') {
   } else {
     // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 자동 선택하지 않고 전체에서 직접 고르게 한다.
     sel.innerHTML = '<option value="">선택하세요</option>'
-      + OT.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');
+      + OT_ACTIVE.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');   // ★새로 고르는 자리라 비활성 제외
   }
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;   // 재구성 전에 고른 값은 유지
 }
@@ -2750,7 +2777,7 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
   const ctypeOpts = holdTypes.length
     ? holdTypes.map(x => `<option value="${esc(x.t)}" data-hold="${x.q}"${single ? ' selected' : ''}>${_ctIcon(x.t)} ${esc(x.t)} — 잔여 ${x.q}개</option>`).join('')
     // 폴백: 나가 있는 종류를 못 구한 경우. 잔여를 모르므로 자동 선택하지 않고 직접 고르게 한다.
-    : OT.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');
+    : OT_ACTIVE.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');   // ★새로 고르는 자리라 비활성 제외
   const needPick = !single;                                     // 여럿이거나 폴백이면 '선택' 안내 옵션을 앞에 둔다
   const m = document.createElement('div');
   m.id = 'modal-quick-recovery';
@@ -5620,7 +5647,9 @@ function renderContainerTypeCfg() {
     ${_stockInitCfgHtml(isAdm)}`;
 }
 
-// 초기재고 설정 — 우리 콘테이너(OT 3종)만. 남의것(농가것·농협것)은 우리가 보유량을 세는 대상이 아니라 초기재고 개념이 없다.
+// 초기재고 설정 — 우리 콘테이너(OT)만. 남의것(농가것·농협것)은 우리가 보유량을 세는 대상이 아니라 초기재고 개념이 없다.
+// ★OT는 container_types(owner='ours') 마스터에서 온다 — 설정에서 종류를 추가하면 입력칸도 자동으로 생긴다.
+//   settings.stock JSON은 종류 이름을 키로 쓰므로(ctNormStockKeys) 새 키가 저장 시 그대로 추가된다.
 // ★2026-08-20에 현황판에서 여기로 옮겼다. 현황판은 표시 전용, 수정은 설정에서(관리자만·이력 남김).
 // ★입력칸 id는 si-{종류}로 예전과 같다 — saveStock이 그대로 읽는다(현황판엔 더 이상 같은 id가 없어 충돌 없음).
 function _stockInitCfgHtml(isAdm) {
@@ -5700,6 +5729,9 @@ async function deleteContainerType(id) {
 }
 // 자가(농가) 콘테이너 반입/반납 폼의 종류 드롭다운 채우기 — 농가것(farm)만 (농협은 별도 폼)
 function popCtypeSels() {
+  // ★종류 마스터 추가·수정·비활성·삭제가 전부 이 함수를 지난다 — 우리것 목록도 여기서 같이 맞춘다.
+  _syncOT();
+  if (document.getElementById('stock-cards')) renderSC();   // 공장 보유 재고 카드도 종류 수가 달라진다
   const farmTypes = containerTypes.filter(t => t.owner === 'farm' && t.is_active !== false)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   const opts = '<option value="">선택</option>' + farmTypes.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
