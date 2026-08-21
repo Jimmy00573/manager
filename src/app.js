@@ -3686,7 +3686,10 @@ function _dispForHarvest(farm, dStr) {
 // ★날짜별 소계: 2026-08-20엔 "농가마다 콘테이너 놓인 위치가 달라 합이 뜻이 없다"고 뺐으나,
 //   카드가 좁아 농가별 숫자만으로는 그날 규모가 안 잡혀 2026-08-21 헤더 요약으로 되살렸다.
 //   ★단 농가 중복은 뺀다 — getFCS는 '농가 총 보유'라 같은 농가가 두 줄이면 두 번 더해진다.
-// ★'신규 배송'(그 수확일로 잡힌 배차) 수치는 카드가 좁아 뺐다.
+// ★'신규 배송'(그 수확일로 잡힌 배차) 수치는 카드가 좁아 뺐다 — 카드에 남는 콘테이너 정보는 '보유'뿐이다.
+// ★보유는 종류별 칩으로 보여준다(2026-08-21 2차). 처음엔 총합만 뒀는데("칩이 대여섯 개면 안 읽힌다"),
+//   그 뒤 우리 종류가 6종이 되고 배송·회수가 다중 종류를 지원하면서(2eda9fc·d840cbd·4731a96)
+//   실제로 두 종류가 같이 나가게 됐다 — 총합만으로는 뭘 더 보내야 할지 판단이 안 된다.
 // ★경고는 '그날 배차가 없음'이 아니라 '콘테이너가 아예 없음'(신규 0 + 보유 0)일 때만 한다 —
 //   이전 차수에서 남은 콘테이너로 수확하는 게 정상 운영이라, 배차 유무만 보면 멀쩡한 건을 계속 경고한다.
 function renderUpcomingHarvest() {
@@ -3744,14 +3747,22 @@ function renderUpcomingHarvest() {
       //   신규 없음 + 보유 0     → '콘테이너 없음'(danger) — 안 보내면 수확 자체를 못 한다
       const noContainer = st !== '수확완료' && dp.total <= 0 && holdN <= 0;
       const carryOver   = st !== '수확완료' && dp.total <= 0 && holdN > 0;
+      // ★종류별 보유 — getFCtypes를 그대로 쓴다(현황판 '처리필요' 칩과 같은 소스·같은 HTML).
+      //   직접 계산하지 않는 이유: 숫자가 현황판과 어긋나면 안 되고, 옛 이름 흡수(ctNorm)·과회수 음수 표시까지
+      //   그 함수가 이미 처리한다. 칩이 비면(종류 정보 없음) 총합으로 폴백.
+      // ★판정(noContainer·carryOver)은 위 총합(holdN) 기준 그대로 — 종류별로 쪼개면
+      //   "시트리앙은 있는데 바구니는 없음" 같은 애매한 상태가 생겨 경고 기준이 흐려진다.
+      const holdChips = getFCtypes(x.farm);
       return `<div style="padding:6px 8px;border-top:1px solid #F3F4F6">
         <div style="display:flex;align-items:center;gap:5px;min-width:0">
           <span style="width:7px;height:7px;border-radius:50%;background:${_hvItemColor(x.item)};flex-shrink:0"></span>
           <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
-        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}</div>
-        ${holdN !== 0 ? `<div style="font-size:11px;color:#9CA3AF;padding-left:12px;margin-top:3px">보유 <strong style="color:#374151">${fmtN(holdN)}</strong>${carryOver ? '개로 진행' : ''}</div>` : ''}
+        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
+        ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
+          <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
+        </div>` : ''}
       </div>`;
     }).join('') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
