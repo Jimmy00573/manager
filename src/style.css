@@ -119,6 +119,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-seri
    .ctf2는 .cto와 같은 무채색이라 명도를 달리해 구분한다. */
 .ctf { background: #FFF3E0; color: #C05800; } .ctf2 { background: #E5E7EB; color: #374151; }
 .ctn { background: #E3F2FD; color: #1565C0; } .ctn2 { background: #EDE7F6; color: #7C3AED; }
+/* 우리것 추가분(플라스틱바구니 🧺 / 천바구니 👝 / 리어카 🛒) — 2026-08-21.
+   ★위 7색과 겹치지 않는 계열만 골랐다: 청록·갈색·분홍.
+   ★리어카는 처음 남색(#303F9F)을 검토했으나 .ctn(콘테이너 #1565C0)과 명도·색상이 너무 가까워 분홍으로 바꿨다.
+   ★.ctb(청록 #00695C)는 .ctg(초록 #2E7D32)와 계열이 이웃하지만, 아이콘이 🧺 vs 🟢로 확연히 달라 구분된다. */
+.ctb { background: #E0F2F1; color: #00695C; } .ctb2 { background: #EFEBE9; color: #5D4037; }
+.ctr { background: #FCE4EC; color: #AD1457; }
 .alert-cnt { font-weight: 500; font-size: 12px; padding: 2px 8px; border-radius: 12px; }
 .alert-cnt.w { background: #FFF3E0; color: #E65100; } .alert-cnt.g { background: #E8F5E9; color: #2E7D32; }
 .alert-none { font-size: 13px; color: var(--text-tertiary); padding: 6px 0; }
