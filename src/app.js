@@ -44,6 +44,8 @@ function _syncOT() {
   OT.push(...(all.length ? all : OT_FALLBACK));
   OT_ACTIVE.length = 0;
   OT_ACTIVE.push(...(act.length ? act : OT.slice()));   // 전부 비활성이면 선택지가 비지 않게 OT로 폴백
+  // ★배차 폼의 종류별 수량 칸도 이 목록에서 나온다 — 여기서 같이 맞춰야 설정 변경이 곧바로 반영된다.
+  if (typeof _dpRenderCtypeQty === 'function') _dpRenderCtypeQty();
 }
 // 옛 색 이름 → 새 이름 흡수 매핑. 이름만 바뀐 같은 물건이므로 집계는 합쳐야 맞다.
 // DB 일괄 갱신 전후의 과도기, 그리고 옛 백업을 복원했을 때를 위해 남겨 둔다(지우지 말 것).
@@ -874,14 +876,17 @@ async function saveStock(t) {
 }
 
 function chkStW() {
-  const c = gv('dp-ctype'), q = parseInt(document.getElementById('dp-qty')?.value) || 0;
   const w = document.getElementById('dp-stw');
   if (!w) return;
-  if (OT.includes(c) && q > 0) {
-    const st = getSt(c);
-    if (q > st.remain) { w.style.display = ''; w.textContent = `⚠ ${c} 잔여 재고 ${st.remain}개보다 ${q - st.remain}개 많습니다. 그래도 등록 가능.`; }
-    else w.style.display = 'none';
-  } else w.style.display = 'none';
+  // ★종류별로 본다 — 한 번에 여러 종류를 보낼 수 있으므로 부족한 종류를 전부 알려야 한다.
+  //   판정은 OT(비활성 포함) 기준 — 우리 콘테이너인 것만 잔여 개념이 있다.
+  const short = _dpCtypeList()
+    .filter(x => OT.includes(x.ct))
+    .map(x => ({ ct: x.ct, qty: x.qty, remain: getSt(x.ct).remain }))
+    .filter(x => x.qty > x.remain);
+  if (!short.length) { w.style.display = 'none'; return; }
+  w.style.display = '';
+  w.textContent = '⚠ ' + short.map(x => `${x.ct} 잔여 ${x.remain}개보다 ${x.qty - x.remain}개 많음`).join(' · ') + '. 그래도 등록 가능.';
 }
 
 // ── 네비
@@ -1006,7 +1011,55 @@ function switchPT(t) {
 function switchDT(t) { _dt = t; _dp = 1; document.getElementById('dtab-w').className = 'dtab' + (t === 'w' ? ' active' : ''); document.getElementById('dtab-d').className = 'dtab' + (t === 'd' ? ' active' : ''); renderDDash(); }
 function switchDT2(t) { _dt2 = t; _d2p = 1; document.getElementById('dtab2-w').className = 'dtab' + (t === 'w' ? ' active' : ''); document.getElementById('dtab2-d').className = 'dtab' + (t === 'd' ? ' active' : ''); renderDisp(); }
 function switchFT(t) { _ft = t; document.getElementById('ftab-n').className = 'dtab' + (t === 'n' ? ' active' : ''); document.getElementById('ftab-o').className = 'dtab' + (t === 'o' ? ' active' : ''); renderFarmTbl(); }
-function selCt(v) { document.getElementById('dp-ctype').value = v; document.querySelectorAll('.ctype-btn').forEach(b => b.classList.toggle('sel', b.textContent.includes(v))); chkStW(); }
+// ── [배차 등록] 콘테이너 종류별 수량 ─────────────────────────────
+// ★예전엔 index.html에 종류 버튼 3개가 박혀 있었다(황제·시트리앙·헌콘테이너). 그래서 설정에서
+//   owner='ours'로 추가한 플라스틱바구니·천바구니·리어카를 배차로 보낼 방법이 아예 없었다.
+// ★버튼(한 종류 선택)을 살리는 대신 '종류별 수량 칸'으로 바꿨다 — 한 번에 여러 종류를 보내려면
+//   버튼과 수량칸이 같은 값을 두 군데서 다루게 되어 어긋난다. 입고 등록의 콘테이너 칩과 같은 방식.
+// ★옛 selCt의 선택 표시가 b.textContent.includes(v) 였는데, 이름이 서로를 포함하면 오작동한다
+//   (예: 농협것 '콘테이너'를 고르면 '헌콘테이너' 버튼까지 선택됨). 칸마다 고유 id를 쓰는 지금은 그 함정이 없다.
+// ★dp-qty(수량)는 이 칸들의 합계로 자동 채운다 — previewMsg·작업보고 등 기존 코드가 dp-qty를 그대로 읽는다.
+// ★dp-ctype에는 '대표 종류'(수량이 가장 큰 것)를 넣는다 — 단일 종류를 기대하는 기존 코드 호환.
+const _DP_CQ = (i) => document.getElementById('dp-cq-' + i);
+function _dpRenderCtypeQty() {
+  const wrap = document.getElementById('dp-ctype-grid');
+  if (!wrap) return;
+  const sig = OT_ACTIVE.join('|');
+  if (wrap.dataset.sig === sig) return;   // 종류 구성이 그대로면 다시 만들지 않는다(입력값 보존)
+  wrap.dataset.sig = sig;
+  wrap.innerHTML = OT_ACTIVE.map((t, i) => `<label><span>${_ctIcon(t)} ${esc(t)}</span>
+    <input id="dp-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-ct="${esc(t)}" oninput="_dpCtypeQtyChanged()"></label>`).join('');
+  _dpCtypeQtyChanged();
+}
+// 입력된 종류만 [{ct, qty}]로. 저장·합계·재고검증이 전부 이 하나를 쓴다.
+function _dpCtypeList() {
+  return OT_ACTIVE.map((t, i) => ({ ct: t, qty: parseInt(_DP_CQ(i)?.value, 10) || 0 })).filter(x => x.qty > 0);
+}
+function _dpCtypeQtyChanged() {
+  const list = _dpCtypeList();
+  const total = list.reduce((a, x) => a + x.qty, 0);
+  const q = document.getElementById('dp-qty');
+  if (q) q.value = total > 0 ? total : '';
+  const main = list.slice().sort((a, b) => b.qty - a.qty)[0];   // 대표 종류 = 수량 최대(동률이면 앞선 종류)
+  const ce = document.getElementById('dp-ctype');
+  if (ce) ce.value = main ? main.ct : '';
+  const hint = document.getElementById('dp-ctype-hint');
+  if (hint) hint.innerHTML = list.length
+    ? list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ') + ` = 합계 <strong>${fmtN(total)}</strong>개`
+    : '';
+  chkStW();
+}
+function _dpClearCtypeQty() {
+  OT_ACTIVE.forEach((_, i) => { const el = _DP_CQ(i); if (el) el.value = ''; });
+  _dpCtypeQtyChanged();
+}
+// 옛 버튼이 쓰던 함수 — 버튼은 없어졌지만 이름을 아는 곳이 있을 수 있어 그 종류 칸으로 커서를 옮겨 주는 것으로 남긴다.
+function selCt(v) {
+  const i = OT_ACTIVE.indexOf(ctNorm(v));
+  if (i < 0) return;
+  const el = _DP_CQ(i);
+  if (el) { el.focus(); el.select(); }
+}
 
 function mkPg(cid, total, cur, fn) {
   const pages = Math.ceil(total / PER) || 1;
@@ -1870,39 +1923,48 @@ function onDrvTypeChange() {
 function ctB(v) { return `${_ctIcon(v)} ${esc(v || '-')}`; }
 
 async function addDisp() {
-  const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv'), qty = n('dp-qty'), ctype = gv('dp-ctype');
+  const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv');
   const targetType = gv('dp-target-type') || '농가';   // 배차 대상 종류(농가/농협/거래처)
   if (!date || !farm || !drv) { alert('날짜, 대상명, 기사명을 입력하세요'); return; }
-  if (!ctype) { alert('콘테이너 종류를 선택하세요'); return; }
-  // ★수량 0으로 저장되면 아래 `if (qty > 0)`에 걸려 picks '배출' 행이 안 생긴다 → 콘테이너 보유 집계엔
-  //   안 잡히면서 배차 목록에만 남는 '유령 배차'가 된다. 애초에 못 만들게 여기서 막는다(수정도 saveDispEdit에서 동일).
-  if (!qty || qty <= 0) { alert('수량을 입력하세요'); return; }
+  // ★종류별 수량 — 입력된 것만 각각 dispatches 행이 된다. dispatches.ctype이 단일 값이라
+  //   한 행에 여러 종류를 담을 수 없다(입고의 카테고리별 행 생성과 같은 접근).
+  //   ★한 종류만 넣으면 예전과 완전히 같은 1행 등록이 된다.
+  const ctList = _dpCtypeList();
+  // ★수량 0으로 저장되면 picks '배출' 행이 안 생겨, 콘테이너 보유 집계엔 안 잡히면서 배차 목록에만 남는
+  //   '유령 배차'가 된다. _dpCtypeList가 0을 이미 걸러내므로 비었으면 여기서 막는다(수정은 saveDispEdit에서 동일).
+  if (!ctList.length) { alert('콘테이너 종류별 수량을 입력하세요'); return; }
+  const totalQty = ctList.reduce((a, x) => a + x.qty, 0);
   const d = gd(drv);
   try {
     // ★기본 상태 '배출완료'(2026-08-18) — 내부 직원이 갔다 온 뒤 기록하므로 '배차완료 → 배출완료' 2단계를 타지 않는다.
     //   (기존 배차 16건 전부 배출완료였음.) 예약 배차가 필요하면 등록 후 '↩ 되돌리기'로 배출 대기로 보낼 수 있다.
-    const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty, ctype, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배출완료', target_type: targetType });
-    dispatches.unshift(row);
-    // 수량이 있을 때만 배출 자동 pick 생성(대상 종류 동일하게)
-    if (qty > 0) {
-      await dbInsertPick({ date, farm, type: '배출', qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
-      picks = await dbGetPicks();
+    let firstRow = null;
+    for (const c of ctList) {
+      const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty: c.qty, ctype: c.ct, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배출완료', target_type: targetType });
+      dispatches.unshift(row);
+      if (!firstRow) firstRow = row;
+      // ★배출 자동 pick은 배차 행마다 정확히 1건 — dispatch_id로 짝지어야 delDisp가 제 것만 지운다.
+      //   (ctype은 넣지 않는다 — 기존과 동일. getFCtypeMap이 배차의 ctype으로 종류별 집계를 하므로 중복 방지.)
+      await dbInsertPick({ date, farm, type: '배출', qty: c.qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
     }
+    picks = await dbGetPicks();
     // ★작업 보고 자동 생성 — 지금까지 '완료' 버튼(updDisp)이 만들어 주던 기록이다(reports 25건 중 24건이 이 경로).
     //   등록 즉시 완료로 바뀌면서 그 버튼을 안 거치므로, 여기서 같은 조건·같은 내용으로 남긴다(중복 방지 조건도 동일).
+    //   ★여러 종류를 한 번에 보내도 보고는 하루 1건 — 수량은 총합으로 넣는다(종류가 하나면 예전과 같은 값).
     if (!reports.find(r => r.driver === drv && r.farm === farm && r.date === date)) {
-      const rpt = await dbInsertReport({ driver: drv, date, farm, qty, note: '완료처리' });
+      const rpt = await dbInsertReport({ driver: drv, date, farm, qty: totalQty, note: '완료처리' });
       reports.unshift(rpt);
     }
-    clr('dp-qty', 'dp-note', 'dp-harvest'); sv('dp-ctype', ''); sv('dp-trip', '');
-    document.querySelectorAll('.ctype-btn').forEach(b => b.classList.remove('sel'));
+    clr('dp-note', 'dp-harvest'); sv('dp-trip', '');
+    _dpClearCtypeQty();   // 종류별 칸·합계·대표종류·재고경고를 한 번에 초기화
     document.getElementById('dp-stw').style.display = 'none';
-    if (_extDrvOn()) openMsg(row);   // ★내부 직원만 쓰는 동안은 문자 팝업을 띄우지 않는다(기능은 보존).
+    if (_extDrvOn() && firstRow) openMsg(firstRow);   // ★내부 직원만 쓰는 동안은 문자 팝업을 띄우지 않는다(기능은 보존).
     // ★목록 탭 기본값이 '배출 대기'(_dt2='w')라 그대로 두면 방금 등록한 건이 안 보여 실패한 것처럼 읽힌다.
     //   등록 결과가 '배출완료'이므로 그 탭으로 옮겨 보여준다(switchDT2가 renderDisp까지 호출).
     renderSC(); switchDT2('d'); renderDDash(); renderDash();
     const rc = document.getElementById('rep-cnt');   // 작업 보고 건수 배지 — updDisp와 동일하게 갱신
     if (rc) rc.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
+    showToast(`✓ ${ctList.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} 등록되었습니다`);
   } catch (e) { alert('오류: ' + e.message); }
 }
 

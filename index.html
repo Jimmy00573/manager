@@ -350,13 +350,18 @@
         <!-- 차수·시간대: 15건 중 5건만 입력해 실사용률이 낮아 숨김(값은 빈 채로 저장). 필요해지면 display:none 제거. -->
         <div class="fg" style="display:none"><label>차수</label><select id="dp-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
         <div class="fg" style="display:none"><label>시간대</label><select id="dp-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
-        <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" oninput="chkStW()"></div>
+        <!-- ★수량은 아래 종류별 칸의 합계로 자동(입고 폼의 ib-qty와 같은 규칙). 직접 못 고친다. -->
+        <div class="fg"><label>수량(개) *</label><input id="dp-qty" type="number" placeholder="0" readonly title="아래 콘테이너 종류별 수량의 합계입니다" style="background:#F3F4F6;cursor:not-allowed"></div>
         <div class="fg"><label>🗓 수확 예정일</label><input id="dp-harvest" type="date"></div>
         <div class="fg"><label>🍊 품목</label><select id="dp-item"></select></div>
         <div class="fg" style="grid-column:1/-1">
-          <label>콘테이너 종류 * <span style="font-size:10px;color:#aaa">→ 재고 자동 차감</span></label>
-          <div class="ctype-btns"><button class="ctype-btn" onclick="selCt('황제')">🟡 황제</button><button class="ctype-btn" onclick="selCt('시트리앙')">🟢 시트리앙</button><button class="ctype-btn" onclick="selCt('헌콘테이너')">⬜ 헌콘테이너</button></div>
-          <input id="dp-ctype" readonly placeholder="위에서 선택" style="cursor:pointer">
+          <label>콘테이너 종류·수량 * <span style="font-size:10px;color:#aaa">→ 재고 자동 차감 · 여러 종류를 한 번에 보낼 수 있습니다</span></label>
+          <!-- ★칸 목록은 _dpRenderCtypeQty가 OT_ACTIVE(container_types owner='ours' 활성)로 만든다. 하드코딩 금지 —
+               예전엔 여기에 버튼 3개가 박혀 있어 설정에서 추가한 종류를 보낼 방법이 없었다. -->
+          <div id="dp-ctype-grid" class="ib-catq"></div>
+          <div id="dp-ctype-hint" style="font-size:11px;margin-top:4px;color:var(--text-tertiary)"></div>
+          <!-- 대표 종류(수량 최대) — 문자 미리보기 등 단일 종류를 기대하는 기존 코드 호환용 -->
+          <input id="dp-ctype" type="hidden">
         </div>
         <div class="fg"><label>특이사항</label><input id="dp-note" placeholder="메모"></div>
       </div>
@@ -1931,6 +1936,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=545"></script>
+<script src="src/app.js?v=546"></script>
 </body>
 </html>
