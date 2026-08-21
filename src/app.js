@@ -1046,9 +1046,9 @@ function _dpCtypeQtyChanged() {
   const ce = document.getElementById('dp-ctype');
   if (ce) ce.value = main ? main.ct : '';
   const hint = document.getElementById('dp-ctype-hint');
-  if (hint) hint.innerHTML = list.length
-    ? list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ') + ` = 합계 <strong>${fmtN(total)}</strong>개`
-    : '';
+  // ★합계 문자열은 회수 화면들과 같은 헬퍼를 쓴다(세 번째 사본이었다).
+  //   []를 넘기는 이유: 배차는 '농가 잔여' 개념이 없다 — 공장 재고 부족 경고는 아래 chkStW가 별도 배너에 쓴다.
+  if (hint) hint.innerHTML = _ctQtyHint(list, []);
   chkStW();
 }
 function _dpClearCtypeQty() {
@@ -2780,6 +2780,29 @@ const _RC_CQ = (pre, i) => document.getElementById(`${pre}-cq-${i}`);
 function _rcList(pre) {
   return (_RC_STATE[pre] || []).map((x, i) => ({ ct: x.t, qty: parseInt(_RC_CQ(pre, i)?.value, 10) || 0 })).filter(x => x.qty > 0);
 }
+// ── 종류별 수량 힌트 HTML — 콘테이너 종류 칸을 쓰는 화면들의 ★단일 소스 ────────
+// 쓰는 곳: 배차 등록(_dpCtypeQtyChanged) · 수거·회수/빈콘 회수(_rcQtyChanged) · 현황판 빠른 회수(_qrQtyChanged).
+// ★셋에 같은 문자열이 복제돼 있었다. 아직 어긋나지 않았지만 한쪽만 고치면 화면마다 안내가 달라진다 —
+//   2026-08-21 하루에 같은 유형의 사본 문제를 세 번 겪었다(getSt 공장재고 25개 오차 · _juiceBoxOf · 브릭스 합산).
+// ★인자
+//   list      [{ct, qty}]  입력된 종류만(0은 호출부가 이미 걸러 온다)
+//   holdTypes [{t, q}]     잔여 소스. q=null이거나 목록에 없으면 그 종류는 초과 판정을 하지 않는다.
+//                          배차처럼 '농가 잔여' 개념이 없는 화면은 []를 넘긴다(합계만 나온다).
+//   emptyMsg               list가 빌 때 보여줄 문구 — 화면마다 다르므로 인자로 받는다.
+// ★과회수는 경고만 하고 막지 않는다 — 기록에 없던 콘테이너가 돌아오는 정상 경우가 있다(getSt 주석).
+//   배차의 '공장 재고 부족' 경고는 성격이 달라(창고에 없음) 여기 합치지 않았다 — chkStW가 별도 배너에 쓴다.
+function _ctQtyHint(list, holdTypes, emptyMsg = '') {
+  const total = list.reduce((a, x) => a + x.qty, 0);
+  const sum = list.length
+    ? `${list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ')} = 합계 <strong>${fmtN(total)}</strong>개`
+    : emptyMsg;
+  const over = list.map(x => {
+    const t = (holdTypes || []).find(y => y.t === x.ct);
+    return (t && t.q != null && x.qty > t.q) ? `${esc(x.ct)} 잔여 ${fmtN(t.q)}개보다 ${fmtN(x.qty - t.q)}개 많음` : null;
+  }).filter(Boolean);
+  return sum + (over.length ? `<div style="color:#C05800;margin-top:3px">⚠ ${over.join(' · ')} — 그래도 등록 가능</div>` : '');
+}
+
 function _rcQtyChanged(pre) {
   const list = _rcList(pre);
   const total = list.reduce((a, x) => a + x.qty, 0);
@@ -2787,14 +2810,7 @@ function _rcQtyChanged(pre) {
   if (q) q.value = total > 0 ? total : '';   // 수량 칸은 합계 자동(배차 dp-qty와 같은 규칙)
   const hint = document.getElementById(`${pre}-ctype-hint`);
   if (!hint) return;
-  const sum = list.length
-    ? `${list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ')} = 합계 <strong>${fmtN(total)}</strong>개`
-    : '';
-  const over = list.map(x => {
-    const t = (_RC_STATE[pre] || []).find(y => y.t === x.ct);
-    return (t && t.q != null && x.qty > t.q) ? `${esc(x.ct)} 잔여 ${fmtN(t.q)}개보다 ${fmtN(x.qty - t.q)}개 많음` : null;
-  }).filter(Boolean);
-  hint.innerHTML = sum + (over.length ? `<div style="color:#C05800;margin-top:3px">⚠ ${over.join(' · ')} — 그래도 등록 가능</div>` : '');
+  hint.innerHTML = _ctQtyHint(list, _RC_STATE[pre]);   // 빈 목록이면 힌트 없음(칸 아래 자리만 비워 둔다)
 }
 // pre = 'pk' | 'bk'. 농가가 바뀌거나 저장 직후에 부른다(잔여가 달라지므로 매번 새로 그린다 = 입력값도 초기화).
 function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
@@ -2910,17 +2926,8 @@ function _qrCtypeList() {
 function _qrQtyChanged() {
   const hint = document.getElementById('qr-qty-hint');
   if (!hint) return;
-  const list = _qrCtypeList();
-  const total = list.reduce((a, x) => a + x.qty, 0);
-  const sum = list.length
-    ? `${list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ')} = 합계 <strong>${fmtN(total)}</strong>개`
-    : '<span style="color:#9CA3AF">회수할 종류에 수량을 넣으세요</span>';
-  const over = list.map(x => {
-    const t = _qrTypes.find(y => y.t === x.ct);
-    return (t && t.q != null && x.qty > t.q) ? `${esc(x.ct)} 잔여 ${fmtN(t.q)}개보다 ${fmtN(x.qty - t.q)}개 많음` : null;
-  }).filter(Boolean);
-  hint.innerHTML = sum
-    + (over.length ? `<div style="color:#C05800;margin-top:3px">⚠ ${over.join(' · ')} — 그래도 등록 가능</div>` : '');
+  // 빈 목록 문구는 이 모달만 안내를 띄운다(모달은 여는 순간 비어 있어 뭘 해야 할지 알려 줘야 한다)
+  hint.innerHTML = _ctQtyHint(_qrCtypeList(), _qrTypes, '<span style="color:#9CA3AF">회수할 종류에 수량을 넣으세요</span>');
 }
 
 function openQuickRecovery(farm, hold, targetType = '농가') {
