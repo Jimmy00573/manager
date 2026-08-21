@@ -2827,6 +2827,38 @@ const _qrInpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px so
 
 // 현황판 농가보유 → 바로 회수 처리(빈콘회수 기본). dbInsertPick 재사용. 바깥클릭 닫힘 없음(입력 손실 방지).
 // targetType '농협'/'거래처'면 외부行(우리 콘테이너 농협/거래처보유) 회수 — pick에 target_type 저장(C-2b-1). 기본 '농가'(기존 호출 무변).
+//
+// ★2026-08-21 여러 종류 동시 회수. 예전엔 종류 select 하나 + 수량 하나라, 한 농가에 시트리앙과
+//   플라스틱바구니가 같이 나가 있으면 모달을 두 번 열어야 했다. 배차(addDisp)를 종류별 행으로 바꾼 것과 같은 접근 —
+//   picks.ctype이 단일 값이라 종류마다 pick 행을 따로 만든다.
+// ★칸 목록은 _qrHoldTypes(그 대상에 실제로 나가 있는 종류 + 잔여) — 배차의 고정 목록(OT_ACTIVE)과 다르다.
+//   나가 있는 종류를 못 구하면 OT_ACTIVE로 폴백하되 잔여는 표시하지 않는다(모르니까).
+// ★잔여 초과는 막지 않고 경고만 — 과회수는 기록에 없던 콘테이너가 돌아오는 정상 경우가 있어 허용한다(getSt 주석).
+// ★기본값: 종류가 하나뿐이면 그 잔여를 채워 둔다(기존 동작 그대로). 여럿이면 전부 빈칸 —
+//   전부 채워 두면 무심코 '등록'을 눌렀을 때 여러 종류가 한꺼번에 회수돼 되돌리기 번거롭다.
+let _qrTypes = [];   // 현재 열린 모달의 종류 목록 [{t, q}] — q=잔여(폴백이면 null)
+const _QR_CQ = (i) => document.getElementById('qr-cq-' + i);
+
+// 입력된 종류만 [{ct, qty}]로. 저장·합계·초과경고가 이 하나를 쓴다.
+function _qrCtypeList() {
+  return _qrTypes.map((x, i) => ({ ct: x.t, qty: parseInt(_QR_CQ(i)?.value, 10) || 0 })).filter(x => x.qty > 0);
+}
+function _qrQtyChanged() {
+  const hint = document.getElementById('qr-qty-hint');
+  if (!hint) return;
+  const list = _qrCtypeList();
+  const total = list.reduce((a, x) => a + x.qty, 0);
+  const sum = list.length
+    ? `${list.map(x => `${_ctIcon(x.ct)} ${esc(x.ct)} <strong>${fmtN(x.qty)}</strong>`).join(' · ')} = 합계 <strong>${fmtN(total)}</strong>개`
+    : '<span style="color:#9CA3AF">회수할 종류에 수량을 넣으세요</span>';
+  const over = list.map(x => {
+    const t = _qrTypes.find(y => y.t === x.ct);
+    return (t && t.q != null && x.qty > t.q) ? `${esc(x.ct)} 잔여 ${fmtN(t.q)}개보다 ${fmtN(x.qty - t.q)}개 많음` : null;
+  }).filter(Boolean);
+  hint.innerHTML = sum
+    + (over.length ? `<div style="color:#C05800;margin-top:3px">⚠ ${over.join(' · ')} — 그래도 등록 가능</div>` : '');
+}
+
 function openQuickRecovery(farm, hold, targetType = '농가') {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
   document.getElementById('modal-quick-recovery')?.remove();
@@ -2834,18 +2866,20 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
   // ★콘테이너 종류 — 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인).
   //   그 대상에 실제로 나가 있는 종류만 보여준다(getFCtypeMap = 현황판 칩과 같은 숫자).
   const holdTypes = _qrHoldTypes(farm, targetType);
-  const single = holdTypes.length === 1;                       // 하나뿐이면 자동 선택
-  const qtyInit = single ? Math.min(defQty || holdTypes[0].q, holdTypes[0].q) : defQty;
-  const ctypeOpts = holdTypes.length
-    ? holdTypes.map(x => `<option value="${esc(x.t)}" data-hold="${x.q}"${single ? ' selected' : ''}>${_ctIcon(x.t)} ${esc(x.t)} — 잔여 ${x.q}개</option>`).join('')
-    // 폴백: 나가 있는 종류를 못 구한 경우. 잔여를 모르므로 자동 선택하지 않고 직접 고르게 한다.
-    : OT_ACTIVE.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');   // ★새로 고르는 자리라 비활성 제외
-  const needPick = !single;                                     // 여럿이거나 폴백이면 '선택' 안내 옵션을 앞에 둔다
+  const single = holdTypes.length === 1;                       // 하나뿐이면 잔여를 미리 채운다(기존 동작)
+  _qrTypes = holdTypes.length
+    ? holdTypes.map(x => ({ t: x.t, q: x.q }))
+    : OT_ACTIVE.map(t => ({ t, q: null }));                    // 폴백: 잔여를 모르므로 null
+  const cells = _qrTypes.map((x, i) => {
+    const pre = (single && x.q != null) ? Math.min(defQty || x.q, x.q) : '';
+    return `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
+      <input id="qr-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" value="${pre}" oninput="_qrQtyChanged()"></label>`;
+  }).join('');
   const m = document.createElement('div');
   m.id = 'modal-quick-recovery';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   m.innerHTML = `
-    <div style="background:#fff;border-radius:14px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="background:#fff;border-radius:14px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
         <div style="font-size:14px;font-weight:700;color:#1565C0">🧺 콘테이너 회수 — ${esc(farm)}</div>
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
@@ -2854,17 +2888,14 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
         <div style="font-size:12px;color:#6B7280">현재 ${targetType === '농가' ? '농가보유' : targetType + '보유(우리 콘테이너)'} <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">날짜</label>
           <input id="qr-date" type="date" value="${td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
-        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">콘테이너 종류 <span style="color:#DC2626">*</span></label>
-          <select id="qr-ctype" onchange="_qrSyncQty()" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
-            ${needPick ? '<option value="">선택하세요</option>' : ''}${ctypeOpts}
-          </select></div>
+        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:5px">콘테이너 종류·수량 <span style="color:#DC2626">*</span> <span style="font-size:10px;color:#9CA3AF">여러 종류를 한 번에 회수할 수 있습니다</span></label>
+          <div id="qr-ctype-grid" class="ib-catq">${cells}</div>
+          <div id="qr-qty-hint" style="font-size:11px;margin-top:5px;line-height:1.4;color:var(--text-tertiary)"></div></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">구분</label>
           <select id="qr-type" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
             <option value="빈콘회수" selected>⬜ 빈콘회수</option>
             <option value="원물수거">원물수거</option>
           </select></div>
-        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">수량(개)</label>
-          <input id="qr-qty" type="number" min="1" value="${qtyInit}" style="${_qrInpS}"></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">담당자(회수한 사람) <span style="color:#DC2626">*</span></label>
           <select id="qr-staff" style="${_qrInpS}">${_drvOptHtml()}</select></div>
       </div>
@@ -2875,37 +2906,32 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(바깥클릭 X)
   document.body.appendChild(m);
-  setTimeout(() => document.getElementById(single ? 'qr-qty' : 'qr-ctype')?.focus(), 30);
-}
-// 종류를 고르면 수량 기본값을 그 종류 잔여로 맞춘다(부분 회수는 그대로 줄여서 입력 가능).
-function _qrSyncQty() {
-  const sel = document.getElementById('qr-ctype'), q = document.getElementById('qr-qty');
-  if (!sel || !q) return;
-  const hold = sel.selectedOptions[0]?.dataset.hold;
-  if (hold === undefined) return;   // 폴백 옵션(잔여 모름)이면 건드리지 않음
-  q.value = hold;                   // 기본값만 맞춘다 — max는 걸지 않음(과회수는 음수로 표시하는 기존 동작 유지)
+  _qrQtyChanged();
+  setTimeout(() => _QR_CQ(0)?.focus(), 30);
 }
 async function saveQuickRecovery(farm, targetType = '농가') {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const date = document.getElementById('qr-date')?.value || td();
   const type = document.getElementById('qr-type')?.value || '빈콘회수';
-  const ctype = document.getElementById('qr-ctype')?.value || '';
-  const qty = parseInt(document.getElementById('qr-qty')?.value, 10) || 0;
   const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(필수)
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
-  if (!ctype) return alert('콘테이너 종류를 선택하세요.');
-  if (qty <= 0) return alert('수량을 입력하세요.');
+  //   _qrCtypeList가 0을 걸러내므로 비었으면 '종류도 수량도 없음'이다(예전 두 검사를 하나로).
+  const list = _qrCtypeList();
+  if (!list.length) return alert('회수할 콘테이너 종류·수량을 입력하세요.');
   if (!driver) return alert('담당자를 선택하세요.');
   try {
     const car = driver ? (drivers.find(d => d.name === driver)?.car || null) : null;
-    const row = await dbInsertPick({ date, farm, type, qty, ctype, driver, car, auto: false, note: '현황판 회수', target_type: targetType });
-    if (row) picks.unshift(row);
+    // ★종류마다 pick 행을 따로 만든다 — picks.ctype이 단일 값이라 한 행에 여러 종류를 담을 수 없다.
+    //   한 종류만 넣으면 예전과 완전히 같은 1행 등록이 된다.
+    for (const c of list) {
+      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver, car, auto: false, note: '현황판 회수', target_type: targetType });
+      if (row) picks.unshift(row);
+    }
     document.getElementById('modal-quick-recovery')?.remove();
     renderDash();   // 농가보유 재계산·현황판 즉시 반영(renderFarmTbl 포함)
-    showToast(`${farm} ${type} ${qty}개 회수 등록`);
+    showToast(`${farm} ${type} ${list.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} 회수 등록`);
   } catch (e) { alert('회수 등록 오류: ' + e.message); }
 }
-
 // 현황판 농가 콘테이너 반납필요 → 바로 반납(own_out). dbInsertOwnOut 재사용. 담당자=drivers(선택).
 // ctype 생략 시 농가 전체(기존 동작), 지정 시 그 종류만 반납.
 function openQuickReturnOwn(farm, ctype) {
