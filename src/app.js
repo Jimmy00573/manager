@@ -9531,7 +9531,7 @@ function iemOnProductChange() {
   }
 
   const ptype  = PRODUCT_TYPE_MAP[product] || '만감류';
-  const groups = getSizeGroupsFor(product);
+  const groups = _inputSizeGroups(product);   // ★재고 직접 입력 — 감귤류 000 제외(파치 극소과로 관리)
 
   area.innerHTML = `
     <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">사이즈별 수량 (CT) — ${ptype}</div>
@@ -9671,7 +9671,7 @@ function invSgExcelParse(input) {
       const CITRUS_VALID = new Set(SIZES_감귤류.filter(s => s !== '000' && s !== '00'));
       let zeroCount = 0;   // '0' 등장 순서: 첫=00, 둘째=000
       const posKg = { '특1': {}, '특2': {}, '특3': {}, '상': {}, '일반': {} };
-      let farmRaw = '', dateRaw = '';
+      let farmRaw = '', dateRaw = '', skipped000Kg = 0;
 
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
@@ -9689,6 +9689,9 @@ function invSgExcelParse(input) {
         if (!CITRUS_VALID.has(gradeVal) && gradeVal !== '0') continue;
         let size = gradeVal;
         if (gradeVal === '0') { zeroCount++; size = zeroCount === 1 ? '00' : '000'; }
+        // ★000은 선과품 재고 대상이 아니다(2026-08-21 정책 — 전부 파치 극소과로 간다).
+        //   이 모달에는 파치로 보낼 경로가 없으므로 담지 않고, 얼마가 빠졌는지 화면에 알린다(조용히 버리지 않기).
+        if (size === '000') { _SG_POS.forEach(p => { skipped000Kg += Number(row[posCol[p]]) || 0; }); continue; }
         _SG_POS.forEach(p => {
           const kg = Number(row[posCol[p]]) || 0;
           if (kg > 0) posKg[p][size] = (posKg[p][size] || 0) + kg;
@@ -9700,7 +9703,7 @@ function invSgExcelParse(input) {
       const m = dateRaw.replace(/[^\d-]/g, '').match(/(\d{1,2})-(\d{1,2})/);
       if (m) dateISO = `${new Date().getFullYear()}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
 
-      _invSgExcel = { farm: farmRaw, dateISO, posKg };
+      _invSgExcel = { farm: farmRaw, dateISO, posKg, skipped000Kg };
       invSgExcelRenderBody();
     } catch (err) {
       alert('엑셀 파싱 오류: ' + err.message);
@@ -9739,6 +9742,7 @@ function invSgExcelRenderBody() {
         <input id="sg-date" type="date" value="${esc(_invSgExcel.dateISO)}" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box">
       </div>
     </div>
+    ${_invSgExcel.skipped000Kg > 0 ? `<div style="font-size:11px;color:#9A3412;background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:6px 9px;margin-bottom:8px">엑셀의 000 행 <strong>${fmtN(Math.round(_invSgExcel.skipped000Kg))}kg</strong>은 제외했습니다 — 000은 선과품 재고 대상이 아니라 파치 극소과로 관리합니다.</div>` : ''}
     <div style="font-size:12px;color:#374151;font-weight:600;margin-bottom:6px">배출구 → 당도 등급 매핑 <span style="color:#9CA3AF;font-weight:400">(제외는 등록 안 함)</span></div>
     ${_brixMaxNote() ? `<div style="font-size:11px;color:#C05800;margin-bottom:6px">${_brixMaxNote()}</div>` : ''}
     <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
@@ -10383,7 +10387,7 @@ function _mtxUpdateSizes() {
   const product = document.getElementById('mtx-product')?.value || '';
   const prev = sel.value;
   if (!product) { sel.innerHTML = '<option value="">(품목 먼저 선택)</option>'; sel.value = ''; return; }
-  const sizes = getSizeGroupsFor(product).flatMap(g => g.sizes);
+  const sizes = _inputSizeGroups(product).flatMap(g => g.sizes);   // ★신규 입력 — 감귤류 000 제외
   sel.innerHTML = '<option value="">(선택 안 함)</option>' + sizes.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   sel.value = (prev && sizes.includes(prev)) ? prev : '';   // 기존 선택값이 새 목록에 없으면 초기화
 }
@@ -12543,9 +12547,25 @@ function getSizeGroupsFor(product) {
 //   ★품목별로 다르게 두지 않는 이유: 규칙 최소가 황금향·천혜향·한라봉 8수, 카라향 10수라
 //   '규칙 최소 −3' 식으로 하면 카라향 5·6수가 또 막힌다.
 //   규칙 밖 사이즈의 그룹 배정은 getSizeGroupsFor가 이미 '기타'로 처리한다(대과에 섞이지 않음).
+// ★2026-08-21 정책: 감귤류 000은 선과품 재고 대상이 아니다 — 전부 파치 극소과(pachi_tiny)로 간다.
+//   그래서 '새로 입력하는' 화면에서는 000을 아예 안 보여준다(_inputSizeGroups).
+// ★그렇다고 SIZES_감귤류 상수에서 빼면 안 된다 — sizesForProduct는 감귤류일 때 이 상수를 그대로 돌려주고
+//   extras(데이터 실존 사이즈) 보정을 안 타므로, 상수에서 빼는 순간 과거 000 데이터
+//   (sorting_details 159건 85.65CT)가 선과이력·농가 결과표에서 열째로 사라져 합계가 안 맞게 된다.
+//   → 상수는 그대로 두고, '데이터에 000이 있을 때만' 열을 살린다.
+const _NO_INPUT_SIZES = new Set(['000']);
+// 새로 입력할 수 있는 사이즈 그룹(감귤류 000 제외). 조회·집계는 getSizeGroupsFor를 그대로 쓸 것.
+function _inputSizeGroups(product) {
+  return getSizeGroupsFor(product)
+    .map(g => ({ group: g.group, sizes: g.sizes.filter(sz => !_NO_INPUT_SIZES.has(sz)) }))
+    .filter(g => g.sizes.length);
+}
 function sizesForProduct(product, dataSizes, opts) {
   const pt = PRODUCT_TYPE_MAP[product] || '만감류';
-  if (pt === '감귤류') return SIZES_감귤류;   // 감귤류 불변
+  if (pt === '감귤류') {
+    // 과거 데이터에 000이 있으면 열을 살리고(조회 보존), 없으면 뺀다(신규 화면에 빈 열이 안 생기게)
+    return (dataSizes || []).includes('000') ? SIZES_감귤류 : SIZES_감귤류.filter(sz => sz !== '000');
+  }
   let base;
   const item = _getItemDef(product);
   const rules = item ? itemSizeRules.filter(r => r.item_id === item.id) : [];
@@ -16084,6 +16104,8 @@ function srtParseExcel(input) {
       const posKg = { '특1': {}, '특2': {}, '특3': {}, '상': {}, '일반': {} };   // 배출구→사이즈→kg (그리드 매칭분)
       const posTotalKg = { '특1': 0, '특2': 0, '특3': 0, '상': 0, '일반': 0 };   // 엑셀 일합계 행(대조용)
       const unmatched = {};   // 미매칭 사이즈 origSize → {배출구:kg}
+      let tinyKg = 0;                    // 000·극소과 행 kg 합(배출구 구분 없음 — 비정상품은 총량 한 칸)
+      const tinyLabels = new Set();      // 화면 안내용: 엑셀에 실제로 나온 라벨('000'·'극소과')
       let foundTotal = false;
 
       for (let i = 1; i < rows.length; i++) {
@@ -16110,6 +16132,7 @@ function srtParseExcel(input) {
         if (isCitrus) {
           if (CITRUS_VALID_SIZES.has(gradeVal)) { size = gradeVal; matched = validSizes.has(size); }
           else if (gradeVal === '0') { zeroCount++; size = zeroCount === 1 ? '00' : '000'; matched = validSizes.has(size); }
+          else if (gradeVal.includes('극소과')) { size = '극소과'; matched = false; }   // 엑셀 맨 위 '극소과' 행 — 예전엔 통째로 버려졌다
           else continue;   // 감귤류 사이즈 아님
         } else {
           if (!gradeVal.match(/\d+수/) && !gradeVal.match(/\d+g/)) continue;
@@ -16117,6 +16140,14 @@ function srtParseExcel(input) {
           matched = validSizes.has(size);
         }
 
+        // ★000·극소과는 정상품 사이즈 그리드가 아니라 비정상품 극소과 칸(srt-tiny)으로 간다.
+        //   posKg에 넣으면 사이즈 그리드에도 들어가 같은 물량이 두 번 잡힌다 — 여기서 갈라 놓는다.
+        //   ★CT 변환은 하지 않고 kg으로만 모은다(적용 단계에서 1회 변환 — 반올림 오차 방지).
+        if (isCitrus && _SRT_TINY_SIZES.has(size)) {
+          _SRT_POS.forEach(p => { tinyKg += Number(row[posCol[p]]) || 0; });
+          tinyLabels.add(size);
+          continue;
+        }
         _SRT_POS.forEach(p => {
           const kg = Number(row[posCol[p]]) || 0;
           if (kg <= 0) return;
@@ -16135,6 +16166,8 @@ function srtParseExcel(input) {
       _srtExcel = {
         posKg, posTotalKg, unmatched, product, kgPerCt,
         sizes: gridSizes, foundTotal,
+        tinyKg, tinyLabels: [...tinyLabels],
+        tinyOn: tinyKg > 0,   // ★기본 선택 = 극소과(비정상품). 사용자가 아래 드롭다운에서 '제외'로 바꿀 수 있다.
         map: { '특1': '', '특2': '', '특3': '', '상': '', '일반': '' }   // 배출구→등급(기본 제외)
       };
       _srtRenderExcelMap();
@@ -16158,6 +16191,10 @@ function closeSortingModal() {
 // 배출구 매핑의 '저당도(비정상품)' 전용 값 — 정상품 등급 라벨과 절대 겹치지 않게 특수 토큰을 쓴다.
 // ★브릭스 등급 '9브릭스 이하'(정상품)와는 별개. 이쪽은 사이즈 구분 없는 비정상품 총량 칸(srt-lowbrix)으로 간다.
 const _SRT_LOWBRIX = '__lowbrix__';
+// ★엑셀에서 '비정상품 극소과'로 보낼 사이즈 라벨(2026-08-21 정책). 000은 선과품 재고로 안 간다.
+//   ★저당도(_SRT_LOWBRIX)는 '배출구' 단위 매핑이고 이건 '사이즈' 단위라 처리 위치가 다르다 —
+//   저당도는 배출구 드롭다운에서 고르고, 이건 사이즈 파싱 단계에서 갈라 별도 한 줄로 보여 준다.
+const _SRT_TINY_SIZES = new Set(['000', '극소과']);
 
 // 배출구 매핑 드롭다운 옵션 라벨
 function _srtGradeOptLabel(v) {
@@ -16229,13 +16266,36 @@ function _srtRenderExcelMap() {
     </div>`;
   }
 
+  // ★000·극소과 물량 — 배출구가 아니라 '사이즈' 단위라 배출구 목록과 따로 한 줄로 보여 준다.
+  //   기본은 극소과(비정상품). 적용 후에도 srt-tiny 칸을 손으로 고칠 수 있다(자동은 편의일 뿐).
+  let tinyHtml = '';
+  if (_srtExcel.tinyKg > 0) {
+    const tinyCT = toCT(_srtExcel.tinyKg);
+    tinyHtml = `<div style="margin-top:6px;padding:6px 8px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;font-weight:700;color:#9A3412;width:44px;flex-shrink:0">극소과</span>
+      <span style="font-size:11px;color:#9A3412;flex:1;min-width:0;line-height:1.4">엑셀 ${esc(_srtExcel.tinyLabels.join('·'))} 행 <strong>${fmtCT(tinyCT)}CT</strong> — 선과품 재고가 아니라 비정상품으로 갑니다</span>
+      <select onchange="srtSetExcelTiny(this.value)" style="height:30px;padding:3px 6px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;font-family:inherit;background:#fff;flex-shrink:0">
+        <option value="1"${_srtExcel.tinyOn ? ' selected' : ''}>극소과(비정상품)</option>
+        <option value="0"${_srtExcel.tinyOn ? '' : ' selected'}>제외</option>
+      </select>
+    </div>`;
+  }
+
   el.style.display = '';
   el.innerHTML = `
     <div style="font-weight:700;color:#166534;margin-bottom:6px">📄 배출구 → 당도 등급 매핑 <span style="color:#9CA3AF;font-weight:400">(제외는 안 채움)</span></div>
     ${_brixMaxNote() ? `<div style="font-size:11px;color:#C05800;margin-bottom:6px">${_brixMaxNote()} (저장 시 자동 적용)</div>` : ''}
     <div style="display:flex;flex-direction:column;gap:5px">${posRows}</div>
+    ${tinyHtml}
     ${umHtml}
     <button type="button" onclick="srtApplyExcelMap()" style="margin-top:10px;width:100%;padding:9px;background:#1565C0;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✅ 등급 탭에 채우기</button>`;
+}
+
+// 극소과(비정상품) 켜고 끄기 — 미리보기·적용 양쪽이 _srtExcel.tinyOn 하나만 본다.
+function srtSetExcelTiny(v) {
+  if (!_srtExcel) return;
+  _srtExcel.tinyOn = (v === '1' || v === true);
+  _srtRenderExcelMap();
 }
 
 function srtSetExcelMap(pos, grade) {
@@ -16286,8 +16346,9 @@ function srtApplyExcelMap() {
     });
   });
 
+  const tinyOn = !!(_srtExcel.tinyKg > 0 && _srtExcel.tinyOn);
   const grades = Object.keys(fill);
-  if (!grades.length && !lowbrixPos) { alert('채울 등급을 하나 이상 지정하세요. (모두 제외됨)'); return; }
+  if (!grades.length && !lowbrixPos && !tinyOn) { alert('채울 등급을 하나 이상 지정하세요. (모두 제외됨)'); return; }
 
   // 등급 탭에 없는 등급이면 중단(브릭스 마스터 불일치 방어)
   const known = new Set(_srtGradeLabels());
@@ -16330,6 +16391,20 @@ function srtApplyExcelMap() {
     }
   }
 
+  // 4) 극소과(비정상품) — 000·극소과 라벨 물량. 저당도와 같은 규칙:
+  //    ★kg으로 모아 뒀다가 여기서 CT 1회 변환(반올림 오차 방지), ★'+=' 가 아니라 set(재적용해도 누적 금지).
+  let tinyNote = '';
+  if (tinyOn) {
+    const tInp = document.getElementById('srt-tiny');
+    if (tInp) {
+      const prevVal = parseFloat(tInp.value) || 0;
+      const newVal  = toCT(_srtExcel.tinyKg);
+      tInp.value = newVal > 0 ? newVal : 0;
+      tinyNote = ` · 극소과 ${fmtCT(newVal)}CT`;
+      if (prevVal > 0 && prevVal !== newVal) tinyNote += `(기존 입력 ${fmtCT(prevVal)}CT 대체)`;
+    }
+  }
+
   srtUpdateTotals();
 
   // 완료 요약(매핑 UI 아래에 덧붙임)
@@ -16342,7 +16417,7 @@ function srtApplyExcelMap() {
     const done = document.createElement('div');
     done.className = 'srt-excel-done';
     done.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px solid #BBF7D0;color:#166534;font-weight:600';
-    done.textContent = `✅ ${filled}개 칸 채움${lowbrixNote} · ${summary}`;
+    done.textContent = `✅ ${filled}개 칸 채움${lowbrixNote}${tinyNote} · ${summary}`;
     el.appendChild(done);
   }
 }
