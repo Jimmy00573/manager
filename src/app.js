@@ -4368,6 +4368,9 @@ function resetLocForm(pfx) {
 let _moveInboundId = null;
 
 function openMoveModal(id) {
+  // ★버튼을 가려도 콘솔에서 부를 수 있다 — 열기 자체를 막는다(db36345·1cb0b41과 같은 이중 방식).
+  //   위치가 바뀌면 재고 위치 집계가 달라진다. ⋮ 메뉴에서 마지막으로 남아 있던 무방비 변경 경로.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
   _moveInboundId = id;
@@ -4386,6 +4389,9 @@ function closeMoveModal() {
 }
 
 async function saveMoveLocation() {
+  // ★위치 변경이 DB에 실제로 쓰이는 지점 — 모달을 막아도 여기가 열려 있으면 뚫린다
+  //   (index.html의 저장 버튼이 이 함수를 직접 부른다). saveInboundModal과 같은 규칙.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const id = _moveInboundId;
   if (!id) return;
   const r = inboundRecords.find(x => x.id === id);
