@@ -223,7 +223,9 @@
       <div class="fg"><label>차수</label><select id="ed-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
       <div class="fg"><label>시간대</label><select id="ed-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
       <div class="fg"><label>수량(개) *</label><input id="ed-qty" type="number" placeholder="0" min="1"></div>
-      <div class="fg"><label>콘테이너 종류</label><select id="ed-ctype"><option value="황제">🟡 황제</option><option value="시트리앙">🟢 시트리앙</option><option value="헌콘테이너">⬜ 헌콘테이너</option></select></div>
+      <!-- ★옵션은 openDispEdit이 OT_ACTIVE(container_types owner='ours' 활성)로 채운다. 하드코딩 금지 —
+           3종이 박혀 있어 설정에서 추가한 플라스틱바구니·천바구니·리어카로 못 바꿨다. -->
+      <div class="fg"><label>콘테이너 종류 *</label><select id="ed-ctype"></select></div>
       <div class="fg"><label>수확 예정일</label><input id="ed-harvest" type="date"></div>
       <div class="fg"><label>품목</label><select id="ed-item"></select></div>
       <div class="fg"><label>특이사항</label><input id="ed-note"></div>
@@ -1944,6 +1946,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=548"></script>
+<script src="src/app.js?v=549"></script>
 </body>
 </html>

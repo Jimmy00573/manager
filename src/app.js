@@ -1661,7 +1661,18 @@ function openDispEdit(id) {
   drivers.forEach(dr => edrv.innerHTML += `<option value="${esc(dr.name)}">${esc(dr.name)}</option>`);
   edrv.value = d.driver || '';
   document.getElementById('ed-qty').value = d.qty || '';
-  document.getElementById('ed-ctype').value = ctNorm(d.ctype) || '황제';   // 옛 이름으로 저장된 행도 새 옵션에 맞춰 선택되게
+  // ★종류 옵션도 마스터(OT_ACTIVE)에서 만든다 — index.html에 3종이 박혀 있어 설정에서 추가한 종류로 못 바꿨다.
+  //   등록 폼은 2eda9fc에서 이미 마스터 기반이 됐는데 이 모달만 남아 있었다.
+  // ★대상명(ed-farm)과 똑같은 함정 — 저장된 값이 옵션에 없으면 select.value가 조용히 ''이 되고,
+  //   그대로 저장하면 ctype이 비어 getSt·getFCtypeMap의 종류별 집계에서 통째로 빠진다.
+  //   그래서 비활성 종류·마스터에 없는 옛 이름도 옵션으로 붙여 준다(ctNorm 정규화는 그대로).
+  const ect = document.getElementById('ed-ctype');
+  const curCt = ctNorm(d.ctype) || '';
+  ect.innerHTML = OT_ACTIVE.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');
+  if (curCt && !OT_ACTIVE.includes(curCt)) {
+    ect.insertAdjacentHTML('beforeend', `<option value="${esc(curCt)}">${_ctIcon(curCt)} ${esc(curCt)} (목록에 없음)</option>`);
+  }
+  ect.value = curCt || OT_ACTIVE[0] || '';   // ★'황제' 하드코딩 대신 목록 첫 종류
   document.getElementById('ed-harvest').value = d.harvest || '';
   document.getElementById('ed-item').value = d.item || '';
   document.getElementById('ed-note').value = d.note || '';
@@ -1680,6 +1691,10 @@ async function saveDispEdit() {
   // ★등록(addDisp)에서 수량 0을 막으므로 수정에서도 막는다 — 여기만 열어 두면 등록 후 0으로 바꿔 유령 배차를 만들 수 있다.
   //   옛 '미정'(수량 0) 기록은 목록에 그대로 보이고(미정 뱃지) 삭제도 되지만, 저장하려면 수량을 채워야 한다.
   if (!qty || qty <= 0) { alert('수량을 입력하세요'); return; }
+  // ★종류 없이 저장되면 getSt·getFCtypeMap의 종류별 집계에서 이 배차가 빠져 공장 재고가 안 맞는다.
+  //   옵션에 없는 값이 들어와 select가 ''이 되는 경우까지 여기서 막는다(openDispEdit이 옵션을 붙여 주지만 이중 방어).
+  const edCtype = document.getElementById('ed-ctype').value;
+  if (!edCtype) { alert('콘테이너 종류를 선택하세요'); return; }
   const d = gd(driver);
   const data = {
     date, farm, driver,
@@ -1687,7 +1702,7 @@ async function saveDispEdit() {
     //   (sbUpdate는 PATCH라 지금까지 target_type이 '유실'되진 않았고, 그냥 손대지 않은 채였다.)
     target_type: gv('ed-target-type') || '농가',
     dtel: d.tel || '', car: d.car || '', qty,
-    ctype: document.getElementById('ed-ctype').value,
+    ctype: edCtype,
     harvest: document.getElementById('ed-harvest').value || null,
     item: document.getElementById('ed-item').value || null,
     note: document.getElementById('ed-note').value || null,
