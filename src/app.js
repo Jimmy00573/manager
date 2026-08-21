@@ -5946,6 +5946,7 @@ function renderBrixGradeCfg() {
     <td style="font-weight:600">${esc(g.label)}</td>
     <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="toggleBrixGradeActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
+    <td style="text-align:center"><input type="checkbox" onchange="toggleBrixGradeMerge(${g.id}, this.checked)" ${g.merge_to_normal !== false ? 'checked' : ''} title="켜면 브릭스 분리 최대 사이즈를 넘는 물건이 저장될 때 '일반'으로 합쳐집니다(고당 등급만 켤 것)"></td>
     ${isAdm ? `<td style="white-space:nowrap">
       <button class="btn" onclick="moveBrixGrade(${g.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
       <button class="btn" onclick="moveBrixGrade(${g.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
@@ -5965,12 +5966,13 @@ function renderBrixGradeCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>등급명</th><th>순서</th><th>활성</th><th></th></tr></thead>
+      <thead><tr><th>등급명</th><th>순서</th><th>활성</th><th>일반 합산</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 당도 등급 없음</div>`}
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid #E5E7EB">
       <div style="font-size:13px;font-weight:700">브릭스 분리 최대 사이즈 <span style="font-weight:400;color:var(--text-secondary);font-size:12px">(감귤류)</span></div>
-      <div style="font-size:12px;color:var(--text-secondary);margin:2px 0 8px">이 사이즈까지만 브릭스 등급을 분리하고, 초과 사이즈는 저장 시 일반으로 합산됩니다. (기존 데이터는 안 바뀜)</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin:2px 0 8px">이 사이즈까지만 브릭스 등급을 분리하고, 초과 사이즈는 저장 시 일반으로 합산됩니다.
+        <b>단 위 표에서 '일반 합산'을 켠 등급만</b> 해당합니다 — 저당도 등급까지 합치면 당도 낮은 물건이 정상 재고에 섞입니다. (기존 데이터는 안 바뀜)</div>
       <select id="brix-max-size-sel" ${isAdm ? '' : 'disabled'} onchange="chgBrixMaxSize(this.value)" style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit">
         ${SIZES_감귤류.map(s => `<option value="${s}"${s === _brixMaxSizeOf() ? ' selected' : ''}>${s}</option>`).join('')}
       </select>
@@ -6049,6 +6051,18 @@ async function deleteBrixGrade(id) {
     renderBrixGradeCfg();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+// '일반 합산' 토글 — brix_grades.merge_to_normal. ★고당 등급에만 켜야 한다(저당도를 켜면 정상 재고에 섞임).
+async function toggleBrixGradeMerge(id, checked) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  try {
+    await dbUpdateBrixGrade(id, { merge_to_normal: checked });
+    const idx = brixGrades.findIndex(g => g.id === id);
+    if (idx !== -1) brixGrades[idx].merge_to_normal = checked;
+    renderBrixGradeCfg();
+    showToast(checked ? '일반 합산 대상으로 변경' : '일반 합산에서 제외');
+  } catch(e) { alert('변경 오류: ' + e.message + '\n\nbrix_grades.merge_to_normal 컬럼이 있는지 확인해 주세요.'); }
 }
 
 async function toggleBrixGradeActive(id, checked) {
@@ -12303,17 +12317,44 @@ function _isBrixAllowedSize(sz, product) {
   if (iMax === -1 || i === -1) return true;   // 알 수 없는 사이즈/기준은 변환하지 않음(안전)
   return i <= iMax;
 }
+// ── 이 등급이 "최대 사이즈 초과 시 일반으로 합산" 대상인가 ────────────
+// ★고당 등급(12br·11.5br)만 대상이다. 선과기 배출구가 큰 사이즈는 브릭스를 안 나눠 실물이 일반에 섞이므로,
+//   고당 선과를 해도 L 이상은 등급을 따로 두지 않고 일반으로 뺀다 — 이게 원래 의도였다.
+// ★2026-08-21 수정 전에는 "'일반'이 아닌 모든 등급"이 대상이라 '9브릭스 이하'(저당도)까지 합쳐졌다.
+//   그러면 당도 낮은 물건이 정상 재고에 섞인다 — 정반대 결과다. '청과'도 같은 이유로 합치면 안 된다.
+// ★판정 기준은 brix_grades.merge_to_normal(설정 > 당도 등급 관리에서 등급별로 켜고 끔).
+//   등급 체계가 바뀌어도 코드를 안 고치게 하려는 것 — 저당도만 하드코딩하면 등급이 늘 때 같은 사고가 반복된다.
+// ★컬럼이 아직 없는 배포 시점 방어: undefined/null이면 기존 동작(합산)을 유지한다.
+//   컬럼 추가(DEFAULT false) 후에는 명시적으로 켠 등급만 합산된다 — 새 등급이 조용히 합쳐지지 않게.
+function _isBrixMergeGrade(label) {
+  if (!label || label === '일반') return false;   // '일반'은 애초에 전환 대상이 아니다
+  const g = brixGrades.find(x => x.label === label);
+  if (!g) return true;   // 마스터에 없는 잔존 등급(옛 '고당' 등) — 기존 동작 유지
+  return g.merge_to_normal !== false;
+}
+// 현재 합산 대상인 활성 등급 라벨 목록(안내 문구·설정 화면 공용)
+function _brixMergeLabels() {
+  return brixGrades
+    .filter(g => g.is_active !== false && g.merge_to_normal !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(g => g.label);
+}
 function _brixMaxNote() {
   const mx = _brixMaxSizeOf();
   const i = SIZES_감귤류.indexOf(mx);
   const over = (i >= 0 && i < SIZES_감귤류.length - 1) ? SIZES_감귤류[i + 1] : null;
-  return over ? `※ 감귤류 ${over} 이상 사이즈(브릭스 분리 최대 ${mx} 초과)는 일반으로 합산됩니다.` : '';
+  if (!over) return '';
+  // ★대상 등급을 문구에 드러낸다 — 예전 문구("일반으로 합산됩니다")는 모든 등급이 합쳐지는 것처럼 읽혔다.
+  const targets = _brixMergeLabels();
+  if (!targets.length) return '';   // 합산 대상이 하나도 없으면 안내할 것도 없다
+  return `※ 감귤류 ${over} 이상 사이즈(브릭스 분리 최대 ${mx} 초과)는 ${targets.join('·')}만 일반으로 합산됩니다.`;
 }
-// {size_code, quality_grade, ct...} 목록에 기준 적용: 초과 브릭스 → '일반' 전환 후 같은 (등급×사이즈) 하나로 합산(수량 보존·중복 행 방지)
+// {size_code, quality_grade, ct...} 목록에 기준 적용: 합산 대상 등급의 초과 사이즈 → '일반' 전환 후
+// 같은 (등급×사이즈) 하나로 합산(수량 보존·중복 행 방지). 합산 대상이 아니면 사이즈와 무관하게 등급 유지.
 function _applyBrixMaxSize(list, product) {
   const map = {}, order = [];
   list.forEach(d => {
-    const g = (d.quality_grade && d.quality_grade !== '일반' && !_isBrixAllowedSize(d.size_code, product)) ? '일반' : (d.quality_grade || '일반');
+    const g = (_isBrixMergeGrade(d.quality_grade) && !_isBrixAllowedSize(d.size_code, product)) ? '일반' : (d.quality_grade || '일반');
     const k = g + '||' + d.size_code;
     if (!map[k]) { map[k] = { ...d, quality_grade: g, ct: 0 }; order.push(k); }
     map[k].ct = Math.round((map[k].ct + (Number(d.ct) || 0)) * 10) / 10;
