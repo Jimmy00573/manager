@@ -526,7 +526,9 @@
   </div>
   <div id="cal-harvest-progress" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:12px"></div>
   <div id="cal-harvest-active" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:12px"></div>
-  <div style="background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden">
+  <!-- ★2026-08-21 '다가오는 수확' 4일 카드와 중복이라 숨김(renderCalUpcoming 호출도 뺌).
+       되돌리려면 아래 display:none 제거 + app.js의 renderCalUpcoming() 주석 해제. -->
+  <div id="cal-month-list-box" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden">
     <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between">
       <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">이번 달 수확 일정</div>
       <div id="cal-up-count" style="font-size:11px;color:#aaa"></div>
@@ -1929,6 +1931,6 @@
 <script src="src/supabase-client.js?v=27"></script>
 <script src="src/db.js?v=22"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=541"></script>
+<script src="src/app.js?v=542"></script>
 </body>
 </html>
