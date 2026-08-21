@@ -15356,6 +15356,9 @@ function _renderScDoingTable() {
 let _editInboundId = null;
 
 function editInboundRow(id) {
+  // ★버튼을 가려도 콘솔에서 부를 수 있다 — 열기 자체를 막는다(db36345와 같은 이중 방식).
+  //   입고 수정은 수량·카테고리가 바뀌면 재고·콘테이너·집계가 전부 달라져 파급이 크다.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
   if (r.inbound_category === '선과품') {
@@ -15442,6 +15445,9 @@ async function closeEditInboundModal() {
 }
 
 async function saveInboundModal() {
+  // ★입고 수정이 DB에 실제로 쓰이는 지점 — 모달을 막아도 여기가 열려 있으면 뚫린다
+  //   (index.html의 '저장' 버튼이 이 함수를 직접 부른다). saveSortingResult와 같은 규칙.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const id = _editInboundId;
   if (!id) return;
   const date = document.getElementById('eib-m-date').value;
