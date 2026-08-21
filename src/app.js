@@ -3707,6 +3707,25 @@ function _hvProgToggle(farm) {
   renderHarvestProgress();   // 이 섹션만 다시 그린다 — 캘린더 전체를 다시 그릴 이유가 없다
 }
 
+// ── 전 농가 일괄 펼침/접기 ─────────────────────────────────────
+// ★버튼 라벨 기준은 '과반'이다 — 절반 넘게 펼쳐져 있으면 '모두 접기'로 바뀐다.
+//   입출고 요약의 _inoutCatToggleAll은 '전부(every)' 기준인데, 여기는 기본값으로 이미 펼쳐진
+//   '확인 필요' 농가가 섞여 있어 every로 하면 거의 항상 '모두 펼치기'로만 보인다.
+// ★일괄 조작은 기본값 규칙(_hvProgIsOpen의 'stale만 펼침')을 농가마다 덮어쓴다 — '모두'가 그 뜻이다.
+//   _hvProgOpen은 메모리에만 있으므로 새로고침하면 기본값으로 돌아간다(의도된 동작).
+function _hvProgAllOpen() {
+  const gs = _hvProgGroups();
+  if (!gs.length) return false;
+  return gs.filter(_hvProgIsOpen).length > gs.length / 2;
+}
+function _hvProgToggleAll() {
+  const gs = _hvProgGroups();
+  if (!gs.length) return;
+  const open = !_hvProgAllOpen();
+  gs.forEach(g => { _hvProgOpen[g.farm] = open; });
+  renderHarvestProgress();   // 개별 토글과 같은 방식 — 이 섹션만 다시 그린다
+}
+
 function _hvProgCard(g) {
   const k = _HV_PROG_KIND[g.kind];
   const open = _hvProgIsOpen(g);
@@ -3753,11 +3772,12 @@ function renderHarvestProgress() {
   el.innerHTML = `
     <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
       <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🗂 농가별 진행 현황</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
         ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
           const k = _HV_PROG_KIND[kd];
           return `<span style="font-size:11px;font-weight:600;color:${k.fg};background:${k.bg};border:0.5px solid ${k.bd};border-radius:10px;padding:1px 8px">${k.icon} ${k.label} ${cnt[kd]}</span>`;
         }).join('')}
+        <button type="button" onclick="_hvProgToggleAll()" style="font-size:11px;color:#2563EB;background:none;border:none;cursor:pointer;padding:2px 4px;font-family:inherit;white-space:nowrap">${_hvProgAllOpen() ? '모두 접기' : '모두 펼치기'}</button>
       </div>
     </div>
     <div style="padding:8px 10px;display:flex;flex-direction:column;gap:10px">
