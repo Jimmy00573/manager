@@ -7798,6 +7798,7 @@ async function saveUnsortedOutbound(inboundId) {
 }
 
 async function _execPachiDelete(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const row = _pachiRowRegistry[regId];
   if (!row) return;
   const label = `${row.product} ${row.date} ${fmtCT(row.ct)} CT`;
@@ -7806,6 +7807,7 @@ async function _execPachiDelete(regId) {
 }
 
 function openPachiEditModal(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const row = _pachiRowRegistry[regId];
   if (!row) return;
   const modal = document.getElementById('modal-pachi-edit');
@@ -8237,6 +8239,7 @@ function _juiceBoxCell(b, unit) {
 }
 
 function openJuiceBatchEdit(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const b = invJuiceBatches.find(x => x.id === id);
   if (!b) return;
   const modal = document.getElementById('modal-juice-edit');
@@ -14275,6 +14278,8 @@ async function outboundUncheckedInvAudit() {
 }
 
 function toggleIbAuditMode() {
+  // ★버튼은 renderInboundList에서 관리자에게만 보이지만, 콘솔 호출도 막는다.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _ibAuditMode = !_ibAuditMode;
   if (!_ibAuditMode) _ibAuditChecked = new Set();
   ibPage = 1;
@@ -14435,11 +14440,15 @@ function renderInboundList() {
   // ★_ibAuditVisible에 담아 두면 진행률·미확인 삭제가 그 배열을 본다.
   // ★재고현황 실사(_invAuditMode)와는 완전히 별개다 — 이쪽은 inbound_records, 그쪽은 inventory_records.
   // 실사 모드 토글 버튼 상태 동기화
+  // ★버튼은 index.html에 직접 박혀 있어 렌더에서 가려야 한다(관리자 전용).
+  //   ★관리자가 아닌데 이미 실사 모드면 여기서 강제로 끈다 — 실사 중 로그아웃·권한 변경 방어.
+  if (!isAdm && _ibAuditMode) { _ibAuditMode = false; _ibAuditChecked = new Set(); }
   const _auditBtn = document.getElementById('btn-ib-audit');
   if (_auditBtn) {
-    _auditBtn.style.cssText = _ibAuditMode
+    _auditBtn.style.cssText = (_ibAuditMode
       ? 'font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:1px solid #1565C0;border-radius:8px;cursor:pointer;font-family:inherit'
-      : 'font-size:11px;padding:3px 10px;background:#fff;color:var(--text-secondary);border:1px solid #ddd;border-radius:8px;cursor:pointer;font-family:inherit';
+      : 'font-size:11px;padding:3px 10px;background:#fff;color:var(--text-secondary);border:1px solid #ddd;border-radius:8px;cursor:pointer;font-family:inherit')
+      + (isAdm ? '' : ';display:none');   // ★cssText가 display를 덮으므로 반드시 같은 문자열에 붙일 것
   }
   // 실사 모드: 잔여>0 행만
   if (_ibAuditMode) visible = visible.filter(r => getRemainingCT(r) > 0);
@@ -15027,6 +15036,9 @@ function _renderScDoneTable() {
 function _renderScTable() {
   const wrap = document.getElementById('sc-table-wrap');
   if (!wrap) return;
+  // ★선과 결과 입력은 관리자 전용. 목록·진행률·이력 조회는 게스트도 되어야 하므로 액션 칸만 가린다.
+  //   ★버튼 숨김만으로는 부족해 openSortingModal에도 같은 검사를 둔다(콘솔 호출 차단).
+  const _scAdm = sessionStorage.getItem('citrus_role') === 'admin';
 
   // ==================================================================
   // 1. 기준 데이터 (처리량 맵 · 오늘 날짜)
@@ -15218,10 +15230,10 @@ function _renderScTable() {
                 </td>
                 <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
                 <td style="padding:4px;text-align:center">
-                  <button onclick="openSortingModal('${r.id}')"
+                  ${_scAdm ? `<button onclick="openSortingModal('${r.id}')"
                     style="background:${isDoing ? '#C2410C' : '#1565C0'};color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
                     ✂️ 입력
-                  </button>
+                  </button>` : '<span style="color:#D1D5DB;font-size:11px">-</span>'}
                 </td>
               </tr>`;
             }).join('')}
@@ -15232,6 +15244,7 @@ function _renderScTable() {
 function _renderScDoingTable() {
   const wrap = document.getElementById('sc-doing-table-wrap');
   if (!wrap) return;
+  const _scAdm = sessionStorage.getItem('citrus_role') === 'admin';   // ★_renderScTable과 같은 규칙(입력은 관리자만)
 
   const pm = _ibProcessedMap();
   const today = td();
@@ -15329,10 +15342,10 @@ function _renderScDoingTable() {
                 </td>
                 <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
                 <td style="padding:4px;text-align:center">
-                  <button onclick="event.stopPropagation(); openSortingModal('${r.id}')"
+                  ${_scAdm ? `<button onclick="event.stopPropagation(); openSortingModal('${r.id}')"
                     style="background:#C2410C;color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
                     ✂️ 입력
-                  </button>
+                  </button>` : '<span style="color:#D1D5DB;font-size:11px">-</span>'}
                 </td>
               </tr>`;
             }).join('')}
@@ -15568,6 +15581,8 @@ async function deleteInbound(id) {
 // ── 선과 처리 모달 ─────────────────────────────────────────────────
 
 async function openSortingModal(id) {
+  // ★버튼을 가려도 콘솔에서 부를 수 있다 — 열기 자체를 막는다(재고현황 실사와 같은 이중 방식).
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
 
@@ -16063,6 +16078,8 @@ function srtUpdateTotals() {
 }
 
 async function saveSortingResult() {
+  // ★선과 결과가 DB에 실제로 쓰이는 지점 — 모달을 막아도 여기가 열려 있으면 뚫린다.
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!_sortingInboundId) return;
   const r = inboundRecords.find(x => x.id === _sortingInboundId);
   if (!r) return;
