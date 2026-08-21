@@ -16240,12 +16240,10 @@ async function openSortingModal(id) {
   document.getElementById('srt-operator').value = '';
   document.getElementById('srt-note').value = '';
   document.getElementById('srt-input-ct').value = remaining;
-  document.getElementById('srt-waste').value = 0;
-  document.getElementById('srt-highacid').value = 0;
-  document.getElementById('srt-lowbrix').value = 0;
-  document.getElementById('srt-tiny').value = 0;
-  document.getElementById('srt-green').value = 0;
-  document.getElementById('srt-loss').value = 0;
+  // ★비정상품 칸도 사이즈 그리드와 같은 규칙 — 빈 칸으로 두고 placeholder가 0을 보여 준다.
+  //   한 폼에서 위는 빈 칸, 아래는 0이면 오히려 더 헷갈린다. 읽는 쪽은 전부 || 0 방어가 있다.
+  ['srt-waste', 'srt-highacid', 'srt-lowbrix', 'srt-tiny', 'srt-green', 'srt-loss']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
   // 엑셀 매핑 상태 초기화(이전 업로드 잔존 방지)
   _srtExcel = null;
@@ -16302,12 +16300,16 @@ function srtRenderSizeGrid(productType) {
   }).join('');
 
   // 모든 등급 그리드를 한꺼번에 렌더 → 활성 등급만 보임(display 토글). 탭 전환해도 input이 DOM에 남아 값 유지.
+  // ★칸은 value="0"이 아니라 빈 칸 + placeholder="0"으로 둔다(2026-08-21).
+  //   0이 박혀 있으면 커서가 0 앞에 놓여 5를 치면 50이 된다 — 사이즈 14개 × 등급 수만큼 매번 겪는 불편.
+  //   합계(srtUpdateTotals)·저장(saveSortingResult)이 전부 parseFloat(...) || 0 이라 빈 칸은 0으로 읽힌다
+  //   (누락이 아니라 0으로 저장된다). 배차·회수 종류별 수량 칸도 같은 방식이다.
   const grids = grades.map(g => {
     const isNormal = g === '일반';
     const cells = sizes.map(sz => `
       <div>
         <label style="font-size:11px;color:${isNormal ? '#6B7280' : '#1D4ED8'};display:block;margin-bottom:2px">${sz}${fruitNoBadge(sz)}</label>
-        <input type="number" data-size="${sz}" data-grade="${esc(g)}" class="srt-size-input" min="0" value="0"
+        <input type="number" data-size="${sz}" data-grade="${esc(g)}" class="srt-size-input" min="0" placeholder="0"
           style="width:100%;padding:4px 6px;border:1px solid ${isNormal ? '#E5E7EB' : '#BFDBFE'};border-radius:5px;font-size:13px;text-align:right;background:${isNormal ? '#F9F9F9' : '#fff'}"
           oninput="srtUpdateTotals()">
       </div>`).join('');
@@ -16643,7 +16645,7 @@ function srtApplyExcelMap() {
 
   // 1) 대상 등급 그리드 리셋 → 2) 매핑대로 세팅
   grades.forEach(g => {
-    document.querySelectorAll(`.srt-size-input[data-grade="${g}"]`).forEach(inp => { inp.value = 0; });
+    document.querySelectorAll(`.srt-size-input[data-grade="${g}"]`).forEach(inp => { inp.value = ''; });   // ★0이 아니라 빈 칸으로 — 칸 기본값 규칙과 같게
   });
   let filled = 0;
   grades.forEach(g => {
@@ -16651,7 +16653,7 @@ function srtApplyExcelMap() {
       const inp = document.querySelector(`.srt-size-input[data-size="${sz}"][data-grade="${g}"]`);
       if (!inp) return;
       const ct = toCT(fill[g][sz]);
-      inp.value = ct > 0 ? ct : 0;
+      inp.value = ct > 0 ? ct : '';
       if (ct > 0) filled++;
     });
   });
@@ -16664,7 +16666,7 @@ function srtApplyExcelMap() {
     if (lbInp) {
       const prevVal = parseFloat(lbInp.value) || 0;
       const newVal  = toCT(lowbrixKg);
-      lbInp.value = newVal > 0 ? newVal : 0;
+      lbInp.value = newVal > 0 ? newVal : '';
       lowbrixNote = ` · 저당도 ${fmtCT(newVal)}CT`;
       // 수동 입력이 있었다면 덮어썼음을 알린다(정상품 등급 그리드와 동일하게 매핑된 칸은 엑셀이 기준).
       if (prevVal > 0 && prevVal !== newVal) lowbrixNote += `(기존 입력 ${fmtCT(prevVal)}CT 대체)`;
@@ -16679,7 +16681,7 @@ function srtApplyExcelMap() {
     if (tInp) {
       const prevVal = parseFloat(tInp.value) || 0;
       const newVal  = toCT(_srtExcel.tinyKg);
-      tInp.value = newVal > 0 ? newVal : 0;
+      tInp.value = newVal > 0 ? newVal : '';
       tinyNote = ` · 극소과 ${fmtCT(newVal)}CT`;
       if (prevVal > 0 && prevVal !== newVal) tinyNote += `(기존 입력 ${fmtCT(prevVal)}CT 대체)`;
     }
