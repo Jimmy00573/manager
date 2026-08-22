@@ -1545,6 +1545,7 @@ async function addFarm() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delFarm(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const f = farms.find(x => x.id === id);
   if (!f) return;
   if (!(await _confirmMasterDelete('농가 삭제', { name: f.name, id }, _REF_FARM))) return;
@@ -1580,6 +1581,7 @@ function _selEnsureVal(el, val) {
   }
 }
 function renderFarm() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   popFarmFormSelects();
   document.getElementById('farm-cnt').textContent = farms.length;
   const el = document.getElementById('farm-cards');
@@ -1595,7 +1597,7 @@ function renderFarm() {
         ${f.memo ? `<span>💬 ${esc(f.memo)}</span>` : ''}
       </div>
     </div>
-    <div class="fc-actions"><button class="btn" onclick="openFarmHistory('${esc(f.name)}')">📋 이력</button><button class="btn edt" onclick="openFarmEdit(${f.id})">✏️</button><button class="btn del" onclick="delFarm(${f.id})">삭제</button></div>
+    <div class="fc-actions"><button class="btn" onclick="openFarmHistory('${esc(f.name)}')">📋 이력</button><button class="btn edt" onclick="openFarmEdit(${f.id})">✏️</button>${isAdm ? `<button class="btn del" onclick="delFarm(${f.id})">삭제</button>` : ''}</div>
   </div>`).join('');
 }
 
@@ -1617,6 +1619,7 @@ async function addDriver() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delDriver(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const d0 = drivers.find(x => x.id === id);
   if (!d0) return;
   if (!(await _confirmMasterDelete('기사 삭제', { name: d0.name, id }, _REF_DRIVER))) return;
@@ -1729,6 +1732,7 @@ function _extDrvUISync() {
 }
 
 function renderDrivers() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   _extDrvUISync();
   document.getElementById('drv-cnt').textContent = drivers.length;
   const el = document.getElementById('drv-list');
@@ -1748,7 +1752,7 @@ function renderDrivers() {
           <button class="btn" onclick="moveDriver(${d.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
           <button class="btn" onclick="moveDriver(${d.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
           <button class="btn edt" onclick="openDrvEdit(${d.id})">✏️ 수정</button>
-          <button class="btn del" onclick="delDriver(${d.id})">삭제</button>
+          ${isAdm ? `<button class="btn del" onclick="delDriver(${d.id})">삭제</button>` : ''}
         </div>
       </div>
       <div class="pm-pin-area">
@@ -1768,6 +1772,7 @@ function renderDrivers() {
 let _editVehicleId = null;
 
 function renderVehicles() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   // 기사 등록 폼의 차량 드롭다운 갱신
   const sel = document.getElementById('dv-car-sel');
   if (sel) {
@@ -1825,7 +1830,7 @@ function renderVehicles() {
           ${statusBadge}
           <span style="font-size:11px;color:#aaa">이번달 ${monthTotal}건 · ${monthQty}개</span>
           <button class="btn edt" style="padding:3px 8px;font-size:11px" onclick="openVehicleEdit(${v.id})">✏️</button>
-          <button class="btn del" style="padding:3px 8px;font-size:11px" onclick="delVehicle(${v.id})">삭제</button>
+          ${isAdm ? `<button class="btn del" style="padding:3px 8px;font-size:11px" onclick="delVehicle(${v.id})">삭제</button>` : ''}
         </div>
       </div>
       ${pending.length
@@ -1918,6 +1923,7 @@ async function saveVehicleEdit() {
 }
 
 async function delVehicle(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const v0 = vehicles.find(x => x.id === id);
   if (!v0) return;
   // 차량은 이름이 아니라 번호(number)로 배차·회수에 남는다
@@ -2003,6 +2009,7 @@ async function updDisp(id, s) {
 }
 
 async function delDisp(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await cDel('배차 기록 삭제'))) return;
   try {
     const autoPicks = picks.filter(p => p.dispatch_id === id);
@@ -2147,6 +2154,7 @@ function fillDispForm(farm, harvestDate, item) {
 }
 
 function renderDisp() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const f = dispatches.filter(d => _dt2 === 'w' ? d.status === '배차완료' : d.status === '배출완료');
   const page = f.slice((_d2p - 1) * PER, _d2p * PER);
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
@@ -2163,7 +2171,7 @@ function renderDisp() {
         ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>`
         : `<button class="btn" style="background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="updDisp(${d.id},'배차완료')">↩ 되돌리기</button>`}
       <button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>
-      <button class="btn del" onclick="delDisp(${d.id})">삭제</button>
+      ${isAdm ? `<button class="btn del" onclick="delDisp(${d.id})">삭제</button>` : ''}
     </div></td>
   </tr>`).join('') : emr(14, _dt2 === 'w' ? '배출 대기 없음' : '배출 완료 없음');
   mkPg('disp2-pg', f.length, _d2p, 'goD2P');
@@ -2191,11 +2199,13 @@ async function addPick() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delPick(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await cDel('수거 기록 삭제'))) return;
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderPick(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
 }
 function renderPick() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const tb = document.getElementById('pick-tb');
   const list = picks.filter(p => !p.auto);
   if (!list.length) { tb.innerHTML = emr(9, '수거·회수 기록이 없습니다'); return; }
@@ -2206,7 +2216,7 @@ function renderPick() {
     <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.car || '-')}</td>
     <td>${esc(p.note || '-')}</td>
     <td class="mtime">${p.updated_at ? '✏️ ' + ftm(p.updated_at) : '-'}</td>
-    <td><div style="display:flex;gap:4px"><button class="btn edt" onclick="openPickEdit(${p.id})">✏️</button><button class="btn del" onclick="delPick(${p.id})">삭제</button></div></td>
+    <td><div style="display:flex;gap:4px"><button class="btn edt" onclick="openPickEdit(${p.id})">✏️</button>${isAdm ? `<button class="btn del" onclick="delPick(${p.id})">삭제</button>` : ''}</div></td>
   </tr>`).join('');
 }
 
@@ -2265,6 +2275,7 @@ async function addOwnOut() {
   }
 }
 async function delOwn(id, t) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제'))) return;
 
   try {
@@ -2322,7 +2333,7 @@ function renderOwn() {
   document.getElementById('own-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...ownIns.map(o => ({ ...o, dir: '반입', xt: 'ownIn', meth: '-' })), ...ownOuts.map(o => ({ ...o, dir: '반납', xt: 'ownOut', meth: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('own-tb-badge'); if (tb) tb.textContent = all.length + '건';
-  document.getElementById('own-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.farm)}</td><td><span class="badge ${o.dir === '반입' ? 'b-pur' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.meth)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button><button class="btn del" onclick="delOwn(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button></td></tr>`).join('') : emr(8, '기록 없음');
+  document.getElementById('own-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.farm)}</td><td><span class="badge ${o.dir === '반입' ? 'b-pur' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.meth)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button>${isAdm ? `<button class="btn del" onclick="delOwn(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button>` : ''}</td></tr>`).join('') : emr(8, '기록 없음');
 }
 
 // ── 빈콘 회수
@@ -2350,11 +2361,13 @@ async function addBkCol() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delBkCol(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await cDel('빈콘 회수 삭제'))) return;
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderBkCol(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
 }
 function renderBkCol() {
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const list = picks.filter(p => p.type === '빈콘회수');
   const tb = document.getElementById('bk-tb'); if (!tb) return;
   tb.innerHTML = list.length ? list.map(p => `<tr>
@@ -2363,7 +2376,7 @@ function renderBkCol() {
     <td>${esc(p.note || '-')}</td>
     <td style="display:flex;gap:4px">
       ${p.driver ? `<button class="btn copy" style="padding:4px 8px" onclick="openBkMsg({date:'${p.date}',farm:'${p.farm.replace(/'/g,"\\'")}',driver:'${(p.driver||'').replace(/'/g,"\\'")}',qty:${p.qty},note:'${(p.note||'').replace(/'/g,"\\'")}',dtel:''})">📱</button>` : ''}
-      <button class="btn del" onclick="delBkCol(${p.id})">삭제</button>
+      ${isAdm ? `<button class="btn del" onclick="delBkCol(${p.id})">삭제</button>` : ''}
     </td>
   </tr>`).join('') : emr(6, '빈콘 회수 기록 없음');
 }
@@ -2527,6 +2540,7 @@ async function addNhfOut() {
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delNhf(id, t) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await cDel(t === 'i' ? '반입 기록 삭제' : '반납 기록 삭제'))) return;
   try {
     if (t === 'i') { await dbDeleteNhfIn(id); nhfIns = nhfIns.filter(o => o.id !== id); }
@@ -2632,7 +2646,7 @@ function renderNhf() {
   document.getElementById('nhf-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...nhfIns.map(o => ({ ...o, dir: '반입', xt: 'nhfIn', dm: o.goods ? '반입(' + o.goods + ')' : '-' })), ...nhfOuts.map(o => ({ ...o, dir: '반납', xt: 'nhfOut', dm: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('nhf-tb-badge'); if (tb) tb.textContent = all.length + '건';
-  document.getElementById('nhf-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.nhf)}</td><td>${_ctBadge(o.type)}</td><td><span class="badge ${o.dir === '반입' ? 'b-teal' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.dm)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button><button class="btn del" onclick="delNhf(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button></td></tr>`).join('') : emr(9, '기록 없음');
+  document.getElementById('nhf-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.nhf)}</td><td>${_ctBadge(o.type)}</td><td><span class="badge ${o.dir === '반입' ? 'b-teal' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.dm)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px"><button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button>${isAdm ? `<button class="btn del" onclick="delNhf(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button>` : ''}</td></tr>`).join('') : emr(9, '기록 없음');
 }
 
 // ── 기사 화면
@@ -4062,6 +4076,7 @@ function itemColor(item) {
 
 // ── [화면: 수확·수송 > 수확 캘린더 > 예정 목록] renderCal에서 호출. 진행중은 renderHarvestActive.
 function renderCalUpcoming() {
+  const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const all = calGetAllItems();
   const total = all.length;
   document.getElementById('cal-up-count').textContent = `총 ${total}건`;
@@ -4089,7 +4104,7 @@ function renderCalUpcoming() {
      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
        ${(e.status === '수확전' || e.status === '수확중' || e.status === '수확완료')
          ? `<span class="badge ${_hvStBadge[e.status]||'b-warn'}" style="white-space:nowrap;font-size:12px">${e.status}</span>${harvestActBtns(e)}`
-         : e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button><button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>` : `<span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>`}
+         : e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button>${canEdit ? `<button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>` : ''}` : `<span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>`}
      </div>
     </div>`;
   }).join('');
@@ -4332,6 +4347,7 @@ async function setHarvestStatus(id, status) {
   }
 }
 async function delHarvest(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await cDel('수확일정 삭제'))) return;
   try {
     await dbDeleteHarvest(id);
@@ -4403,6 +4419,7 @@ async function addHarvest() {
 }
 
 async function delHarvest(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await showConfirmDanger({ title: '수확 일정 삭제', subtitle: '삭제된 데이터는 복구할 수 없습니다', confirmText: '삭제' }))) return;
   try {
     await dbDeleteHarvest(id);
@@ -4989,6 +5006,7 @@ async function moveLocation(id, dir) {
 }
 
 async function deleteLocation(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const loc = storageLocations.find(l => l.id === id);
   if (!loc) return;
   if (!(await showConfirmDanger({ title: '위치 삭제', subtitle: '입고 내역의 위치값은 유지됩니다', items: [loc.name], confirmText: '삭제' }))) return;
@@ -5165,6 +5183,7 @@ async function saveQcCriteria() {
 }
 
 async function deleteQcCriteria() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!_editQcId) return;
   const qc = qualityCriteria.find(q => q.id === _editQcId);
   if (!qc) return;
