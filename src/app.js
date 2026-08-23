@@ -2093,8 +2093,21 @@ function tripBadge(trip) {
 }
 function renderDDash() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  // ★두 탭은 정렬 방향이 반대다 — 성격이 다르기 때문이다.
+  //   배출 대기 : 오래 기다린 것이 급하다 → 오름차순(옛날 것이 위)
+  //   배출 완료 : 이미 끝난 기록이라 오늘 것부터 본다 → 내림차순
+  //   ※목록 화면(renderDisp)은 dispatches 배열 순서를 그대로 쓰는데 DB가 date.desc로 주므로 이미 최신순이다.
+  //     현황판만 여기서 따로 정렬해 완료 탭이 거꾸로 보이고 있었다.
+  // ★같은 날짜는 created_at으로 갈라 순서를 고정한다. 날짜 비교만 하면 같은 날 안의 순서가
+  //   배열이 만들어진 순서에 좌우돼 흔들린다(지금 날짜+시간대+차수까지 같은 묶음이 3개 있다).
+  //   화면은 날짜 안에서 오전/오후 → 차수로 다시 묶으므로, 이 보조 정렬은 그 뒤 동률에만 쓰인다.
+  const _ddAsc = _dt === 'w';
+  const _ddCmp = (x, y) => (x || '') > (y || '') ? 1 : (x || '') < (y || '') ? -1 : 0;
   const list = dispatches.filter(d => _dt === 'w' ? d.status === '배차완료' : d.status === '배출완료')
-    .sort((a, b) => a.date > b.date ? 1 : a.date < b.date ? -1 : 0);
+    .sort((a, b) => {
+      const byDate = _ddCmp(a.date, b.date) || _ddCmp(a.created_at, b.created_at);
+      return _ddAsc ? byDate : -byDate;
+    });
   const el = document.getElementById('d-disp-tb');
   const w = dispatches.filter(d => d.status === '배차완료').length;
   const dn = dispatches.filter(d => d.status === '배출완료').length;
