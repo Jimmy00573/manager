@@ -595,7 +595,8 @@
     </div>
     <div id="ch-sum" style="margin-top:10px"></div>
   </div>
-  <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>유형</th><th>대상</th><th>종류</th><th>수량</th><th>담당자</th></tr></thead><tbody id="ch-tb"></tbody></table></div>
+  <!-- ★'누적 잔여'는 대상 하나를 검색했을 때만 값이 찬다(여러 대상이 섞이면 누적이 뜻을 잃는다). 그 외에는 '—'. -->
+  <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>유형</th><th>대상</th><th>종류</th><th>수량</th><th>누적 잔여</th><th>담당자</th></tr></thead><tbody id="ch-tb"></tbody></table></div>
 </div>
 
 <!-- 내보내기 -->
@@ -1953,6 +1954,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=23"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=563"></script>
+<script src="src/app.js?v=564"></script>
 </body>
 </html>

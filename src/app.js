@@ -2970,9 +2970,74 @@ function renderContainerHistory() {
   const sum = document.getElementById('ch-sum');
   if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>${kindHtml ? ' ' + kindHtml : ''}`;
   const tkBadge = t => t === '농협' ? '<span class="badge b-teal">농협</span>' : t === '거래처' ? '<span class="badge b-info">거래처</span>' : '<span class="badge" style="background:#F3E5F5;color:#6A1B9A">농가</span>';
-  tb.innerHTML = list.length ? list.map(r =>
-    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.qty}</td><td>${esc(r.staff || '—')}</td></tr>`
-  ).join('') : emr(6, '이력 없음');
+
+  // ── 누적 잔여 ────────────────────────────────────────────────────────────
+  // ★축을 절대 한 숫자로 합치지 않는다 — 배출/회수와 반입/반납은 서로 다른 물건의 잔액이다.
+  //   ours   : 배출 + / 회수 −  = 우리 콘테이너가 그 대상에게 나가 있는 양(현황판 getFCS().hold와 같은 값)
+  //   theirs : 반입 + / 반납 −  = 그 대상의 콘테이너를 우리가 갖고 있는 양(반납 대기)
+  //   김숙자·남원농협처럼 두 축이 다 있는 대상이 실제로 있어, 합치면 뜻 없는 숫자가 된다.
+  const _CH_AXIS = { 배출: 'ours', 회수: 'ours', 반입: 'theirs', 반납: 'theirs' };
+  const _CH_SIGN = { 배출: 1, 회수: -1, 반입: 1, 반납: -1 };
+  const _chAxisLabel = { ours: '우리것', theirs: '남의것' };
+  const targets = [...new Set(list.map(r => r.target))];
+  // ★표시 조건 2가지
+  //   · 대상이 하나 — 여러 농가가 섞이면 누적이 뜻을 잃는다
+  //   · 유형(kd) 필터 없음 — '회수'만 걸러 보면 잔액이 아니라 회수 누계가 된다(종류·분류 필터는 그 종류의 잔액이라 괜찮다)
+  const runOK = targets.length === 1 && !kd;
+
+  // ★기간을 좁히면 그 이전 기록이 빠져 누적이 틀어진다 → 이전 잔액을 '이월'로 먼저 계산해 얹는다.
+  //   누적 열을 숨기는 쪽이 더 쉽지만, '최근 한 달만 보기'가 이 기능을 제일 많이 쓸 상황이라
+  //   그때 기능이 사라지면 만든 뜻이 없다. 비용은 전체 행을 한 번 더 훑는 정도다.
+  const runBal = { ours: 0, theirs: 0 };
+  const runCat = { ours: {}, theirs: {} };
+  if (runOK && from) {
+    all.filter(r =>
+      (!tk || r.targetKind === tk) && (!ct || r.category === ct) &&
+      (!q || (r.target || '').includes(q)) && (r.date || '') < from
+    ).forEach(r => {
+      const ax = _CH_AXIS[r.kind]; if (!ax) return;
+      const v = _CH_SIGN[r.kind] * (r.qty || 0);
+      runBal[ax] += v;
+      if (r.category) runCat[ax][r.category] = (runCat[ax][r.category] || 0) + v;
+    });
+  }
+  const carried = { ours: runBal.ours, theirs: runBal.theirs };
+
+  // ★화면은 최신순이므로 누적은 배열을 거꾸로(오래된 것부터) 훑어 각 행에 붙인다.
+  //   같은 날 안의 순서는 화면에 보이는 순서 그대로 쓴다 — 계산과 표시가 어긋나지 않게.
+  const cells = new Array(list.length);
+  if (runOK) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const r = list[i];
+      const ax = _CH_AXIS[r.kind]; if (!ax) { cells[i] = null; continue; }
+      const v = _CH_SIGN[r.kind] * (r.qty || 0);
+      runBal[ax] += v;
+      if (r.category) runCat[ax][r.category] = (runCat[ax][r.category] || 0) + v;
+      cells[i] = { ax, total: runBal[ax], cats: { ...runCat[ax] } };
+    }
+  }
+  const axesUsed = [...new Set(list.map(r => _CH_AXIS[r.kind]).filter(Boolean))];
+  const chCell = c => {
+    if (!c) return '<span style="color:#ccc">—</span>';
+    // 종류가 하나뿐이면 칩을 생략한다 — 숫자 옆에 같은 말을 두 번 쓰는 셈이라 표만 무거워진다.
+    const cats = Object.entries(c.cats).filter(([, n]) => n !== 0);
+    const chips = cats.length > 1
+      ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:2px;justify-content:flex-end">${cats
+          .map(([k2, n]) => `<span class="ct ${_ctClass(k2)}">${_ctIcon(k2)} ${fmtN(n)}</span>`).join('')}</div>`
+      : '';
+    const axTag = axesUsed.length > 1 ? `<span style="font-size:9px;color:#999;margin-right:3px">${_chAxisLabel[c.ax]}</span>` : '';
+    const col = c.total < 0 ? '#DC2626' : c.total > 0 ? '#C05800' : '#6B7280';
+    return `${axTag}<strong style="color:${col}">${fmtN(c.total)}</strong>${chips}`;
+  };
+  // 이월 행 — 기간 이전 잔액이 있을 때만. 가장 오래된 위치(최신순이므로 맨 아래)에 붙인다.
+  const carryRow = (runOK && from && (carried.ours || carried.theirs))
+    ? `<tr style="background:#FAFAFA;color:#888"><td colspan="5" style="text-align:right;font-size:11px">${esc(from)} 이전 이월</td>`
+      + `<td style="font-weight:700">${axesUsed.map(a => `${axesUsed.length > 1 ? _chAxisLabel[a] + ' ' : ''}${fmtN(carried[a])}`).join(' / ')}</td><td>—</td></tr>`
+    : '';
+
+  tb.innerHTML = list.length ? list.map((r, i) =>
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[i])}</td><td>${esc(r.staff || '—')}</td></tr>`
+  ).join('') + carryRow : emr(7, '이력 없음');
 }
 
 // 담당자(직원·기사) select 옵션 — 이름 값(picks.driver / own_out·nhf_out.staff 모두 이름 저장). 선택사항.
