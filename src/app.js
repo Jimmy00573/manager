@@ -3938,9 +3938,41 @@ const _HV_PROG_KIND = {
   active: { icon: '🌱', label: '진행중',    bg: '#EFF8FF', bd: '#BBDEFB', fg: '#1565C0' },
   done:   { icon: '🏁', label: '종료',      bg: '#F5F5F5', bd: '#E0E0E0', fg: '#616161' },
 };
-// ★순서 기준은 '수확 흐름'이 아니라 '급한 순'이다(이 화면을 만든 원칙). 대기는 콘테이너가 나가 있는데
-//   기록이 아예 없는 상태라 가장 먼저 봐야 한다 → 확인 필요보다도 위.
-const _HV_PROG_ORDER = ['wait', 'stale', 'active', 'done'];
+// ★그룹 순서 = 진행중(현재) → 대기(미래) → 종료(과거). 시간 축 순서이자 보는 빈도 순이다.
+//   '확인 필요'만 그 축 밖에 있다 — 시간이 아니라 신호이고 대개 0건이라, 생겼을 때만 맨 위에 뜬다
+//   ("방치 의심을 맨 위에 — 먼저 보라고 만든 섹션"이라는 이 화면의 원래 원칙 그대로).
+const _HV_PROG_ORDER = ['stale', 'active', 'wait', 'done'];
+
+// ★그룹 안 정렬 — '급한 순'의 뜻이 그룹마다 다르므로 하나로 못 묶는다.
+const _HV_PROG_SORT = {
+  stale: (a, b) => b.days - a.days,                       // 오래 방치된 것부터
+  wait:  (a, b) => b.days - a.days,                       // 콘테이너가 오래 나가 있는 것부터
+  // 진행중은 한 그룹 안에 상태가 셋 섞인다. 지금 손이 가 있는 곳부터 본다.
+  //   수확중(0) → 수확전(1) → 수확완료(2, 아직 확인 필요 기준일 전)
+  //   · 수확중끼리 : 진행 오래된 순(5일째가 1일째보다 위) — 오래 끌수록 신경 쓰인다
+  //   · 수확전끼리 : 임박한 순. dday 오름차순이라 '지남(음수) → 오늘 → D-1' 순이 된다
+  //   · 수확완료끼리: 경과 오래된 순(확인 필요로 넘어갈 순서)
+  //   ★진행일수와 D-day를 한 값으로 섞어 정렬하지 않는다 — 같은 3이라도 'D-3=사흘 뒤'와
+  //     '진행 3일째=사흘 전 시작'으로 뜻이 반대다. 상태로 먼저 갈라 놓고 각자 기준으로 센다.
+  active: (a, b) => {
+    const rank = g => { const s = g.last?.status || '수확전'; return s === '수확중' ? 0 : s === '수확전' ? 1 : 2; };
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 0) return b.onDay - a.onDay;
+    if (ra === 1) return a.dday - b.dday;
+    return b.days - a.days;
+  },
+  // 종료는 최근에 끝난 것부터. end_date가 없던 옛 기록은 시작일로 대신한다(카드 표기와 같은 규칙).
+  done: (a, b) => ((b.last?.end_date || b.last?.date || '')).localeCompare(a.last?.end_date || a.last?.date || ''),
+};
+// 화면에 나오는 순서 그대로 배열을 정렬해 둔다 — 렌더는 kind로 걸러 쓰기만 한다.
+function _hvProgSortAll(arr) {
+  const oi = k => _HV_PROG_ORDER.indexOf(k);
+  return arr.sort((a, b) =>
+    oi(a.kind) - oi(b.kind)
+    || (_HV_PROG_SORT[a.kind] ? _HV_PROG_SORT[a.kind](a, b) : 0)
+    || (a.farm || '').localeCompare(b.farm || '', 'ko'));   // 끝까지 같으면 농가명(순서가 흔들리지 않게)
+}
 const _hvProgOpen = {};   // farm -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 상태별 기본값(확인 필요만 펼침).
 
 // 농가별로 차수를 모아 상태를 매긴다. 렌더와 토글이 같은 판정을 쓰도록 순수 함수로 분리.
@@ -3964,7 +3996,7 @@ function _hvProgGroups() {
     const dday  = last.date ? Math.round((new Date(last.date + 'T00:00:00') - today) / 86400000) : 0;
     const onDay = last.date ? Math.max(1, Math.floor((today - new Date(last.date + 'T00:00:00')) / 86400000) + 1) : 1;
     return { farm, rounds, last, days, dday, onDay, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
-  }).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+  });   // 정렬은 아래 _hvProgSortAll에서 그룹별 기준으로 한 번에 한다
 
   // ★대기(⏳) — 콘테이너는 나갔는데 수확 기록이 아예 없는 농가. 지금까지 이 화면 어디에도 안 보였다.
   //   판정은 둘 다 만족: getFCS(농가 보유) > 0  AND  harvests 0건.
@@ -3982,9 +4014,9 @@ function _hvProgGroups() {
     // 배차에 적어 둔 수확 예정일(dispatches.harvest)이 있으면 병기한다 — 아직 harvests 행이 없어도 계획은 있는 경우.
     const planned = dispatches.filter(d => d.farm === farm && _isFarmTgt(d) && d.harvest).map(d => d.harvest).sort().pop() || null;
     return { farm, rounds: [], last: null, hold, outDate, planned, days, kind: 'wait', items: [] };
-  }).sort((a, b) => b.days - a.days || (a.farm || '').localeCompare(b.farm || '', 'ko'));   // 오래 방치된 것부터
+  });
 
-  return waits.concat(withHarvest);
+  return _hvProgSortAll(waits.concat(withHarvest));
 }
 
 // 임박도 색 — ★새 색을 만들지 않는다. 앱이 이미 쓰는 세 조합만 골라 쓴다.
