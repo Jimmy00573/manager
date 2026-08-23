@@ -6170,6 +6170,15 @@ function _ibRecalcCatQty() {
       hint.style.color = 'var(--text-tertiary)';
     } else { hint.textContent = ''; }
   }
+  _ibRenderCatNotes();   // 수량이 생긴/사라진 카테고리에 맞춰 메모칸을 다시 그린다
+  // ★품질은 상품 행에만 저장된다 — 상품이 0이면 입력해도 아무 데도 안 남으므로 미리 알린다(막지는 않는다).
+  const qHint = document.getElementById('ib-quality-scope-hint');
+  if (qHint) {
+    const mainQty = parseInt(_IB_CQ(0)?.value, 10) || 0;
+    const show = total > 0 && mainQty <= 0;
+    qHint.style.display = show ? '' : 'none';
+    qHint.textContent = show ? '⚠ 상품 수량이 0이라 품질 정보는 저장되지 않습니다.' : '';
+  }
   // 재선별 칸에 값이 있으면 기존 재선별 섹션 토글을 그대로 태운다(숨긴 ib-category가 스위치 역할)
   // ★2026-08-21 재선별이 IB_CAT_SORT_ORDER에서 빠져 reIdx는 늘 -1 — 아래 블록은 동작하지 않는다(기능만 OFF).
   //   배열에 '재선별'을 다시 넣으면 이 토글이 그대로 되살아난다. 지우지 말 것.
@@ -6181,6 +6190,27 @@ function _ibRecalcCatQty() {
   }
 }
 function _ibCatQtyChanged() { _ibRecalcCatQty(); }
+
+// ── 카테고리별 메모 ────────────────────────────────────────────────────────
+// ★상품은 기존 ib-note가 그대로 담당한다 — 평소(상품만 등록)에는 칸이 하나도 늘지 않아야 한다.
+//   수량을 넣은 '상품 외' 카테고리에만 칸이 생기고, 수량을 지우면 사라진다.
+// ★값은 여기(_ibCatNotes)가 주인이다. 칸을 지웠다 다시 만들 때 입력 내용이 날아가면 안 되기 때문.
+let _ibCatNotes = {};
+function _ibCatNoteInput(cat, v) { _ibCatNotes[cat] = v; }
+function _ibCatNoteVal(cat) { return (_ibCatNotes[cat] || '').trim(); }
+function _ibRenderCatNotes() {
+  const box = document.getElementById('ib-cat-notes');
+  if (!box) return;
+  const cats = _ibCatQtyList().map(x => x.cat).filter(c => c !== '상품');
+  // 수량이 빠진 카테고리의 메모는 같이 버린다(안 보이는 값이 저장되면 안 된다)
+  Object.keys(_ibCatNotes).forEach(c => { if (!cats.includes(c)) delete _ibCatNotes[c]; });
+  box.innerHTML = cats.map(c => `<input id="ib-note-${esc(c)}" placeholder="${esc(c)} 메모 (선택)" value="${esc(_ibCatNotes[c] || '')}"
+      oninput="_ibCatNoteInput('${esc(c)}', this.value)" style="font-size:13px">`).join('');
+}
+function _ibClearCatNotes() {
+  _ibCatNotes = {};
+  const box = document.getElementById('ib-cat-notes'); if (box) box.innerHTML = '';
+}
 // 입력된 카테고리만 [{cat, qty}]로. 저장·요약 양쪽이 이 하나를 쓴다.
 function _ibCatQtyList() {
   return IB_CAT_SORT_ORDER.map((cat, i) => ({ cat, qty: parseInt(_IB_CQ(i)?.value, 10) || 0 })).filter(x => x.qty > 0);
@@ -13539,6 +13569,13 @@ function onIbCatChange(prefix) {
   const catEl = document.getElementById(prefix === 'ib' ? 'ib-category' : 'eib-m-cat');
   const sec   = document.getElementById(prefix === 'ib' ? 'ib-reclass-section' : 'eib-reclass-section');
   if (!sec) return;
+  // ★품질은 상품 기준 — 다른 카테고리 행을 열었을 때 왜 값이 비어 있는지 알려 준다(칸은 그대로 둔다).
+  const qHint = document.getElementById(`${prefix === 'ib' ? 'ib' : 'eib'}-quality-scope-hint`);
+  if (qHint && prefix === 'eib') {
+    const notMain = catEl && catEl.value && catEl.value !== '상품';
+    qHint.style.display = notMain ? '' : 'none';
+    qHint.textContent = notMain ? `ℹ 품질 정보는 보통 상품에만 기록합니다(${catEl.value} 행에도 저장은 됩니다).` : '';
+  }
   const show = catEl?.value === '재선별';
   sec.style.display = show ? '' : 'none';
   if (!show) {
@@ -16073,6 +16110,7 @@ function editInboundRow(id) {
   if (processed > 0) { hint.textContent = `이미 ${fmtN(processed)}CT 처리됨 — ${fmtN(processed)}CT 미만으로 줄일 수 없습니다`; hint.style.display = ''; }
   else hint.style.display = 'none';
   document.getElementById('eib-m-cat').value = r.inbound_category || '상품';
+  onIbCatChange('eib');   // ★값만 넣으면 onchange가 안 뜬다 — 재선별 섹션·품질 안내를 열 때도 맞춰 준다
   setGradeVal('eib-m-appearance-grade', r.appearance_grade || null);   // ★당도·산도 등급 입력은 제거됨
   setDefectTags('eib-m-defect-wrap', r.defect_tags || null);
   _brixRangeToSel(r.brix_range, 'eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
@@ -17718,19 +17756,23 @@ async function _addInboundCore(keepOpen) {
 
   // ★inbound_category는 여기 넣지 않는다 — 카테고리마다 다르므로 저장 루프에서 행별로 붙인다.
   //   재선별 부가정보(reclassFields)도 '재선별' 행에만 붙는다.
+  //   ★품질(qualityFields)도 '상품' 행에만 붙는다 — 대과·소과·청과·파치는 당도·산도를 재지 않는데
+  //     예전엔 commonData에 있어 모든 행에 같은 값이 복사됐다(상품 133 + 대과 4를 함께 등록하면 대과에도 당도 11~12).
   const commonData = {
     date, product, farm_name,
     note, staff: 'admin',
     is_priority,
     driver_id,
+    ...(ibWeight && { weight_kg: ibWeight }),
+    ...(ibPrice  && { unit_price: ibPrice }),
+    ...(ibAmount && { amount: ibAmount }),
+  };
+  const qualityFields = {
     ...(appearance_grade && { appearance_grade }),
     ...(defect_tags && { defect_tags }),
     ...(brix_range && { brix_range }),
     ...(acidity_range && { acidity_range }),
     ...(size_distribution && { size_distribution }),
-    ...(ibWeight && { weight_kg: ibWeight }),
-    ...(ibPrice  && { unit_price: ibPrice }),
-    ...(ibAmount && { amount: ibAmount }),
   };
 
   // Reset everything except date/farm/driver
@@ -17738,6 +17780,7 @@ async function _addInboundCore(keepOpen) {
     const prodEl = document.getElementById('ib-product'); if (prodEl) prodEl.value = '';
     const catEl = document.getElementById('ib-category'); if (catEl) catEl.value = '상품';
     sv('ib-qty', ''); sv('ib-note', '');
+    _ibClearCatNotes();   // ★카테고리 메모를 먼저 비운다 — 뒤에 두면 _ibClearCatQty가 다시 그린 칸에 옛 값이 남는다
     _ibClearCatQty();   // 카테고리별 수량칸도 비움(상품 자동값·힌트까지 재계산)
     resetLocForm('ib'); clearGrades('ib');
     ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max',
@@ -17760,7 +17803,14 @@ async function _addInboundCore(keepOpen) {
       let ibId = null, ibIdQty = -1;   // 콘테이너 연동용 대표 입고 id
       // ★카테고리마다 행을 만든다. 카테고리가 하나면 예전과 완전히 같은 1회 등록.
       for (const c of catQtys) {
-        const catData = { ...commonData, inbound_category: c.cat, ...(c.cat === '재선별' ? reclassFields : {}) };
+        // ★행별로 다른 것 3가지: 카테고리 · 품질(상품만) · 메모(카테고리 메모 없으면 공통 메모 그대로)
+        const catData = {
+          ...commonData,
+          inbound_category: c.cat,
+          ...(c.cat === '상품' ? qualityFields : {}),
+          ...(c.cat === '재선별' ? reclassFields : {}),
+          note: _ibCatNoteVal(c.cat) || note,
+        };
         let _newInbounds = [];   // 이 카테고리로 방금 저장된 행(들) — 파치 재고 전환용
         if (isDistributed) {     // 분산은 위에서 카테고리 1개만 허용 — 이 분기는 최대 1회
           const distribution_group_id = generateUUID();

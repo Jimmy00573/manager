@@ -1037,8 +1037,9 @@
           </div>
         </div>
 
-        <!-- 품질 정보 -->
-        <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
+        <!-- 품질 정보 — ★상품 행에만 저장된다(대과·소과·청과·파치는 당도·산도를 재지 않음). -->
+        <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택 · 상품에만 저장됩니다)</small></div>
+        <div id="ib-quality-scope-hint" style="font-size:11px;color:#C05800;margin:-2px 0 6px;display:none"></div>
         <div style="margin-bottom:12px">
           <!-- ★당도·산도 등급(상/중/하) 제거됨 — 당도는 비파괴 당도계 수치가 원본이라 등급은 중복 입력이었고,
                산도는 파괴 검사 때만 나와 없을 때가 많은데 억지로 고르게 돼 있었음.
@@ -1091,7 +1092,12 @@
         <!-- 추가 정보 -->
         <div class="ib-section-label">추가 정보</div>
         <div class="form-grid">
-          <div class="fg" style="grid-column:1/-1"><label>메모</label><input id="ib-note" placeholder="특이사항 (선택사항)"></div>
+          <!-- ★ib-note는 예전 그대로 = 상품 행의 메모이자, 카테고리 메모를 안 적은 행의 기본값.
+               상품만 등록하는 평소 흐름에서는 칸이 하나도 늘지 않는다.
+               대과·소과·청과·파치에 수량을 넣으면 그때만 아래에 그 카테고리 메모칸이 생긴다(_ibRenderCatNotes). -->
+          <div class="fg" style="grid-column:1/-1"><label>메모 <small style="font-weight:400;color:var(--text-tertiary)">— 상품 · 카테고리 메모를 비우면 이 내용이 들어갑니다</small></label><input id="ib-note" placeholder="특이사항 (선택사항)">
+            <div id="ib-cat-notes" style="display:grid;gap:6px;margin-top:6px"></div>
+          </div>
           <div class="fg" style="grid-column:1/-1;padding-top:2px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
               <input type="checkbox" id="ib-priority" style="width:16px;height:16px;cursor:pointer">
@@ -1527,6 +1533,9 @@
     </div>
 
     <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
+    <!-- ★수정 모달에서는 품질 칸을 숨기지 않는다 — 예전에 모든 카테고리 행에 복사되던 시절의 값이
+         비-상품 행에도 남아 있어(외관·크기분포·불량태그), 숨기면 보이지도 고치지도 못한다. 안내만 띄운다. -->
+    <div id="eib-quality-scope-hint" style="font-size:11px;color:#C05800;margin:-2px 0 6px;display:none"></div>
     <div style="margin-bottom:12px">
       <!-- ★당도·산도 등급 제거 — 등록 폼과 동일하게 유지할 것(위 ib- 폼 주석 참고). -->
       <div style="margin-bottom:8px">
@@ -1942,6 +1951,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=23"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=558"></script>
+<script src="src/app.js?v=559"></script>
 </body>
 </html>
