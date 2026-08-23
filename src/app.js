@@ -3910,12 +3910,19 @@ function _hvItemColor(item) {
 // ★HV_STALE_DAYS 근거: 밭떼기는 보통 1~2주 간격으로 차수를 이어간다(김태순 1차 7/15 → 2차 7/27 = 12일).
 //   2주가 지나도 아무 움직임이 없으면 정상 간격을 벗어난 것으로 본다. 기준을 바꾸려면 이 숫자만 고치면 된다.
 const HV_STALE_DAYS = 14;
+// ★대기(⏳) 경고 기준은 차수 간격(HV_STALE_DAYS=14)과 따로 둔다 — 성격이 다르기 때문이다.
+//   차수는 1~2주 간격이 정상이지만, 콘테이너는 나가면 곧 채워 들어오는 게 정상이라
+//   일주일 넘게 빈 채로 농가에 있으면 그 자체로 이미 물어볼 일이다. (문기덕 13일·김숙자 20일)
+const HV_WAIT_WARN_DAYS = 7;
 const _HV_PROG_KIND = {
+  wait:   { icon: '⏳', label: '대기',      bg: '#FFF3E0', bd: '#FFE0B2', fg: '#C05800' },   // 수확전 배지와 같은 주황(새 색 안 만듦)
   stale:  { icon: '⚠️', label: '확인 필요', bg: '#FFEBEE', bd: '#FFCDD2', fg: '#C62828' },
   active: { icon: '🌱', label: '진행중',    bg: '#EFF8FF', bd: '#BBDEFB', fg: '#1565C0' },
   done:   { icon: '🏁', label: '종료',      bg: '#F5F5F5', bd: '#E0E0E0', fg: '#616161' },
 };
-const _HV_PROG_ORDER = ['stale', 'active', 'done'];   // 방치 의심을 맨 위에 — 먼저 보라고 만든 섹션이다
+// ★순서 기준은 '수확 흐름'이 아니라 '급한 순'이다(이 화면을 만든 원칙). 대기는 콘테이너가 나가 있는데
+//   기록이 아예 없는 상태라 가장 먼저 봐야 한다 → 확인 필요보다도 위.
+const _HV_PROG_ORDER = ['wait', 'stale', 'active', 'done'];
 const _hvProgOpen = {};   // farm -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 상태별 기본값(확인 필요만 펼침).
 
 // 농가별로 차수를 모아 상태를 매긴다. 렌더와 토글이 같은 판정을 쓰도록 순수 함수로 분리.
@@ -3923,7 +3930,7 @@ function _hvProgGroups() {
   const byFarm = {};
   harvests.forEach(h => { (byFarm[h.farm] = byFarm[h.farm] || []).push(h); });
   const today = new Date(td() + 'T00:00:00');   // 로컬 자정 기준(td()=ymd) — toISOString 안 씀
-  return Object.keys(byFarm).map(farm => {
+  const withHarvest = Object.keys(byFarm).map(farm => {
     // 차수 오름차순(같으면 날짜순) → 마지막 원소가 '마지막 차수'. 1차가 없고 2차만 있어도 그대로 동작한다.
     const rounds = byFarm[farm].slice().sort((a, b) => (a.round || 1) - (b.round || 1) || (a.date || '').localeCompare(b.date || ''));
     const last = rounds[rounds.length - 1];
@@ -3940,6 +3947,26 @@ function _hvProgGroups() {
     const onDay = last.date ? Math.max(1, Math.floor((today - new Date(last.date + 'T00:00:00')) / 86400000) + 1) : 1;
     return { farm, rounds, last, days, dday, onDay, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
   }).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+
+  // ★대기(⏳) — 콘테이너는 나갔는데 수확 기록이 아예 없는 농가. 지금까지 이 화면 어디에도 안 보였다.
+  //   판정은 둘 다 만족: getFCS(농가 보유) > 0  AND  harvests 0건.
+  //   · 보유는 getFCS 그대로 재사용 — 현황판 '처리필요'와 숫자가 어긋나면 안 된다.
+  //   · 수확 기록이 하나라도 있으면(다음 차수 대기 포함) 위 3그룹이 맡는다 — 여기 끼어들지 않는다.
+  //   · 보유 0 + 기록 0인 농가는 어느 그룹에도 안 들어간다(농가 마스터 전체가 뜨면 안 된다).
+  const waits = farms.filter(f => !byFarm[f.name] && (getFCS(f.name).hold || 0) > 0).map(f => {
+    const farm = f.name;
+    const hold = getFCS(farm).hold;
+    // 최근 배송일 — 배차가 원칙이지만, 배차 없이 나간 배출 pick만 있는 농가도 있어 둘 중 최신을 쓴다.
+    const dDates = dispatches.filter(d => d.farm === farm && _isFarmTgt(d) && d.date).map(d => d.date);
+    const pDates = picks.filter(p => p.farm === farm && p.type === '배출' && _isFarmTgt(p) && p.date).map(p => p.date);
+    const outDate = [...dDates, ...pDates].sort().pop() || null;
+    const days = outDate ? Math.floor((today - new Date(outDate + 'T00:00:00')) / 86400000) : 0;
+    // 배차에 적어 둔 수확 예정일(dispatches.harvest)이 있으면 병기한다 — 아직 harvests 행이 없어도 계획은 있는 경우.
+    const planned = dispatches.filter(d => d.farm === farm && _isFarmTgt(d) && d.harvest).map(d => d.harvest).sort().pop() || null;
+    return { farm, rounds: [], last: null, hold, outDate, planned, days, kind: 'wait', items: [] };
+  }).sort((a, b) => b.days - a.days || (a.farm || '').localeCompare(b.farm || '', 'ko'));   // 오래 방치된 것부터
+
+  return waits.concat(withHarvest);
 }
 
 // 임박도 색 — ★새 색을 만들지 않는다. 앱이 이미 쓰는 세 조합만 골라 쓴다.
@@ -3953,7 +3980,8 @@ function _hvDdayTone(dd) {
   return { fg: '#6B7280', bg: '#F3F4F6', bd: '#E5E7EB' };
 }
 
-function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : g.kind === 'stale'; }
+// 기본 펼침 = 먼저 보라고 만든 두 그룹(대기·확인 필요). 나머지는 접힌 채로 둔다.
+function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : (g.kind === 'stale' || g.kind === 'wait'); }
 
 function _hvProgToggle(farm) {
   const g = _hvProgGroups().find(x => x.farm === farm);
@@ -3981,9 +4009,46 @@ function _hvProgToggleAll() {
   renderHarvestProgress();   // 개별 토글과 같은 방식 — 이 섹션만 다시 그린다
 }
 
+// 배너 칩과 같은 방식 — 새 등록 기능을 만들지 않고 같은 화면의 기존 수확 등록 폼(cal-add-*)에 값만 채운다.
+// cal-add-farm은 검색형이라 fsPick으로 넣어야 표시까지 맞는다(_hvGoDispatch의 dp-farm과 같은 규칙).
+function _hvGoHarvestAdd(farm) {
+  const form = document.getElementById('cal-add-form');
+  if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => {
+    if (document.getElementById('cal-add-farm')) fsPick('cal-add-farm', farm);
+    const dt = document.getElementById('cal-add-date'); if (dt && !dt.value) dt.value = td();
+    document.getElementById('cal-add-date')?.focus();
+  }, 60);
+}
+
 function _hvProgCard(g) {
   const k = _HV_PROG_KIND[g.kind];
   const open = _hvProgIsOpen(g);
+  // ★대기는 harvests가 0건이라 차수·상태가 없다 — 아래 기존 로직(g.last 참조)을 태우면 터진다.
+  //   내용도 다르다: 차수 목록 대신 '보유 콘테이너 종류별 칩 + 수확 등록으로 가기'.
+  if (g.kind === 'wait') {
+    const late = g.days >= HV_WAIT_WARN_DAYS;
+    const dstr = g.outDate ? g.outDate.slice(5).replace('-', '/') : '-';
+    const t = late ? { fg: '#C62828', bg: '#FFEBEE', bd: '#FFCDD2' } : _hvDdayTone(9);   // 늦으면 확인필요와 같은 빨강
+    const dayTxt = g.days <= 0 ? '오늘 배송' : `${g.days}일째`;
+    const ct = getFCtypes(g.farm);   // 현황판과 같은 종류별 칩(단일 소스)
+    return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
+      <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
+        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>
+        ${g.planned ? `<span style="font-size:11px;color:#1565C0;font-weight:600">수확 ${esc(g.planned.slice(5).replace('-', '/'))} 예정</span>` : ''}
+        <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <span style="font-size:10px;font-weight:700;color:${t.fg};background:${t.bg};border:1px solid ${t.bd};border-radius:10px;padding:1px 7px;white-space:nowrap">${esc(dayTxt)}</span>
+          <span style="font-size:11px;font-weight:600;color:${k.fg}">콘테이너 ${fmtN(g.hold)}개 · ${esc(dstr)} 배송</span>
+        </span>
+      </div>
+      ${open ? `<div style="padding:8px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff">
+        ${ct ? `<div style="display:flex;flex-wrap:wrap;gap:3px">${ct}</div>` : ''}
+        <span style="font-size:11px;color:#888">수확 기록이 없습니다.</span>
+        <button type="button" onclick="_hvGoHarvestAdd('${_fsQ(g.farm)}')" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>
+      </div>` : ''}
+    </div>`;
+  }
   const st = g.last.status || '수확전';
   const rd = g.last.round || 1;
   const dstr = (g.last.end_date || g.last.date || '').slice(5).replace('-', '/');
@@ -4021,7 +4086,7 @@ function renderHarvestProgress() {
   if (!el) return;
   const groups = _hvProgGroups();
   if (!groups.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  const cnt = { stale: 0, active: 0, done: 0 };
+  const cnt = { wait: 0, stale: 0, active: 0, done: 0 };
   groups.forEach(g => cnt[g.kind]++);
   el.style.display = '';
   el.innerHTML = `
@@ -4039,7 +4104,7 @@ function renderHarvestProgress() {
       ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
         const k = _HV_PROG_KIND[kd];
         return `<div>
-          <div style="font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}</div>
+          <div style="font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 수확 기록이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>
           <div style="display:flex;flex-direction:column;gap:6px">${groups.filter(g => g.kind === kd).map(_hvProgCard).join('')}</div>
         </div>`;
       }).join('')}
