@@ -292,7 +292,9 @@ async function loadProductWeights() {
       productWeights = { ...PRODUCT_WEIGHTS_DEFAULT };
     }
   } catch(e) {
+    // ★기본값으로 떨어지면 사용자가 설정한 중량과 달라져 weight_kg·금액이 조용히 틀어진다
     productWeights = { ...PRODUCT_WEIGHTS_DEFAULT };
+    _loadFail('품목 중량 설정');
   }
 }
 
@@ -413,9 +415,14 @@ function _syncRenderBar() {
   const BTN = 'border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;padding:3px 10px';
   if (_loadFailures.length) {
     // ★가장 높은 우선순위 — 데이터가 모자란 상태라 '변경됨' 알림보다 먼저 보여야 한다.
+    // ★라벨이 많아도 배너가 화면을 덮지 않게 앞 4개만 쓰고 나머지는 건수로 접는다
+    //   (통신이 통째로 끊기면 십수 개가 한꺼번에 실패한다). 전체 목록은 title로 남긴다.
+    const SHOW = 4;
+    const names = _loadFailures.slice(0, SHOW).join(' · ')
+      + (_loadFailures.length > SHOW ? ` 외 ${_loadFailures.length - SHOW}건` : '');
     el.style.cssText = 'position:sticky;top:50px;z-index:98;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'
       + 'padding:7px 14px;background:#FEE2E2;border-bottom:1px solid #FCA5A5;font-size:13px;color:#991B1B';
-    el.innerHTML = `<span style="flex:1;min-width:180px">⚠️ <strong>${esc(_loadFailures.join(' · '))}</strong>을(를) 불러오지 못했습니다. 화면의 숫자가 실제와 다릅니다 — 새로고침해 주세요.</span>
+    el.innerHTML = `<span style="flex:1;min-width:180px" title="${esc(_loadFailures.join(', '))}">⚠️ <strong>${esc(names)}</strong>을(를) 불러오지 못했습니다. 화면의 숫자가 실제와 다릅니다 — 새로고침해 주세요.</span>
       <button onclick="location.reload()" style="${BTN};background:#DC2626;color:#fff;font-weight:600">새로고침</button>`;
     el.style.display = '';
     return;
@@ -484,6 +491,9 @@ async function initApp() {
     pachiConditions = pachiCondData || [];
     // 품목 마스터(수확·배차 품목 select용) — inv 탭 미방문 상태에서도 항상 사용 가능하게 부팅 시 로드
     if (catSys) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; }
+    // ★아래 셋과 위 Promise.all의 마스터 조회들은 db.js에서 오류를 catch해 빈 배열을 돌려준다 —
+    //   그래서 여기 .catch는 발동하지 않는다. 실패 라벨은 db.js의 _sbLoadFail에 붙어 있으니
+    //   여기에 _loadFail을 또 넣지 말 것(중복).
     partners = await dbGetPartners().catch(() => []);
     manualTransactions = await dbGetManualTransactions().catch(() => []);
     containerTypes = await dbGetContainerTypes().catch(() => []);
@@ -5290,14 +5300,16 @@ async function loadAndRenderInv() {
   showLoading('재고 불러오는 중...');
   try {
     const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds, allOutbounds] = await Promise.all([
-      dbGetInbounds().catch(() => []),
-      dbGetProcessings().catch(() => []),
-      dbGetUnsorted(null).catch(() => []),
+      // ★이 둘은 db.js에서 오류를 안 삼키고 던지므로 라벨을 여기서 붙인다.
+      //   (내부에서 catch하는 함수들은 db.js 쪽에 _sbLoadFail이 들어가 있다 — 두 번 붙이지 말 것)
+      dbGetInbounds().catch(() => { _loadFail('입고 기록'); return []; }),
+      dbGetProcessings().catch(() => { _loadFail('선과 처리 기록'); return []; }),
+      dbGetUnsorted(null).catch(() => []),   // 0행 레거시 표 — 실패해도 영향 없어 라벨 없음
       dbGetSorted(null), dbGetWaste(null),
       loadSizeConfig(), loadCategorySystem(),
       dbGetInventoryRecords().catch(() => []),
       dbGetJuiceMasters().catch(() => []),
-      sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => []),
+      sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => { _loadFail('선과 결과'); return []; }),
       dbGetJuiceBatches().catch(() => []),
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
       //   주스분(현재 366건)은 아직 한도 아래지만 같은 테이블이라 같이 옮겨 둔다.
@@ -5340,7 +5352,7 @@ async function loadAndRenderInv() {
     } else { _invSrMap = {}; }
     popInvProductSelects();
     popLocSelects(); popUsageSelects();
-  } catch(e) { console.error('재고 로드 오류:', e); }
+  } catch(e) { console.error('재고 로드 오류:', e); _loadFail('재고 화면'); }   // ★여기까지 오면 재고 화면 전체가 빈 상태 — 콘솔만으론 아무도 모른다
   hideLoading();
   renderInvAll();
 }

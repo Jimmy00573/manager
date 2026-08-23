@@ -65,6 +65,14 @@ function _sbNotifyWrite() {
   try { if (typeof _syncMarkSelfWrite === 'function') _syncMarkSelfWrite(); } catch (e) {}
 }
 
+// db.js의 조회 실패를 app.js 배너(_loadFail)로 넘긴다. app.js보다 먼저 로드되므로 optional call —
+// 정의 전이면 그냥 넘어간다(_sbNotifyWrite와 같은 방식).
+// ★db.js 조회 함수들은 오류를 catch해서 빈 배열을 돌려주므로, 여기서 알리지 않으면
+//   호출부의 .catch가 아예 발동하지 않아 실패가 '데이터 없음'과 구분되지 않는다.
+function _sbLoadFail(label) {
+  try { if (typeof _loadFail === 'function') _loadFail(label); } catch (e) {}
+}
+
 async function sbInsert(table, data) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
