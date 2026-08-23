@@ -1757,6 +1757,24 @@ async function saveDispEdit() {
   try {
     await dbUpdateDispatch(_editDispId, data);
     dispatches = dispatches.map(x => x.id === _editDispId ? { ...x, ...data } : x);
+    // ★배차에 딸린 '배출' pick도 같이 고친다 — 안 고치면 배차와 pick이 갈린다.
+    //   getFCS(농가 보유)는 picks를, getSt(공장 재고)는 dispatches를 보기 때문에
+    //   한쪽만 바뀌면 화면마다 숫자가 달라진다(한진수 배출 666 vs 이력 661 사고의 원인).
+    //   ★맞추는 항목 = addDisp가 pick에 넣는 것과 같은 집합: date·farm·qty·driver·car·target_type.
+    //     ctype은 넣지 않는다 — picks에 ctype이 없다는 기존 규칙이 getFCtypeMap의 중복 계상 방지 근거다.
+    //   ★순서: 배차 먼저, pick 나중. 배차가 실패하면 아무것도 안 바뀐 채 끝나고(안전),
+    //     pick이 실패하면 아래에서 알린다. 이 동기화는 같은 값으로 다시 저장해도 결과가 같으므로
+    //     (멱등) '다시 저장'이 곧 복구다 — 배차를 되돌리려다 그것마저 실패하는 쪽보다 낫다.
+    const linked = picks.filter(p => p.dispatch_id === _editDispId && p.type === '배출');
+    const pickPatch = { date, farm, qty, driver, car: d.car || '', target_type: data.target_type };
+    try {
+      // 옛 배차엔 연결 pick이 없을 수 있다(수량 0으로 등록되던 시절) — 그때는 조용히 넘어간다.
+      for (const p of linked) await dbUpdatePick(p.id, pickPatch);
+      picks = picks.map(p => (p.dispatch_id === _editDispId && p.type === '배출') ? { ...p, ...pickPatch } : p);
+    } catch (pe) {
+      alert('배차는 저장됐지만 연결된 배출 기록을 못 고쳤습니다.\n\n'
+        + '지금은 콘테이너 숫자가 화면마다 다를 수 있습니다.\n같은 내용으로 한 번 더 저장하면 맞춰집니다.\n\n' + pe.message);
+    }
     CM('disp'); renderDisp(); renderDDash(); renderSC(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
