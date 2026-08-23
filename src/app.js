@@ -331,6 +331,15 @@ let _syncRebaseTimer = null;
 let _syncPollTimer = null;
 let _syncAgeTimer = null;        // 경과 시간 문구는 가만 둬도 늙으므로 1분마다 다시 그린다(텍스트만)
 
+// ★조회 실패를 눈에 보이게 — 이번 문제(1,000행 잘림)의 본질이 '조용히 부족한 데이터'였다.
+//   실패한 조회는 빈 배열이 되므로, 화면의 '0건'이 진짜 0인지 못 불러온 건지 사람이 알 수 있어야 한다.
+//   sync-bar를 그대로 쓴다(이미 sticky·최상단). 닫기 버튼은 두지 않는다 — 숫자가 틀린 상태라 숨기면 안 된다.
+let _loadFailures = [];
+function _loadFail(label) {
+  if (!_loadFailures.includes(label)) _loadFailures.push(label);
+  try { _syncRenderBar(); } catch (e) {}
+}
+
 // 테이블별 최신 created_at 1건. 실패는 undefined로 두고 조용히 넘어감(앱이 멈추면 안 됨).
 async function _syncFetchLatest() {
   const out = {};
@@ -402,6 +411,15 @@ function _syncRenderBar() {
   const el = document.getElementById('sync-bar');
   if (!el) return;
   const BTN = 'border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;padding:3px 10px';
+  if (_loadFailures.length) {
+    // ★가장 높은 우선순위 — 데이터가 모자란 상태라 '변경됨' 알림보다 먼저 보여야 한다.
+    el.style.cssText = 'position:sticky;top:50px;z-index:98;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'
+      + 'padding:7px 14px;background:#FEE2E2;border-bottom:1px solid #FCA5A5;font-size:13px;color:#991B1B';
+    el.innerHTML = `<span style="flex:1;min-width:180px">⚠️ <strong>${esc(_loadFailures.join(' · '))}</strong>을(를) 불러오지 못했습니다. 화면의 숫자가 실제와 다릅니다 — 새로고침해 주세요.</span>
+      <button onclick="location.reload()" style="${BTN};background:#DC2626;color:#fff;font-weight:600">새로고침</button>`;
+    el.style.display = '';
+    return;
+  }
   if (_syncBannerOn) {
     el.style.cssText = 'position:sticky;top:50px;z-index:98;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'
       + 'padding:7px 14px;background:#FEF3C7;border-bottom:1px solid #FCD34D;font-size:13px;color:#92400E';
@@ -5281,8 +5299,10 @@ async function loadAndRenderInv() {
       dbGetJuiceMasters().catch(() => []),
       sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => []),
       dbGetJuiceBatches().catch(() => []),
-      sbGet('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc').catch(() => []),
-      sbGet('outbound_records', 'is_void=eq.false&order=date.desc').catch(() => [])
+      // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
+      //   주스분(현재 366건)은 아직 한도 아래지만 같은 테이블이라 같이 옮겨 둔다.
+      sbGetAll('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc').catch(() => { _loadFail('주스 출고'); return []; }),
+      sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc').catch(() => { _loadFail('출고 기록'); return []; })
     ]);
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
