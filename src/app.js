@@ -9669,6 +9669,21 @@ function calcIbWeightFromCt() {
     if (wEl && ct > 0) wEl.value = Math.round(ct * kgct * 10) / 10;
   }
   calcIbAmount();
+  _ibWeightHint();
+}
+
+// 총 중량 ↔ CT당 kg 되짚어 보여 주는 한 줄. 저장은 총 중량(weight_kg) 하나뿐이라
+// 계근값을 그대로 적었을 때 CT당이 얼마인지 눈으로 확인할 자리가 필요하다(반대로 CT당을 적었을 때는 총 중량 확인).
+// ★표시 전용 — 값을 고치지 않는다. 수량이 0이면(콘테이너 미입력) 나눗셈이 무의미하므로 총 중량만 보여 준다.
+function _ibWeightHint() {
+  const el = document.getElementById('ibp-weight-hint');
+  if (!el) return;
+  const w  = parseFloat(document.getElementById('ibp-weight')?.value) || 0;
+  const ct = parseFloat(document.getElementById('ib-qty')?.value) || 0;
+  if (w <= 0) { el.innerHTML = ''; return; }
+  el.innerHTML = ct > 0
+    ? `총 <b>${fmtN(Math.round(w * 10) / 10)}</b>kg · ${fmtN(ct)}CT → CT당 <b>${(w / ct).toFixed(1)}</b>kg`
+    : `총 <b>${fmtN(Math.round(w * 10) / 10)}</b>kg`;
 }
 
 function toggleIbPrice() {
@@ -15525,6 +15540,7 @@ function renderInboundList() {
       : `<span style="color:#D1D5DB">-</span>`;
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
+         <button onclick="openInboundShareText('${r.id}')">📋 공유</button>
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
          ${remaining > 0 ? `<button onclick="openUnsortedOutboundModal('${r.id}')">📤 출고</button>` : ''}
          ${_srtExcludable ? `<button onclick="toggleInboundSortExclude('${r.id}')">${isSrtExcluded ? '↩️ 선과 대상으로' : '🚫 선과 안 함'}</button>` : ''}
@@ -17408,6 +17424,135 @@ async function copySortingShareText() {
   }
 }
 
+// ── 미선과 입고 사무실 공유 텍스트(조회 전용 — 계산·저장 무변)
+// ★한 차(車)를 한 장으로 묶는다. 2026-08-21부터 상품·대과·소과가 각각 다른 inbound_records 행으로 저장되므로
+//   누른 행 하나만 내보내면 반쪽짜리가 된다.
+// ★★묶음 판정을 '날짜+농가+품목'만으로 하면 틀린다 — 같은 농가에서 하루 두 번 들어오는 일이 실제로 있다.
+//   (2026-08-23 한진수(신풍리460): 04:08 상품85·대과55 / 07:48 상품65·대과23. 넷을 한 장으로 합치면 거짓말이 된다.)
+//   한 번의 등록으로 만들어진 행들은 created_at 간격이 1초 안쪽이고, 다른 차와는 시간 단위로 벌어진다
+//   → 같은 날짜+농가+품목 안에서 created_at이 이어지는 것끼리만 묶는다.
+const IB_SHARE_GAP_SEC = 120;
+function _ibShareMD(s) { if (!s) return ''; const p = String(s).slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : s; }
+// 20.0 → '20' / 16.5 → '16.5'. 소수점 뒤가 0이면 떼어 낸다(카톡에서 '20kg'가 '20.0kg'보다 읽기 편하다).
+function _ibShareNum(n) { const v = Math.round(Number(n) * 10) / 10; return Number.isInteger(v) ? String(v) : v.toFixed(1); }
+// rows(같은 날짜+농가+품목) 중에서 target이 속한 '연속 등록' 구간만 돌려준다.
+// ★created_at이 없는 옛 행은 시각을 0으로 보게 되므로, 값이 없으면 자기 자신만 돌려주고 만다(엉뚱한 묶음 방지).
+function _ibShareCluster(rows, target) {
+  if (!target.created_at) return [target];
+  const ts = r => new Date(r.created_at).getTime();
+  const sorted = rows.filter(r => r.created_at).sort((a, b) => ts(a) - ts(b));
+  const i = sorted.findIndex(r => String(r.id) === String(target.id));
+  if (i < 0) return [target];
+  let s = i, e = i;
+  const gap = IB_SHARE_GAP_SEC * 1000;
+  while (s > 0 && ts(sorted[s]) - ts(sorted[s - 1]) <= gap) s--;
+  while (e < sorted.length - 1 && ts(sorted[e + 1]) - ts(sorted[e]) <= gap) e++;
+  return sorted.slice(s, e + 1);
+}
+async function buildInboundShareText(inboundId) {
+  const base = (await sbGet('inbound_records', `id=eq.${inboundId}`))[0];
+  if (!base) throw new Error('입고 기록을 찾을 수 없습니다.');
+  // ★같은 '날짜'만 서버에서 거르고 농가·품목은 JS로 거른다 — 둘 다 한글이라 쿼리에 그대로 넣으면 인코딩 사고가 난다.
+  //   날짜 하루치는 많아야 수십 행이라 이대로 충분하다.
+  const sameDay = await sbGet('inbound_records', `date=eq.${base.date}&select=*`);
+  const sibs = (sameDay || []).filter(r => !r.is_void && r.farm_name === base.farm_name && r.product === base.product);
+  const grp = _ibShareCluster(sibs.length ? sibs : [base], base)
+    .sort((a, b) => _ibCatRank(a.inbound_category) - _ibCatRank(b.inbound_category));
+
+  const total = grp.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  // 값이 있는 첫 행에서 집는다. 품질·중량은 상품 행에만 저장되지만(143dcd9·이번 커밋),
+  // 그 전에 등록된 건은 모든 행에 같은 값이 복사돼 있어 어느 쪽이든 같은 값이 나온다.
+  const pick = k => { const r = grp.find(x => x[k] != null && x[k] !== ''); return r ? r[k] : ''; };
+  const drv = drivers.find(d => String(d.id) === String(base.driver_id));
+  const drvLine = drv ? [drv.name, (drv.note || '').trim()].filter(Boolean).join(' ') : '';
+  const addr = (gf(base.farm_name).addr || '').trim();
+  // 중량: 저장은 총 중량(weight_kg) 하나뿐 → 공유엔 CT당으로 환산해 적는다(사무실이 CT당으로 말한다).
+  const wKg = Number(pick('weight_kg')) || 0;
+  const kgPerCt = (wKg > 0 && total > 0) ? wKg / total : 0;
+
+  // 콘테이너 — 입고 저장 때 소유별로 picks(우리것)·own_ins(농가것)·nhf_ins(농협것) 세 곳으로 갈라져 들어간다.
+  // ★대표 입고 id 한 곳에만 붙으므로 묶음의 id를 전부 넣어 찾는다(uuid라 쿼리에 그대로 써도 안전).
+  const idQ = grp.map(r => r.id).join(',');
+  const ctMap = {};
+  try {
+    const [pk, oi, ni] = await Promise.all([
+      sbGet('picks',   `inbound_id=in.(${idQ})&select=ctype,qty`),
+      sbGet('own_ins', `inbound_id=in.(${idQ})&select=ctype,qty`),
+      sbGet('nhf_ins', `inbound_id=in.(${idQ})&select=type,qty`),
+    ]);
+    [...(pk || []).map(r => [r.ctype, r.qty]), ...(oi || []).map(r => [r.ctype, r.qty]), ...(ni || []).map(r => [r.type, r.qty])]
+      .forEach(([n, q]) => { if (n) ctMap[n] = (ctMap[n] || 0) + (Number(q) || 0); });
+  } catch (e) { console.warn('공유 텍스트 콘테이너 조회 실패(콘테나 줄 생략):', e.message); }
+  const ctNames = Object.keys(ctMap);
+  // 한 종류면 이름만(사무실에서 쓰던 형식), 여러 종류면 수량까지 나열해야 어느 게 몇 개인지 알 수 있다.
+  const ctLine = ctNames.length === 1 ? ctNames[0] : ctNames.map(n => `${n} ${fmtN(ctMap[n])}`).join(', ');
+
+  const L = [];
+  const add = (label, val) => { if (val !== '' && val != null) L.push(`${label}: ${val}`); };   // 값 없는 줄은 통째로 생략
+  add('기사', drvLine);
+  add('입고일자', _ibShareMD(base.date));
+  add('농가명', base.farm_name || '');
+  add('주소', addr);
+  add('품목', base.product || '');
+  add('수량', grp.map(r => `${r.inbound_category || '상품'} ${fmtN(r.quantity)}ct`).join(', '));
+  if (grp.length > 1) L.push(`총 ${fmtN(total)}ct`);   // 카테고리가 하나면 위 '수량' 줄과 같은 값이라 생략
+  if (kgPerCt > 0) add('중량', `${_ibShareNum(kgPerCt)}kg`);
+  add('크기', pick('size_distribution'));
+  add('당도', pick('brix_range'));
+  add('산도', pick('acidity_range'));
+  add('콘테나', ctLine);
+  // 특이사항 — 카테고리마다 메모가 다를 수 있다(상품 '색 잘남' / 대과 '왕1·왕2' / 소과 '00번 사이즈').
+  // 대표(상품) 메모를 앞에 두고, 그와 다른 메모만 카테고리 이름을 붙여 뒤에 잇는다. 같은 메모는 한 번만.
+  const mainNote = ((grp.find(r => (r.inbound_category || '상품') === '상품') || grp[0]).note || '').trim();
+  const noteLines = [];
+  if (mainNote) noteLines.push(mainNote);
+  grp.forEach(r => {
+    const n = (r.note || '').trim();
+    if (n && n !== mainNote) noteLines.push(`${r.inbound_category || '상품'}: ${n}`);
+  });
+  if (noteLines.length) { L.push(`특이사항: ${noteLines[0]}`); noteLines.slice(1).forEach(n => L.push(n)); }
+  return L.join('\n');
+}
+async function openInboundShareText(inboundId) {
+  try {
+    const text = await buildInboundShareText(inboundId);
+    // ★모달 셸을 매번 지우고 다시 만든다 — 한 번만 만드는 방식은 옛 레이아웃이 남는 사고가 있었다.
+    document.getElementById('modal-ib-share')?.remove();
+    const m = document.createElement('div');
+    m.id = 'modal-ib-share';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    m.innerHTML = `
+      <div style="background:#fff;border-radius:14px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:85vh">
+        <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:14px;font-weight:700;color:#1565C0">📋 입고내역 공유</div>
+          <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+        </div>
+        <div style="padding:14px 18px;flex:1;overflow:auto">
+          <textarea id="ib-share-text" style="width:100%;box-sizing:border-box;height:320px;max-height:50vh;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;font-family:inherit;line-height:1.5;resize:vertical"></textarea>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:6px">같은 차로 들어온 카테고리를 한 장으로 묶었습니다. 보내기 전 여기서 고칠 수 있습니다.</div>
+        </div>
+        <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+          <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">닫기</button>
+          <button class="btn pri" style="font-size:13px;padding:7px 16px" onclick="copyInboundShareText()">📋 복사</button>
+        </div>
+      </div>`;
+    m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+    document.body.appendChild(m);
+    document.getElementById('ib-share-text').value = text;   // .value로 주입(이스케이프 문제 방지)
+  } catch (e) { showToast('공유 텍스트 생성 오류: ' + e.message); }
+}
+async function copyInboundShareText() {
+  const ta = document.getElementById('ib-share-text');
+  if (!ta) return;
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    showToast('📋 복사되었습니다');
+  } catch (e) {
+    ta.select(); document.execCommand('copy');   // 클립보드 권한 실패 폴백
+    showToast('📋 복사되었습니다');
+  }
+}
+
 async function confirmCancelSorting(srId, inboundId, seq) {
   const res = await showConfirmDanger({
     title: `${seq}차 선과 취소`,
@@ -17951,15 +18096,27 @@ async function _addInboundCore(keepOpen) {
   //   재선별 부가정보(reclassFields)도 '재선별' 행에만 붙는다.
   //   ★품질(qualityFields)도 '상품' 행에만 붙는다 — 대과·소과·청과·파치는 당도·산도를 재지 않는데
   //     예전엔 commonData에 있어 모든 행에 같은 값이 복사됐다(상품 133 + 대과 4를 함께 등록하면 대과에도 당도 11~12).
+  //   ★중량·매입(weightFields)도 마찬가지로 한 행에만 붙인다 — 아래 weightFields 주석 참고.
   const commonData = {
     date, product, farm_name,
     note, staff: 'admin',
     is_priority,
     driver_id,
+  };
+  // ★총 중량·매입액은 '그 차 전체'의 값이라 카테고리마다 복사하면 안 된다.
+  //   예전엔 commonData에 있어 상품146+대과4+소과2를 함께 등록하면 3행 모두 같은 총 중량이 들어갔고,
+  //   중량·매입액을 합산하는 순간 카테고리 수만큼 부풀어 올랐다(품질을 상품 행에만 저장한 143dcd9와 같은 규칙).
+  //   ★기존 데이터 피해는 없다 — weight_kg가 있는 행은 남원농협 1건뿐이고 그건 카테고리가 하나다.
+  const weightFields = {
     ...(ibWeight && { weight_kg: ibWeight }),
     ...(ibPrice  && { unit_price: ibPrice }),
     ...(ibAmount && { amount: ibAmount }),
   };
+  // 넣을 행 = '상품'. 상품이 없는 등록(대과만·파치만 등)이면 수량이 가장 큰 행에 넣는다
+  // — 상품 고정으로 두면 그런 등록에서 입력한 중량이 어디에도 안 남고 조용히 사라진다.
+  const _wCat = catQtys.some(c => c.cat === '상품')
+    ? '상품'
+    : catQtys.reduce((m, c) => (c.qty > m.qty ? c : m), catQtys[0]).cat;
   const qualityFields = {
     ...(appearance_grade && { appearance_grade }),
     ...(defect_tags && { defect_tags }),
@@ -17985,6 +18142,7 @@ async function _addInboundCore(keepOpen) {
     const ibpW = document.getElementById('ibp-weight'); if (ibpW) ibpW.value = '';
     const ibpP = document.getElementById('ibp-price');  if (ibpP) ibpP.value = '';
     const ibpAmt = document.getElementById('ibp-amount'); if (ibpAmt) ibpAmt.innerHTML = '';
+    const ibpWH = document.getElementById('ibp-weight-hint'); if (ibpWH) ibpWH.innerHTML = '';   // 실중량 칸이 폼 본문으로 나와 상시 보이므로 힌트도 같이 비운다
     const ibpBody = document.getElementById('ibp-body'); if (ibpBody) ibpBody.style.display = 'none';
     const ibpTog = document.getElementById('ibp-toggle'); if (ibpTog) ibpTog.textContent = '▸ 매입 단가 (선택)';
     syncReclassList('ib');
@@ -18009,13 +18167,16 @@ async function _addInboundCore(keepOpen) {
           const distribution_group_id = generateUUID();
           const inserted = [];
           for (const loc of locs) {
-            const row = await dbInsertInbound({ ...catData, location: loc.name, quantity: loc.qty, distribution_group_id });
+            // ★중량·매입은 첫 위치 행에만 — 총 중량은 차 전체 값이라 위치 행마다 복사하면 위치 수만큼 부풀어 오른다.
+            //   (분산저장은 위에서 카테고리 1개만 허용하므로 _wCat 판정은 항상 이 카테고리다)
+            const _wHere = inserted.length === 0 && c.cat === _wCat ? weightFields : {};
+            const row = await dbInsertInbound({ ...catData, ..._wHere, location: loc.name, quantity: loc.qty, distribution_group_id });
             inserted.push(row);
           }
           inserted.forEach(row => inboundRecords.unshift({ ...row, driver: driverObj }));
           _newInbounds = inserted;
         } else {
-          const row = await dbInsertInbound({ ...catData, quantity: c.qty, location: getLocValue('ib') || null });
+          const row = await dbInsertInbound({ ...catData, ...(c.cat === _wCat ? weightFields : {}), quantity: c.qty, location: getLocValue('ib') || null });
           inboundRecords.unshift({ ...row, driver: driverObj });
           _newInbounds = [row];
         }

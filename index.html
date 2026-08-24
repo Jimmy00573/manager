@@ -1092,6 +1092,22 @@
           </div>
         </div>
 
+        <!-- 실중량 — ★품질과 같은 규칙으로 '상품' 행에만 저장된다(총 중량은 그 차 전체 값이라 카테고리마다 복사하면 집계가 부풀어 오른다).
+             ★저장 컬럼은 inbound_records.weight_kg 하나 = **총 중량**. CT당으로 적으면 × 수량 해서 총으로 환산해 넣는다(calcIbWeightFromCt).
+             ★id(ibp-kgct·ibp-weight)는 매입 단가 블록에 있던 것 그대로 — calcIbAmount·clearFormPartial이 이 id로 읽고 비운다. 바꾸지 말 것. -->
+        <div class="ib-section-label">실중량 <small style="font-weight:400;color:var(--text-tertiary)">(선택 · 상품에만 저장됩니다)</small></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div>
+            <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">CT당 kg <small style="color:#9CA3AF;font-size:10px">(적으면 총중량 자동)</small></label>
+            <input type="number" id="ibp-kgct" min="0" step="0.1" placeholder="예: 20" oninput="calcIbWeightFromCt()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">총 중량 (kg) <small style="color:#9CA3AF;font-size:10px">(계근값)</small></label>
+            <input type="number" id="ibp-weight" min="0" step="0.1" placeholder="예: 3040" oninput="calcIbAmount();_ibWeightHint()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          </div>
+        </div>
+        <div id="ibp-weight-hint" style="font-size:11px;color:#6B7280;margin:-8px 0 12px"></div>
+
         <!-- 추가 정보 -->
         <div class="ib-section-label">추가 정보</div>
         <div class="form-grid">
@@ -1112,15 +1128,10 @@
         <div style="border-top:0.5px dashed #D1D5DB;margin-top:10px;padding-top:9px">
           <div id="ibp-toggle" onclick="toggleIbPrice()" style="font-size:12px;color:#2563EB;cursor:pointer;user-select:none">▸ 매입 단가 (선택)</div>
           <div id="ibp-body" style="display:none;margin-top:8px">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-              <div>
-                <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">CT당 kg <span style="color:#9CA3AF;font-size:10px">(입력 시 실측 자동)</span></label>
-                <input type="number" id="ibp-kgct" min="0" step="0.1" placeholder="0" oninput="calcIbWeightFromCt()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
-              </div>
-              <div>
-                <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">실측 중량 (kg)</label>
-                <input type="number" id="ibp-weight" min="0" step="0.1" placeholder="0" oninput="calcIbAmount()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
-              </div>
+            <!-- ★CT당 kg·실측 중량 입력칸은 위 '실중량' 섹션으로 옮겼다(id는 ibp-kgct·ibp-weight 그대로).
+                 여기 접힘 블록 안에 있으니 단가를 넣는 사람만 열어 봐서 실제로 안 쓰이고 있었다.
+                 매입액은 '실중량 × 여기 단가'라 두 칸이 떨어져 있어도 calcIbAmount가 같은 id를 읽어 그대로 계산된다. -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div>
                 <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">kg당 단가 (원)</label>
                 <input type="number" id="ibp-price" min="0" step="1" placeholder="0" oninput="calcIbAmount()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
@@ -1954,6 +1965,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=23"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=565"></script>
+<script src="src/app.js?v=566"></script>
 </body>
 </html>
