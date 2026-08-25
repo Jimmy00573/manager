@@ -9472,10 +9472,71 @@ function openInvEditModal(regId) {
   document.getElementById('modal-inv-edit').style.display = 'flex';
 }
 
+// ── 재고 직접 입력: 등급별 수량 버퍼 (_iemBuf) 보조 ─────────────────
+// 현재 화면 입력칸 → _iemBuf[등급]. 0·빈값은 담지 않고, 전부 비었으면 그 등급 키를 지운다
+// (빈 등급이 남으면 요약에 '0사이즈 0CT'가 뜨고 저장 행 수 계산도 틀어진다).
+function _iemBufCollect(grade) {
+  const g = grade || '일반';
+  const buf = {};
+  document.querySelectorAll('.iem-size-inp').forEach(inp => {
+    const q = parseFloat(inp.value);
+    if (!isNaN(q) && q > 0) buf[inp.dataset.size] = q;
+  });
+  if (Object.keys(buf).length) _iemBuf[g] = buf; else delete _iemBuf[g];
+}
+// _iemBuf[등급] → 화면 입력칸. 버퍼에 없는 사이즈는 빈칸으로 되돌린다(앞 등급 값이 남지 않게).
+function _iemBufApply(grade) {
+  const buf = _iemBuf[grade || '일반'] || {};
+  document.querySelectorAll('.iem-size-inp').forEach(inp => {
+    const v = buf[inp.dataset.size];
+    inp.value = (v == null) ? '' : v;
+  });
+}
+// 버퍼 + 현재 화면(활성 등급)을 합친 사본 — 요약과 저장이 같은 값을 보게 하는 단일 창구.
+function _iemBufSnapshot() {
+  const snap = {};
+  Object.keys(_iemBuf).forEach(g => { snap[g] = { ..._iemBuf[g] }; });
+  const cur = {};
+  document.querySelectorAll('.iem-size-inp').forEach(inp => {
+    const q = parseFloat(inp.value);
+    if (!isNaN(q) && q > 0) cur[inp.dataset.size] = q;
+  });
+  const g = _iemGrade || '일반';
+  if (Object.keys(cur).length) snap[g] = cur; else delete snap[g];
+  return snap;
+}
+// 등급별 입력 현황 한 줄 — "입력됨 — 일반 2사이즈 8CT · 12br 1사이즈 1CT". 아무것도 없으면 숨김.
+// ★다른 등급에 적어 둔 값은 화면에서 안 보이므로, 이 줄이 유일한 단서다.
+function _iemRenderBufSummary() {
+  const el = document.getElementById('iem-buf-summary');
+  if (!el) return;
+  const snap = _iemBufSnapshot();
+  // 등급 순서는 셀렉트 옵션 순서를 그대로 따른다(일반 → 활성 브릭스 sort_order). 옵션에 없는 등급은 뒤에.
+  const sel = document.getElementById('iem-grade');
+  const order = sel ? [...sel.options].map(o => o.value) : [];
+  const keys = [...order.filter(k => snap[k]), ...Object.keys(snap).filter(k => !order.includes(k))];
+  if (!keys.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  const parts = keys.map(g => {
+    const szN = Object.keys(snap[g]).length;
+    const ct  = Object.values(snap[g]).reduce((s, v) => s + (Number(v) || 0), 0);
+    const on  = g === (_iemGrade || '일반');
+    return `<b style="color:${on ? '#1565C0' : '#374151'}">${esc(g)}</b> ${szN}사이즈 ${fmtCT(ct)}CT`;
+  });
+  // ★아래 '총 합계'는 화면에 보이는 현재 등급만 더한 값이다(입력칸을 그대로 읽으므로).
+  //   등급이 둘 이상이면 그 숫자가 '전부'로 읽혀 오해를 부르므로 여기에 전체 합계를 덧붙인다.
+  const allCt = keys.reduce((s, g) => s + Object.values(snap[g]).reduce((t, v) => t + (Number(v) || 0), 0), 0);
+  const tail = keys.length > 1 ? ` <span style="color:#1565C0;font-weight:700">전체 ${fmtCT(allCt)}CT</span>` : '';
+  el.innerHTML = `입력됨 — ${parts.join(' · ')}${tail}`;
+  el.style.display = '';
+}
+
 function setIemGrade(g) {
+  _iemBufCollect(_iemGrade);   // ★먼저 지금 등급 값을 버퍼에 담고
   _iemGrade = g;
   const el = document.getElementById('iem-grade');
   if (el && el.value !== g) el.value = g;
+  _iemBufApply(g);             // 새 등급 값으로 입력칸을 갈아끼운다(없으면 전부 빈칸)
+  iemUpdateTotal();            // 합계 갱신 — 안에서 요약도 다시 그린다
 }
 
 function setInvEditGrade(gi) {
@@ -9750,6 +9811,13 @@ function obOutboundTotal() {
 
 let _invEditGrade = '일반';
 let _iemGrade = '일반';
+// ★재고 직접 입력 — 등급별 수량 버퍼 {등급: {사이즈: 수량}}.
+//   실사 때 일반 → 11.5br → 12br 순으로 등급을 옮겨 가며 적고 한 번에 저장하는 흐름을 위한 것.
+//   예전에는 등급을 바꿔도 입력칸이 그대로여서, 앞 등급에 적은 수량이 뒤 등급으로 저장됐다.
+//   ★화면에는 '현재 등급' 한 벌만 있고, 나머지 등급은 이 버퍼에만 있다 —
+//     화면 값을 읽는 쪽(요약·저장)은 반드시 버퍼에 먼저 걷어 담고(_iemBufCollect) 볼 것.
+//   ★품목이 바뀌면 사이즈 체계가 달라지므로 버퍼를 통째로 비운다(iemOnProductChange).
+let _iemBuf = {};
 let _obGrade = '일반';
 function setObGrade(g) {
   _obGrade = g;
@@ -10042,6 +10110,8 @@ function openInvEntryModal() {
             <select id="iem-grade" onchange="setIemGrade(this.value)" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box">
               <option>일반</option>
             </select>
+            <!-- 등급별 입력 현황 — 화면에는 현재 등급만 보이므로 나머지 등급을 여기서 알려 준다(_iemRenderBufSummary) -->
+            <div id="iem-buf-summary" style="display:none;margin-top:6px;padding:5px 8px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;font-size:11px;color:#6B7280;line-height:1.6"></div>
           </div>
           <div id="iem-size-area">
             <div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">품목을 먼저 선택하세요</div>
@@ -10098,9 +10168,13 @@ function openInvEntryModal() {
       .map(g => g.label)];
     iemGradeEl.innerHTML = gradeLabels.map(lbl => `<option>${esc(lbl)}</option>`).join('');
   }
-  setIemGrade('일반');
+  // ★여기서는 setIemGrade를 쓰지 않는다 — 그 함수는 '현재 화면 값을 버퍼에 담고' 시작하므로
+  //   지난번에 열었을 때 남아 있던 입력칸 값이 버퍼로 들어간다. 열 때는 통째로 비우는 게 맞다.
+  _iemBuf = {};
+  _iemGrade = '일반';
+  if (iemGradeEl) iemGradeEl.value = '일반';
 
-  // 사이즈 영역 초기화
+  // 사이즈 영역 초기화 (입력칸을 새로 그려 비운다 + 버퍼/요약도 여기서 초기화)
   iemOnProductChange();
 
   modal.style.display = 'flex';
@@ -10119,6 +10193,12 @@ function iemOnProductChange() {
   const product = document.getElementById('iem-product')?.value;
   const area    = document.getElementById('iem-size-area');
   if (!area) return;
+
+  // ★품목이 바뀌면 등급 버퍼를 비운다 — 사이즈 체계가 품목마다 달라(감귤류 S1·M1 / 만감류 12수)
+  //   앞 품목 사이즈가 버퍼에 남으면 그 품목에 없는 사이즈로 저장된다.
+  //   ※원래도 입력칸은 여기서 새로 그려져 비워졌다 — 화면과 버퍼를 같은 시점에 맞추는 것.
+  _iemBuf = {};
+  _iemRenderBufSummary();
 
   if (!product) {
     area.innerHTML = '<div style="padding:24px;text-align:center;color:#9CA3AF;font-size:13px">품목을 먼저 선택하세요</div>';
@@ -10172,6 +10252,8 @@ function iemUpdateTotal() {
 
   const totEl = document.getElementById('iem-grand-total');
   if (totEl) totEl.textContent = fmtCT(grand) + ' CT';
+
+  _iemRenderBufSummary();   // 입력 중에도 등급별 현황이 따라 움직이게(oninput → 여기로 들어온다)
 }
 
 async function saveInvEntry() {
@@ -10185,24 +10267,51 @@ async function saveInvEntry() {
   if (!product) return alert('품목을 선택해주세요.');
   if (!farm)    return alert('농가를 선택해주세요.');
 
+  // ★저장 직전에 지금 화면 값을 버퍼로 걷어 담는다 — 등급을 바꾸지 않고 바로 저장하는 흐름
+  //   (등급 하나만 입력하는 기존 사용법)이 여기서 처리된다.
+  _iemBufCollect(_iemGrade);
+
+  const grades = Object.keys(_iemBuf).filter(g => Object.keys(_iemBuf[g] || {}).length);
   const toSave = [];
-  document.querySelectorAll('.iem-size-inp').forEach(inp => {
-    const qty = parseFloat(inp.value) || 0;
-    if (qty > 0) toSave.push({ size_code: inp.dataset.size, quantity: qty });
+  grades.forEach(g => {
+    Object.keys(_iemBuf[g]).forEach(sz => {
+      const qty = Number(_iemBuf[g][sz]) || 0;
+      if (qty > 0) toSave.push({ size_code: sz, quantity: qty, quality_grade: g });
+    });
   });
   if (!toSave.length) return alert('수량을 1개 이상 입력해주세요.');
+
+  // 등급이 둘 이상이면 무엇이 들어가는지 한 번 보여 준다 — 다른 등급 값은 화면에 안 보이기 때문.
+  // ★등급 하나면 확인창 없이 바로 저장(기존 동작 유지).
+  if (grades.length > 1) {
+    // ★한 줄로 잇는다 — showConfirmEdit은 msg를 esc()로만 넣어 줄바꿈(\n)이 살지 않는다(2570).
+    const lines = grades.map(g => {
+      const rows = toSave.filter(r => r.quality_grade === g);
+      const ct = rows.reduce((s, r) => s + r.quantity, 0);
+      return `${g} ${rows.length}사이즈 ${fmtCT(ct)}CT`;
+    }).join(' · ');
+    const ok = await showConfirmEdit('재고 등록', `${grades.length}개 등급, ${toSave.length}행을 등록합니다. — ${lines}`);
+    if (!ok) return;
+  }
 
   const btn = document.getElementById('iem-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
 
   try {
-    const base = { date, farm_name: farm, product, location, source_type: 'manual', note, quality_grade: _iemGrade };
-    await Promise.all(toSave.map(r => dbInsertInventoryRecord({ ...base, size_code: r.size_code, quantity: r.quantity })));
+    // ★공통 1세트 — 날짜·농가·품목·위치·비고는 등급별로 달라지지 않는다. 등급만 행마다 붙인다.
+    const base = { date, farm_name: farm, product, location, source_type: 'manual', note };
+    await Promise.all(toSave.map(r => dbInsertInventoryRecord({
+      ...base, size_code: r.size_code, quantity: r.quantity, quality_grade: r.quality_grade
+    })));
 
     inventoryRecords = await dbGetInventoryRecords();
+    // 성공 후 버퍼·입력칸 비우기 — 다음에 열었을 때 지난 입력이 남아 있으면 안 된다.
+    _iemBuf = {};
+    document.querySelectorAll('.iem-size-inp').forEach(inp => { inp.value = ''; });
+    iemUpdateTotal();   // 합계·요약 초기화
     document.getElementById('modal-inv-entry').style.display = 'none';
     renderInventoryStatus();
-    showToast(`${toSave.length}개 사이즈 재고 등록 완료 (${product} · ${farm})`);
+    showToast(`${grades.length}개 등급 · ${toSave.length}행 재고 등록 완료 (${product} · ${farm})`);
   } catch(e) {
     alert('저장 오류: ' + e.message);
   } finally {
