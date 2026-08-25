@@ -8119,7 +8119,11 @@ function _renderInvMatrix(product, recs, auditMode) {
       const mark     = allChk ? `<span style="font-size:9px;line-height:1;color:#7C3AED">✓</span>` : '';
       const single   = cellRecs.length === 1 ? cellRecs[0] : null;
       const numHtml  = single
-        ? `<b data-chip-key="${single.id}" onclick="startChipEdit('${single.id}',event)" style="font-size:13px;line-height:1.1;color:${numColor};border-bottom:1px dashed ${numColor};cursor:text${numWeight}">${fmtCT(val)}</b>`
+        // ★칩 클릭 영역 — 숫자 텍스트만 누를 수 있어 모바일에서 자꾸 빗나갔다(셀 토글만 걸림).
+        //   inline-block + padding으로 누를 자리를 넓힌다. 열 폭이 46px(SZ_W)뿐이라
+        //   box-sizing·max-width로 칸 밖으로 삐져나가지 않게 묶어 둔다.
+        //   ※점선은 '고칠 수 있다'는 표시라 상태색(numColor)이 아닌 중립 회색으로 둔다.
+        ? `<b data-chip-key="${single.id}" onclick="startChipEdit('${single.id}',event)" style="display:inline-block;padding:3px 8px;box-sizing:border-box;max-width:100%;font-size:13px;line-height:1.1;color:${numColor};border-bottom:1px dashed #9CA3AF;border-radius:4px;cursor:text${numWeight}">${fmtCT(val)}</b>`
         : `<strong style="font-size:13px;line-height:1.1;color:${numColor}${numWeight}">${fmtCT(val)}</strong>`;
       h += `<div class="inv-mc" onclick="toggleInvAuditCell(${regId},'${esc(sz)}')" title="${esc(title)}" style="${C}${cellBg}cursor:pointer;flex-direction:column;gap:0;padding:3px 2px">${mark}${numHtml}</div>`;
     });
@@ -15104,6 +15108,9 @@ function startChipEdit(key, event) {
   inp.step = 'any';
   inp.style.cssText = 'width:44px;font-size:12px;font-weight:700;border:1px solid #7C3AED;border-radius:3px;padding:0 2px;text-align:center;outline:none;';
   b.textContent = '';
+  // ★편집 중에는 칩 여백을 없앤다 — 쉬는 상태의 padding(3px 8px)에 44px 입력칸이 더해지면
+  //   46px짜리 열을 넘어 옆 칸을 덮는다. 여백은 '누를 자리'용이고, 편집 중에는 입력칸이 그 역할을 한다.
+  b.style.padding = '0';
   b.appendChild(inp);
   inp.focus();
   inp.select();
@@ -15116,6 +15123,7 @@ function startChipEdit(key, event) {
   const cancel = () => {
     if (committed) return;
     committed = true;
+    b.style.padding = '';   // 여백 원복(취소는 재렌더가 없어 여기서 되돌려야 한다)
     b.textContent = fmtN(curVal);
   };
   inp.addEventListener('keydown', e => {
