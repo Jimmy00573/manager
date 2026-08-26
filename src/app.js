@@ -1150,16 +1150,40 @@ function refreshEdFarmOpts() {
   if (el.value !== prev) el.value = '';                  // 종류를 바꿔 기존 대상이 목록에 없으면 비운다
   fsSync('ed-farm');
 }
+// 수거·회수(pk-target-type → pk-farm) · 빈콘 회수(bk-target-type → bk-farm) — 배차 등록과 같은 소스.
+// ★예전엔 popSels가 두 select를 farms로만 채워 농협·거래처 회수를 폼에서 못 했다(현황판 버튼으로만 가능).
+// ★두 select 모두 attachFarmSearch가 붙어 있다(_fsAttachAll) — fsSync를 빼면 옵션만 바뀌고 검색 입력칸에 옛 이름이 남는다.
+// ★대상이 바뀌면 잔여 종류도 달라지므로 _syncPkCtype/_syncBkCtype까지 여기서 부른다(호출부가 빠뜨리지 않게).
+function refreshPkFarmOpts() {
+  const el = document.getElementById('pk-farm'); if (!el) return;
+  const prev = el.value;
+  el.innerHTML = _dispTargetOptHtml(gv('pk-target-type') || '농가');
+  el.value = prev;
+  if (el.value !== prev) { el.value = ''; afF('pk'); }   // 종류 전환으로 기존 선택이 없으면 초기화(연락처 자동값도 비움)
+  fsSync('pk-farm');
+  _syncPkCtype();
+}
+function refreshBkFarmOpts() {
+  const el = document.getElementById('bk-farm'); if (!el) return;
+  const prev = el.value;
+  el.innerHTML = _dispTargetOptHtml(gv('bk-target-type') || '농가');
+  el.value = prev;
+  if (el.value !== prev) el.value = '';                  // 빈콘 회수 폼엔 자동채움 칸이 없다(afF 불필요)
+  fsSync('bk-farm');
+  _syncBkCtype();
+}
 
 function popSels() {
-  ['pk-farm', 'oi-farm', 'oo-farm', 'bk-farm'].forEach(id => {
+  ['oi-farm', 'oo-farm'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value; el.innerHTML = '<option value="">선택</option>';
     farms.forEach(f => el.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
     el.value = v;
   });
   refreshDpFarmOpts();   // dp-farm은 대상 종류(농가/농협)에 따라 별도 채움
-  _syncPkCtype(); _syncBkCtype();   // 농가 목록이 새로 채워졌으니 종류 옵션도 현재 선택 기준으로 맞춤
+  // ★pk-farm·bk-farm도 대상 종류를 따른다 — 여기서 farms로 덮어쓰면 농협/거래처를 고른 폼이 초기화된다.
+  //   두 함수가 _syncPkCtype/_syncBkCtype까지 부르므로 종류 옵션도 현재 선택 기준으로 맞춰진다.
+  refreshPkFarmOpts(); refreshBkFarmOpts();
 
   ['dp-drv', 'pk-drv', 'bk-drv'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
@@ -2256,6 +2280,9 @@ function renderDisp() {
 // ── 수거
 async function addPick() {
   const date = gv('pk-date'), farm = gv('pk-farm'), type = gv('pk-type');
+  // ★농가도 '농가'를 그대로 저장한다 — 현황판 빠른 회수(saveQuickRecovery)와 같은 규칙이고,
+  //   운영 picks에 target_type이 null인 행은 0건이다(2026-08-26 확인). _isFarmTgt는 null·'농가' 둘 다 농가로 본다.
+  const targetType = gv('pk-target-type') || '농가';
   if (!date || !farm || !type) { alert('필수 항목을 입력하세요'); return; }
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
   //   _rcList가 0을 걸러내므로 비었으면 '종류도 수량도 없음'이다(예전 두 검사를 하나로).
@@ -2266,7 +2293,7 @@ async function addPick() {
     // ★종류마다 pick 행을 따로 만든다 — picks.ctype이 단일 값이라 한 행에 여러 종류를 담을 수 없다.
     //   한 종류만 넣으면 예전과 완전히 같은 1행 등록이 된다.
     for (const c of list) {
-      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false });
+      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false, target_type: targetType });
       picks.unshift(row);
     }
     clr('pk-note'); _syncPkCtype(); renderPick(); renderDash();   // 잔여가 줄었으니 종류 칸도 다시 계산(수량 칸도 초기화됨)
@@ -2279,6 +2306,10 @@ async function delPick(id) {
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderPick(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
 }
+// 목록의 대상 유형 표시 — 농협·거래처만 배지를 붙인다(농가 행은 기존 화면 그대로 유지).
+function _pkTkBadge(p) {
+  return (p.target_type === '농협' || p.target_type === '거래처') ? _tkBadge(p.target_type) + ' ' : '';
+}
 function renderPick() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const tb = document.getElementById('pick-tb');
@@ -2286,7 +2317,7 @@ function renderPick() {
   if (!list.length) { tb.innerHTML = emr(9, '수거·회수 기록이 없습니다'); return; }
   const cls = { 원물수거: 'b-ok', 빈콘회수: 'b-teal' };
   tb.innerHTML = list.map(p => `<tr>
-    <td>${p.date}</td><td class="nm">${esc(p.farm)}</td>
+    <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
     <td><span class="badge ${cls[p.type] || 'b-neu'}">${esc(p.type)}</span></td>
     <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.car || '-')}</td>
     <td>${esc(p.note || '-')}</td>
@@ -2414,7 +2445,8 @@ function renderOwn() {
 // ── 빈콘 회수
 async function addBkCol() {
   const date = gv('bk-date'), farm = gv('bk-farm');
-  if (!date || !farm) { alert('날짜, 농가명을 입력하세요'); return; }
+  const targetType = gv('bk-target-type') || '농가';   // 농가도 명시 저장(addPick 주석 참고)
+  if (!date || !farm) { alert('날짜, 대상명을 입력하세요'); return; }
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
   const list = _rcList('bk');
   if (!list.length) { alert('콘테이너 종류별 수량을 입력하세요.'); return; }
@@ -2425,7 +2457,7 @@ async function addBkCol() {
     const note = gv('bk-note') || null;   // ★지우기 전에 잡아 둔다 — 예전엔 clr 뒤에 읽어 문자에 비고가 늘 비어 있었다
     // ★종류마다 pick 행을 따로 만든다(배차·빠른 회수와 같은 규칙). 한 종류면 예전과 같은 1행.
     for (const c of list) {
-      const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, driver: drvName || null, car: drv?.car || null, note });
+      const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, driver: drvName || null, car: drv?.car || null, note, target_type: targetType });
       picks.unshift(row);
     }
     clr('bk-note');
@@ -2446,7 +2478,7 @@ function renderBkCol() {
   const list = picks.filter(p => p.type === '빈콘회수');
   const tb = document.getElementById('bk-tb'); if (!tb) return;
   tb.innerHTML = list.length ? list.map(p => `<tr>
-    <td>${p.date}</td><td class="nm">${esc(p.farm)}</td>
+    <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
     <td>${p.qty > 0 ? p.qty+'개' : '-'}</td><td>${esc(p.driver || '-')}</td>
     <td>${esc(p.note || '-')}</td>
     <td style="display:flex;gap:4px">
@@ -2854,7 +2886,8 @@ function _qrHoldTypes(fn, targetType) {
 
 // 회수 폼(수거·회수 탭 / 빈콘 회수)의 콘테이너 종류·수량 칸 — 현황판 회수 모달과 같은 소스(_qrHoldTypes)라 숫자가 어긋나지 않는다.
 // ★종류를 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인). 대상이 바뀌면 다시 부를 것.
-// 두 폼 모두 대상은 농가만 다루므로(popSels가 farms로만 채움) targetType은 '농가' 고정.
+// ★2026-08-26 두 폼도 대상 유형(농가/농협/거래처)을 받는다 — targetType은 호출부(_syncPkCtype/_syncBkCtype)가 넘긴다.
+//   기본값 '농가'는 인자를 안 주는 옛 호출부 호환용.
 //
 // ★2026-08-21 종류 select 하나 → 종류별 수량 칸으로. 한 농가에 여러 종류가 나가 있으면 예전엔 폼을 두 번 채워야 했다.
 //   picks.ctype이 단일 값이라 저장은 종류마다 행을 따로 만든다(배차 2eda9fc·빠른 회수 d840cbd와 같은 접근).
@@ -2910,7 +2943,7 @@ function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
   if (q) q.value = '';
   if (!farm) {
     _RC_STATE[pre] = [];
-    wrap.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:6px 2px">농가를 먼저 선택하세요</div>';
+    wrap.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:6px 2px">대상을 먼저 선택하세요</div>';
     if (hint) hint.innerHTML = '';
     return;
   }
@@ -2922,8 +2955,17 @@ function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
       <input id="${pre}-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" oninput="_rcQtyChanged('${pre}')"></label>`).join('');
   _rcQtyChanged(pre);
 }
-function _syncPkCtype() { _syncRecoveryCtypeSel('pk', gv('pk-farm')); }
-function _syncBkCtype() { _syncRecoveryCtypeSel('bk', gv('bk-farm')); }
+// ★대상 유형까지 넘긴다 — getFCtypeMap이 target_type 일치 행만 집계하므로, 안 넘기면 농협/거래처를 골라도
+//   농가 잔여를 보여 주고 회수 가능 종류가 어긋난다.
+function _syncPkCtype() { _syncRecoveryCtypeSel('pk', gv('pk-farm'), gv('pk-target-type') || '농가'); }
+function _syncBkCtype() { _syncRecoveryCtypeSel('bk', gv('bk-farm'), gv('bk-target-type') || '농가'); }
+// 대상 유형 배지 — 콘테이너 이력 표와 수거·회수 목록이 같은 모양을 쓰도록 여기 한 곳에서만 정한다.
+// ★원래 renderCH 안의 지역 const였다. 수거·회수 목록에서도 쓰게 되면서 올렸다(스타일 문자열 복제 방지).
+function _tkBadge(t) {
+  return t === '농협' ? '<span class="badge b-teal">농협</span>'
+    : t === '거래처' ? '<span class="badge b-info">거래처</span>'
+    : '<span class="badge" style="background:#F3E5F5;color:#6A1B9A">농가</span>';
+}
 // 외부行 보유 집계(우리 콘테이너 농협/거래처行) — target_type 일치 picks만: 배출 − (원물수거+빈콘회수). getNhfContainerHold(C-1)를 대상 무관으로 일반화.
 function getTargetContainerHold(name, targetType) {
   const out = picks.filter(p => p.farm === name && p.type === '배출' && p.target_type === targetType).reduce((s, p) => s + p.qty, 0);
@@ -2982,7 +3024,7 @@ function renderContainerHistory() {
     .map(k => `<span class="badge" style="background:#fff;border:1px solid ${kColor[k]};color:${kColor[k]}">${k} ${kindTot[k]}개</span>`).join(' ');
   const sum = document.getElementById('ch-sum');
   if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>${kindHtml ? ' ' + kindHtml : ''}`;
-  const tkBadge = t => t === '농협' ? '<span class="badge b-teal">농협</span>' : t === '거래처' ? '<span class="badge b-info">거래처</span>' : '<span class="badge" style="background:#F3E5F5;color:#6A1B9A">농가</span>';
+  const tkBadge = _tkBadge;   // 모듈 레벨로 옮김(수거·회수 목록과 공용) — 사용부는 그대로.
 
   // ── 누적 잔여 ────────────────────────────────────────────────────────────
   // ★축을 절대 한 숫자로 합치지 않는다 — 배출/회수와 반입/반납은 서로 다른 물건의 잔액이다.
@@ -5776,10 +5818,10 @@ function _fsAttachAll() {
   attachFarmSearch('wa-farm',      { placeholder: '농가 검색 (선택 안 함 가능)' });
   // 2차 — onchange가 걸린 곳. dp는 대상 종류에 따라 농가/농협/거래처로 목록이 바뀐다(refreshDpFarmOpts가 fsSync까지 함).
   attachFarmSearch('dp-farm',      { placeholder: '대상 검색' });
-  attachFarmSearch('pk-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('pk-farm',      { placeholder: '대상 검색' });   // 농가뿐 아니라 농협·거래처도 고른다
   attachFarmSearch('oi-farm',      { placeholder: '농가 검색' });
   attachFarmSearch('oo-farm',      { placeholder: '농가 검색' });
-  attachFarmSearch('bk-farm',      { placeholder: '농가 검색' });
+  attachFarmSearch('bk-farm',      { placeholder: '대상 검색' });   // 농가뿐 아니라 농협·거래처도 고른다
 }
 
 // ── 입고 당도/산도 범위(드롭다운) — 저장은 'min~max' 문자열(기존 필드·표시 호환) ──

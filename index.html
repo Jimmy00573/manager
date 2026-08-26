@@ -383,13 +383,14 @@
     <div class="form-card"><div class="form-title">수거·회수 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
-        <div class="fg"><label>농가명 *</label><select id="pk-farm" onchange="afF('pk');_syncPkCtype()"><option value="">선택</option></select></div>
+        <div class="fg"><label>대상 종류</label><select id="pk-target-type" onchange="refreshPkFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
+        <div class="fg"><label>대상명 *</label><select id="pk-farm" onchange="afF('pk');_syncPkCtype()"><option value="">선택</option></select></div>
         <div class="fg"><label>연락처</label><input id="pk-tel" class="auto" readonly></div>
         <div class="fg"><label>구분 *</label><select id="pk-type" onchange="onPickTypeChange()"><option value="">선택</option><option value="원물수거">원물수거</option><option value="빈콘회수">⬜ 빈콘회수</option></select></div>
         <!-- ★콘테이너 종류: 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다.
-             칸은 _syncPkCtype()가 농가별 잔여로 만든다(여러 종류 동시 회수 가능). -->
+             칸은 _syncPkCtype()가 대상별 잔여로 만든다(여러 종류 동시 회수 가능). -->
         <div class="fg full"><label>콘테이너 종류·수량 * <span style="font-size:10px;color:#aaa">여러 종류를 한 번에 회수할 수 있습니다</span></label>
-          <div id="pk-ctype-grid" class="ib-catq"><div style="font-size:12px;color:#9CA3AF;padding:6px 2px">농가를 먼저 선택하세요</div></div>
+          <div id="pk-ctype-grid" class="ib-catq"><div style="font-size:12px;color:#9CA3AF;padding:6px 2px">대상을 먼저 선택하세요</div></div>
           <div id="pk-ctype-hint" style="font-size:11px;margin-top:4px;line-height:1.4;color:var(--text-tertiary)"></div></div>
         <!-- ★수량은 위 종류별 칸의 합계로 자동. 직접 못 고친다. -->
         <div class="fg"><label>수량(개) *</label><input id="pk-qty" type="number" placeholder="0" readonly title="위 콘테이너 종류별 수량의 합계입니다" style="background:#F3F4F6;cursor:not-allowed"></div>
@@ -440,11 +441,12 @@
     <div class="form-card"><div class="form-title">⬜ 빈콘 회수 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="bk-date" type="date"></div>
-        <div class="fg"><label>농가명 *</label><select id="bk-farm" onchange="_syncBkCtype()"><option value="">선택</option></select></div>
+        <div class="fg"><label>대상 종류</label><select id="bk-target-type" onchange="refreshBkFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
+        <div class="fg"><label>대상명 *</label><select id="bk-farm" onchange="_syncBkCtype()"><option value="">선택</option></select></div>
         <!-- ★콘테이너 종류: 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다.
-             칸은 _syncBkCtype()가 농가별 잔여로 만든다(여러 종류 동시 회수 가능). -->
+             칸은 _syncBkCtype()가 대상별 잔여로 만든다(여러 종류 동시 회수 가능). -->
         <div class="fg full"><label>콘테이너 종류·수량 * <span style="font-size:10px;color:#aaa">여러 종류를 한 번에 회수할 수 있습니다</span></label>
-          <div id="bk-ctype-grid" class="ib-catq"><div style="font-size:12px;color:#9CA3AF;padding:6px 2px">농가를 먼저 선택하세요</div></div>
+          <div id="bk-ctype-grid" class="ib-catq"><div style="font-size:12px;color:#9CA3AF;padding:6px 2px">대상을 먼저 선택하세요</div></div>
           <div id="bk-ctype-hint" style="font-size:11px;margin-top:4px;line-height:1.4;color:var(--text-tertiary)"></div></div>
         <!-- ★수량은 위 종류별 칸의 합계로 자동. 직접 못 고친다. -->
         <div class="fg"><label>수량(개) *</label><input id="bk-qty" type="number" placeholder="0" readonly title="위 콘테이너 종류별 수량의 합계입니다" style="background:#F3F4F6;cursor:not-allowed"></div>
@@ -1965,6 +1967,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=23"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=568"></script>
+<script src="src/app.js?v=569"></script>
 </body>
 </html>
