@@ -12759,6 +12759,30 @@ function getRemainingCT(inboundRecord) {
   return inboundRecord.quantity - processed - sortingInput;
 }
 
+// 저장 직전 잔여 재확인 — 화면(메모리)이 낡아도 저장 순간엔 DB 최신을 본다(read-before-write).
+// ★2026-08-25 사고: 두 사람이 2시간 간격으로 같은 입고(정승우 황금향 36CT)에 각각 36CT를 등록해
+//   투입 합이 72CT가 됐다. 60초 폴링 배너는 '표시'만 할 뿐 저장을 막지 못한다.
+// ★잔여 식은 바로 위 getRemainingCT와 같은 기준이다:
+//     입고량 − processing_records(process_type ≠ '선과') − sorting_results.input_ct
+//   전역 배열이 아니라 DB 응답을 봐야 해서 함수를 공유하지 못한다 — 식이 바뀌면 두 곳을 같이 고칠 것.
+// ★조회 실패는 삼키지 않는다 — 그대로 던져서 호출부가 저장을 멈추게 한다(조용히 통과 금지).
+// ★sorting_results가 아니라 processing_records만 늘어난 경우도 있으므로 둘 다 다시 읽는다.
+async function _dbSortingState(ib) {
+  const [srs, procs] = await Promise.all([
+    sbGet('sorting_results', `inbound_record_id=eq.${ib.id}&select=sequence_number,input_ct,sorting_date,operator_name,created_at`),
+    sbGet('processing_records', `inbound_id=eq.${ib.id}&select=quantity,process_type`)
+  ]);
+  const rows = Array.isArray(srs) ? srs : [];
+  const used = rows.reduce((a, r) => a + (Number(r.input_ct) || 0), 0);
+  const processed = (Array.isArray(procs) ? procs : [])
+    .filter(x => x.process_type !== '선과')
+    .reduce((a, x) => a + (Number(x.quantity) || 0), 0);
+  const maxSeq = rows.reduce((m, r) => Math.max(m, Number(r.sequence_number) || 0), 0);
+  // 가장 최근 등록 1건 — 차단 메시지에 '언제 누가 몇 CT'를 담기 위해서만 쓴다.
+  const last = rows.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))).pop() || null;
+  return { remaining: (Number(ib.quantity) || 0) - processed - used, nextSeq: maxSeq + 1, count: rows.length, last };
+}
+
 async function getInboundLinks(id) {
   let sortingResultIds = [];
   let sorting = 0, details = 0, inventory = 0;
@@ -17403,6 +17427,35 @@ async function saveSortingResult() {
   if (_saveBtn) { _saveBtn.disabled = true; _saveBtn.dataset.orig = _saveBtn.textContent; _saveBtn.textContent = '처리 중...'; }
 
   try {
+    // ★저장 직전 DB 재확인 — 화면은 다른 사람이 방금 등록한 차수를 모른다(2026-08-25 이중 등록 사고).
+    //   여기서 걸러야 하는 이유: 위 `inputCt > remaining` 검사는 메모리(getRemainingCT) 기준이라
+    //   내 화면이 열려 있는 동안 늘어난 투입을 못 본다.
+    let _db;
+    try {
+      _db = await _dbSortingState(r);
+    } catch (e) {
+      // ★조용히 통과하지 않는다 — 확인을 못 했으면 저장하지 않는다.
+      alert(`잔여 확인에 실패해 저장을 중단했습니다.
+
+통신 상태를 확인한 뒤 다시 시도하세요.
+(${e.message || e})`);
+      return;
+    }
+    if (inputCt > _db.remaining + 1e-9) {   // 소수점 오차로 잘못 막지 않게 미세 여유
+      const L = _db.last;
+      const who = L
+        ? `${ftm(L.created_at)}에 ${L.operator_name || '다른 담당자'}님이 ${L.sequence_number}차 ${fmtN(L.input_ct)}CT를 이미 등록했습니다.`   // alert는 평문 — esc 불필요
+        : '다른 곳에서 이 입고의 처리가 이미 등록됐습니다.';
+      alert(`⚠ ${who}
+
+현재 잔여 ${fmtN(_db.remaining)}CT — 투입 ${fmtN(inputCt)}CT는 저장할 수 없습니다.
+화면을 새로고침해 확인하세요.`);
+      return;
+    }
+    // ★차수도 DB 기준 최대+1로 다시 정한다 — 모달을 열 때 정한 값(_sortingSeq)을 그대로 쓰면
+    //   그 사이에 남이 등록한 차수와 번호가 겹친다.
+    _sortingSeq = _db.nextSeq;
+
     // 1. 헤더
     const headerRows = await sbInsert('sorting_results', {
       inbound_record_id: _sortingInboundId,
