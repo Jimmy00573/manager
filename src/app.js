@@ -2743,15 +2743,15 @@ function gNhfSt(nhf, type) {
 }
 // 그 입고 물건이 아직 재고에 남아있는 만큼 그 콘테이너가 차 있다(물리 현실 기준). 반납 3분류의 '원물있음' 산출용.
 //  - 미선과 입고: 선과하면 선과품이 우리 CT로 옮겨 담기므로 남의 콘테이너는 빔 → 미선과 잔여(getRemainingCT).
-//  - 선과품 입고: 선과 없이 그대로 쓰므로 그 재고가 나가야 빔 → 그 입고에서 온 재고 잔량.
-//    ★getRemainingCT는 선과품을 0으로 반환(선과 대상이 아니라서)하므로 여기서 따로 계산해야 함.
+//  - 선과품 입고: ★2026-08-26부터 원물 판정에서 뺀다(원물 없음 = 반납가능 취급).
+//    예전엔 inventory_records의 inbound_record_id 잔량으로 셌는데, 선과품 재고는 실사·실사출고·수정으로
+//    관리돼 그 잔량이 현실과 구조적으로 어긋난다 — 맞지도 않는 🟡'원물있음'을 띄우느니 빼는 편이 낫다는 판단.
+//    ※재고 모델이 정리되면(입고 연결이 실사 흐름까지 따라오면) 다시 살릴 것.
+//    ★0을 돌려주면 _calcReturnBreakdown의 뺄셈 구조상 자동으로 ready(반납가능)로 잡힌다 —
+//      ready를 직접 더하지 말 것(이중 계상). 검산 ready+holding+unknown=left는 그대로 성립한다.
 function _ibOccupiedCT(ib) {
   if (!ib) return 0;
-  if (ib.inbound_category === '선과품') {
-    return inventoryRecords
-      .filter(r => !r.is_void && String(r.inbound_record_id) === String(ib.id))   // 소진분(is_void) 제외
-      .reduce((s, r) => s + (Number(r.quantity) || 0), 0);
-  }
+  if (ib.inbound_category === '선과품') return 0;
   return getRemainingCT(ib);
 }
 // 남의 용기(농협·거래처·농가) 보유량을 반납가능/원물있음/확인필요로 쪼개는 공통 계산. ★표시 전용 —
