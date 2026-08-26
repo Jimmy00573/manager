@@ -3927,6 +3927,9 @@ function renderCal() {
   renderUpcomingHarvest();
   renderHarvestProgress();
   // renderHarvestActive();
+  // ★열려 있는 날짜 상세 패널도 함께 갱신 — harvests를 바꾸는 함수는 전부 renderCal을 부르므로
+  //   여기 한 곳에 두면 호출부를 빠뜨릴 일이 없다(삭제·수정·상태변경·차수이어가기 모두 커버).
+  _refreshCalDetail();
 }
 
 // ── [화면: 수확·수송 > 수확 캘린더 > 다가오는 수확] renderCal에서 호출.
@@ -4408,11 +4411,18 @@ function renderHarvestActive() {
     </div>`;
 }
 
-function calSelectDay(dStr) {
-  calSelectedDate = calSelectedDate === dStr ? null : dStr;
+// 날짜 상세 패널(cal-detail-panel) 그리기 — ★단일 소스. renderCal 끝에서 부른다.
+// 예전엔 이 로직이 calSelectDay 안에만 있어서, 일정을 지우거나 상태를 바꿔도 renderCal은 달력·진행현황만
+// 다시 그리고 패널은 옛 내용을 그대로 물고 있었다(새로고침해야 사라짐). 그래서 렌더 경로로 옮겼다.
+// ★여기서 renderCal을 부르면 무한 재귀가 된다 — 절대 부르지 말 것(달력 갱신은 호출부 책임).
+// ★calSelectedDate는 건드리지 않는다 — 빈 날을 클릭하면 패널은 안 열려도 그 칸은 선택 표시되는(renderCal의 isSel)
+//   기존 동작을 그대로 두기 위함. 일정이 0건이 되면 패널만 접힌다.
+function _refreshCalDetail() {
   const panel = document.getElementById('cal-detail-panel');
-  const evs = calSortItems(calGetEvents(dStr));
-  if (!calSelectedDate || evs.length === 0) { panel.style.display = 'none'; renderCal(); return; }
+  if (!panel) return;
+  const dStr = calSelectedDate;
+  const evs = dStr ? calSortItems(calGetEvents(dStr)) : [];
+  if (!dStr || evs.length === 0) { panel.style.display = 'none'; return; }
   const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const d = new Date(dStr + 'T00:00:00');
   document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
@@ -4435,6 +4445,10 @@ function calSelectDay(dStr) {
     </div>`;
   }).join('');
   panel.style.display = 'block';
+}
+// 날짜 칸 클릭 — 선택 토글만 하고, 칸 강조·상세 패널은 renderCal 한 번으로 함께 갱신한다.
+function calSelectDay(dStr) {
+  calSelectedDate = calSelectedDate === dStr ? null : dStr;
   renderCal();
 }
 function itemColor(item) {
@@ -4728,16 +4742,6 @@ async function setHarvestStatus(id, status) {
     }
   }
 }
-async function delHarvest(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!(await cDel('수확일정 삭제'))) return;
-  try {
-    await dbDeleteHarvest(id);
-    harvests = harvests.filter(h => h.id !== id);
-    renderCal();
-  } catch (e) { alert('오류: ' + e.message); }
-}
-
 // 수확 차수 이어가기 — 재등록 없이 같은 농가·품목 round+1 새 harvest(수확중, 오늘). 이력 보존.
 async function startNextRound(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
