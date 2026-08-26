@@ -97,6 +97,9 @@ function _extDrvOn() { return FORCE_DISPATCH_SMS || drivers.some(d => d.type ===
 const NON_SORTING_CATEGORIES = ['기타'];
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const td = () => ymd(new Date());
+// 'YYYY-MM-DD'의 전날. ★로컬 파싱('T00:00:00')으로 만든다 — toISOString은 UTC로 밀려 하루 어긋난다
+//   (moveSummaryDate가 쓰는 방식과 같다). 수확 전날 = 콘테이너를 미리 갖다 두는 날.
+function _dayBefore(ds) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() - 1); return ymd(d); }
 function buildSeqByDate(srRows) {
   const sorted = [...srRows].sort((a,b) =>
     (a.sorting_date||'').localeCompare(b.sorting_date||'')
@@ -2063,6 +2066,8 @@ async function addDisp() {
   //   그 둘은 완료 처리 시점에 _completeDispatch가 같은 형태로 만든다.
   //   해제(기본)면 아래 경로가 예전과 한 글자도 다르지 않게 흐른다.
   const reserve = document.getElementById('dp-reserve')?.checked === true;
+  // ★수확 예정일·품목은 여기서 잡아 둔다 — 아래 clr('dp-harvest')로 지워진 뒤엔 못 읽는다.
+  const hvDate = gv('dp-harvest'), hvItem = gv('dp-item');
   if (!date || !farm || !drv) { alert('날짜, 대상명, 기사명을 입력하세요'); return; }
   // ★종류별 수량 — 입력된 것만 각각 dispatches 행이 된다. dispatches.ctype이 단일 값이라
   //   한 행에 여러 종류를 담을 수 없다(입고의 카테고리별 행 생성과 같은 접근).
@@ -2108,6 +2113,15 @@ async function addDisp() {
     const rc = document.getElementById('rep-cnt');   // 작업 보고 건수 배지 — updDisp와 동일하게 갱신
     if (rc) rc.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
     showToast(`✓ ${ctList.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} ${reserve ? '예약되었습니다(배출 대기)' : '등록되었습니다'}`);
+    // ★여기부터는 '제안'일 뿐 — 배차 저장은 위에서 이미 끝났다.
+    //   ★농가 배차일 때만 묻는다 — 농협·거래처는 수확 일정을 잡는 대상이 아니다.
+    //   ★있는지 판정은 _upcomingHarvestsOn 재사용(다가오는 수확 카드와 같은 기준) —
+    //     그날 시작한 일정뿐 아니라 '기간에 걸친 일정·끝나지 않은 진행'도 이미 있는 것으로 본다.
+    if (targetType === '농가' && hvDate && !_upcomingHarvestsOn(hvDate).some(h => h.farm === farm)
+        && await showConfirmEdit('수확 일정', `${farm} ${hvDate} 수확 일정이 없습니다. 등록할까요?`)) {
+      transportSub('cal');                      // 수확 캘린더 패널로(등록 폼이 그 안에 있다)
+      _hvGoHarvestAdd(farm, hvDate, hvItem);    // 농가·날짜·품목까지 채운다
+    }
   } catch (e) { alert('오류: ' + e.message); }
 }
 
@@ -4072,14 +4086,27 @@ function renderUpcomingHarvest() {
 // ★새 등록 기능을 만들지 않는다 — 기존 배차 폼(p-disp)을 그대로 열고 값만 넣는다.
 //   dp-farm은 검색형이라 값을 넣은 뒤 fsSync로 표시를 맞추고, change를 쏴서 기존 afF('dp') 자동채움을 태운다.
 function _hvGoDispatch(farm, harvestDate) {
+  // ★수확일이 미래면 '예약 배차'로 이어 준다 — 배송일 기본값은 수확 전날(전날 갖다 두고 이튿날 딴다).
+  //   단 전날이 이미 오늘 이하면(=내일 수확) 지금 나가야 하므로 오늘 배차 + 예약 해제 = 기존 동작.
+  //   수확일이 오늘·과거면 손대지 않는다(dp-date는 setDates가 넣어 둔 오늘 그대로).
+  const t = td();
+  let dpDate = null, reserve = false;
+  if (harvestDate && harvestDate > t) {
+    const eve = _dayBefore(harvestDate);
+    if (eve > t) { dpDate = eve; reserve = true; } else dpDate = t;
+  }
   transportSub('disp');
   setTimeout(() => {
     const tt = document.getElementById('dp-target-type');
     if (tt) { tt.value = '농가'; refreshDpFarmOpts(); }
     const f = document.getElementById('dp-farm');
     if (f) { f.value = farm; fsSync('dp-farm'); f.dispatchEvent(new Event('change')); }
-    const dt = document.getElementById('dp-date'); if (dt && !dt.value) dt.value = td();
+    // ★dp-date는 setDates()가 이미 오늘로 채워 두므로 '비었을 때만'으로는 예약 날짜가 안 들어간다 — 계산값이 있으면 덮어쓴다.
+    const dt = document.getElementById('dp-date');
+    if (dt) { if (dpDate) dt.value = dpDate; else if (!dt.value) dt.value = t; }
     const hv = document.getElementById('dp-harvest'); if (hv) hv.value = harvestDate;
+    // ★체크 상태를 매번 확정한다 — 앞선 조작으로 켜져 있던 예약이 남아 모르는 새 대기로 저장되지 않게.
+    const rs = document.getElementById('dp-reserve'); if (rs) rs.checked = reserve;
     document.getElementById('dp-qty')?.focus();
   }, 60);   // 패널 전환 후 폼이 보이는 시점에 채운다
 }
@@ -4245,12 +4272,19 @@ function _hvProgToggleAll() {
 
 // 배너 칩과 같은 방식 — 새 등록 기능을 만들지 않고 같은 화면의 기존 수확 등록 폼(cal-add-*)에 값만 채운다.
 // cal-add-farm은 검색형이라 fsPick으로 넣어야 표시까지 맞는다(_hvGoDispatch의 dp-farm과 같은 규칙).
-function _hvGoHarvestAdd(farm) {
+// ★date·item은 선택 인자 — 배차 등록 뒤 '수확 일정도 만들까요?' 제안에서 넘어온다.
+//   인자를 안 주면 예전 그대로 동작한다(대기 카드의 '＋ 수확 등록' 호출부 호환).
+function _hvGoHarvestAdd(farm, date, item) {
   const form = document.getElementById('cal-add-form');
   if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
   setTimeout(() => {
     if (document.getElementById('cal-add-farm')) fsPick('cal-add-farm', farm);
-    const dt = document.getElementById('cal-add-date'); if (dt && !dt.value) dt.value = td();
+    // 인자로 받은 날짜가 있으면 그 값으로 덮어쓴다(빈칸일 때만 오늘을 넣던 기존 규칙은 인자 없을 때만).
+    const dt = document.getElementById('cal-add-date');
+    if (dt) { if (date) dt.value = date; else if (!dt.value) dt.value = td(); }
+    // ★품목 select는 마스터로 만들어진다 — 목록에 없는 값을 넣으면 조용히 ''이 되므로 있을 때만 넣는다.
+    const it = document.getElementById('cal-add-item');
+    if (it && item && [...it.options].some(o => o.value === item)) it.value = item;
     document.getElementById('cal-add-date')?.focus();
   }, 60);
 }
@@ -4766,6 +4800,11 @@ async function addHarvest() {
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
     renderCal();
+    // ★여기부터는 '제안'일 뿐 — 저장은 위에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
+    //   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).
+    if (date > td() && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (배송일 기본 ${_dayBefore(date)})`)) {
+      _hvGoDispatch(farm, date);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크까지 채운다
+    }
   } catch (e) { alert('오류: ' + e.message); }
 }
 
