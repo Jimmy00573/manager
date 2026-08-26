@@ -819,11 +819,16 @@ function switchMsgTab(t) {
 //     공장 재고의 '배출'에서 빠졌다. 회수는 세면서 배출은 안 세니 한 바퀴 돌 때마다 잔여가 부풀었다.
 //     같은 실수가 또 나지 않게 판정을 이 함수 하나로 모았다 — 새로 세는 곳이 생기면 여기를 쓸 것.
 function _isExtraOutPick(p) { return p.type === '배출' && (p.outbound_id || p.manual_tx_id) && !!p.ctype; }
+// ★예약 배차(status='배차완료')는 아직 창고에 있다 — 나간 것으로 세면 안 된다.
+//   공장 재고(getSt)와 대상별 종류 칩(getFCtypeMap)이 **같은** 판정을 쓰도록 여기 한 곳에 둔다.
+//   (위 _isExtraOutPick을 하나로 모은 것과 같은 이유 — 한쪽만 바뀌면 화면마다 숫자가 갈린다.)
+//   ※2026-08-26 도입 시점의 기존 배차 32건은 전부 '배출완료'라 이 조건으로 숫자가 변하지 않는다.
+function _isOutDisp(d) { return d.status === '배출완료'; }
 
 function getSt(t) {
   const init = stock[t]?.init || 0;
   // ctNorm — 옛 이름(노랑/초록/헌콘)으로 저장된 기존 행도 같은 종류로 합산한다. 이름만 바뀐 같은 물건이므로 수량은 변하지 않는다.
-  const dispD = dispatches.filter(d => ctNorm(d.ctype) === t).reduce((s, d) => s + d.qty, 0);           // ① 배차로 나간 것
+  const dispD = dispatches.filter(d => ctNorm(d.ctype) === t && _isOutDisp(d)).reduce((s, d) => s + d.qty, 0);   // ① 배차로 나간 것(예약 대기 제외)
   const dispP = picks.filter(p => _isExtraOutPick(p) && ctNorm(p.ctype) === t).reduce((s, p) => s + p.qty, 0);   // ② 배차 없이 나간 것(납품·수동거래)
   const disp = dispD + dispP;   // 총배출
   const back = picks.filter(p => ctNorm(p.ctype) === t && (p.type === '원물수거' || p.type === '빈콘회수')).reduce((s, p) => s + p.qty, 0);   // 회수(공장 복귀)
@@ -2054,6 +2059,10 @@ function ctB(v) { return `${_ctIcon(v)} ${esc(v || '-')}`; }
 async function addDisp() {
   const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv');
   const targetType = gv('dp-target-type') || '농가';   // 배차 대상 종류(농가/농협/거래처)
+  // ★예약 등록 — 배차 행만 '배출 대기'로 만들고 배출 pick·작업 보고는 만들지 않는다.
+  //   그 둘은 완료 처리 시점에 _completeDispatch가 같은 형태로 만든다.
+  //   해제(기본)면 아래 경로가 예전과 한 글자도 다르지 않게 흐른다.
+  const reserve = document.getElementById('dp-reserve')?.checked === true;
   if (!date || !farm || !drv) { alert('날짜, 대상명, 기사명을 입력하세요'); return; }
   // ★종류별 수량 — 입력된 것만 각각 dispatches 행이 된다. dispatches.ctype이 단일 값이라
   //   한 행에 여러 종류를 담을 수 없다(입고의 카테고리별 행 생성과 같은 접근).
@@ -2066,21 +2075,25 @@ async function addDisp() {
   const d = gd(drv);
   try {
     // ★기본 상태 '배출완료'(2026-08-18) — 내부 직원이 갔다 온 뒤 기록하므로 '배차완료 → 배출완료' 2단계를 타지 않는다.
-    //   (기존 배차 16건 전부 배출완료였음.) 예약 배차가 필요하면 등록 후 '↩ 되돌리기'로 배출 대기로 보낼 수 있다.
+    //   (기존 배차 16건 전부 배출완료였음.)
+    // ★2026-08-26 '📅 예약 등록'을 체크하면 '배차완료'(배출 대기)로 저장한다 — 등록 후 되돌리기로
+    //   보내던 우회를 대신한다. 예약도 종류마다 dispatches 행을 만든다(pick만 안 만든다).
     let firstRow = null;
     for (const c of ctList) {
-      const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty: c.qty, ctype: c.ct, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: '배출완료', target_type: targetType });
+      const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty: c.qty, ctype: c.ct, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: reserve ? '배차완료' : '배출완료', target_type: targetType });
       dispatches.unshift(row);
       if (!firstRow) firstRow = row;
       // ★배출 자동 pick은 배차 행마다 정확히 1건 — dispatch_id로 짝지어야 delDisp가 제 것만 지운다.
       //   (ctype은 넣지 않는다 — 기존과 동일. getFCtypeMap이 배차의 ctype으로 종류별 집계를 하므로 중복 방지.)
-      await dbInsertPick({ date, farm, type: '배출', qty: c.qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
+      //   ★예약이면 여기서 만들지 않는다 — 완료 처리 때 _completeDispatch가 같은 내용으로 만든다.
+      if (!reserve) await dbInsertPick({ date, farm, type: '배출', qty: c.qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
     }
-    picks = await dbGetPicks();
+    if (!reserve) picks = await dbGetPicks();
     // ★작업 보고 자동 생성 — 지금까지 '완료' 버튼(updDisp)이 만들어 주던 기록이다(reports 25건 중 24건이 이 경로).
     //   등록 즉시 완료로 바뀌면서 그 버튼을 안 거치므로, 여기서 같은 조건·같은 내용으로 남긴다(중복 방지 조건도 동일).
     //   ★여러 종류를 한 번에 보내도 보고는 하루 1건 — 수량은 총합으로 넣는다(종류가 하나면 예전과 같은 값).
-    if (!reports.find(r => r.driver === drv && r.farm === farm && r.date === date)) {
+    //   ★예약이면 아직 다녀오지 않았으므로 보고도 만들지 않는다(완료 처리 때 생긴다).
+    if (!reserve && !reports.find(r => r.driver === drv && r.farm === farm && r.date === date)) {
       const rpt = await dbInsertReport({ driver: drv, date, farm, qty: totalQty, note: '완료처리' });
       reports.unshift(rpt);
     }
@@ -2090,11 +2103,42 @@ async function addDisp() {
     if (_extDrvOn() && firstRow) openMsg(firstRow);   // ★내부 직원만 쓰는 동안은 문자 팝업을 띄우지 않는다(기능은 보존).
     // ★목록 탭 기본값이 '배출 대기'(_dt2='w')라 그대로 두면 방금 등록한 건이 안 보여 실패한 것처럼 읽힌다.
     //   등록 결과가 '배출완료'이므로 그 탭으로 옮겨 보여준다(switchDT2가 renderDisp까지 호출).
-    renderSC(); switchDT2('d'); renderDDash(); renderDash();
+    //   ★예약이면 결과가 '배차완료'라 대기 탭('w')으로 — 같은 이유로 탭을 맞춰 준다.
+    renderSC(); switchDT2(reserve ? 'w' : 'd'); renderDDash(); renderDash();
     const rc = document.getElementById('rep-cnt');   // 작업 보고 건수 배지 — updDisp와 동일하게 갱신
     if (rc) rc.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
-    showToast(`✓ ${ctList.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} 등록되었습니다`);
+    showToast(`✓ ${ctList.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} ${reserve ? '예약되었습니다(배출 대기)' : '등록되었습니다'}`);
   } catch (e) { alert('오류: ' + e.message); }
+}
+
+// ── 배차 완료 처리에 딸리는 것들 (배출 pick + 작업 보고) ─────────────────────────
+// ★예약 배차는 등록 때 이 둘을 만들지 않는다. 완료로 넘어가는 순간 여기서 만든다.
+//   완료 진입점이 3곳(updDisp·drvDone·addReport)이라 한 함수로 모은다 — 복붙하면 세 곳이 갈린다.
+// ★addDisp의 즉시 완료 경로와 '같은 형태'로 만든다: note '[자동]' · dispatch_id 연결 · auto:true.
+//   ctype은 넣지 않는다(addDisp와 동일) — picks에 ctype이 없다는 규칙이 getFCtypeMap 중복 계상 방지의 근거다.
+// ★date는 완료를 누른 날이 아니라 배차의 d.date다 — 집계·이력이 전부 배차일에 붙는다.
+// ★멱등 — 이미 연결 pick이 있으면 만들지 않는다. 기존 32건(전부 배출완료)에 완료를 다시 눌러도,
+//   완료↔되돌리기를 왕복해도 pick이 불어나지 않는다.
+async function _completeDispatch(d, rptNote = '완료처리') {
+  if (!d) return;
+  if (!picks.some(p => p.dispatch_id === d.id && p.type === '배출')) {
+    const row = await dbInsertPick({ date: d.date, farm: d.farm, type: '배출', qty: d.qty, driver: d.driver, car: d.car || '', note: '[자동]', dispatch_id: d.id, auto: true, target_type: d.target_type || '농가' });
+    if (row) picks.unshift(row);
+  }
+  // 중복 방지 조건(기사·농가·날짜)은 addDisp·기존 updDisp와 똑같이 둔다.
+  if (!reports.find(r => r.driver === d.driver && r.farm === d.farm && r.date === d.date)) {
+    const rpt = await dbInsertReport({ driver: d.driver, date: d.date, farm: d.farm, qty: d.qty, note: rptNote });
+    reports.unshift(rpt);
+  }
+}
+// 되돌리기('배출완료' → '배차완료') — 완료 때 만든 배출 pick을 거둔다. 안 지우면 대기 상태인데
+// 콘테이너는 나간 것으로 남아 getFCS(농가 보유)가 부풀고, 다시 완료하면 두 번 세어진다.
+// ★reports는 지우지 않는다 — 실제로 다녀온 작업 이력이라 남긴다. 재완료 때는 위 중복 방지 조건이 걸러 준다.
+async function _uncompleteDispatch(id) {
+  const linked = picks.filter(p => p.dispatch_id === id && p.type === '배출');
+  if (!linked.length) return;
+  await Promise.all(linked.map(p => dbDeletePick(p.id)));
+  picks = picks.filter(p => !(p.dispatch_id === id && p.type === '배출'));
 }
 
 async function updDisp(id, s) {
@@ -2102,13 +2146,9 @@ async function updDisp(id, s) {
   try {
     await dbUpdateDispatch(id, { status: s });
     dispatches = dispatches.map(d => d.id === id ? { ...d, status: s } : d);
-    if (s === '배출완료') {
-      const d = dispatches.find(x => x.id === id);
-      if (d && !reports.find(r => r.driver === d.driver && r.farm === d.farm && r.date === d.date)) {
-        const rpt = await dbInsertReport({ driver: d.driver, date: d.date, farm: d.farm, qty: d.qty, note: '완료처리' });
-        reports.unshift(rpt);
-      }
-    }
+    // ★보고 생성은 _completeDispatch로 옮겼다 — 배출 pick과 한 묶음이라 따로 두면 두 진입점이 갈린다.
+    if (s === '배출완료') await _completeDispatch(dispatches.find(x => x.id === id));
+    else if (s === '배차완료') await _uncompleteDispatch(id);
     renderDisp(); renderDDash(); renderMyAssign(); renderMyPending();
     const c = document.getElementById('rep-cnt'); if (c) c.textContent = (_loggedDrv ? reports.filter(r=>r.driver===_loggedDrv.name).length : reports.length) + '건';
     if (_repOpen) renderRep(); renderDash();
@@ -2811,10 +2851,8 @@ async function drvDone(id) {
   try {
     await dbUpdateDispatch(id, { status: '배출완료' });
     dispatches = dispatches.map(x => x.id === id ? { ...x, status: '배출완료' } : x);
-    if (!reports.find(r => r.driver === d.driver && r.farm === d.farm && r.date === d.date)) {
-      const rpt = await dbInsertReport({ driver: d.driver, date: d.date, farm: d.farm, qty: d.qty, note: '앱에서 완료처리' });
-      reports.unshift(rpt);
-    }
+    // ★보고 문구('앱에서 완료처리')는 이 경로만의 값이라 인자로 넘긴다 — 기존 기록과 구분이 유지된다.
+    await _completeDispatch(dispatches.find(x => x.id === id), '앱에서 완료처리');
     const c = document.getElementById('rep-cnt'); if (c) c.textContent = (_loggedDrv ? reports.filter(r=>r.driver===_loggedDrv.name).length : reports.length) + '건';
     if (!_repOpen) { _repOpen = true; document.getElementById('rep-history').style.display = ''; document.getElementById('rep-h-icon').textContent = '▲ 접기'; }
     renderRep(); renderMyPending(); renderMyAssign(); renderDisp(); renderDDash(); renderDash();
@@ -2836,7 +2874,11 @@ async function addReport() {
     const rpt = await dbInsertReport({ driver: _loggedDrv.name, date, farm, qty, note: gv('rp-note') });
     reports.unshift(rpt);
     dispatches = dispatches.map(d => (d.driver === _loggedDrv.name && d.farm === farm && d.date === date) ? { ...d, status: '배출완료' } : d);
-    await Promise.all(dispatches.filter(d => d.driver === _loggedDrv.name && d.farm === farm && d.date === date).map(d => dbUpdateDispatch(d.id, { status: '배출완료' })));
+    const doneList = dispatches.filter(d => d.driver === _loggedDrv.name && d.farm === farm && d.date === date);
+    await Promise.all(doneList.map(d => dbUpdateDispatch(d.id, { status: '배출완료' })));
+    // ★배차 행마다 배출 pick을 만든다 — 예약 배차였다면 이때 처음 생긴다.
+    //   보고는 바로 위에서 이미 남겼으므로 _completeDispatch의 중복 방지 조건이 알아서 건너뛴다.
+    for (const d of doneList) await _completeDispatch(d);
     clr('rp-qty', 'rp-note'); _rp = 1;
     if (!_repOpen) { _repOpen = true; document.getElementById('rep-history').style.display = ''; document.getElementById('rep-h-icon').textContent = '▲ 접기'; }
     renderRep(); renderMyPending(); renderDisp(); renderDDash(); renderDash();
@@ -2870,7 +2912,7 @@ function getFCtypeMap(fn, targetType) {
   const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
   // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
   // ★집계 키는 ctNorm으로 통일 — 옛 이름(초록)과 새 이름(시트리앙)이 섞여 있어도 한 종류로 합쳐 칩이 둘로 갈리지 않게.
-  const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d)).forEach(d => { const k = ctNorm(d.ctype); ob[k] = (ob[k] || 0) + d.qty; });
+  const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d) && _isOutDisp(d)).forEach(d => { const k = ctNorm(d.ctype); ob[k] = (ob[k] || 0) + d.qty; });
   // 납품 콘테이너(D-1 출고 / D-1b 수동거래) 배출 — outbound_id·manual_tx_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
   picks.filter(p => p.farm === fn && _isExtraOutPick(p) && tgtOk(p)).forEach(p => { const k = ctNorm(p.ctype); ob[k] = (ob[k] || 0) + p.qty; });
   // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
