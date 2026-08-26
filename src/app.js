@@ -1172,6 +1172,15 @@ function refreshBkFarmOpts() {
   fsSync('bk-farm');
   _syncBkCtype();
 }
+// 수거 수정 모달(mp-target-type → mp-farm) — 위 두 폼과 같은 소스. 종류 칸이 없어 _sync*Ctype은 부르지 않는다.
+function refreshMpFarmOpts() {
+  const el = document.getElementById('mp-farm'); if (!el) return;
+  const prev = el.value;
+  el.innerHTML = _dispTargetOptHtml(gv('mp-target-type') || '농가');
+  el.value = prev;
+  if (el.value !== prev) el.value = '';                  // 종류를 바꿔 기존 대상이 목록에 없으면 비운다
+  fsSync('mp-farm');
+}
 
 function popSels() {
   ['oi-farm', 'oo-farm'].forEach(id => {
@@ -1192,8 +1201,7 @@ function popSels() {
     drivers.forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${typeLabel(d.type)})</option>`);
     el.value = v;
   });
-  const mpf = document.getElementById('mp-farm');
-  if (mpf) { const v = mpf.value; mpf.innerHTML = '<option value="">선택</option>'; farms.forEach(f => mpf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`); mpf.value = v; }
+  refreshMpFarmOpts();   // 수거 수정 모달도 대상 종류를 따른다(농가로 덮어쓰면 농협/거래처 pick이 빈칸이 된다)
   const mpd = document.getElementById('mp-drv');
   if (mpd) { const v = mpd.value; mpd.innerHTML = '<option value="">선택사항</option>'; drivers.forEach(d => mpd.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`); mpd.value = v; }
  ['oi-staff', 'oo-staff'].forEach(id => {
@@ -1539,7 +1547,21 @@ function openPickEdit(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const p = picks.find(x => x.id === id); if (!p) return;
   _editPickId = id;
-  sv('mp-date', p.date || ''); sv('mp-farm', p.farm || '');
+  sv('mp-date', p.date || '');
+  // ★대상 종류 → 대상명 순서로 채운다(배차 수정 openDispEdit과 같은 순서). 순서를 뒤집으면
+  //   대상명을 넣은 직후 옵션이 갈아끼워져 값이 날아간다. 옛 pick엔 target_type이 없다 → '농가'.
+  sv('mp-target-type', p.target_type || '농가');
+  refreshMpFarmOpts();
+  const mpf = document.getElementById('mp-farm');
+  // ★목록에 없는 대상이면 그 이름을 옵션으로 붙인다 — 없으면 select.value가 조용히 ''이 되어
+  //   savePickEdit의 !farm 가드에 걸린다 = '필수 항목을 입력하세요'만 뜨고 이 pick을 영영 못 고친다.
+  //   (값이 지워지는 게 아니라 수정이 막히는 쪽이다. 배차 수정 6f1e575와 완전히 같은 함정.)
+  //   비활성 거래처·삭제된 농가도 여기에 걸린다.
+  if (p.farm && ![...mpf.options].some(o => o.value === p.farm)) {
+    mpf.insertAdjacentHTML('beforeend', `<option value="${esc(p.farm)}">${esc(p.farm)} (목록에 없음)</option>`);
+  }
+  mpf.value = p.farm || '';
+  fsSync('mp-farm');   // 검색형 입력칸 표시도 이 값으로(모달은 열 때마다 값이 바뀐다)
   document.getElementById('mp-type').value = p.type || '원물수거';
   sv('mp-qty', p.qty || ''); sv('mp-drv', p.driver || ''); sv('mp-car', p.car || ''); sv('mp-note', p.note || '');
   document.getElementById('modal-pick').style.display = 'flex';
@@ -1548,7 +1570,7 @@ async function savePickEdit() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const date = gv('mp-date'), farm = gv('mp-farm'), type = gv('mp-type'), qty = parseInt(document.getElementById('mp-qty').value) || 0;
   if (!date || !farm || !type || !qty) { alert('필수 항목을 입력하세요'); return; }
-  const data = { date, farm, type, qty, driver: gv('mp-drv'), car: gv('mp-car'), note: gv('mp-note'), updated_at: new Date().toISOString() };
+  const data = { date, farm, type, qty, driver: gv('mp-drv'), car: gv('mp-car'), note: gv('mp-note'), target_type: gv('mp-target-type') || '농가', updated_at: new Date().toISOString() };
   try {
     await dbUpdatePick(_editPickId, data);
     picks = picks.map(p => p.id === _editPickId ? { ...p, ...data } : p);

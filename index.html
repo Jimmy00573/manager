@@ -126,7 +126,8 @@
     <div class="modal-hdr"><div class="modal-title">✏️ 수거 기록 수정</div><button class="modal-close" onclick="CM('pick')">✕</button></div>
     <div class="modal-grid">
       <div class="fg"><label>날짜 *</label><input id="mp-date" type="date"></div>
-      <div class="fg"><label>농가명 *</label><select id="mp-farm"><option value="">선택</option></select></div>
+      <div class="fg"><label>대상 종류</label><select id="mp-target-type" onchange="refreshMpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
+      <div class="fg"><label>대상명 *</label><select id="mp-farm"><option value="">선택</option></select></div>
       <div class="fg"><label>구분 *</label><select id="mp-type"><option value="원물수거">원물수거</option><option value="빈콘회수">빈콘회수</option></select></div>
       <div class="fg"><label>수량(개) *</label><input id="mp-qty" type="number"></div>
       <div class="fg"><label>기사</label><select id="mp-drv"><option value="">선택사항</option></select></div>
@@ -1967,6 +1968,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=23"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=569"></script>
+<script src="src/app.js?v=570"></script>
 </body>
 </html>
