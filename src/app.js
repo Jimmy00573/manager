@@ -116,6 +116,14 @@ let partners = [];
 let ownIns = [], ownOuts = [], nhfIns = [], nhfOuts = [], reports = [], harvests = [], vehicles = [];
 let invUnsorted = [], invSorted = [], invWaste = [], invJuiceMasters = [], invJuiceBatches = [], invOutbounds = [];
 let juiceExpiryDays = 90;
+// ── 주스·청 재고 부족 기준(settings key='juice_low_threshold') — 제품별 잔여가 이 값 미만이면 빨간 경고.
+// ★비교 대상은 juice_batches.remaining_bottles 저장값 그대로다(환산하지 않는다).
+//   마스터 단위가 '박스'인 품목(한라봉 모나카·랑드샤)도 배치는 낱개로 저장돼 있어 표시 단위와 뜻이 다르지만,
+//   화면에 찍히는 숫자가 곧 이 저장값이라 그 숫자와 기준을 비교해야 사람이 보는 것과 어긋나지 않는다.
+//   단위 불일치 자체는 별개 과제로 남긴다.
+// ★0이면 경고를 끄는 뜻으로 쓴다(미만 조건이 성립할 수 없으므로).
+const JUICE_LOW_DEFAULT = 500;
+let juiceLowThreshold = JUICE_LOW_DEFAULT;
 let _obHistFilter = {};
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
@@ -249,6 +257,7 @@ const _MODAL_ESC_CLOSE = {
   'modal-sorting': 'closeSortingModal',
   'modal-dup-warn': 'cancelDupWarn',
   'modal-urgency': 'closeUrgencyThresholdsModal',
+  'modal-juicelow': 'closeJuiceLowModal',
   'modal-pw-change': 'closePwChangeModal',
   'modal-srt-ratio': 'closeSortingRatioModal',
 };
@@ -538,6 +547,13 @@ async function initApp() {
     document.getElementById('hdr-logged').style.display = 'none';
     document.getElementById('rbtn-logout').style.display = '';
     setRole('staff');
+  } else if (savedRole === 'airport') {
+    // 공항(조회 전용) — 화면 복원은 관리자·직원과 같고, 보이는 범위만 setRole이 좁힌다.
+    document.getElementById('pin-screen').style.display = 'none';
+    document.getElementById('hdr-btns').style.display = 'flex';
+    document.getElementById('hdr-logged').style.display = 'none';
+    document.getElementById('rbtn-logout').style.display = '';
+    setRole('airport');
   } else if (savedRole === 'driver' && savedDrvName) {
     const drv = drivers.find(d => d.name === savedDrvName);
     if (drv && drv.pin_active !== false) {
@@ -663,12 +679,20 @@ async function chkAdmLogin() {
   try {
     const rows = await sbGet('admin_accounts', `username=eq.${encodeURIComponent(username)}&is_active=eq.true`);
     if (rows && rows.length > 0 && verifyPassword(password, rows[0].password)) {
-      sessionStorage.setItem('citrus_role', 'admin');
+      // ★권한은 DB(admin_accounts.role)가 정한다. 값이 비어 있으면 예전과 같이 'admin'(컬럼 DEFAULT와 같은 뜻).
+      //   ADM_ROLES에 없는 값이면 로그인을 막는다 — 오타 하나가 조용히 관리자 권한이 되는 걸 막기 위함.
+      const role = rows[0].role || 'admin';
+      if (!ADM_ROLES.includes(role)) {
+        alert(`알 수 없는 권한("${role}")입니다.\n관리자에게 문의해 주세요.`);
+        document.getElementById('adm-pw-in').value = '';
+        return;
+      }
+      sessionStorage.setItem('citrus_role', role);
       sessionStorage.setItem('citrus_adm_user', rows[0].username);
       const keepAdm = document.getElementById('adm-login-keep')?.checked;
       if (keepAdm) {
         localStorage.setItem('citrus_keep', '1');
-        localStorage.setItem('citrus_role', 'admin');
+        localStorage.setItem('citrus_role', role);
         localStorage.setItem('citrus_adm_user', rows[0].username);
       }
       document.getElementById('pin-screen').style.display = 'none';
@@ -678,7 +702,7 @@ async function chkAdmLogin() {
       document.getElementById('adm-user-in').value = '';
       document.getElementById('adm-pw-in').value = '';
       document.getElementById('adm-err').style.display = 'none';
-      setRole('admin');
+      setRole(role);
     } else {
       document.getElementById('adm-err').style.display = '';
       document.getElementById('adm-pw-in').value = '';
@@ -730,6 +754,9 @@ function doLogout() {
 }
 
 function gotoAdmin() {
+  // ★공항 계정은 이 버튼이 숨겨져 있지만, 남아 있는 onclick으로 관리자 화면이 열리는 것까지 막는다.
+  //   (UI 차단 — 세션 역할은 그대로라 저장 경로는 기존 admin 가드들이 이미 막는다.)
+  if (sessionStorage.getItem('citrus_role') === 'airport') return;
   document.getElementById('rbtn-adm').className = 'rbtn active';
   document.getElementById('hdr-btns').style.display = 'flex';
   document.getElementById('hdr-logged').style.display = 'none';
@@ -742,7 +769,9 @@ function adminLogout() {
   ['citrus_keep','citrus_role','citrus_drv','citrus_adm_user'].forEach(k => localStorage.removeItem(k));
   document.getElementById('pin-screen').style.display = 'flex';
   document.getElementById('rbtn-logout').style.display = 'none';
-  document.getElementById('rbtn-adm').className = 'rbtn active';
+  const _ab = document.getElementById('rbtn-adm');
+  _ab.className = 'rbtn active';
+  _ab.style.display = '';   // 공항·직원 로그인 때 숨겼던 것을 되돌린다(다음 로그인에서 setRole이 다시 정한다)
   setPinMode('staff');
 }
 
@@ -930,25 +959,48 @@ function chkStW() {
 }
 
 // ── 네비
+// ★역할별 화면 제한은 전부 'UI 차단'이다 — Supabase RLS가 열려 있어 REST를 직접 부르면 막히지 않는다.
+//   진짜 보안은 Supabase Auth 도입(v2) 때 서버 쪽에서 걸어야 한다. 여기서는 화면에서 못 닿게 하는 것까지.
+// ★사무실 계열 역할(로그인 후 anav를 쓰는 역할) 목록. driver는 별도(dnav).
+const OFFICE_ROLES = ['admin', 'staff', 'airport'];
+// admin_accounts.role에 들어올 수 있는 값. 계정 관리 화면의 선택지이자 로그인 시 검증 목록.
+// ★staff는 여기 없다 — 직원은 계정 테이블이 아니라 settings의 공통 비밀번호로 들어온다(별도 경로).
+const ADM_ROLES = ['admin', 'airport'];
+const ADM_ROLE_LABEL = { admin: '관리자', airport: '공항(조회 전용)' };
+// 역할별 상단 탭 화이트리스트(없으면 전부 보임 = admin)
+const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'] };
+// 역할별 재고 화면 하위 탭 화이트리스트(없으면 전부 보임 = admin)
+// ★공항(airport) 계정은 주스·청 한 탭만 본다.
+const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'] };
+const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
+
+// 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
+// ★"허용 목록에 없으면 숨김"이 아니라 매번 양쪽(''/'none')을 다 써야 한다.
+//   한 역할로 숨긴 탭이 다른 역할로 로그인해도 숨은 채 남는 잔상이 생긴다.
+function _applyInvTabs(r) {
+  const allow = ROLE_INV_TABS[r] || null;
+  INV_TAB_IDS.forEach(t => {
+    const btn = document.getElementById('it-' + t);
+    if (btn) btn.style.display = (!allow || allow.includes(t)) ? '' : 'none';
+  });
+}
+
 function setRole(r) {
-  document.getElementById('anav').style.display = (r === 'admin' || r === 'staff') ? 'flex' : 'none';
+  document.getElementById('anav').style.display = OFFICE_ROLES.includes(r) ? 'flex' : 'none';
   document.getElementById('dnav').style.display = r === 'driver' ? 'flex' : 'none';
-  const logTab = document.getElementById('it-log');
-  if (logTab) logTab.style.display = r === 'staff' ? 'none' : '';
-  const outTab = document.getElementById('it-out');
-  if (outTab) outTab.style.display = r === 'staff' ? 'none' : '';
+  _applyInvTabs(r);
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
-  if (r === 'admin' || r === 'staff') {
+  if (OFFICE_ROLES.includes(r)) {
     const admBtn = document.getElementById('rbtn-adm');
-    if (admBtn) admBtn.style.display = r === 'staff' ? 'none' : '';
+    if (admBtn) admBtn.style.display = r === 'admin' ? '' : 'none';
     document.getElementById('rbtn-logout').style.display = '';
-    const STAFF_TABS = ['inv'];
+    const allowNav = ROLE_NAV_TABS[r] || null;
     document.querySelectorAll('#anav .nbtn').forEach(btn => {
       const tab = btn.getAttribute('data-tab');
-      btn.style.display = (r === 'staff' && !STAFF_TABS.includes(tab)) ? 'none' : '';
+      btn.style.display = (allowNav && !allowNav.includes(tab)) ? 'none' : '';
     });
     _applyEditRestrictions(r === 'admin');
-    T('inv');
+    T('inv');   // airport는 T→invTab('sum')이 invTab 안에서 'juice'로 교정된다(교정 지점은 한 곳뿐)
   }
 }
 
@@ -963,7 +1015,9 @@ function _applyEditRestrictions(canEdit) {
 }
 
 function T(id) {
-  if (sessionStorage.getItem('citrus_role') === 'staff' && id !== 'inv') return;
+  // 재고 화면만 허용되는 역할(직원·공항)은 다른 탭으로 못 넘어간다. 화이트리스트는 ROLE_NAV_TABS와 같은 뜻.
+  const _r = sessionStorage.getItem('citrus_role');
+  if ((_r === 'staff' || _r === 'airport') && id !== 'inv') return;
   // transport 그룹 진입 → 하위 탭으로 위임
   if (id === 'transport') { transportSub('dash'); return; }
   // 하위 탭 바 숨김 (transport 그룹 밖으로 나갈 때)
@@ -5599,7 +5653,7 @@ async function deleteQcCriteria() {
 // ── 재고관리 ──────────────────────────────────────────────────
 
 function setTab(t) {
-  ['menu', 'loc', 'qc', 'cfg', 'usage', 'brix', 'weight', 'juicemaster', 'partner', 'ctype', 'datacheck'].forEach(s => {
+  ['menu', 'loc', 'qc', 'cfg', 'usage', 'brix', 'weight', 'juicemaster', 'partner', 'ctype', 'datacheck', 'acct'].forEach(s => {
     const el = document.getElementById('set-' + s + '-view');
     if (el) el.style.display = t === s ? '' : 'none';
   });
@@ -5613,11 +5667,15 @@ function setTab(t) {
   if (t === 'juicemaster') renderJuiceMasterCfg();
   if (t === 'partner') renderPartnerCfg();
   if (t === 'datacheck') renderDataCheck();   // 진입 시 자동 1회 실행
+  if (t === 'acct') renderAcctCfg();
 }
 function setBack() { setTab('menu'); }
 
 function invTab(t) {
-  if ((t === 'log' || t === 'out') && sessionStorage.getItem('citrus_role') === 'staff') t = 'sum';
+  // ★역할 교정은 여기 한 곳에서만 한다(setRole·T는 그대로 넘긴다).
+  const _r = sessionStorage.getItem('citrus_role');
+  if (_r === 'airport') t = 'juice';   // 공항 계정은 주스·청 외 탭이 없다
+  if ((t === 'log' || t === 'out') && _r === 'staff') t = 'sum';
   ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
@@ -5710,6 +5768,12 @@ async function loadAndRenderInv() {
       const expiryRows = await sbGet('settings', 'key=eq.juice_expiry_days');
       if (expiryRows && expiryRows[0]) juiceExpiryDays = parseInt(expiryRows[0].value) || 90;
     } catch(e) {}
+    try {
+      // 재고 부족 기준 — 행이 없으면(=한 번도 저장 안 함) 기본값. 조회 실패면 직전 값을 유지한다.
+      const lowRows = await sbGet('settings', 'key=eq.juice_low_threshold');
+      const lv = lowRows && lowRows[0] ? parseInt(lowRows[0].value) : NaN;
+      juiceLowThreshold = (!isNaN(lv) && lv >= 0) ? lv : JUICE_LOW_DEFAULT;
+    } catch(e) {}
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
@@ -5725,6 +5789,11 @@ async function loadAndRenderInv() {
   } catch(e) { console.error('재고 로드 오류:', e); _loadFail('재고 화면'); }   // ★여기까지 오면 재고 화면 전체가 빈 상태 — 콘솔만으론 아무도 모른다
   hideLoading();
   renderInvAll();
+  // ★renderInvAll은 주스·청 섹션을 그리지 않는다(invTab('juice')에서만 그린다).
+  //   T('inv')는 이 로드를 기다리지 않고 곧바로 invTab을 부르므로, 주스 탭이 열린 채로 들어오면
+  //   데이터가 오기 전 빈 화면이 그대로 남는다 — 공항 계정은 항상 이 경로다. 로드 후 한 번 더 그린다.
+  const jd = document.getElementById('inv-juice-div');
+  if (jd && jd.style.display !== 'none') renderJuiceSection();
 }
 
 // ── 카테고리 시스템 헬퍼
@@ -19521,11 +19590,17 @@ function renderJuiceSection() {
     return `<span style="font-size:11px;color:#6B7280">${expiry}</span>`;
   };
 
+  // 재고 부족 판정 — 기준·비교 근거는 juiceLowThreshold 선언부 주석 참고(저장값 그대로 비교, 0이면 끔).
+  const isJuiceLow = total => juiceLowThreshold > 0 && total < juiceLowThreshold;
+  const JUICE_LOW_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#DC2626;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠ 재고 부족</span>`;
+
   const statsCardOf = ([p, batches]) => {
     const total = batches.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
-    return `<div style="background:#F0FFF4;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;min-width:120px">
+    const low = isJuiceLow(total);
+    return `<div style="background:${low ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${low ? '#DC2626' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:120px">
+      ${low ? `<div style="margin-bottom:4px">${JUICE_LOW_BADGE}</div>` : ''}
       <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-      <div style="font-size:18px;font-weight:700;color:#065F46">${fmtN(total)} ${juiceUnitOf(p)}</div>
+      <div style="font-size:18px;font-weight:700;color:${low ? '#DC2626' : '#065F46'}">${fmtN(total)} ${juiceUnitOf(p)}</div>
       <div style="font-size:11px;color:#999;margin-top:2px">${batches.length}배치</div>
     </div>`;
   };
@@ -19547,6 +19622,7 @@ function renderJuiceSection() {
       return a.expiry_date.localeCompare(b.expiry_date);
     });
     const totalRemaining = sorted.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
+    const lowProd = isJuiceLow(totalRemaining);
     const thisGroup = juiceUnitOf(product) === '박스' ? 'box' : isCheong(product) ? 'cheong' : 'juice';
     let grpHdr = '';
     if (thisGroup !== _lastJuiceGroup) {
@@ -19563,7 +19639,7 @@ function renderJuiceSection() {
       return `<tr style="${trBg}">
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
-        <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600${lowProd ? ';color:#DC2626' : ''}">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(boxTxt)}">${esc(boxTxt)}</td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(b.note || '')}">${esc(b.note || '')}</td>
         ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px;position:sticky;right:0;background:${stickyBg};z-index:1">
@@ -19599,10 +19675,12 @@ function renderJuiceSection() {
       }
     }).join('');
 
-    return `${grpHdr}<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;margin-bottom:8px">
-      <div style="display:flex;align-items:center;padding:10px 14px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;gap:8px">
-        <span style="font-size:13px;font-weight:700;color:#111827;flex:1">${esc(product)}</span>
-        <span style="font-size:13px;font-weight:600;color:#065F46">${fmtN(totalRemaining)} ${juiceUnitOf(product)}</span>
+    return `${grpHdr}<div style="background:#fff;border:1px solid ${lowProd ? '#DC2626' : '#E5E7EB'};border-radius:8px;overflow:hidden;margin-bottom:8px">
+      <div style="display:flex;align-items:center;padding:10px 14px;background:${lowProd ? '#FEF2F2' : '#F9FAFB'};border-bottom:1px solid #E5E7EB;gap:8px">
+        <span style="font-size:13px;font-weight:700;color:#111827">${esc(product)}</span>
+        ${lowProd ? JUICE_LOW_BADGE : ''}
+        <span style="flex:1"></span>
+        <span style="font-size:13px;font-weight:600;color:${lowProd ? '#DC2626' : '#065F46'}">${fmtN(totalRemaining)} ${juiceUnitOf(product)}</span>
         <button onclick="toggleJuiceHistory('${productKey}')"
           style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
       </div>
@@ -20608,6 +20686,177 @@ async function saveUrgencyThresholds() {
     renderInvSummary();
     showToast('✓ 우선처리 기준이 저장되었습니다.');
   } catch(e) {
+    alert('저장 오류: ' + e.message);
+  }
+}
+
+// ── 계정 관리 (admin_accounts) ─────────────────────────────────────
+// ★여기서 만드는 권한 제한은 전부 화면(UI) 차단이다. RLS가 열려 있어 REST 직접 호출은 막지 못한다.
+//   진짜 보안은 Supabase Auth 도입(v2) 때 서버에서 걸어야 한다.
+// ★전역 캐시를 두지 않는다 — 계정은 자주 안 바뀌고, 화면을 열 때마다 DB에서 읽는 게 어긋날 여지가 없다.
+let _acctRows = [];
+
+async function renderAcctCfg() {
+  const el = document.getElementById('csp-acct');
+  if (!el) return;
+  if (sessionStorage.getItem('citrus_role') !== 'admin') { el.innerHTML = '<div class="empty">관리자만 볼 수 있습니다.</div>'; return; }
+  el.innerHTML = '<div class="empty">불러오는 중…</div>';
+  try {
+    _acctRows = await sbGet('admin_accounts', 'select=id,username,display_name,is_active,role&order=created_at');
+  } catch(e) {
+    _acctRows = [];
+    el.innerHTML = `<div class="empty">계정 목록을 불러오지 못했습니다.<br><span style="font-size:12px;color:#9CA3AF">${esc(e.message)}</span></div>`;
+    return;
+  }
+  const me = sessionStorage.getItem('citrus_adm_user') || '';
+  const roleOpts = (cur) => ADM_ROLES.map(r =>
+    `<option value="${r}"${(cur || 'admin') === r ? ' selected' : ''}>${ADM_ROLE_LABEL[r]}</option>`).join('');
+
+  const rows = _acctRows.map(a => {
+    const isMe = a.username === me;
+    const active = a.is_active !== false;
+    return `<tr${active ? '' : ' style="opacity:.55"'}>
+      <td style="font-weight:600">${esc(a.username)}${isMe ? ' <span style="font-size:10px;color:#2563EB">(나)</span>' : ''}</td>
+      <td style="color:#888;font-size:12px">${esc(a.display_name || '—')}</td>
+      <td>
+        <select onchange="chgAdmAccountRole('${a.id}',this.value)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:5px">
+          ${roleOpts(a.role)}
+        </select>
+      </td>
+      <td style="text-align:center;font-size:12px">${active
+        ? '<span style="color:#059669;font-weight:600">사용중</span>'
+        : '<span style="color:#9CA3AF">중지</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn edt" onclick="resetAdmAccountPw('${a.id}')">비번 재설정</button>
+        <button class="btn ${active ? 'del' : 'edt'}" onclick="toggleAdmAccount('${a.id}')">${active ? '중지' : '사용'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:14px;font-weight:700">계정 관리</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">
+        관리자·공항 계정을 만들고 권한을 정합니다. <strong>공항(조회 전용)</strong>은 재고 화면의 주스·청 탭만 볼 수 있고 등록·수정은 못 합니다.
+      </div>
+    </div>
+    ${_acctRows.length ? `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>아이디</th><th>이름</th><th>권한</th><th style="text-align:center">상태</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty">등록된 계정이 없습니다.</div>`}
+
+    <div class="form-card" style="margin-top:16px">
+      <div class="form-title">+ 계정 추가</div>
+      <div class="form-grid">
+        <div class="fg"><label>아이디 *</label><input id="acct-user" autocomplete="off" placeholder="예) airport"></div>
+        <div class="fg"><label>이름</label><input id="acct-name" autocomplete="off" placeholder="예) 공항 매장"></div>
+        <div class="fg"><label>비밀번호 *</label><input id="acct-pw" type="password" autocomplete="new-password" placeholder="4자 이상"></div>
+        <div class="fg"><label>권한 *</label><select id="acct-role">${roleOpts('airport')}</select></div>
+      </div>
+      <div class="form-actions"><button class="btn pri" onclick="addAdmAccount()">계정 추가</button></div>
+    </div>`;
+}
+
+// 마지막 남은 '사용중 관리자'를 잃으면 아무도 못 들어온다 — 중지·권한변경 전에 이걸로 막는다.
+function _acctLastAdminBlocked(a, nextRole, nextActive) {
+  const others = _acctRows.filter(x => x.id !== a.id && (x.role || 'admin') === 'admin' && x.is_active !== false);
+  if (others.length > 0) return false;
+  return !((nextRole || 'admin') === 'admin' && nextActive);
+}
+
+async function addAdmAccount() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const username = (document.getElementById('acct-user').value || '').trim();
+  const display  = (document.getElementById('acct-name').value || '').trim();
+  const pw       = document.getElementById('acct-pw').value || '';
+  const role     = document.getElementById('acct-role').value;
+  if (!username) return alert('아이디를 입력해 주세요.');
+  if (!/^[A-Za-z0-9_.-]+$/.test(username)) return alert('아이디는 영문·숫자·_ . - 만 쓸 수 있습니다.');
+  if (pw.length < 4) return alert('비밀번호는 4자 이상으로 정해 주세요.');
+  if (!ADM_ROLES.includes(role)) return alert('권한 값이 올바르지 않습니다.');
+  if (_acctRows.some(a => a.username.toLowerCase() === username.toLowerCase()))
+    return alert(`"${username}"은 이미 있는 아이디입니다.`);
+  try {
+    const hashed = await hashPassword(pw);
+    await sbInsert('admin_accounts', { username, display_name: display || null, password: hashed, role, is_active: true });
+    await renderAcctCfg();
+    showToast(`✓ ${username} (${ADM_ROLE_LABEL[role]}) 계정을 만들었습니다.`);
+  } catch(e) { alert('계정 추가 오류: ' + e.message); }
+}
+
+async function chgAdmAccountRole(id, role) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') { renderAcctCfg(); return alert('관리자만 가능합니다.'); }
+  const a = _acctRows.find(x => x.id === id);
+  if (!a) return;
+  if (!ADM_ROLES.includes(role)) { renderAcctCfg(); return alert('권한 값이 올바르지 않습니다.'); }
+  if (_acctLastAdminBlocked(a, role, a.is_active !== false)) {
+    renderAcctCfg();   // select를 원래 값으로 되돌린다
+    return alert('마지막 남은 관리자 계정입니다. 권한을 바꾸면 아무도 로그인할 수 없습니다.');
+  }
+  if (!(await showConfirmEdit('권한 변경', `${a.username} → ${ADM_ROLE_LABEL[role]}`))) { renderAcctCfg(); return; }
+  try {
+    await sbUpdate('admin_accounts', id, { role });
+    await renderAcctCfg();
+    // ★내 계정의 권한을 바꿔도 지금 세션은 그대로다(다음 로그인부터 적용) — 오해 없게 알린다.
+    showToast(a.username === (sessionStorage.getItem('citrus_adm_user') || '')
+      ? '✓ 저장했습니다. 내 권한은 다음 로그인부터 적용됩니다.'
+      : '✓ 권한을 바꿨습니다.');
+  } catch(e) { renderAcctCfg(); alert('권한 변경 오류: ' + e.message); }
+}
+
+async function toggleAdmAccount(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const a = _acctRows.find(x => x.id === id);
+  if (!a) return;
+  const next = !(a.is_active !== false);
+  if (!next && a.username === (sessionStorage.getItem('citrus_adm_user') || ''))
+    return alert('지금 로그인한 내 계정은 중지할 수 없습니다.');
+  if (_acctLastAdminBlocked(a, a.role, next))
+    return alert('마지막 남은 관리자 계정입니다. 중지하면 아무도 로그인할 수 없습니다.');
+  if (!(await showConfirmEdit(next ? '계정 사용' : '계정 중지', `${a.username} 계정을 ${next ? '다시 사용' : '중지'}합니다.`))) return;
+  try {
+    await sbUpdate('admin_accounts', id, { is_active: next });
+    await renderAcctCfg();
+    showToast(next ? '✓ 다시 사용합니다.' : '✓ 중지했습니다.');
+  } catch(e) { alert('상태 변경 오류: ' + e.message); }
+}
+
+async function resetAdmAccountPw(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const a = _acctRows.find(x => x.id === id);
+  if (!a) return;
+  const pw = prompt(`${a.username} 계정의 새 비밀번호를 입력하세요. (4자 이상)`);
+  if (pw === null) return;
+  if (pw.length < 4) return alert('비밀번호는 4자 이상으로 정해 주세요.');
+  try {
+    await sbUpdate('admin_accounts', id, { password: await hashPassword(pw) });
+    showToast('✓ 비밀번호를 바꿨습니다.');
+  } catch(e) { alert('비밀번호 변경 오류: ' + e.message); }
+}
+
+// ── 주스·청 재고 부족 기준 모달 (settings key='juice_low_threshold')
+function openJuiceLowModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  document.getElementById('jlow-input').value = juiceLowThreshold;
+  document.getElementById('modal-juicelow').style.display = 'flex';
+}
+function closeJuiceLowModal() {
+  document.getElementById('modal-juicelow').style.display = 'none';
+}
+async function saveJuiceLowThreshold() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const v = parseInt(document.getElementById('jlow-input').value);
+  if (isNaN(v) || v < 0) return alert('0 이상의 숫자를 입력해 주세요. (0 = 경고 끄기)');
+  const prev = juiceLowThreshold;
+  try {
+    await dbSaveSetting('juice_low_threshold', v, '주스·청 재고 부족 기준');
+    juiceLowThreshold = v;
+    closeJuiceLowModal();
+    renderJuiceSection();   // 설정 → 재고 화면으로 안 돌아가도 다음 진입 때 반영되게 값부터 갱신(가드 있어 안전)
+    showToast(v > 0 ? `✓ 재고 부족 기준: ${fmtN(v)} 미만` : '✓ 재고 부족 경고를 껐습니다.');
+  } catch(e) {
+    juiceLowThreshold = prev;
     alert('저장 오류: ' + e.message);
   }
 }

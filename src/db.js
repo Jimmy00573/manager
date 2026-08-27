@@ -190,6 +190,27 @@ async function saveBrixMaxSize(data) {
   }
 }
 
+// ── settings 단일 키 저장(있으면 PATCH, 없으면 INSERT)
+// ★saveBrixMaxSize·saveUrgencyThresholds가 같은 코드를 각자 복사해 갖고 있다. 그 둘은 동작이 검증된
+//   코드라 건드리지 않고, 새로 추가되는 설정 키만 이 함수를 쓴다(복사본을 더 늘리지 않기 위함).
+// ★PATCH 후 영향받은 행이 0이면 성공으로 보지 않는다 — RLS·조건 불일치로 조용히 안 저장되는 걸 막는다.
+async function dbSaveSetting(key, value, label) {
+  const f = `key=eq.${encodeURIComponent(key)}`;
+  const rows = await sbGet('settings', f);
+  if (rows && rows.length > 0) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?${f}`, {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ value, updated_at: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error(`${label} 저장 실패: HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || json.length === 0) throw new Error(`${label} 저장 실패: 영향받은 행 없음 (RLS 또는 조건 불일치)`);
+  } else {
+    await sbInsert('settings', { key, value });
+  }
+}
+
 // ── 재고: 미선과
 async function dbGetUnsorted(date) {
   const q = date ? `date=eq.${date}&order=created_at.desc` : 'order=date.desc,created_at.desc';
