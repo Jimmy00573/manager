@@ -8668,9 +8668,21 @@ function togglePachiRowMenu(regId, btn) {
     menu.style.display = 'none'; _pachiMenuRegId = null; return;
   }
   _pachiMenuRegId = regId;
+
+  // ★행 종류에 따라 항목을 갈아 끼운다.
+  //  Source 3(입고 파치, isInbound)는 inventory_records 행이 아니라 inbound_records 행이다.
+  //  그래서 기존 세 항목이 전부 헛돈다 — 수정·삭제는 inventory_records에서 그 id를 못 찾고,
+  //  출고는 차감 계획이 빈 채로 출고 기록만 남긴다(재고는 그대로). 눌러도 되는 것처럼 보이면 안 된다.
+  //  대신 이 행을 실제로 줄일 수 있는 '사용 처리'만 남긴다.
+  const _isIb = !!_pachiRowRegistry[regId]?.isInbound;
+  [['pmenu-edit', !_isIb], ['pmenu-outbound', !_isIb], ['pmenu-delete', !_isIb], ['pmenu-use', _isIb]]
+    // ★'flex'를 명시한다 — .inv-menu-item에는 display 규칙이 없어서 ''로 두면 block이 되고,
+    //   아이콘·글자 정렬(align-items·gap)이 안 먹는다.
+    .forEach(([id, show]) => { const el = document.getElementById(id); if (el) el.style.display = show ? 'flex' : 'none'; });
+
   const rect = btn.getBoundingClientRect();
   menu.style.display = 'block';
-  const mw = 130, mh = 80;
+  const mw = 130, mh = _isIb ? 40 : 80;
   let left = rect.right - mw;
   if (left < 4) left = rect.left;
   let top = rect.bottom + 4;
@@ -8681,7 +8693,78 @@ function togglePachiRowMenu(regId, btn) {
 function _pachiMenuEdit()      { const id = _pachiMenuRegId; _closePachiMenu(); openPachiEditModal(id); }
 function _pachiMenuOutbound() { const id = _pachiMenuRegId; _closePachiMenu(); openPachiOutboundModal(id); }
 function _pachiMenuDelete()   { const id = _pachiMenuRegId; _closePachiMenu(); _execPachiDelete(id); }
+function _pachiMenuUse()      { const id = _pachiMenuRegId; _closePachiMenu(); openPachiInboundUseModal(id); }
 function _closePachiMenu()    { const m = document.getElementById('pachi-row-menu'); if (m) m.style.display = 'none'; _pachiMenuRegId = null; }
+
+// ── 파치 입고행(Source 3) 사용 처리 ───────────────────────────────────
+// 이 행은 inventory_records가 아니라 inbound_records다. 그래서 재고를 깎는 방식(출고·수정·삭제)이
+// 통하지 않는다 — 줄이는 유일한 길이 processing_records를 남기는 것이고, 이 모달이 그 길이다.
+// ★출고처·단가를 받지 않는다: 여기서 하는 일은 '팔았다'가 아니라 '그 입고분을 다 썼다'는 기록이다.
+//   파는 경우는 입고 화면의 미선과 출고(saveUnsortedOutbound)가 출고 기록까지 남긴다.
+function openPachiInboundUseModal(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const row = _pachiRowRegistry[regId];
+  if (!row || !row.isInbound || !row.ibId) return;
+  if (row.ct <= 0) { alert('남은 수량이 없습니다.'); return; }
+
+  document.getElementById('ob-title').textContent =
+    `✔ 사용 처리 — ${row.pachiKind} ${row.product}${row.farm ? ' · ' + row.farm : ''} · 잔여 ${fmtCT(row.ct)} CT`;
+  document.getElementById('ob-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#6B7280;line-height:1.6">
+        입고 <strong>${esc(row.date || '-')}</strong> · ${esc(row.product)} ${fmtCT(row.ct)} CT 중 사용한 만큼을 적습니다.<br>
+        전량 처리하면 이 행은 목록에서 사라집니다. (처리 내역은 입고 기록에 남습니다)
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">처리일 *</label>
+          <input type="date" id="piu-date" value="${td()}" max="${td()}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+        <div><label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">수량(CT) * <span style="color:#059669">잔여 ${fmtCT(row.ct)}</span></label>
+          <input type="number" id="piu-qty" value="${row.ct}" min="0" max="${row.ct}" step="0.1"
+            onfocus="setTimeout(()=>this.select(),0)"
+            style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">메모</label>
+        <input type="text" id="piu-note" placeholder="(선택) 예) 가공용 사용" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button id="piu-save-btn" class="btn pri" onclick="savePachiInboundUse(${regId})" style="flex:1;padding:10px;font-size:14px">✔ 사용 처리</button>
+        <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+  window._pachiInboundUseCtx = { regId, row };
+  document.getElementById('modal-outbound').style.display = 'flex';
+}
+
+async function savePachiInboundUse(regId) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ctx = window._pachiInboundUseCtx;
+  if (!ctx || ctx.regId !== regId) return;
+  const row = ctx.row;
+
+  const date = document.getElementById('piu-date')?.value;
+  const note = document.getElementById('piu-note')?.value?.trim() || null;
+  const qty  = parseFloat(document.getElementById('piu-qty')?.value) || 0;
+
+  if (!date)        return alert('처리일을 입력해주세요.');
+  if (date > td())  return alert('처리일은 오늘 이후로 지정할 수 없습니다.');
+  if (qty <= 0)     return alert('수량을 입력해주세요.');
+  if (qty > row.ct) return alert(`잔여(${fmtCT(row.ct)} CT)를 초과했습니다.`);
+
+  const btn = document.getElementById('piu-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '처리 중...'; }
+  try {
+    await _addProcessingOut({ inboundId: row.ibId, date, qty, note });
+    document.getElementById('modal-outbound').style.display = 'none';
+    showToast(`사용 처리 완료 (${fmtCT(qty)} CT)`);
+    // ★같은 processing_records를 보는 화면을 함께 갱신한다 — 파치 목록만 그리면 입고 화면의
+    //   잔여가 옛 값으로 남는다(저장은 됐는데 화면은 그대로인 전형적 패턴).
+    renderPachiSection(); renderInboundList(); renderInvSummary();
+  } catch(e) { alert('사용 처리 오류: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '✔ 사용 처리'; } }
+}
 
 function openPachiOutboundModal(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
@@ -8844,6 +8927,22 @@ function openUnsortedOutboundModal(inboundId) {
   document.getElementById('modal-outbound').style.display = 'flex';
 }
 
+// ── 입고분 '출고' 처리 기록 1건 추가 (processing_records) ─────────────
+// ★DB 저장과 전역 배열 반영을 한 덩어리로 묶는다. 잔여 계산(getRemainingCT·파치 입고행)이 전부
+//   processingRecords를 보므로, INSERT만 하고 push를 빠뜨리면 "저장은 됐는데 화면은 그대로"가 된다.
+// ★쓰는 곳: 미선과 출고(saveUnsortedOutbound) · 파치 입고행 사용 처리(savePachiInboundUse).
+//   둘은 뒤에 붙는 일이 다르다 — 미선과는 출고 기록(outbound_records)까지 남기고, 파치 사용 처리는
+//   재고 이동이 아니라 소진이라 여기까지만 한다.
+async function _addProcessingOut({ inboundId, date, qty, note }) {
+  const procRow = await dbInsertProcessing({
+    inbound_id: inboundId, date, process_type: '출고',
+    quantity: qty, note: note || null,
+    staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+  });
+  processingRecords.push(procRow);
+  return procRow;
+}
+
 async function saveUnsortedOutbound(inboundId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const ctx = window._unsortedOutboundCtx;
@@ -8865,12 +8964,7 @@ async function saveUnsortedOutbound(inboundId) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
-    const procRow = await dbInsertProcessing({
-      inbound_id: inboundId, date, process_type: '출고',
-      quantity: qty, note: note || null,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
-    });
-    processingRecords.push(procRow);
+    const procRow = await _addProcessingOut({ inboundId, date, qty, note });
 
     const procId = procRow?.id;
     const weight = parseFloat(document.getElementById('ob-weight')?.value) || null;
@@ -19163,19 +19257,31 @@ function renderPachiSection() {
   // Source 1(irGrouped)에서 이미 표시되므로 제외(중복 방지). 아직 전환 안 된 레거시·전환실패 입고분만 여기서 표시.
   // ★대조 source_type은 카테고리별로 정확히 하나씩(파치→'pachi', 청과→'pachi_green') — 저장 쪽과 같은 짝이어야
   //  중복 계상도, 누락도 안 생긴다. 선과에서 나온 파치는 sorting_result_id만 있고 inbound_record_id가 없어 안 섞인다.
+  // ★표시 수량은 입고량이 아니라 **잔여**다(2026-08-27).
+  //  예전엔 quantity를 그대로 찍어, 다 쓴 파치도 영구히 남았다 — 이 행은 실사·일괄수정 대상도 아니라
+  //  줄일 방법이 아예 없는 사각지대였다. 이제 processing_records를 빼고, 잔여 0 이하면 목록에서 뺀다.
+  // ★잔여 식은 미선과와 같은 getRemainingCT를 그대로 쓴다(입고량 − 처리기록(선과 제외) − 선과 투입).
+  //  파치 입고에 선과 투입이 생길 일은 없지만, 식을 복사해 두 벌로 만들면 나중에 어긋난다.
+  // ★kg도 잔여 기준으로 다시 낸다 — 입고량 기준으로 두면 CT와 kg가 서로 다른 얘기를 하게 된다.
+  // ★0.1 단위로 반올림: 부동소수 잔차(5 - 5 = 4.999…)가 남으면 다 쓴 행이 안 사라진다.
   const _IB_PACHI_SRC = { '파치': 'pachi', '청과': 'pachi_green' };
   const inboundPachi = inboundRecords
     .filter(r => !r.is_void && _IB_PACHI_SRC[r.inbound_category]
       && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === _IB_PACHI_SRC[r.inbound_category] && ir.inbound_record_id === r.id))
-    .map(r => ({
-      date: r.date, farm: r.farm_name || null, product: r.product || '기타',
-      ct: Number(r.quantity) || 0,
-      kg: Math.round((Number(r.quantity) || 0) * kgPerCt(r.product)),
-      ids: [r.id], memo: r.note || '',
-      isSorting: false, isLegacy: false, isInbound: true,
-      pachiKind: r.inbound_category === '청과' ? '청과' : '파치', usage: r.usage || '미분류', location: r.location || null,
-      sizeGroup: null, condition: null
-    }));
+    .map(r => {
+      const remain = Math.round((getRemainingCT(r) || 0) * 10) / 10;
+      return {
+        date: r.date, farm: r.farm_name || null, product: r.product || '기타',
+        ct: remain,
+        kg: Math.round(remain * kgPerCt(r.product)),
+        ids: [r.id], ibId: r.id,   // ibId = 처리 기록을 붙일 inbound_records.id (ids와 같지만 뜻을 분명히)
+        memo: r.note || '',
+        isSorting: false, isLegacy: false, isInbound: true,
+        pachiKind: r.inbound_category === '청과' ? '청과' : '파치', usage: r.usage || '미분류', location: r.location || null,
+        sizeGroup: null, condition: null
+      };
+    })
+    .filter(x => x.ct > 0);
 
   // ==================================================================
   // 5. 세 소스 합치기 + 정렬

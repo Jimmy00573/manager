@@ -1426,9 +1426,12 @@
 
 <!-- 파치 kebab 드롭다운 -->
 <div id="pachi-row-menu" style="display:none;position:fixed;z-index:9000;background:#fff;border:1px solid #E5E7EB;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:120px;overflow:hidden">
-  <div class="inv-menu-item" onclick="_pachiMenuEdit()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">✏️ 수정</div>
-  <div class="inv-menu-item" onclick="_pachiMenuOutbound()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#2563EB">📤 출고</div>
-  <div class="inv-menu-item" onclick="_pachiMenuDelete()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#DC2626">🗑️ 삭제</div>
+  <!-- ★항목 노출은 togglePachiRowMenu가 행 종류에 따라 정한다.
+       입고 파치(Source 3)는 inventory_records 행이 아니라 아래 세 항목이 헛돌아, '사용 처리'만 보인다. -->
+  <div class="inv-menu-item" id="pmenu-edit" onclick="_pachiMenuEdit()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">✏️ 수정</div>
+  <div class="inv-menu-item" id="pmenu-outbound" onclick="_pachiMenuOutbound()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#2563EB">📤 출고</div>
+  <div class="inv-menu-item" id="pmenu-delete" onclick="_pachiMenuDelete()" style="padding:8px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#DC2626">🗑️ 삭제</div>
+  <div class="inv-menu-item" id="pmenu-use" onclick="_pachiMenuUse()" style="display:none;padding:8px 14px;font-size:14px;cursor:pointer;align-items:center;gap:8px;color:#059669">✔ 사용 처리</div>
 </div>
 
 
@@ -2025,6 +2028,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=24"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=579"></script>
+<script src="src/app.js?v=580"></script>
 </body>
 </html>
