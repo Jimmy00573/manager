@@ -3780,6 +3780,12 @@ function calGetAllItems() {
 }
 // 수확 일정 관리 버튼(시작/완료/수정/삭제) — 금일 strip·달력 상세·월간 목록 공통 재사용
 const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
+// ── 달력 이벤트가 '수확'인가 '배송(배차)'인가 ─────────────────────────
+// calGetEvents는 두 갈래를 섞어 돌려준다: harvests 레코드(수확전/수확중/수확완료)와
+// dispatches 레코드(배차없음/배차완료/배출완료). ★두 status 집합은 서로 겹치지 않아 이 판정이 성립한다.
+// ★원래 renderCal 안의 지역 상수였다 — 같은 판정이 상세 패널에도 필요해지면서 전역으로 올렸다
+//   (판정식은 글자 그대로 동일. 네 번째 복사본을 만들지 않으려는 것).
+function _isHarvestEv(e) { return e.status === '수확전' || e.status === '수확중' || e.status === '수확완료'; }
 const _hvStBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
 const _hvStFg    = { 수확전: '#C05800', 수확중: '#1565C0', 수확완료: '#2E7D32' };   // _hvStBg 짝 글자색(달력 셀 pill용) — 앱 기존 팔레트 재사용
 function harvestActBtns(h) {
@@ -3847,8 +3853,7 @@ function renderCal() {
     !calTodayEvents.find(e => e.farm === h.farm)
   );
   // 농가 기준 중복 제거. 같은 농가에 배차+수확 이벤트가 둘 다면 수확 이벤트 우선(수확 관리 목적).
-  // status 집합 disjoint → 수확상태(수확전/중/완료)면 harvest 레코드. (배차가 수확 안 덮게)
-  const _isHarvestEv = e => e.status === '수확전' || e.status === '수확중' || e.status === '수확완료';
+  // 판정은 전역 _isHarvestEv (status 집합이 disjoint한 근거는 그 선언부 주석 참고).
   const _byFarm = new Map();   // 농가별 대표 이벤트(먼저 나온 농가 순서 유지, 수확 이벤트가 배차보다 우선)
   for (const e of [...calTodayEvents, ...ongoingHarvests]) {
     const prev = _byFarm.get(e.farm);
@@ -4508,10 +4513,16 @@ function _refreshCalDetail() {
   if (!dStr || evs.length === 0) { panel.style.display = 'none'; return; }
   const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const d = new Date(dStr + 'T00:00:00');
-  document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 수확 예정 (${evs.length}건)`;
+  // ★제목은 수확과 배송을 따로 센다. 예전엔 전체를 "수확 예정 (N건)"으로 묶어, 배차 2건이 섞이면
+  //   수확이 4건인 것처럼 읽혔다. 둘은 같은 날 겹칠 뿐 다른 단계다(수확 → 배송).
+  //   한쪽이 0건이면 그쪽은 아예 안 쓴다 — "배송 0건"은 없는 정보를 있는 것처럼 보이게 한다.
+  const hvCnt = evs.filter(_isHarvestEv).length;
+  const dpCnt = evs.length - hvCnt;
+  const cntTxt = [hvCnt ? `수확 ${hvCnt}건` : '', dpCnt ? `배송 ${dpCnt}건` : ''].filter(Boolean).join(' · ');
+  document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 — ${cntTxt}`;
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
     // 수확 진행상태(수확전/중/완료) 일정 → harvestRow 재사용(▶시작·✅완료·✏️수정·🗑삭제, 미래 포함)
-    if (e.status === '수확전' || e.status === '수확중' || e.status === '수확완료') {
+    if (_isHarvestEv(e)) {
       return `<div style="margin-bottom:5px">${harvestRow(e, false)}</div>`;
     }
     const bg = e.status === '배출완료' ? '#F1F8E9' : e.status === '배차없음' ? '#FFEBEE' : '#FFF3E0';
@@ -4521,7 +4532,7 @@ function _refreshCalDetail() {
       : `<span class="badge ${bdg}">${e.status}</span>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:${bg};margin-bottom:5px;gap:8px;flex-wrap:wrap">
       <div>
-        <div style="font-weight:500;font-size:13px">${esc(e.farm)}${e.round?` <span style="font-weight:600;font-size:11px;color:#1565C0">${e.round}차</span>`:''} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
+        <div style="font-weight:500;font-size:13px"><span title="배송" style="margin-right:3px">🚚</span>${esc(e.farm)}${e.round?` <span style="font-weight:600;font-size:11px;color:#1565C0">${e.round}차</span>`:''} <span style="font-weight:400;font-size:12px;color:#888">· ${esc(e.item||'-')}</span></div>
         <div style="font-size:11px;color:#888;margin-top:2px">${e.driver?'기사: '+esc(e.driver)+' · ':''} ${e.ctype?_ctIcon(e.ctype)+' '+esc(e.ctype)+' '+e.qty+'개 · ':''} ${e.date?'배출일: '+calFmtShort(e.date):'배출일 미정'}</div>
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${detailBtns}</div>
