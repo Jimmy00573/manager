@@ -19551,6 +19551,8 @@ function _jbColGroup(isAdm) {
   return `<colgroup><col style="width:${date}px"><col style="width:${expiry}px"><col style="width:${remain}px">`
        + `<col style="width:${box}px"><col style="width:${note}px">${isAdm ? `<col style="width:${menu}px">` : ''}</colgroup>`;
 }
+// 열 개수 — '배치 없음' 빈 행의 colspan용. ★_jbColGroup이 내보내는 col 수와 반드시 같아야 한다.
+function _JB_COLS(isAdm) { return 5 + (isAdm ? 1 : 0); }
 
 function renderJuiceSection() {
   const el = document.getElementById('inv-juice-section');
@@ -19562,17 +19564,42 @@ function renderJuiceSection() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const activeBatches = invJuiceBatches.filter(b => !b.is_void && b.remaining_bottles > 0);
 
+  // ── 제품 상태 판정 ────────────────────────────────────────────
+  // ★경계는 여기 한 곳에서만 정한다: 0 이하 = 품절 · 0 < 잔여 < 기준 = 부족 · 기준 이상 = 정상.
+  //   비교 기준값의 근거(단위 환산을 안 하는 이유)는 juiceLowThreshold 선언부 주석 참고.
+  // ★기준 0은 '부족(⚠) 경고 끄기'다 — 품절(⛔)은 기준과 무관한 사실이라 끄지 않는다.
+  const isJuiceLow = total => juiceLowThreshold > 0 && total < juiceLowThreshold;
+  const JST_OUT = 0, JST_LOW = 1, JST_OK = 2;   // 정렬 순서와 같다(작을수록 급함)
+  const juiceStatusOf = total => total <= 0 ? JST_OUT : (isJuiceLow(total) ? JST_LOW : JST_OK);
+  const JUICE_OUT_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#991B1B;border-radius:4px;padding:1px 6px;white-space:nowrap">⛔ 품절</span>`;
+  const JUICE_LOW_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#DC2626;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠ 재고 부족</span>`;
+  const juiceBadgeOf = st => st === JST_OUT ? JUICE_OUT_BADGE : st === JST_LOW ? JUICE_LOW_BADGE : '';
+
   const productMap = {};
   activeBatches.forEach(b => {
     const p = b.product_name || '기타';
     if (!productMap[p]) productMap[p] = [];
     productMap[p].push(b);
   });
+  // ★잔여 0인 제품도 목록에 남긴다 — 가장 급한 상태(품절)가 화면에서 통째로 사라지던 문제.
+  //   목록 = 활성 마스터 ∪ 잔여가 남은 배치의 제품.
+  //   · invJuiceMasters는 dbGetJuiceMasters가 `is_active=eq.true`로만 받아온다 → 비활성 제품은 여기 없다.
+  //   · ★뒤쪽 합집합(배치 쪽)을 빼면 안 된다. 마스터를 비활성으로 돌려도 창고에 남은 물량은 계속 보여야 한다
+  //     (콘테이너 OT/OT_ACTIVE와 같은 논리). 결과적으로 **비활성 + 잔여 0**인 제품만 목록에서 빠진다.
+  invJuiceMasters.forEach(m => {
+    const p = m.product_name;
+    if (p && !productMap[p]) productMap[p] = [];
+  });
 
+  const totalOf = p => (productMap[p] || []).reduce((s, b) => s + (b.remaining_bottles || 0), 0);
   const productKeys = Object.keys(productMap).sort((a, b) => {
     const ga = juiceUnitOf(a) === '박스' ? 2 : isCheong(a) ? 1 : 0;
     const gb = juiceUnitOf(b) === '박스' ? 2 : isCheong(b) ? 1 : 0;
     if (ga !== gb) return ga - gb;
+    // ★그룹(주스/청/가공품) 안에서 급한 것부터: 품절 → 부족 → 정상 → 이름순.
+    //   그룹을 넘어 섞지 않는다 — 그러면 '🧃 주스 / 🍯 청 / 🍫 가공품' 머리글이 뜻을 잃는다.
+    const sa = juiceStatusOf(totalOf(a)), sb = juiceStatusOf(totalOf(b));
+    if (sa !== sb) return sa - sb;
     return a.localeCompare(b, 'ko');
   });
 
@@ -19590,18 +19617,15 @@ function renderJuiceSection() {
     return `<span style="font-size:11px;color:#6B7280">${expiry}</span>`;
   };
 
-  // 재고 부족 판정 — 기준·비교 근거는 juiceLowThreshold 선언부 주석 참고(저장값 그대로 비교, 0이면 끔).
-  const isJuiceLow = total => juiceLowThreshold > 0 && total < juiceLowThreshold;
-  const JUICE_LOW_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#DC2626;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠ 재고 부족</span>`;
-
   const statsCardOf = ([p, batches]) => {
     const total = batches.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
-    const low = isJuiceLow(total);
-    return `<div style="background:${low ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${low ? '#DC2626' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:120px">
-      ${low ? `<div style="margin-bottom:4px">${JUICE_LOW_BADGE}</div>` : ''}
+    const st = juiceStatusOf(total);
+    const warn = st !== JST_OK;   // 품절·부족은 테두리·글씨를 같은 빨강으로 두고 라벨로만 구분한다
+    return `<div style="background:${warn ? '#FEF2F2' : '#F0FFF4'};border:1px solid ${warn ? '#DC2626' : '#A7F3D0'};border-radius:8px;padding:12px 16px;min-width:120px">
+      ${warn ? `<div style="margin-bottom:4px">${juiceBadgeOf(st)}</div>` : ''}
       <div style="font-size:12px;color:#888;margin-bottom:2px">${esc(p)}</div>
-      <div style="font-size:18px;font-weight:700;color:${low ? '#DC2626' : '#065F46'}">${fmtN(total)} ${juiceUnitOf(p)}</div>
-      <div style="font-size:11px;color:#999;margin-top:2px">${batches.length}배치</div>
+      <div style="font-size:18px;font-weight:700;color:${warn ? '#DC2626' : '#065F46'}">${fmtN(total)} ${juiceUnitOf(p)}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px">${batches.length ? batches.length + '배치' : '남은 배치 없음'}</div>
     </div>`;
   };
   const groupBlockOf = (label, entries) => entries.length
@@ -19622,7 +19646,8 @@ function renderJuiceSection() {
       return a.expiry_date.localeCompare(b.expiry_date);
     });
     const totalRemaining = sorted.reduce((s, b) => s + (b.remaining_bottles || 0), 0);
-    const lowProd = isJuiceLow(totalRemaining);
+    const prodSt  = juiceStatusOf(totalRemaining);
+    const warnProd = prodSt !== JST_OK;
     const thisGroup = juiceUnitOf(product) === '박스' ? 'box' : isCheong(product) ? 'cheong' : 'juice';
     let grpHdr = '';
     if (thisGroup !== _lastJuiceGroup) {
@@ -19639,7 +19664,7 @@ function renderJuiceSection() {
       return `<tr style="${trBg}">
         <td style="padding:6px 10px;font-size:12px;color:#555;white-space:nowrap">${b.inbound_date || '-'}</td>
         <td style="padding:6px 10px">${expiryDisplay(b.expiry_date)}</td>
-        <td style="padding:6px 10px;text-align:right;font-weight:600${lowProd ? ';color:#DC2626' : ''}">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600${warnProd ? ';color:#DC2626' : ''}">${fmtN(b.remaining_bottles)}<span style="font-size:11px;font-weight:400;color:#9CA3AF"> ${juiceUnitOf(product)}</span></td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(boxTxt)}">${esc(boxTxt)}</td>
         <td style="padding:6px 10px;font-size:11px;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(b.note || '')}">${esc(b.note || '')}</td>
         ${isAdm ? `<td style="padding:3px 6px;text-align:center;width:36px;position:sticky;right:0;background:${stickyBg};z-index:1">
@@ -19675,12 +19700,12 @@ function renderJuiceSection() {
       }
     }).join('');
 
-    return `${grpHdr}<div style="background:#fff;border:1px solid ${lowProd ? '#DC2626' : '#E5E7EB'};border-radius:8px;overflow:hidden;margin-bottom:8px">
-      <div style="display:flex;align-items:center;padding:10px 14px;background:${lowProd ? '#FEF2F2' : '#F9FAFB'};border-bottom:1px solid #E5E7EB;gap:8px">
+    return `${grpHdr}<div style="background:#fff;border:1px solid ${warnProd ? '#DC2626' : '#E5E7EB'};border-radius:8px;overflow:hidden;margin-bottom:8px">
+      <div style="display:flex;align-items:center;padding:10px 14px;background:${warnProd ? '#FEF2F2' : '#F9FAFB'};border-bottom:1px solid #E5E7EB;gap:8px">
         <span style="font-size:13px;font-weight:700;color:#111827">${esc(product)}</span>
-        ${lowProd ? JUICE_LOW_BADGE : ''}
+        ${juiceBadgeOf(prodSt)}
         <span style="flex:1"></span>
-        <span style="font-size:13px;font-weight:600;color:${lowProd ? '#DC2626' : '#065F46'}">${fmtN(totalRemaining)} ${juiceUnitOf(product)}</span>
+        <span style="font-size:13px;font-weight:600;color:${warnProd ? '#DC2626' : '#065F46'}">${fmtN(totalRemaining)} ${juiceUnitOf(product)}</span>
         <button onclick="toggleJuiceHistory('${productKey}')"
           style="background:none;border:1px solid #D1D5DB;border-radius:6px;padding:3px 10px;font-size:11px;color:#6B7280;cursor:pointer">이력 ▾</button>
       </div>
@@ -19694,7 +19719,7 @@ function renderJuiceSection() {
         <th style="padding:5px 10px;text-align:left;font-size:11px;font-weight:600;color:#9CA3AF;border-bottom:1px solid #E5E7EB">박스</th>
         <th style="padding:5px 10px;border-bottom:1px solid #E5E7EB"></th>
         ${isAdm ? '<th style="border-bottom:1px solid #E5E7EB;position:sticky;right:0;background:#fff;z-index:2"></th>' : ''}
-      </tr></thead><tbody>${batchRows}</tbody></table>
+      </tr></thead><tbody>${batchRows || emr(_JB_COLS(isAdm), '남은 배치가 없습니다 (품절)')}</tbody></table>
       </div>
       <div id="juice-history-${productKey}" style="display:none;padding:10px 14px;background:#FAFAFA;border-top:1px solid #F3F4F6">
         <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:6px">입출고 이력</div>
