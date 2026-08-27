@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🍊 시트리앙 통합관리</title>
-  <link rel="stylesheet" href="src/style.css?v=28">
+  <link rel="stylesheet" href="src/style.css?v=29">
 </head>
 <body>
 
@@ -543,8 +543,8 @@
       <span id="cal-item-legend" style="display:flex;gap:10px;flex-wrap:wrap"></span>
     </div>
   </div>
-  <div id="cal-head-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px"></div>
-  <div id="cal-body-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:16px"></div>
+  <div id="cal-head-grid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-bottom:4px"></div>
+  <div id="cal-body-grid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-bottom:16px"></div>
   <div id="cal-detail-panel" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;padding:14px;margin-bottom:12px">
     <div id="cal-detail-title" style="font-size:13px;font-weight:500;color:#C05800;margin-bottom:10px"></div>
     <div id="cal-detail-list"></div>
@@ -2025,6 +2025,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=24"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=577"></script>
+<script src="src/app.js?v=578"></script>
 </body>
 </html>

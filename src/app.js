@@ -3898,8 +3898,9 @@ function renderCal() {
   else strip.style.display = 'none';
 
   // 달력 헤더
+  // ★min-width:0 — 본문 셀과 같은 이유(아래 셀 주석 참고). 헤더가 안 줄면 요일이 본문 열과 어긋난다.
   document.getElementById('cal-head-grid').innerHTML = ['일','월','화','수','목','금','토'].map(d =>
-    `<div style="text-align:center;font-size:11px;font-weight:500;color:#888;padding:4px 0">${d}</div>`
+    `<div style="text-align:center;font-size:11px;font-weight:500;color:#888;padding:4px 0;min-width:0">${d}</div>`
   ).join('');
 
   // 달력 셀
@@ -3907,8 +3908,20 @@ function renderCal() {
   const last = new Date(calYear, calMonth + 1, 0);
   const startDay = first.getDay();
   let cells = '';
-  const cellStyle = 'min-height:72px;border-radius:8px;border:0.5px solid #e0e0e0;background:#fff;padding:4px;cursor:pointer';
-  const otherStyle = 'min-height:72px;border-radius:8px;border:0.5px solid #e0e0e0;background:#f5f5f5;padding:4px;opacity:.4';
+  // ★min-width:0 — 그리드 아이템의 기본 최소 크기(min-width:auto)는 '내용의 최소 폭'이다.
+  //   셀 안 일정 칩이 white-space:nowrap이라 농가명 전체 폭이 그 최소값이 되고, 7열 합이 폰 화면을
+  //   넘겨 오른쪽 4열이 잘려 나갔다(가로 스크롤도 안 됨 — body가 overflow-x:hidden).
+  //   min-width:0을 주면 셀이 1/7 폭까지 줄고, 칩의 text-overflow:ellipsis가 그제야 실제로 동작한다.
+  const otherStyle = 'min-height:72px;border-radius:8px;border:0.5px solid #e0e0e0;background:#f5f5f5;padding:4px;opacity:.4;min-width:0';
+
+  // 일정 상태색 — 칩(배경·글자)과 좁은 화면의 색 점이 **같은 판정**을 쓰도록 한 곳에서 낸다.
+  // ★값은 기존 칩 코드 그대로다(수확=_hvStBg/_hvStFg, 배차=배출완료/배차없음/그 외). 색 규칙은 안 바꿨다.
+  const evColor = e => _isHarvestEv(e)
+    ? { bg: _hvStBg[e.status] || '#FFF3E0', fg: _hvStFg[e.status] || '#C05800' }
+    : e.status === '배출완료' ? { bg: '#E8F5E9', fg: '#2E7D32' }
+    : e.status === '배차없음' ? { bg: '#FFEBEE', fg: '#C62828' }
+    : { bg: '#FFF3E0', fg: '#C05800' };
+  const CAL_DOT_MAX = 4;   // 좁은 화면에서 한 셀에 찍는 점 개수(넘치면 +N)
 
   for (let i = 0; i < startDay; i++) {
     const d = new Date(calYear, calMonth, -startDay + i + 1);
@@ -3919,11 +3932,11 @@ function renderCal() {
     const evs = calSortItems(calGetEvents(dStr));
     const isToday = dStr === todayStr;
     const isSel = dStr === calSelectedDate;
-    let pills = evs.slice(0, 2).map(e => {
+    // ── 넓은 화면용: 농가명 칩 2개(+N) ───────────────────────────
+    let pillsFull = evs.slice(0, 2).map(e => {
       // 수확 이벤트는 상태색(_hvStBg/_hvStFg), 배차 이벤트는 기존 배출 상태색 그대로.
-      const bg = _isHarvestEv(e)
-        ? `${_hvStBg[e.status]||'#FFF3E0'};color:${_hvStFg[e.status]||'#C05800'}`
-        : e.status === '배출완료' ? '#E8F5E9;color:#2E7D32' : e.status === '배차없음' ? '#FFEBEE;color:#C62828' : '#FFF3E0;color:#C05800';
+      const c = evColor(e);
+      const bg = `${c.bg};color:${c.fg}`;
       // 좁은 셀이라 기호만: 전체종료 🏁 > 수확완료 ✓ > 수확중 ▶ (수확전은 색으로만). 배차 이벤트엔 해당 status 없어 기존과 동일.
       const mark = e.is_final ? ' 🏁' : e.status === '수확완료' ? ' ✓' : e.status === '수확중' ? ' ▶' : '';
       // 차수는 1차부터 표시(월간 목록·상세와 동일 규칙). 배차 이벤트엔 round·is_final 없어 기존과 동일.
@@ -3935,10 +3948,26 @@ function renderCal() {
         : '';
       return `<div title="${esc(e.farm)}${e.item ? ' · ' + esc(e.item) : ''}" style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${bg}">${dot}${esc(e.farm)}${e.round?' '+e.round+'차':''}${mark}</div>`;
     }).join('');
-    if (evs.length > 2) pills += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
+    if (evs.length > 2) pillsFull += `<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:#f0f0f0;color:#888">+${evs.length - 2}</div>`;
+
+    // ── 좁은 화면(≤640px)용: 색 점만 ─────────────────────────────
+    // 폰에서 한 셀이 40px 남짓이라 농가명은 어차피 못 읽는다. 점으로 "몇 건·무슨 상태"만 보이고,
+    // 이름·품목·차수는 날짜를 눌러 기존 상세 패널에서 본다(cal-detail-panel).
+    // ★점 색 = 칩과 같은 상태색(evColor.fg). 달력 위 범례와 대조된다.
+    //   품목색(_hvItemColor)은 여기 안 쓴다 — 8px 점 하나에 상태와 품목을 같이 담을 수 없다.
+    // ★두 벌을 다 그려 놓고 CSS로 하나만 보인다(.cal-pills-full / .cal-pills-dots).
+    //   렌더 때 innerWidth로 갈래를 타면 창 크기 변경·화면 회전 때마다 다시 그려야 한다.
+    let pillsDots = evs.slice(0, CAL_DOT_MAX).map(e =>
+      `<span title="${esc(e.farm)}${e.item ? ' · ' + esc(e.item) : ''}" style="width:8px;height:8px;border-radius:50%;background:${evColor(e).fg};display:inline-block;flex-shrink:0"></span>`
+    ).join('');
+    if (evs.length > CAL_DOT_MAX) pillsDots += `<span style="font-size:9px;color:#888;line-height:1">+${evs.length - CAL_DOT_MAX}</span>`;
+
+    const pills = evs.length
+      ? `<div class="cal-pills-full" style="min-width:0">${pillsFull}</div><div class="cal-pills-dots">${pillsDots}</div>`
+      : '';
     const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
     const bg = isSel ? '#f8f8f8' : '#fff';
-    cells += `<div style="min-height:72px;border-radius:8px;border:${border};background:${bg};padding:4px;cursor:pointer" onclick="calSelectDay('${dStr}')">
+    cells += `<div style="min-height:72px;border-radius:8px;border:${border};background:${bg};padding:4px;cursor:pointer;min-width:0" onclick="calSelectDay('${dStr}')">
       <div style="font-size:11px;font-weight:500;color:${isToday ? '#C05800' : '#888'};margin-bottom:2px">${i}</div>${pills}
     </div>`;
   }

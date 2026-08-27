@@ -550,3 +550,13 @@ textarea {
 /* ── 입고 목록 비율 뱃지 */
 .ib-ratio-chip { display:inline-flex; align-items:center; gap:3px; font-size:11px; padding:2px 9px; border-radius:11px; cursor:pointer; font-weight:500; color:#2563EB; background:transparent; border:1px solid #BFD3F0; transition:all .15s; }
 .ib-ratio-chip:hover { background:#EFF6FF; }
+
+/* ── 수확 달력: 좁은 화면에서 7열이 화면 안에 들어가게 ────────────────
+   셀(그리드 아이템)의 min-width:0은 renderCal이 인라인으로 넣는다 — 그게 열이 안 줄던 진짜 원인.
+   여기서는 셀 '내용'을 갈아끼운다: 넓은 화면은 농가명 칩, 640px 이하는 색 점만.
+   ★두 벌을 다 그려 두고 하나만 보이게 한다 — 창 크기가 바뀌거나 화면을 돌려도 다시 그릴 필요가 없다. */
+.cal-pills-dots { display: none; }
+@media (max-width: 640px) {
+  .cal-pills-full { display: none; }
+  .cal-pills-dots { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+}
