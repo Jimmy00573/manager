@@ -68,6 +68,7 @@ async function dbDeleteNhfOut(id) { return sbDelete('nhf_outs', id); }
 
 async function dbGetReports() { return sbGet('reports', 'order=date.desc,created_at.desc'); }
 async function dbInsertReport(data) { const r = await sbInsert('reports', data); return r[0]; }
+async function dbDeleteReport(id) { return sbDelete('reports', id); }
 
 async function loadAllData() {
   const [farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests, vehicles] = await Promise.all([

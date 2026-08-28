@@ -1363,14 +1363,22 @@ function gradeOf(r) { return (r && r.quality_grade) || '일반'; }
 function isNormalGrade(r) { return gradeOf(r) === '일반'; }
 function isGraded(r) { return !isNormalGrade(r); }   // 등급 있음(현재=고당, 향후=브릭스)
 function emr(c, m) { return `<tr><td colspan="${c}" class="empty">${m}</td></tr>`; }
+// 빨간 경고 칩 — 재고 요약 KPI 카드(renderInvSummary)와 배차 현황판(renderDDash)이 같이 쓴다.
+// ★스타일을 복사해 두 벌로 만들지 않는다(원래 renderInvSummary 안의 지역 const였다).
+// ★onClick을 안 주면 예전 출력과 한 글자도 다르지 않다 — 주면 눌리는 칩이 된다.
+function kpiChip(txt, onClick) {
+  return `<div style="display:inline-block;background:#FCEBEB;color:#A32D2D;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px${onClick ? ';cursor:pointer' : ''}"${onClick ? ` onclick="${onClick}"` : ''}>${txt}</div>`;
+}
 function ftm(iso) {
   if (!iso) return '-';
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 function CM(t) { document.getElementById('modal-' + t).style.display = 'none'; }
-async function cDel(m) {
-  return await showConfirmDanger({ title: m, subtitle: '삭제된 데이터는 복구할 수 없습니다', confirmText: '삭제' });
+// ★items는 showConfirmDanger가 빨간 목록으로 그린다 — '이것도 같이 지워진다'를 미리 알리는 용도.
+//   안 넘기면 기존 호출부(수거·반입·반납·빈콘 5곳)와 화면이 한 글자도 다르지 않다.
+async function cDel(m, items = []) {
+  return await showConfirmDanger({ title: m, subtitle: '삭제된 데이터는 복구할 수 없습니다', items, confirmText: '삭제' });
 }
 
 // ══ 마스터 삭제 전 '연결된 기록' 확인 ══════════════════════════════
@@ -2223,16 +2231,40 @@ async function updDisp(id, s) {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
+// 이 배차를 지우면 '대표할 배차가 사라지는' 작업 보고를 고른다.
+// ★reports에는 dispatch_id가 없다 — (기사·농가·날짜)로만 느슨하게 붙어 있고,
+//   addDisp·_completeDispatch의 중복 방지 조건이 그 조합에 보고를 1건만 남긴다.
+//   그래서 같은 조합에 배차가 2건이면 보고 1건이 둘을 대표한다(운영 데이터에 그런 묶음이 5개 있다.
+//   예: 양성윤·한진수(신풍리460)·2026-08-22 배차 2건 ↔ 보고 1건).
+//   한 건만 지웠는데 보고까지 지우면 남은 배차의 실적이 사라진다 → 다른 배차가 하나도 안 남을 때만 정리한다.
+// ★확인창 문구와 실제 삭제가 이 한 함수를 같이 본다 — 따로 계산하면 둘이 갈린다.
+function _dispOrphanReports(d, delId) {
+  if (!d) return [];
+  if (dispatches.some(x => x.id !== delId && x.driver === d.driver && x.farm === d.farm && x.date === d.date)) return [];
+  return reports.filter(r => r.driver === d.driver && r.farm === d.farm && r.date === d.date);
+}
+
 async function delDisp(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  if (!(await cDel('배차 기록 삭제'))) return;
+  // ★판정은 삭제 '전'에 한다 — dispatches에서 빼고 나면 대상 행의 기사·농가·날짜를 못 읽는다.
+  const orphanRpts = _dispOrphanReports(dispatches.find(d => d.id === id), id);
+  if (!(await cDel('배차 기록 삭제', orphanRpts.length ? [`연결된 작업보고 ${orphanRpts.length}건도 함께 정리됩니다`] : []))) return;
   try {
     const autoPicks = picks.filter(p => p.dispatch_id === id);
     await Promise.all(autoPicks.map(p => dbDeletePick(p.id)));
     await dbDeleteDispatch(id);
     dispatches = dispatches.filter(d => d.id !== id);
     picks = picks.filter(p => p.dispatch_id !== id);
+    // ★배차 삭제가 끝난 뒤에 지운다 — 앞이 실패하면 보고는 손대지 않는다.
+    if (orphanRpts.length) {
+      await Promise.all(orphanRpts.map(r => dbDeleteReport(r.id)));
+      const gone = new Set(orphanRpts.map(r => r.id));
+      reports = reports.filter(r => !gone.has(r.id));   // ★DB만 지우고 배열을 안 고치면 화면은 그대로 남는다
+    }
     renderSC(); renderDisp(); renderDDash(); renderDash();
+    if (_repOpen) renderRep();
+    const rc = document.getElementById('rep-cnt');   // 작업 보고 건수 배지 — updDisp와 같은 식
+    if (rc) rc.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
   } catch (e) { alert('오류: ' + e.message); }
 }
 
@@ -2245,8 +2277,23 @@ function tripBadge(trip) {
   if (!trip) return '';
   return `<span style="font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;background:#F3E5F5;color:#6A1B9A">${esc(trip)}</span>`;
 }
+// 지난 배송 예정 경고 — 배차일이 지났는데 아직 '배차완료'(배출 대기)로 남아 있는 건.
+// ★예약 배차는 완료 처리를 잊으면 조용히 쌓인다. 날짜 그룹의 '⚠ 지연' 표시는 대기 탭을 열어야 보이므로,
+//   이 칩은 어느 탭에 있든 목록 위에 뜬다(0건이면 아무것도 그리지 않아 예전 화면 그대로).
+// ★날짜 비교는 td()(로컬) 기준 문자열 비교 — toISOString은 UTC로 밀려 하루 어긋난다.
+function _renderDispOverdueWarn() {
+  const el = document.getElementById('disp-overdue-warn');
+  if (!el) return;
+  const today = td();
+  const n = dispatches.filter(d => d.status === '배차완료' && d.date && d.date < today).length;
+  if (!n) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = kpiChip(`⚠ 지난 배송 예정 ${n}건`, "switchDT('w')");
+}
+
 function renderDDash() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  _renderDispOverdueWarn();   // ★목록이 비어도 떠야 한다 — 아래 조기 return보다 먼저 그린다.
   // ★두 탭은 정렬 방향이 반대다 — 성격이 다르기 때문이다.
   //   배출 대기 : 오래 기다린 것이 급하다 → 오름차순(옛날 것이 위)
   //   배출 완료 : 이미 끝난 기록이라 오늘 것부터 본다 → 내림차순
@@ -12324,7 +12371,7 @@ function renderInvSummary() {
       ${sub || ''}
     </div>`;
   const kpiSub  = txt => `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${txt}</div>`;
-  const kpiChip = txt => `<div style="display:inline-block;background:#FCEBEB;color:#A32D2D;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px">${txt}</div>`;
+  // ★kpiChip은 전역 헬퍼로 옮겼다(배차 현황판과 공용). 여기 호출부는 그대로 — 인자 1개면 출력이 예전과 같다.
   const kpiHtml = `<div class="sum-kpi-grid">
     ${unsTotalCt > 0 ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
       priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns') : ''}

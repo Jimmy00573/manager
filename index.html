@@ -309,6 +309,8 @@
   <div class="sec-hdr"><div class="sec-title">배차·배출 현황</div><button class="sec-toggle" onclick="togS('disp-dash')"><span id="disp-dash-txt">간략히</span></button></div>
   <div id="disp-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="disp-dash-badges"></div></div>
   <div id="disp-dash-detail">
+    <!-- 지난 배송 예정 경고 칩 — _renderDispOverdueWarn이 채운다(0건이면 display:none 유지) -->
+    <div id="disp-overdue-warn" style="display:none;margin-bottom:8px"></div>
     <div class="disp-tabs" style="margin-bottom:12px"><button class="dtab active" id="dtab-w" onclick="switchDT('w')">배출 대기</button><button class="dtab" id="dtab-d" onclick="switchDT('d')">배출 완료</button></div>
     <div id="d-disp-tb"></div>
     <div class="pagination" id="disp-pg"></div>
@@ -2026,8 +2028,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="src/supabase-client.js?v=29"></script>
-<script src="src/db.js?v=24"></script>
+<script src="src/db.js?v=25"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=580"></script>
+<script src="src/app.js?v=581"></script>
 </body>
 </html>
