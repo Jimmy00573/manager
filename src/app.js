@@ -33,6 +33,22 @@ const PER = 7;
 const OT_FALLBACK = ['황제', '시트리앙', '헌콘테이너'];
 const OT = [...OT_FALLBACK];          // 표시·집계용(비활성 포함)
 const OT_ACTIVE = [...OT_FALLBACK];   // 선택 옵션용(비활성 제외)
+// ★운반구 종류 이름 집합 — container_types.holds_fruit=false 인 것(파렛트·우리파렛트·리어카).
+//   원물을 담는 용기가 아니라 받침·운반 도구라 개수가 원물 CT와 아무 관계가 없다.
+//   (2026-08-28 남원농협 하우스감귤: 콘테이너 205 + 파렛트 6이 합산돼 입고 211로 잡힌 사고)
+// ★이름을 코드에 나열하지 않는 이유 — 종류가 늘 때마다 같은 사고가 난다. 판단은 마스터 컬럼 하나가 한다.
+// ★소유(owner)를 가리지 않는다 — 실제 '파렛트'는 owner='nhf', '리어카·우리파렛트'는 'ours'다.
+//   OT/OT_ACTIVE(ours 전용)와 범위가 다른 이유가 이것이다.
+// ★Set '객체'는 그대로 두고 내용만 갈아끼운다(clear+add) — OT의 length=0+push와 같은 이유.
+// ★마스터를 못 읽으면 비어 있다 = 전부 원물 취급 = 예전 동작. 안전한 기본값이다.
+const OT_NOFRUIT = new Set();
+// 이 종류가 원물을 담는가? 입고수량 자동합계에 넣을지의 유일한 판단처.
+// 인자는 마스터 행(권장 — 그 행의 값을 그대로 본다) 또는 종류 이름.
+// ★모르는 종류는 true — 새 종류가 조용히 합계에서 빠지는 쪽이 더 위험하다(수량이 모자라게 잡힌다).
+function ctHoldsFruit(v) {
+  if (v && typeof v === 'object') return v.holds_fruit !== false;
+  return !OT_NOFRUIT.has(ctNorm(v));
+}
 function _syncOT() {
   const ours = (containerTypes || [])
     .filter(t => t && t.owner === 'ours')
@@ -44,6 +60,10 @@ function _syncOT() {
   OT.push(...(all.length ? all : OT_FALLBACK));
   OT_ACTIVE.length = 0;
   OT_ACTIVE.push(...(act.length ? act : OT.slice()));   // 전부 비활성이면 선택지가 비지 않게 OT로 폴백
+  // ★운반구 집합은 위 ours 필터를 쓰지 않는다 — '파렛트'가 owner='nhf'라 ours만 보면 그대로 샌다.
+  //   비활성 종류도 담는다: 안 쓰기로 한 종류라도 이미 열려 있는 폼의 칸은 계속 판정돼야 한다.
+  OT_NOFRUIT.clear();
+  (containerTypes || []).forEach(t => { if (t && t.holds_fruit === false && t.name) OT_NOFRUIT.add(ctNorm(t.name)); });
   // ★배차 폼의 종류별 수량 칸도 이 목록에서 나온다 — 여기서 같이 맞춰야 설정 변경이 곧바로 반영된다.
   if (typeof _dpRenderCtypeQty === 'function') _dpRenderCtypeQty();
 }
@@ -6373,23 +6393,26 @@ function renderContainerTypeCfg() {
     <td>${isAdm ? `<select id="ctc-o-${t.id}" style="${inp};width:90px"><option value="ours"${t.owner==='ours'?' selected':''}>우리것</option><option value="farm"${t.owner==='farm'?' selected':''}>농가것</option><option value="nhf"${t.owner==='nhf'?' selected':''}>농협</option></select>` : _ctOwnerLabel(t.owner)}</td>
     <td>${isAdm ? `<input id="ctc-s-${t.id}" type="number" value="${t.sort_order ?? ''}" style="${inp};width:60px">` : (t.sort_order ?? '—')}</td>
     <td style="text-align:center"><input type="checkbox" ${t.is_active !== false ? 'checked' : ''} ${isAdm ? '' : 'disabled'} onchange="toggleContainerTypeActive(${t.id}, this.checked)"></td>
+    <td style="text-align:center"><input type="checkbox" ${ctHoldsFruit(t) ? 'checked' : ''} ${isAdm ? '' : 'disabled'} title="끄면 입고수량 자동합계에서 빠집니다(파렛트·리어카 등 운반구)" onchange="toggleContainerTypeHoldsFruit(${t.id}, this.checked)"></td>
     ${isAdm ? `<td style="white-space:nowrap"><button class="btn edt" onclick="saveContainerType(${t.id})">저장</button><button class="btn del" onclick="deleteContainerType(${t.id})">삭제</button></td>` : '<td></td>'}
   </tr>`).join('');
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
         <div style="font-size:14px;font-weight:700">콘테이너 종류 관리</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(황제·시트리앙·헌콘테이너), 농가것(사각·농가), 농협을 구분해 관리합니다. 농가것은 농가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">우리것(황제·시트리앙·헌콘테이너), 농가것(사각·농가), 농협을 구분해 관리합니다. 농가것은 농가 콘테이너 반입/반납의 종류 선택지로 쓰입니다.<br><strong>원물</strong> = 감귤을 담는 용기. 끄면 파렛트·리어카처럼 <strong>입고수량 자동합계에서 빠집니다</strong>(칩 기록은 그대로 남습니다).</div>
       </div>
     </div>
     ${isAdm ? `<div style="display:flex;gap:6px;align-items:end;margin-bottom:12px;flex-wrap:wrap">
       <input id="ctc-new-name" placeholder="종류 이름" style="${inp};flex:1;min-width:100px">
       <select id="ctc-new-owner" style="${inp};width:100px"><option value="ours">우리것</option><option value="farm">농가것</option><option value="nhf">농협</option></select>
       <input id="ctc-new-order" type="number" placeholder="순서" style="${inp};width:70px">
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);white-space:nowrap;padding-bottom:6px" title="감귤을 담는 용기면 켠 채로 두세요. 파렛트·리어카 등 운반구는 끕니다.">
+        <input type="checkbox" id="ctc-new-holds" checked>원물 담김</label>
       <button class="btn pri" style="font-size:12px;padding:6px 14px;white-space:nowrap" onclick="addContainerType()">+ 추가</button>
     </div>` : ''}
     ${list.length ? `<div class="tbl-wrap"><table>
-      <thead><tr><th>종류명</th><th>소유</th><th>순서</th><th>사용</th><th></th></tr></thead>
+      <thead><tr><th>종류명</th><th>소유</th><th>순서</th><th>사용</th><th>원물</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>` : `<div class="empty">등록된 종류가 없습니다.</div>`}
     ${_stockInitCfgHtml(isAdm)}`;
 }
@@ -6434,7 +6457,9 @@ async function addContainerType() {
   const owner = document.getElementById('ctc-new-owner')?.value || 'ours';
   const order = parseInt(document.getElementById('ctc-new-order')?.value, 10);
   try {
-    const row = await dbInsertContainerType({ name, owner, sort_order: isNaN(order) ? (containerTypes.length + 1) : order, is_active: true });
+    // ★holds_fruit=false면 입고수량 자동합계에서 빠진다(운반구). 기본은 켜짐 = 예전과 같은 동작.
+    const holds_fruit = document.getElementById('ctc-new-holds')?.checked !== false;
+    const row = await dbInsertContainerType({ name, owner, sort_order: isNaN(order) ? (containerTypes.length + 1) : order, is_active: true, holds_fruit });
     if (row) containerTypes.push(row);
     renderContainerTypeCfg(); popCtypeSels();
     showToast(`"${name}" 추가됨`);
@@ -6460,6 +6485,18 @@ async function toggleContainerTypeActive(id, checked) {
     await dbUpdateContainerType(id, { is_active: checked });
     const i = containerTypes.findIndex(t => t.id === id);
     if (i !== -1) containerTypes[i].is_active = checked;
+    popCtypeSels();
+  } catch (e) { alert('변경 오류: ' + e.message); }
+}
+// 원물 담김 토글 — 끄면 입고수량 자동합계에서 빠진다(파렛트·리어카 등 운반구).
+// ★popCtypeSels()를 거쳐야 _syncOT가 OT_NOFRUIT를 다시 채운다 — 안 부르면 화면만 바뀌고 합계는 예전 판정을 쓴다.
+// ★이미 저장된 입고의 quantity는 바뀌지 않는다(소급 없음). 이 뒤에 등록하는 입고부터 적용된다.
+async function toggleContainerTypeHoldsFruit(id, checked) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  try {
+    await dbUpdateContainerType(id, { holds_fruit: checked });
+    const i = containerTypes.findIndex(t => t.id === id);
+    if (i !== -1) containerTypes[i].holds_fruit = checked;
     popCtypeSels();
   } catch (e) { alert('변경 오류: ' + e.message); }
 }
@@ -6540,7 +6577,7 @@ function renderIbContainerSection(key = 'ib') {
       <div id="${ctx.pre}-grp-${g.key}" style="margin-top:7px">
         <div style="font-size:10px;color:#9CA3AF;margin-bottom:3px">${g.label} <span style="color:#C7CBD1">· ${g.hint}</span></div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${g.items.map(t =>
-          `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid ${g.bd};border-radius:16px;background:${g.bg};font-size:12px;color:${g.fg};cursor:pointer;font-family:inherit">${esc(t.name)} +</button>`
+          `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid ${g.bd};border-radius:16px;background:${g.bg};font-size:12px;color:${g.fg};cursor:pointer;font-family:inherit">${esc(t.name)}${ctHoldsFruit(t) ? '' : '<span style="font-size:10px;opacity:.7"> 수량 미반영</span>'} +</button>`
         ).join('')}</div>
       </div>`).join('');
   el.innerHTML = `${ctx.head}
@@ -6566,6 +6603,9 @@ function _ibcAddRow(id, key = 'ib') {
     : isNhf
       ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#CCFBF1;color:#0F766E">농협·반납</span>`
       : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">농가·반납</span>`;
+  // 운반구는 개수를 적어도 입고 수량에 안 들어간다 — 줄에서 바로 보이게 알린다(칩에도 같은 문구가 있다).
+  const noQtyBadge = ctHoldsFruit(t) ? ''
+    : `<span title="원물을 담는 용기가 아니라 입고 수량 합계에서 빠집니다" style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#F3F4F6;color:#6B7280">수량 미반영</span>`;
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   const extraInput = isNhf
     ? `<select id="${ctx.pre}-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_nhfOptHtml()}</select>` +
@@ -6578,7 +6618,7 @@ function _ibcAddRow(id, key = 'ib') {
   div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap';
   div.innerHTML = `
     <span style="flex:0 0 70px;font-size:13px;font-weight:500">${esc(t.name)}</span>
-    ${badge}
+    ${badge}${noQtyBadge}
     <input type="number" id="${ctx.pre}-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty('${key}')" style="flex:0 0 62px;${inpS}">
     <span style="font-size:12px;color:#6B7280">개</span>
     ${extraInput}
@@ -6610,9 +6650,16 @@ function _ibcResetRows(key = 'ib') {
   _ibcSyncGroups(key);
 }
 // 콘테이너 종류별 수량 합계 (우리것+남의것 전체, 추가된 줄만)
+// ★운반구(holds_fruit=false: 파렛트·리어카)는 뺀다 — 원물을 담지 않으니 입고 CT가 아니다.
+//   이 함수를 쓰는 곳은 입고 모달 3곳뿐(_ibcQtyHint 힌트 · _ibcSyncQty 수량 자동반영 · 저장 전 필수검증)이라
+//   반입·반납·회수 등 다른 콘테이너 집계는 여기서 아무 영향도 받지 않는다.
+// ★칩·줄·저장(_saveInboundContainers)은 그대로다 — 파렛트가 몇 장 왔는지는 계속 기록된다. 합계에서만 빠진다.
 function _ibcContainerSum(pre = 'ibc') {
   let s = 0;
-  containerTypes.forEach(t => { s += parseInt(document.getElementById(`${pre}-q-${t.id}`)?.value, 10) || 0; });
+  containerTypes.forEach(t => {
+    if (!ctHoldsFruit(t)) return;
+    s += parseInt(document.getElementById(`${pre}-q-${t.id}`)?.value, 10) || 0;
+  });
   return s;
 }
 // ib-qty 옆 힌트: 콘테이너 합계 안내(미선과 단일저장만). 수량=콘테이너 합산이라 항상 일치.
@@ -18601,7 +18648,8 @@ async function _addInboundCore(keepOpen) {
   const driver_id = drvSelVal ? Number(drvSelVal) : null;
   if (!driver_id) return alert('수송기사를 선택하세요.');
   // 미선과(원물)는 항상 콘테이너로 입고 — 콘테이너 개수 필수(수량=콘테이너 합산 자동, 수기입력 없음)
-  if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.');
+  // ★합계는 원물 콘테이너만 센다 — 파렛트·리어카만 입력하면 0이라 여기서 걸린다(원물이 0이니 그게 맞다).
+  if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.\n(파렛트·리어카 등 운반구는 수량에 반영되지 않습니다.)');
   if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
   // ★카테고리별 수량 — 입력된 것만 각각 inbound_records 행이 된다(한 차에 섞여 온 경우 한 번에 등록).
   //   상품칸은 '총 수량 − 나머지' 자동이라, 카테고리가 하나뿐이면 예전과 완전히 같은 1행 등록이 된다.
