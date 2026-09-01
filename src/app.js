@@ -199,7 +199,7 @@ let _invOutboundSub = false;   // 실사 모드 내 '부분출고' 서브 토글
 let _invAuditExpanded = new Set();
 let _invAuditVisible = [];
 let _pachiAuditMode = false;      // 파치 실사 모드(재고/입고 실사와 별개 플래그)
-let _pachiAuditVisible = [];      // 실사 대상 = inventory_records 파치 그룹 행(레거시/입고 제외)
+let _pachiAuditVisible = [];      // 실사 대상 = inventory_records 파치 그룹 행 + 입고 파치(Source 3). 레거시만 제외
 // 재고 실사 체크는 inventory_records.audit_checked_at(TIMESTAMPTZ)에 저장 — 화면 이동·새로고침해도 유지
 let ibSearch = '';
 let ibFilterProduct = '';
@@ -9249,11 +9249,33 @@ function togglePachiAuditMode() {
   _pachiAuditMode = !_pachiAuditMode;
   renderPachiSection();
 }
+// 입고 파치(Source 3) 실사 가능 여부 — inbound_records.audit_checked_at 컬럼이 있어야 한다.
+// ★컬럼이 없으면(마이그레이션 전) 예전과 100% 동일하게 돈다 — 입고 파치는 실사 대상에서 빠진다.
+//   메모리 Set(_ibAuditChecked 방식)으로 대신하지 않는다: 새로고침 한 번에 체크가 조용히 풀리고,
+//   그 상태로 '미확인 출고'를 누르면 이미 확인한 물건이 나가 버린다. 실사는 여러 번에 걸쳐 하는 일이다.
+// ★판정은 로드된 행에 키가 있는지로 한다(sbGet이 select=*라 컬럼이 생기면 자동으로 따라온다).
+function _pachiIbAuditOn() {
+  return Array.isArray(inboundRecords) && inboundRecords.some(r => r && 'audit_checked_at' in r);
+}
 // 파치 행(그룹) 실사 토글 — 그 행 ids 레코드 전부 확인/해제
+// ★행 종류로 저장 위치가 갈린다. 입고 파치(Source 3)는 inventory_records 행이 아니라 inbound_records
+//   행이라 그 테이블의 audit_checked_at을 쓴다(행 1개 = 입고 1건이라 ids 루프도 필요 없다).
 async function togglePachiAuditRow(regId) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const row = _pachiRowRegistry[regId];
-  if (!row || row.isLegacy || row.isInbound) return;
+  if (!row || row.isLegacy) return;
+  if (row.isInbound) {
+    if (!_pachiIbAuditOn() || !row.ibId) return;
+    const ib = inboundRecords.find(x => String(x.id) === String(row.ibId));
+    if (!ib) return;
+    const ts = ib.audit_checked_at ? null : new Date().toISOString();
+    try {
+      await sbUpdate('inbound_records', ib.id, { audit_checked_at: ts });
+      ib.audit_checked_at = ts;
+      renderPachiSection();
+    } catch (e) { showToast('오류: ' + e.message); }
+    return;
+  }
   const recs = (row.ids || [])
     .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
     .filter(r => r && !r.is_void);
@@ -9270,69 +9292,108 @@ async function togglePachiAuditRow(regId) {
     renderPachiSection();
   } catch (e) { showToast('오류: ' + e.message); }
 }
-// 파치 행 확인 여부(ids 전부 확인이면 true)
+// 파치 행 확인 여부(ids 전부 확인이면 true). 입고 파치는 inbound_records 한 행만 본다.
+// ★진행률·미확인 삭제·미확인 출고가 전부 이 함수 하나로 '확인/미확인'을 가른다 — 판정처를 늘리지 말 것.
 function _pachiRowAuditChecked(row) {
+  if (row.isInbound) {
+    if (!_pachiIbAuditOn() || !row.ibId) return false;
+    const ib = inboundRecords.find(x => String(x.id) === String(row.ibId));
+    return !!(ib && ib.audit_checked_at);
+  }
   const recs = (row.ids || [])
     .map(id => inventoryRecords.find(r => String(r.id) === String(id)))
     .filter(r => r && !r.is_void);
   return recs.length > 0 && recs.every(r => r.audit_checked_at);
 }
+// ★버튼 두 개는 선과품 실사 바(_renderInvAuditBar)와 같은 배치·색이다 — 출고(파랑) 왼쪽, 삭제(빨강) 오른쪽.
+//   두 화면에서 같은 자리의 버튼이 다른 일을 하면 손이 먼저 기억한 대로 눌린다.
 function _renderPachiAuditBar() {
   const rows = _pachiAuditVisible || [];
   const total = rows.length;
   const checked = rows.filter(_pachiRowAuditChecked).length;
   const unchecked = total - checked;
+  // 입고 파치 실사가 아직 꺼져 있으면(컬럼 미적용) 그 사실을 밝힌다 — 행이 안 눌리는 이유가 보여야 한다.
+  const ibOffNote = _pachiIbAuditOn() ? ''
+    : `<span style="font-size:11px;color:#B45309;background:#FEF3C7;padding:1px 6px;border-radius:4px">입고 파치는 실사 대상 제외 (DB 컬럼 미적용)</span>`;
   return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border-bottom:1px solid #DDD6FE;font-size:13px">
     <span>📋 <b>파치 실사 중</b> · 전체 <b>${total}</b>행 · ✓<b style="color:#7C3AED">${checked}</b> 확인 · 미확인 <b style="color:#C62828">${unchecked}</b> <span style="color:#9CA3AF;font-size:11px">— 행 왼쪽 ✓ 클릭 = 확인/해제</span></span>
+    ${ibOffNote}
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
       <button onclick="_pachiClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
+      <button onclick="outboundUncheckedPachiAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}행 출고</button>
       <button onclick="deleteUncheckedPachiAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}행 삭제</button>
     </div>
   </div>`;
 }
 // 파치 실사 초기화 — 파치 대상 레코드의 audit_checked_at만 해제(수량 불변)
+// ★두 테이블을 함께 푼다 — 입고 파치 체크만 남으면 다음 실사에서 '이미 확인한 행'으로 보인다.
 async function _pachiClearAuditChecks() {
   const rows = _pachiAuditVisible || [];
-  const recs = [];
-  rows.forEach(row => (row.ids || []).forEach(id => {
-    const r = inventoryRecords.find(x => String(x.id) === String(id));
-    if (r && !r.is_void && r.audit_checked_at) recs.push(r);
-  }));
-  if (!recs.length) { showToast('확인된 항목이 없습니다.'); return; }
-  const ok = await showConfirmEdit('파치 실사 초기화', `확인 표시된 ${recs.length}건을 모두 미확인으로 되돌립니다.\n(수량은 변경되지 않습니다)`);
+  const recs = [];   // inventory_records
+  const ibs  = [];   // inbound_records (입고 파치)
+  rows.forEach(row => {
+    if (row.isInbound) {
+      if (!_pachiIbAuditOn() || !row.ibId) return;
+      const ib = inboundRecords.find(x => String(x.id) === String(row.ibId));
+      if (ib && ib.audit_checked_at) ibs.push(ib);
+      return;
+    }
+    (row.ids || []).forEach(id => {
+      const r = inventoryRecords.find(x => String(x.id) === String(id));
+      if (r && !r.is_void && r.audit_checked_at) recs.push(r);
+    });
+  });
+  const total = recs.length + ibs.length;
+  if (!total) { showToast('확인된 항목이 없습니다.'); return; }
+  const ok = await showConfirmEdit('파치 실사 초기화', `확인 표시된 ${total}건을 모두 미확인으로 되돌립니다.\n(수량은 변경되지 않습니다)`);
   if (!ok) return;
   let done = 0;
   try {
     for (const r of recs) { await sbUpdate('inventory_records', r.id, { audit_checked_at: null }); r.audit_checked_at = null; done++; }
+    for (const ib of ibs) { await sbUpdate('inbound_records', ib.id, { audit_checked_at: null }); ib.audit_checked_at = null; done++; }
     renderPachiSection();
     showToast(`↺ 파치 실사 초기화 ${done}건`);
   } catch (e) { renderPachiSection(); showToast(`${done}건 처리 후 오류: ${e.message}`); }
 }
 // 파치 미확인 행 일괄 삭제(파치 소스 레코드만 void, 재고/주스 불변)
+// ★입고 파치(Source 3)는 삭제 대상이 아니다 — inbound_records 행이라 재고 void가 통하지 않는다.
+//   예전엔 그 행의 ids(=inbound_records.id)를 inventoryRecords에서 찾다 조용히 빗나가,
+//   "삭제했다"고 알리고 실제로는 아무 일도 안 일어났다. 이제 대상에서 빼고 그 사실을 알린다.
+//   입고 파치를 줄이는 길은 processing_records뿐 → '📤 미확인 출고'가 그 길이다.
 async function deleteUncheckedPachiAudit() {
   if (!_pachiAuditMode) return;
   const rows = _pachiAuditVisible || [];
   const uncheckedRows = rows.filter(row => !_pachiRowAuditChecked(row));
+  const ibUnchecked  = uncheckedRows.filter(row => row.isInbound);
+  const invUnchecked = uncheckedRows.filter(row => !row.isInbound);
   const recsToVoid = [];
-  uncheckedRows.forEach(row => (row.ids || []).forEach(id => {
+  invUnchecked.forEach(row => (row.ids || []).forEach(id => {
     const r = inventoryRecords.find(x => String(x.id) === String(id));
     if (r && !r.is_void) recsToVoid.push(r);
   }));
+  const ibCt = ibUnchecked.reduce((sum, row) => sum + (Number(row.ct) || 0), 0);
   if (!recsToVoid.length) {
-    await showConfirmEdit('미확인 없음', '확인되지 않은 파치 행이 없습니다. 모두 확인 완료되었습니다.');
+    await showConfirmEdit(
+      ibUnchecked.length ? '삭제할 수 있는 행이 없음' : '미확인 없음',
+      ibUnchecked.length
+        ? `미확인 ${ibUnchecked.length}행(${fmtN(ibCt)}CT)은 모두 입고 파치입니다.\n입고 파치는 삭제할 수 없습니다 — '📤 미확인 출고'로 처리하세요.`
+        : '확인되지 않은 파치 행이 없습니다. 모두 확인 완료되었습니다.');
     return;
   }
   const totalCt = recsToVoid.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   const MAX_SHOW = 10;
-  const itemLabels = uncheckedRows.slice(0, MAX_SHOW).map(row =>
+  const itemLabels = invUnchecked.slice(0, MAX_SHOW).map(row =>
     `${row.farm || '(농가없음)'} · ${row.product || ''} · ${row.pachiKind || '파치'} · ${fmtN(row.ct)}CT`
   );
-  if (uncheckedRows.length > MAX_SHOW) itemLabels.push(`...외 ${uncheckedRows.length - MAX_SHOW}행`);
+  if (invUnchecked.length > MAX_SHOW) itemLabels.push(`...외 ${invUnchecked.length - MAX_SHOW}행`);
+  const ibNote = ibUnchecked.length
+    ? ` ⚠ 미확인 중 입고 파치 ${ibUnchecked.length}행(${fmtN(ibCt)}CT)은 삭제되지 않습니다 — '📤 미확인 출고'로 처리하세요.`
+    : '';
   const res = await showConfirmDanger({
     title: '⚠️ 미확인 파치 일괄 삭제',
-    subtitle: `실사에서 확인하지 않은 ${uncheckedRows.length}행(${recsToVoid.length}건) · 총 ${fmtN(totalCt)}CT를 삭제합니다. 되돌릴 수 없습니다. 파치 실사를 끝까지 마쳤는지 확인하세요.`,
+    subtitle: `실사에서 확인하지 않은 ${invUnchecked.length}행(${recsToVoid.length}건) · 총 ${fmtN(totalCt)}CT를 삭제합니다. 되돌릴 수 없습니다. 파치 실사를 끝까지 마쳤는지 확인하세요.${ibNote}`,
     items: itemLabels,
-    confirmText: `${uncheckedRows.length}행 삭제`,
+    confirmText: `${invUnchecked.length}행 삭제`,
     needWorker: true
   });
   if (!res || !res.ok) return;
@@ -9358,6 +9419,81 @@ async function deleteUncheckedPachiAudit() {
   renderInvSummary(); renderPachiSection();
   if (failMsg) alert(failMsg);
   else showToast(`✅ 미확인 파치 ${successCount}건 삭제 완료`);
+}
+
+// 실사 미확인 = 나간 것(출고). 파치 미확인 행을 출고로 처리한다.
+// ★★행 종류로 처리 방식이 갈린다 — 이 화면의 행은 두 테이블에서 오고, 줄이는 방법이 서로 다르다:
+//    Source 1 inventory_records 파치 … 선과품 실사와 같은 '실사출고'(출고 기록 + 재고 void).
+//                                       식은 _auditOutboundInvRec 한 곳에 있고 선과품 실사와 공유한다.
+//    Source 3 inbound_records 파치    … void가 통하지 않는다. 줄이는 유일한 길이 processing_records
+//                                       '출고'이고, 그 저장은 _addProcessingOut(aa42351)이 맡는다.
+//   ★두 경로 모두 '기록 먼저 → 차감'이라는 기존 순서를 그대로 따른다. 식을 이 함수 안에 복제하지 말 것
+//     — 복제하면 선과품 실사나 사용 처리만 고쳐졌을 때 여기만 조용히 옛 동작으로 남는다.
+async function outboundUncheckedPachiAudit() {
+  if (!_pachiAuditMode) return;
+  const rows = _pachiAuditVisible || [];
+  const uncheckedRows = rows.filter(row => !_pachiRowAuditChecked(row));
+  const ibRows  = uncheckedRows.filter(row => row.isInbound && row.ibId);
+  const invRows = uncheckedRows.filter(row => !row.isInbound);
+  const recs = [];
+  invRows.forEach(row => (row.ids || []).forEach(id => {
+    const r = inventoryRecords.find(x => String(x.id) === String(id));
+    if (r && !r.is_void) recs.push(r);
+  }));
+  if (!recs.length && !ibRows.length) {
+    await showConfirmEdit('미확인 없음', '확인되지 않은 파치 행이 없습니다. 모두 확인 완료되었습니다.');
+    return;
+  }
+  const invCt = recs.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+  const ibCt  = ibRows.reduce((sum, row) => sum + (Number(row.ct) || 0), 0);
+  const MAX_SHOW = 10;
+  const labelRows = [...invRows, ...ibRows];
+  const itemLabels = labelRows.slice(0, MAX_SHOW).map(row =>
+    `${row.isInbound ? '[입고] ' : ''}${row.farm || '(농가없음)'} · ${row.product || ''} · ${row.pachiKind || '파치'} · ${fmtN(row.ct)}CT`
+  );
+  if (labelRows.length > MAX_SHOW) itemLabels.push(`...외 ${labelRows.length - MAX_SHOW}행`);
+  // ★두 종류가 섞이면 각각 몇 건인지 밝힌다 — 남는 기록이 다르다(출고 기록 vs 입고 처리기록).
+  const mixLine = [
+    recs.length   ? `재고 파치 ${invRows.length}행(${recs.length}건) ${fmtN(invCt)}CT → 출고 기록 + 재고 삭제` : '',
+    ibRows.length ? `입고 파치 ${ibRows.length}행 ${fmtN(ibCt)}CT → 입고 처리기록(출고)` : ''
+  ].filter(Boolean).join(' · ');
+  const res = await showConfirmDanger({
+    title: '📤 미확인 파치 실사 출고',
+    subtitle: `실사에서 확인하지 않은 ${labelRows.length}행 · 총 ${fmtN(invCt + ibCt)}CT를 출고 처리합니다. ${mixLine}. 되돌릴 수 없습니다. 파치 실사를 끝까지 마쳤는지 확인하세요.`,
+    items: itemLabels,
+    confirmText: `${labelRows.length}행 출고`,
+    needWorker: true
+  });
+  if (!res || !res.ok) return;
+  const date = td();   // 로컬 오늘
+  const adm  = res.worker || sessionStorage.getItem('citrus_adm_user') || 'admin';
+  let okCount = 0, failMsg = '';
+  try {
+    for (const r of recs) {
+      await _auditOutboundInvRec(r, { kind: 'pachi', date, worker: adm, reason: `파치 실사 출고(실사출고): ${res.reason}` });
+      okCount++;
+    }
+    for (const row of ibRows) {
+      // ★processing_records.quantity는 정수 컬럼이다. 잔여가 소수면 DB가 반올림해 잔여가 조금 남고
+      //   그 행이 목록에 그대로 보인다(조용히 사라지지 않으니 눈으로 잡힌다). 실데이터는 전부 정수.
+      await _addProcessingOut({ inboundId: row.ibId, date, qty: row.ct, note: '파치 실사 미확인 출고' });
+      await dbInsertAuditLog({
+        target_table: 'inbound_records', target_id: row.ibId,
+        before_val: { product: row.product, farm_name: row.farm, inbound_date: row.date, remaining_ct: row.ct },
+        after_val: { processing: '출고', quantity: row.ct },
+        reason: `파치 실사 출고(입고 파치): ${res.reason}`,
+        staff: adm
+      });
+      okCount++;
+    }
+  } catch (e) {
+    failMsg = `${okCount}건 처리 후 오류: ${e.message}`;
+  }
+  inventoryRecords = await dbGetInventoryRecords();
+  // ★입고 처리기록을 건드렸으니 입고 화면 잔여도 함께 다시 그린다(저장은 됐는데 화면은 그대로 방지).
+  renderInvSummary(); renderPachiSection(); renderInboundList();
+  if (failMsg) alert(failMsg);
+  else showToast(`📤 미확인 파치 ${okCount}건 실사 출고 완료`);
 }
 
 function openPachiBulkModal() {
@@ -15738,8 +15874,49 @@ async function deleteUncheckedInvAudit() {
   else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
 }
 
+// ── 실사 미확인 재고 1건 출고 (공용) ────────────────────────────────
+// ★쓰는 곳 2곳: 선과품 실사(outboundUncheckedInvAudit) · 파치 실사(outboundUncheckedPachiAudit).
+// ★순서 고정: 출고 기록 → 원본 재고 void → 감사로그.
+//   기록이 먼저여야 삽입 실패 시 재고가 그대로 남아 '아무 일도 안 일어난 것'이 된다
+//   (savePachiOutbound·부분출고와 같은 원칙). 반대 순서는 재고만 사라지고 단서가 0이 된다.
+// ★화면별로 다른 건 출고 기록에 남기는 값뿐이라 kind 하나로만 가른다:
+//     'sorting' … source_type='sorting' + size_code + quality_grade (선과품 출고와 같은 짝)
+//     'pachi'   … source_type='pachi'   + size_code 없음           (savePachiOutbound와 같은 짝)
+//   나머지(ref_detail·kg 환산·void·감사로그)는 한 벌뿐이다 — 복제하면 한쪽만 고쳐져 조용히 어긋난다.
+// ★실패는 삼키지 않는다 — 그대로 던져서 호출부가 루프를 멈추고 몇 건까지 됐는지 알리게 한다.
+async function _auditOutboundInvRec(r, { kind, date, worker, reason }) {
+  const qty      = Number(r.quantity) || 0;
+  const kgPer    = (productWeights && r.product && productWeights[r.product] != null) ? Number(productWeights[r.product]) : 17;
+  const isSorted = kind === 'sorting';
+  // 1) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
+  const payload = {
+    date, product: r.product, size_code: isSorted ? r.size_code : null, quantity: qty, unit: 'CT',
+    partner_name: '실사출고', source_type: isSorted ? 'sorting' : 'pachi',
+    farm_name: r.farm_name || null, note: '실사 출고', is_void: false,
+    created_by: worker,
+    ref_detail: [{ table: 'inventory_records', id: r.id, amount: qty, voided: true }],
+    weight_kg: qty * kgPer
+  };
+  if (isSorted) payload.quality_grade = r.quality_grade || '일반';
+  const ob = await dbInsertOutboundRecord(payload);
+  if (ob) invOutbounds.unshift(ob);
+  // 2) 원본 재고 차감(미확인=전량 나감 → void)
+  await sbUpdate('inventory_records', r.id, { quantity: 0, is_void: true });
+  r.quantity = 0; r.is_void = true;
+  const inv = inventoryRecords.find(x => x.id === r.id);
+  if (inv) { inv.quantity = 0; inv.is_void = true; }
+  // 3) 감사로그(되돌릴 수 있게)
+  await dbInsertAuditLog({
+    target_table: 'inventory_records', target_id: r.id,
+    before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
+    after_val: { outbound: '실사출고', quantity: 0, is_void: true },
+    reason, staff: worker
+  });
+}
+
 // 실사 미확인 = 나간 것(출고). 미확인 재고를 '실사출고'로 처리(출고 기록 생성 + 원본 재고 void).
 // deleteUncheckedInvAudit 패턴 복제 + 출고 기록. 선과품(source_type='sorting') 대상. 되돌릴 수 있게 감사로그.
+// ★건별 처리는 _auditOutboundInvRec 공용 헬퍼가 한다(파치 실사와 같은 식·같은 순서).
 async function outboundUncheckedInvAudit() {
   if (!_invAuditMode) return;
   const unchecked = _invAuditVisible.filter(r => !r.audit_checked_at);   // DB 기준(미확인=나간 것)
@@ -15767,32 +15944,7 @@ async function outboundUncheckedInvAudit() {
   let failMsg = '';
   for (const r of unchecked) {
     try {
-      const qty   = Number(r.quantity) || 0;
-      const kgPer = (productWeights && r.product && productWeights[r.product] != null) ? Number(productWeights[r.product]) : 17;
-      // 1) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
-      const ob = await dbInsertOutboundRecord({
-        date, product: r.product, size_code: r.size_code, quantity: qty, unit: 'CT',
-        partner_name: '실사출고', source_type: 'sorting',
-        farm_name: r.farm_name || null, note: '실사 출고', is_void: false,
-        created_by: adm,
-        ref_detail: [{ table: 'inventory_records', id: r.id, amount: qty, voided: true }],
-        weight_kg: qty * kgPer,
-        quality_grade: r.quality_grade || '일반'
-      });
-      if (ob) invOutbounds.unshift(ob);
-      // 2) 원본 재고 차감(미확인=전량 나감 → void)
-      await sbUpdate('inventory_records', r.id, { quantity: 0, is_void: true });
-      r.quantity = 0; r.is_void = true;
-      const inv = inventoryRecords.find(x => x.id === r.id);
-      if (inv) { inv.quantity = 0; inv.is_void = true; }
-      // 3) 감사로그(되돌릴 수 있게)
-      await dbInsertAuditLog({
-        target_table: 'inventory_records', target_id: r.id,
-        before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
-        after_val: { outbound: '실사출고', quantity: 0, is_void: true },
-        reason: `선과품 재고 실사 출고(실사출고): ${res.reason}`,
-        staff: adm
-      });
+      await _auditOutboundInvRec(r, { kind: 'sorting', date, worker: adm, reason: `선과품 재고 실사 출고(실사출고): ${res.reason}` });
       successCount++;
     } catch(e) {
       failMsg = `${successCount}건 출고 후 오류: ${r.farm_name || ''} · ${r.product || ''} — ${e.message}`;
@@ -19237,7 +19389,7 @@ function togglePachiProduct(pi) {
 //
 //   Source 1  inventory_records (파치 6종)  … 주 데이터. 실사·일괄수정 대상.
 //   Source 2  invWaste (레거시)             … 표시만. 실사·일괄수정 제외.
-//   Source 3  inbound_records 파치(미전환)  … 표시만. 실사·일괄수정 제외.
+//   Source 3  inbound_records 파치(미전환)  … 실사 대상(체크·미확인 출고). 일괄수정만 제외.
 //
 // 흐름: 1~4 소스별 수집 → 5 합치기 → 6~8 규칙·축 정하기 → 9~12 화면 조립
 //
@@ -19311,10 +19463,12 @@ function renderPachiSection() {
   // ==================================================================
   // 2. 파치 실사 대상 확정 (_pachiAuditVisible)
   // ==================================================================
-  // ★실사 대상 = Source 1(inventory_records)만. Source 2(레거시)·Source 3(입고)는 제외한다.
-  //  그 둘은 inventory_records 행이 아니라 audit_checked_at을 쓸 자리가 없기 때문.
-  //  실사 진행률·초기화·미확인 삭제가 전부 이 배열을 기준으로 돈다.
-  // 파치 실사 대상 = inventory_records 파치 그룹 행(레거시 invWaste·입고 제외). 진행률·초기화·미확인삭제가 참조.
+  // ★실사 대상 = Source 1(inventory_records) + Source 3(입고 파치). Source 2(레거시)는 제외한다.
+  //  레거시 invWaste는 inventory_records 행이 아니고 audit_checked_at을 쓸 자리도 없다.
+  //  Source 3은 inbound_records.audit_checked_at에 체크를 남긴다 — 컬럼이 없으면 예전처럼 제외된다.
+  //  실사 진행률·초기화·미확인 삭제·미확인 출고가 전부 이 배열을 기준으로 돈다.
+  // ★배열은 여기서 끝내지 않는다 — Source 3은 아래 4번에서 만들어지므로 그 뒤에 더한다.
+  //  (여기서 확정하면 입고 파치가 영영 안 들어간다.)
   _pachiAuditVisible = Object.values(irGrouped);
 
   // ==================================================================
@@ -19377,6 +19531,12 @@ function renderPachiSection() {
       };
     })
     .filter(x => x.ct > 0);
+
+  // ★실사 대상 확정(2번에서 이어짐) — 입고 파치를 여기서 더한다.
+  //  ★체크 저장 위치가 inbound_records.audit_checked_at이라, 컬럼이 없으면 더하지 않는다(예전 동작 그대로).
+  //   메모리에만 담으면 새로고침 한 번에 체크가 풀리고, 그 상태로 '미확인 출고'를 누르면
+  //   이미 확인한 물건이 나가 버린다. _pachiIbAuditOn 설명 참고.
+  if (_pachiIbAuditOn()) _pachiAuditVisible = _pachiAuditVisible.concat(inboundPachi);
 
   // ==================================================================
   // 5. 세 소스 합치기 + 정렬
@@ -19496,14 +19656,26 @@ function renderPachiSection() {
             title="메뉴">⋮</button></td>`
       : '';
     const excludedBadge = excluded ? `<span style="font-size:10px;color:#9CA3AF;background:#F3F4F6;padding:1px 5px;border-radius:4px;margin-left:4px">재고제외</span>` : '';
-    const auditable = !r.isLegacy && !r.isInbound;   // inventory_records 파치만 실사 대상
-    // 실사 확인 상태(그 행 ids 전부 audit_checked_at 있으면 확인)
+    // ★두 플래그를 나눠 둔다 — 실사와 일괄지정은 대상이 다르다.
+    //   실사(auditable)   : 입고 파치도 대상. 체크가 inbound_records.audit_checked_at에 저장된다.
+    //   일괄지정(bulkable): 입고 파치는 계속 제외 — 크기·상태·사용처는 inventory_records 컬럼이라
+    //                       입고 행에는 쓸 자리가 없다(applyPachiBulk도 같은 기준으로 거른다).
+    //   한 플래그로 합치면 입고 행에 체크박스가 생기고, 눌러도 아무 일이 없는 옛 함정이 되살아난다.
+    const auditable = !r.isLegacy && (!r.isInbound || _pachiIbAuditOn());
+    const bulkable  = !r.isLegacy && !r.isInbound;
+    // 실사 확인 상태(그 행 ids 전부 audit_checked_at 있으면 확인. 입고 파치는 그 입고 1건만 본다)
     let auditChecked = false, auditTitle = '';
     if (_pachiAuditMode && auditable) {
-      const arecs = r.ids.map(id => inventoryRecords.find(x => String(x.id) === String(id))).filter(x => x && !x.is_void);
-      auditChecked = arecs.length > 0 && arecs.every(x => x.audit_checked_at);
-      const ats = auditChecked ? arecs.map(x => x.audit_checked_at).sort()[0] : null;
-      auditTitle = auditChecked ? `${_fmtAuditTs(ats)} 확인` : '미확인 · 클릭하여 확인';
+      if (r.isInbound) {
+        const ibRec = inboundRecords.find(x => String(x.id) === String(r.ibId));
+        auditChecked = !!(ibRec && ibRec.audit_checked_at);
+        auditTitle = auditChecked ? `${_fmtAuditTs(ibRec.audit_checked_at)} 확인` : '미확인 · 클릭하여 확인 (입고 파치)';
+      } else {
+        const arecs = r.ids.map(id => inventoryRecords.find(x => String(x.id) === String(id))).filter(x => x && !x.is_void);
+        auditChecked = arecs.length > 0 && arecs.every(x => x.audit_checked_at);
+        const ats = auditChecked ? arecs.map(x => x.audit_checked_at).sort()[0] : null;
+        auditTitle = auditChecked ? `${_fmtAuditTs(ats)} 확인` : '미확인 · 클릭하여 확인';
+      }
     }
     // 행 배경: 실사 모드에서 확인=연보라 / 미확인=연빨강, 그 외 기존(재고제외 흐림)
     let trStyle = excluded ? 'opacity:0.55;background:#FCFCFC' : '';
@@ -19516,9 +19688,9 @@ function renderPachiSection() {
       if (_pachiAuditMode) {
         leadCell = auditable
           ? `<td style="padding:4px 6px;text-align:center" title="${esc(auditTitle)}"><button onclick="togglePachiAuditRow(${regId})" style="width:20px;height:20px;border-radius:5px;border:1.5px solid ${auditChecked ? '#7C3AED' : '#F87171'};background:${auditChecked ? '#7C3AED' : '#fff'};color:${auditChecked ? '#fff' : '#F87171'};cursor:pointer;font-size:12px;line-height:1;font-family:inherit;padding:0">${auditChecked ? '✓' : ''}</button></td>`
-          : `<td style="padding:4px 6px;text-align:center;color:#D1D5DB" title="실사 대상 아님(레거시/입고)">–</td>`;
+          : `<td style="padding:4px 6px;text-align:center;color:#D1D5DB" title="${r.isLegacy ? '실사 대상 아님(레거시)' : '실사 대상 아님(입고 파치 — DB 컬럼 미적용)'}">–</td>`;
       } else {
-        leadCell = `<td style="padding:4px 6px;text-align:center">${auditable
+        leadCell = `<td style="padding:4px 6px;text-align:center">${bulkable
           ? `<input type="checkbox" class="pachi-chk" data-reg-id="${regId}" onchange="onPachiChkChange()" style="cursor:pointer;width:16px;height:16px;vertical-align:middle">`
           : ''}</td>`;
       }
