@@ -3879,7 +3879,7 @@ function harvestRow(h, showDate) {
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
       <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
       <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round||1}차</span>
-      ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
+      ${h.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(h.item)}">${esc(h.item)}</span>` : ''}
       ${h.is_final
         ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>`
         : (st === '수확완료'
@@ -4496,7 +4496,7 @@ function _hvProgCard(g) {
       <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
         <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>
-        ${g.items.length ? `<span style="font-size:11px;color:#888">${esc(g.items.join('·'))}</span>` : ''}
+        ${g.items.length ? `<span style="display:flex;flex-wrap:wrap;gap:3px">${g.items.map(it => `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(it)}">${esc(it)}</span>`).join('')}</span>` : ''}
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           ${chip}<span style="font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
         </span>
@@ -4622,6 +4622,17 @@ function itemColor(item) {
     '황금향': 'background:#FFFDE7;color:#F57F17',
     '청견': 'background:#E0F2F1;color:#004D40',
     '세토카': 'background:#FBE9E7;color:#BF360C',
+    // ── 아래 8개는 품목 마스터(items)에 있는데 색이 없어 회색 폴백(#F5F5F5)으로 떨어지던 것들.
+    //    ★위 8개 색은 건드리지 않는다 — 캘린더 예정 목록과 색이 어긋나면 안 된다.
+    //    같은 화면에 나란히 떠도 구분되도록 계열이 안 겹치게 배정(파스텔 배경 + 진한 글자, 기존 규칙 유지).
+    '유라실생': 'background:#E0F7FA;color:#00838F',
+    '비가림': 'background:#F0F4C3;color:#827717',
+    '타이벡': 'background:#E8EAF6;color:#283593',
+    '수라향': 'background:#FFEBEE;color:#C62828',
+    '카라향': 'background:#EDE7F6;color:#4527A0',
+    '풋귤': 'background:#DCEDC8;color:#33691E',
+    '망고': 'background:#FFECB3;color:#FF6F00',
+    '단호박': 'background:#EFEBE9;color:#5D4037',
   };
   return map[item] || 'background:#F5F5F5;color:#555';
 }
