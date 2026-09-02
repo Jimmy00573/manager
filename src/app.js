@@ -2701,7 +2701,7 @@ function showToast(msg) {
 // ── 공용 위험 작업 확인 모달 ──────────────────────────────────────
 let _confirmResolve = null;
 
-function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입니다', items = [], resultNote = '', confirmText = '삭제', cancelText = '취소', needWorker = false }) {
+function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입니다', items = [], resultNote = '', confirmText = '삭제', cancelText = '취소', needWorker = false, defaultReason = '' }) {
   return new Promise(resolve => {
     if (_confirmResolve) _confirmResolve(false);
     _confirmResolve = resolve;
@@ -2722,7 +2722,7 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
           ${drivers.filter(d=>d.type==='내부').map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}
         </select>
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px;margin-top:8px">사유 *</label>
-        <input id="cdg-reason" placeholder="사유 입력 (필수)" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+        <input id="cdg-reason" placeholder="사유 입력 (필수)" value="${esc(defaultReason)}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
       </div>` : '';
 
     overlay.innerHTML = `
@@ -2773,7 +2773,9 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
     if (document.activeElement) document.activeElement.blur();
-    if (needWorker) overlay.querySelector('#cdg-reason')?.focus();
+    // ★사유가 미리 채워진 때는 그 칸이 아니라 작업자 select로 보낸다 — 이미 들어있는 값 위에 커서가 가면
+    //   지우려다 실수하기 쉽고, 어차피 다음으로 고를 칸은 작업자다(사유는 탭/클릭으로 언제든 고칠 수 있다).
+    if (needWorker) overlay.querySelector(defaultReason ? '#cdg-worker' : '#cdg-reason')?.focus();
     else overlay.querySelector('#cdg-cancel').focus();
   });
 }
@@ -9473,7 +9475,8 @@ async function outboundUncheckedPachiAudit() {
     subtitle: `실사에서 확인하지 않은 ${labelRows.length}행 · 총 ${fmtN(invCt + ibCt)}CT를 출고 처리합니다. ${mixLine}. 되돌릴 수 없습니다. 파치 실사를 끝까지 마쳤는지 확인하세요.`,
     items: itemLabels,
     confirmText: `${labelRows.length}행 출고`,
-    needWorker: true
+    needWorker: true,
+    defaultReason: '재고실사'   // outboundUncheckedInvAudit(선과품 실사 출고)와 같은 이유
   });
   if (!res || !res.ok) return;
   const date = td();   // 로컬 오늘
@@ -15946,7 +15949,8 @@ async function outboundUncheckedInvAudit() {
     subtitle: `실사에서 확인하지 않은 ${unchecked.length}건 · 총 ${fmtN(totalCt)}CT를 '실사출고'로 처리합니다(출고 기록 생성 + 재고에서 빠짐). 실사를 끝까지 마쳤는지 확인하세요.`,
     items: itemLabels,
     confirmText: `${unchecked.length}건 출고`,
-    needWorker: true
+    needWorker: true,
+    defaultReason: '재고실사'   // 실사 출고는 사유가 항상 같다 — 매번 손으로 치던 것을 기본값으로. 고쳐 쓰는 건 그대로 된다.
   });
   if (!res || !res.ok) return;
   const date = td();   // 로컬 오늘
