@@ -13184,6 +13184,24 @@ function _isUnsortedTarget(r) {
     && r.inbound_category !== '청과';
 }
 
+// ── 입고 파치·청과 ↔ 파치 재고(inventory_records) 연결 ──────────────────
+// ★입고 카테고리와 source_type의 짝은 여기 한 곳에서만 정한다. 쓰는 곳이 셋이라 흩어 두면 어긋난다:
+//    ① 입고 등록 시 재고 생성(_addInboundCore)  ② 입고 수정 시 재고 동기화(saveInboundModal)
+//    ③ 파치 화면 Source 3의 '전환됨' 판정(renderPachiSection)
+//   ①③이 서로 다른 값을 쓰면 같은 물건이 두 곳에 뜨거나(중복 계상) 아무 데도 안 뜬다(누락).
+const _IB_PACHI_SRC = { '파치': 'pachi', '청과': 'pachi_green' };
+
+// 이 입고에 연결된 '살아있는' 파치 재고 행. 카테고리가 파치·청과가 아니면 항상 빈 배열.
+// ★is_void 행은 이미 소진된 것이라 제외한다 — 되살리면 유령 재고가 된다.
+//   (2026-09-03 기준 파치·청과 입고 15건 중 14건이 소진·void 상태다. 그 14건은 여기서 안 잡힌다.)
+// ★파치·청과 아닌 카테고리에 빈 배열을 주는 건 "연결 없음"이 아니라 "해당 없음"이다 — 호출부가 구분할 것.
+function _ibPachiLinkedInv(inboundId, cat) {
+  const src = _IB_PACHI_SRC[cat];
+  if (!src) return [];
+  return inventoryRecords.filter(r => r && !r.is_void
+    && r.source_type === src && String(r.inbound_record_id) === String(inboundId));
+}
+
 function getProcessedForInbound(id) {
   return processingRecords.filter(r => r.inbound_id === id).reduce((s, r) => s + r.quantity, 0);
 }
@@ -17180,6 +17198,18 @@ async function saveInboundModal() {
   }
 
   const prev = inboundRecords.find(r => r.id === id);
+
+  // ★파치·청과가 한쪽에라도 걸린 카테고리 변경은 막는다(양방향).
+  //   · 들어오는 쪽(상품→파치)을 열면 "수정 화면이 재고를 새로 만드는" 경로가 생긴다 — 등록 경로와
+  //     둘로 갈라져 이중 생성 위험이 늘고, 이미 처리기록이 붙은 입고면 유령 재고가 된다.
+  //   · 나가는 쪽(파치→상품)을 열면 이미 있는 파치 재고를 void 해야 한다 = 데이터 손실 경로.
+  //   둘 다 실제 발생 빈도가 낮고, '삭제 후 재등록'이라는 안전한 길이 이미 있다(cascade가 연결 재고까지
+  //   정리한다 — deleteInbound/cascadeDeleteInbound). 상품↔재선별 등 파치가 안 낀 변경은 예전 그대로 통과.
+  const _prevCat = prev.inbound_category || '상품';
+  if (inbound_category !== _prevCat && (_IB_PACHI_SRC[_prevCat] || _IB_PACHI_SRC[inbound_category])) {
+    return alert('파치·청과 카테고리는 등록 후 변경할 수 없습니다.\n\n입고를 삭제하고 다시 등록하세요.');
+  }
+
   const changed =
     date !== (prev.date || '') ||
     qty !== prev.quantity ||
@@ -17202,6 +17232,45 @@ async function saveInboundModal() {
   const processed = getProcessedForInbound(id);
   if (qty < processed) return alert(`이미 ${fmtN(processed)}CT가 처리되었습니다. ${fmtN(processed)}CT 미만으로 줄일 수 없습니다.`);
 
+  // ── 파치·청과 입고 → 연결 파치 재고 동기화 준비(저장 전 판정만, 쓰기는 아래에서) ──────
+  // ★여기서 하는 일은 셋이다: ① 전역 로드 확인 ② 줄일 수 있는 한도 검사 ③ 반영할 값 계산.
+  //   실제 PATCH는 입고 본체가 저장된 뒤에 한다 — 순서를 뒤집으면 재고만 바뀌고 입고는 그대로일 수 있다.
+  let _pachiSync = null;
+  if (_IB_PACHI_SRC[inbound_category]) {
+    // ★inventoryRecords가 안 실린 상태면 "연결 없음"과 구분이 안 된다(재고 탭 진입 전엔 빈 배열).
+    //   그대로 두면 조용히 동기화를 건너뛰어 입고량과 파치 재고가 갈린다 — 저장 자체를 막는다.
+    if (!Array.isArray(inventoryRecords) || inventoryRecords.length === 0) {
+      return alert('재고 정보가 아직 로드되지 않아 파치 재고를 함께 고칠 수 없습니다.\n\n새로고침 후 다시 시도해주세요.');
+    }
+    const _pInv = _ibPachiLinkedInv(id, inbound_category);
+    const _qtyChanged = qty !== prev.quantity;
+    if (_pInv.length === 1) {
+      // 이미 쓴 양 = 입고량 − 재고 현재고. (파치 재고 출고는 inventory_records.quantity를 직접 깎는다)
+      // 새 입고량이 그보다 적으면 재고가 음수가 된다 → 조용히 만들지 말고 막는다.
+      const _invCur = Number(_pInv[0].quantity) || 0;
+      const _pUsed  = Math.round(((Number(prev.quantity) || 0) - _invCur) * 10) / 10;
+      const _newInv = Math.round((qty - _pUsed) * 10) / 10;
+      if (_newInv < 0) {
+        return alert(`이 파치는 이미 ${fmtN(_pUsed)}CT가 출고·사용되었습니다.\n\n${fmtN(_pUsed)}CT 미만으로 줄일 수 없습니다.`);
+      }
+      // ★재고 0이 되어도 is_void는 건드리지 않는다 — void는 되돌리기 어려운 소진 표시라 수정에서 세우지 않는다.
+      //   0 CT 행으로 남아 파치 목록에 보이고, 입고량을 다시 늘리면 그대로 복구된다.
+      // ★usage·크기·상태·메모는 손대지 않는다 — 파치 화면에서 사람이 지정한 값이라 입고 수정이 덮으면 안 된다.
+      _pachiSync = { recs: [_pInv[0]], patch: { quantity: _newInv, date, location } };
+    } else if (_pInv.length > 1) {
+      // 분산 저장은 위치마다 입고 행이 따로 생기고 재고도 1:1이라 여기 걸릴 일이 없다(수동 보정 등 예외 상황).
+      // 수량을 어느 행에서 빼야 할지 정할 근거가 없으므로 수량 변경만 막고, 날짜·위치는 전부에 반영한다.
+      if (_qtyChanged) {
+        return alert(`연결된 파치 재고가 ${_pInv.length}건이라 수량을 자동으로 나눌 수 없습니다.\n\n파치 화면에서 직접 조정해주세요.`);
+      }
+      _pachiSync = { recs: _pInv, patch: { date, location } };
+    } else if (_qtyChanged) {
+      // 연결 재고가 없음(전부 소진·void거나 애초에 없음) → 재고를 새로 만들지는 않는다.
+      // 다만 수량만 조용히 바뀌면 이 입고가 파치 화면 Source 3에 잔여로 되살아날 수 있어 알린다.
+      alert('이 입고에 연결된 파치 재고가 없습니다(이미 소진되었거나 전환되지 않은 건).\n\n입고 수량만 수정되고 파치 재고는 그대로입니다.');
+    }
+  }
+
   const updatePayload = {
     date, quantity: qty, location, note, inbound_category, is_priority,
     appearance_grade, defect_tags,
@@ -17211,6 +17280,36 @@ async function saveInboundModal() {
   };
   try {
     await dbUpdateInbound(id, updatePayload);
+
+    // ── 연결 파치 재고 반영 ────────────────────────────────────────
+    // ★순서는 saveDispEdit(배차→배출 pick)과 같다: 본체 먼저, 연결 나중.
+    //   다만 뒷수습이 다르다 — 저기선 "같은 내용으로 다시 저장"이 곧 복구지만, 여기선 그게 안 된다.
+    //   사용량을 '입고량 − 재고'로 되짚기 때문에, 어긋난 상태가 그대로 새 기준이 돼 버리기 때문이다.
+    //   그래서 반영이 실패하면 입고를 원래대로 되돌려 '아무 일도 없던 상태'로 만든다(조용히 넘어가지 않는다).
+    if (_pachiSync) {
+      try {
+        for (const rec of _pachiSync.recs) {
+          await sbUpdate('inventory_records', rec.id, _pachiSync.patch);
+          Object.assign(rec, _pachiSync.patch);   // 전역 배열도 같이 — 안 하면 저장은 됐는데 화면은 그대로
+        }
+      } catch (pe) {
+        try {
+          await dbUpdateInbound(id, { quantity: prev.quantity, date: prev.date, location: prev.location });
+          alert('연결된 파치 재고를 고치지 못해 입고 수정을 취소했습니다.\n\n'
+            + '입고와 파치 재고 모두 수정 전 그대로입니다. 잠시 후 다시 시도해주세요.\n\n' + pe.message);
+        } catch (re) {
+          // ★수량 반영건이면 맞춰야 할 목표값을 알려준다(날짜·위치만 바뀌는 건은 목표 수량이 없다).
+          const _tgt = _pachiSync.patch.quantity;
+          alert('⚠ 입고는 저장됐는데 파치 재고 반영도, 되돌리기도 실패했습니다.\n\n'
+            + `${prev.farm_name} · ${prev.product} · ${prev.date}\n`
+            + (_tgt === undefined ? '파치 재고의 날짜·위치가 입고와 다를 수 있습니다.\n'
+                                  : `파치 재고를 ${fmtN(_tgt)} CT로 맞춰야 합니다.\n`)
+            + '\n' + pe.message);
+        }
+        return;   // ★감사 로그·화면 갱신까지 가지 않는다 — 되돌렸으니 남길 변경이 없다.
+      }
+    }
+
     if (changed) {
       await dbInsertAuditLog({
         target_table: 'inbound_records', target_id: id,
@@ -18973,8 +19072,10 @@ async function _addInboundCore(keepOpen) {
         // ★source_type은 "왜 파치가 됐는지"라 사유별로 다르다 — 청과는 선과 결과의 청과와 같은 'pachi_green'.
         //   그래야 파치 목록 종류 라벨이 '청과'로 뜬다(pachiKindLabel). 'pachi'로 넣으면 그냥 '파치'로 보인다.
         //   선과에서 나온 청과와의 구분은 fromInbound(=inbound_record_id 有) '입고' 배지가 맡는다.
-        if (c.cat === '파치' || c.cat === '청과') {
-          const _pachiSrcType = c.cat === '청과' ? 'pachi_green' : 'pachi';
+        //   ★짝 표는 _IB_PACHI_SRC 한 곳에서 가져온다(예전엔 여기서 삼항으로 따로 정했다) —
+        //     Source 3의 '전환됨' 판정도 같은 표를 보므로, 표만 고치면 저장·판정이 같이 따라온다.
+        if (_IB_PACHI_SRC[c.cat]) {
+          const _pachiSrcType = _IB_PACHI_SRC[c.cat];
           for (const row of _newInbounds) {
             if (!row || !row.id || !(Number(row.quantity) > 0)) continue;
             try {
@@ -19528,7 +19629,7 @@ function renderPachiSection() {
   //  파치 입고에 선과 투입이 생길 일은 없지만, 식을 복사해 두 벌로 만들면 나중에 어긋난다.
   // ★kg도 잔여 기준으로 다시 낸다 — 입고량 기준으로 두면 CT와 kg가 서로 다른 얘기를 하게 된다.
   // ★0.1 단위로 반올림: 부동소수 잔차(5 - 5 = 4.999…)가 남으면 다 쓴 행이 안 사라진다.
-  const _IB_PACHI_SRC = { '파치': 'pachi', '청과': 'pachi_green' };
+  //  ★짝 표는 전역 _IB_PACHI_SRC 하나뿐이다(예전엔 여기에 같은 표를 또 두었다).
   const inboundPachi = inboundRecords
     .filter(r => !r.is_void && _IB_PACHI_SRC[r.inbound_category]
       && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === _IB_PACHI_SRC[r.inbound_category] && ir.inbound_record_id === r.id))
