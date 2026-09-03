@@ -522,7 +522,7 @@ async function initApp() {
     pachiSizes = pachiSizeData || [];
     pachiConditions = pachiCondData || [];
     // 품목 마스터(수확·배차 품목 select용) — inv 탭 미방문 상태에서도 항상 사용 가능하게 부팅 시 로드
-    if (catSys) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; }
+    if (catSys) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; _rebuildProductTypeMap(); }
     // ★아래 셋과 위 Promise.all의 마스터 조회들은 db.js에서 오류를 catch해 빈 배열을 돌려준다 —
     //   그래서 여기 .catch는 발동하지 않는다. 실패 라벨은 db.js의 _sbLoadFail에 붙어 있으니
     //   여기에 _loadFail을 또 넣지 말 것(중복).
@@ -5895,6 +5895,7 @@ async function loadAndRenderInv() {
       juiceLowThreshold = (!isNaN(lv) && lv >= 0) ? lv : JUICE_LOW_DEFAULT;
     } catch(e) {}
     categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
+    _rebuildProductTypeMap();   // ★items 로드 직후 — 품목 유형 판정표를 DB 기준으로 갱신
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
     const srIds = [...new Set(invRecs.filter(r => r.sorting_result_id).map(r => r.sorting_result_id))];
@@ -7715,6 +7716,7 @@ async function saveCatEdit(id) {
     await dbUpdateCategory(id, { name, classification_type: type });
     const idx = categories.findIndex(c => c.id === id);
     if (idx !== -1) categories[idx] = { ...categories[idx], name, classification_type: type };
+    _rebuildProductTypeMap();   // 유형 판정표 갱신(설정 변경 즉시 반영)
     renderSizeCfg(); popInvProductSelects(); renderInvSummary();
   } catch(e) { alert('오류: ' + e.message); }
 }
@@ -7745,6 +7747,7 @@ async function saveItemEdit(id) {
     await dbUpdateItem(id, { name, category_id: catId });
     const idx = itemDefs.findIndex(i => i.id === id);
     if (idx !== -1) itemDefs[idx] = { ...itemDefs[idx], name, category_id: catId };
+    _rebuildProductTypeMap();   // 유형 판정표 갱신(설정 변경 즉시 반영)
     renderSizeCfg(); popInvProductSelects(); renderInvSummary();
   } catch(e) { alert('오류: ' + e.message); }
 }
@@ -7824,6 +7827,7 @@ async function addCat() {
   try {
     const row = await dbInsertCategory({ name, classification_type: type });
     categories.push(row);
+    _rebuildProductTypeMap();   // 유형 판정표 갱신(설정 변경 즉시 반영)
     sv('new-cat-name', '');
     renderSizeCfg();
     popInvProductSelects(); renderInvSummary();
@@ -7836,6 +7840,7 @@ async function deleteCat(id) {
     categories = categories.filter(c => c.id !== id);
     sizeGrades = sizeGrades.filter(g => g.category_id !== id);
     itemDefs = itemDefs.map(i => i.category_id === id ? { ...i, category_id: null } : i);
+    _rebuildProductTypeMap();   // 유형 판정표 갱신(설정 변경 즉시 반영)
     renderSizeCfg();
     popInvProductSelects(); renderInvSummary();
   } catch(e) { alert('오류: ' + e.message); }
@@ -7870,6 +7875,7 @@ async function addItem() {
   try {
     const row = await dbInsertItem({ name, category_id: catId });
     itemDefs.push(row);
+    _rebuildProductTypeMap();   // 유형 판정표 갱신(설정 변경 즉시 반영)
     sv('new-item-name', '');
     renderSizeCfg();
     popInvProductSelects(); renderInvSummary();
@@ -7881,6 +7887,7 @@ async function deleteItem(id) {
     await dbDeleteItem(id);
     itemDefs = itemDefs.filter(i => i.id !== id);
     itemSizeRules = itemSizeRules.filter(r => r.item_id !== id);
+    _rebuildProductTypeMap();   // 유형 판정표 갱신(설정 변경 즉시 반영)
     renderSizeCfg();
     popInvProductSelects(); renderInvSummary();
   } catch(e) { alert('오류: ' + e.message); }
@@ -13839,11 +13846,56 @@ function _auditFilteredCount() {
 }
 
 // ── 선과 처리 상수
-const PRODUCT_TYPE_MAP = {
+// ── 품목 유형(감귤류/만감류) 판정표 ──────────────────────────────────
+// ★예전엔 여기 10개가 하드코딩이라, 설정(⚙️ 선과 기준 > 품목)에서 유형을 지정해도 무시됐다.
+//   2026-09-03 사고: 유라실생을 감귤류(items.category_id=1)로 지정했는데도 표에 없어 만감류로 판정 →
+//   선과기 엑셀의 'L' 사이즈가 만감류 5~27수 체계에 없어 경고가 뜨고 변환이 실패했다.
+//   이제 items.category_id → categories.name으로 정한다(_rebuildProductTypeMap).
+//
+// ★참조(=이 const)는 절대 갈아끼우지 않는다. 읽는 곳이 18군데인데 새 객체로 바꾸면
+//   먼저 읽어 간 쪽이 옛 표를 계속 본다. 내용만 비우고 다시 채운다.
+// ★아래 10개는 '초기값'이다 — items가 로드되기 전에 읽는 코드가 있어도 예전과 똑같이 판정된다(⑤).
+//   로드가 끝나면 이 값들은 DB 기준으로 덮인다(DB에도 같은 10개가 같은 유형으로 들어 있어 결과는 동일).
+const _PRODUCT_TYPE_TABLE = {
   '천혜향': '만감류', '한라봉': '만감류', '카라향': '만감류',
   '레드향': '만감류', '수라향': '만감류', '황금향': '만감류',
   '노지감귤': '감귤류', '하우스감귤': '감귤류', '타이벡': '감귤류', '비가림': '감귤류'
 };
+const _ptypeWarned = new Set();
+// ★Proxy를 쓰는 이유는 하나 — 표에 없는 품목을 콘솔에 '품목당 한 번' 알리기 위해서다(④).
+//   읽는 곳이 전부 `PRODUCT_TYPE_MAP[품목] || '만감류'` 꼴이라, 그 자리를 안 고치고 누락을 잡으려면
+//   읽기를 가로채는 수밖에 없다. get 말고는 평범한 객체 그대로다 — Object.keys·in·전개 다 정상.
+//   (`prop in t`가 프로토타입까지 보므로 toString 같은 내장 이름엔 경고가 안 뜬다.)
+const PRODUCT_TYPE_MAP = new Proxy(_PRODUCT_TYPE_TABLE, {
+  get(t, prop) {
+    if (typeof prop === 'string' && !(prop in t) && !_ptypeWarned.has(prop)) {
+      _ptypeWarned.add(prop);
+      console.warn(`[품목유형] '${prop}'은(는) 품목 마스터(items)에 없습니다 — 만감류로 처리합니다. `
+        + '⚙️ 선과 기준 > 품목에서 등록하고 유형(카테고리)을 지정하세요.');
+    }
+    return t[prop];
+  }
+});
+
+// items·categories가 로드·변경된 뒤에 부른다. 표 내용을 DB 기준으로 다시 채운다.
+// ★유형 문자열은 categories.name을 읽어서 정한다 — 카테고리 id(1/2/3)를 코드에 박지 않는다(②).
+//   이름을 바꾸거나 카테고리를 새로 만들어도 코드를 안 고쳐도 된다.
+// ★앱이 아는 유형은 '감귤류'와 '만감류' 둘뿐이다(사이즈 체계·그룹·엑셀 변환이 전부 이 둘로 갈린다).
+//   그래서 그 외 카테고리는 전부 '만감류'로 둔다 — 지금 '기타'(풋귤·단호박·망고)가 표에 없어
+//   폴백으로 만감류가 되는 것과 결과가 같다. 기타를 별도 유형으로 만드는 건 이번 범위가 아니다(③).
+function _rebuildProductTypeMap() {
+  // ★품목 마스터가 비었으면(로드 실패·초기 상태) 초기값을 그대로 둔다 —
+  //   빈 표로 덮으면 전 품목이 만감류로 오판정되고 콘솔이 경고로 도배된다.
+  if (!Array.isArray(itemDefs) || !itemDefs.length) return;
+  const catName = {};
+  (categories || []).forEach(c => { if (c) catName[c.id] = c.name; });
+  Object.keys(_PRODUCT_TYPE_TABLE).forEach(k => { delete _PRODUCT_TYPE_TABLE[k]; });
+  (itemDefs || []).forEach(it => {
+    if (!it || !it.name) return;
+    _PRODUCT_TYPE_TABLE[it.name] = catName[it.category_id] === '감귤류' ? '감귤류' : '만감류';
+  });
+  _ptypeWarned.clear();   // 표가 바뀌었으니 같은 품목이라도 경고를 다시 낼 수 있게
+}
 const SIZES_만감류 = Array.from({ length: 23 }, (_, i) => `${i + 5}수`);
 const SIZES_감귤류 = ['000', '00', '3S', '2S1', '2S2', 'S1', 'S2', 'M1', 'M2', 'L', '2L', '3L', '왕1', '왕2'];
 
