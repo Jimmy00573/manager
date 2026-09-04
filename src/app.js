@@ -355,7 +355,20 @@ async function saveProductWeights() {
 //   알림만 하고 실제 갱신(location.reload)은 사용자가 누를 때만 한다. 전역 데이터도 안 건드림.
 // 감지 방법: 테이블별 max(created_at) 1건씩만 조회(목록 재조회 아님).
 //   ※출고·선과·콘테이너는 audit_logs에 안 남아서 해당 테이블을 따로 본다.
-const SYNC_TABLES = ['audit_logs', 'outbound_records', 'sorting_results', 'inbound_records'];
+// ★2026-09-04 범위 확대 — audit_logs에는 재고·입고 변경만 기록되므로 수송·콘테이너·수확·주스는
+//   어느 테이블로도 안 잡혀, 남이 배차·회수·수확을 등록해도 배너가 뜨지 않았다.
+//   조회 1건당 select=created_at&limit=1(1행)이라 테이블이 늘어도 응답은 가볍다.
+//   ★추가 조건: created_at 컬럼이 있어야 한다. 없는 테이블을 넣으면 조회가 실패해 undefined가 되고,
+//     '판단 보류'로 조용히 넘어가 감지가 안 되는데도 눈에 띄지 않는다.
+//     아래 13개는 전부 created_at(default now(), NULL 0건)이 있는 것을 DB에서 확인했다.
+const SYNC_TABLES = [
+  'audit_logs', 'outbound_records', 'sorting_results', 'inbound_records',
+  'dispatches',                                           // 수송 — 배차
+  'picks', 'own_ins', 'own_outs', 'nhf_ins', 'nhf_outs',  // 콘테이너 — 회수/반납(자사·농협)
+  'harvests',                                             // 수확 일정
+  'juice_batches',                                        // 주스·청 배치
+  'processing_records'                                    // 선과·파치 처리 기록
+];
 const SYNC_POLL_MS = 60000;
 let _lastLoadedAt = null;        // 데이터 로드 완료 시각(표시용)
 let _syncBaseline = {};          // 테이블별 '마지막으로 확인한' created_at — 이보다 새 것이 있으면 변경
@@ -363,6 +376,7 @@ let _syncBannerOn = false;
 let _syncSelfWriting = false;    // 본인 쓰기 직후 — 자기 저장으로 배너가 뜨는 것 방지
 let _syncRebaseTimer = null;
 let _syncPollTimer = null;
+let _syncPollBusy = false;       // 응답이 느릴 때 폴링이 겹쳐 도는 것 방지(조회 테이블이 13개로 늘어남)
 let _syncAgeTimer = null;        // 경과 시간 문구는 가만 둬도 늙으므로 1분마다 다시 그린다(텍스트만)
 
 // ★조회 실패를 눈에 보이게 — 이번 문제(1,000행 잘림)의 본질이 '조용히 부족한 데이터'였다.
@@ -405,9 +419,15 @@ function _syncMarkSelfWrite() {
 
 async function _syncPoll() {
   if (document.hidden) return;      // 백그라운드 탭이면 요청하지 않음
+  if (_syncPollBusy) return;        // 앞 회차가 아직 응답을 기다리는 중 — 겹쳐 돌지 않는다
   if (_syncBannerOn) return;        // 이미 떠 있으면 더 볼 필요 없음
   if (_syncSelfWriting) return;     // 본인 저장 직후 — 기준선 재설정이 끝나면 재개
-  const latest = await _syncFetchLatest();
+  let latest;
+  _syncPollBusy = true;
+  try { latest = await _syncFetchLatest(); } finally { _syncPollBusy = false; }
+  // ★조회 도중에 본인이 저장했을 수 있다 — 그 사이 기준선이 새로 잡히므로 이번 결과는 버린다.
+  //   (남기면 본인 쓰기로 배너가 뜰 수 있다)
+  if (_syncBannerOn || _syncSelfWriting) return;
   const changed = SYNC_TABLES.some(t => {
     const a = latest[t], b = _syncBaseline[t];
     if (a === undefined || b === undefined || !a) return false;   // 조회 실패·기준선 없음은 판단 보류
