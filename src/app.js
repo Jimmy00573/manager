@@ -14093,6 +14093,9 @@ function _applyBrixMaxSize(list, product) {
 let _sortingInboundId = null;
 let _sortingSeq = 1;
 let _sortingSaving = false;
+// 합산 선과 후보(같은 농가·품목의 미선과 매지). 모달을 열 때 채우고 닫을 때 비운다.
+// ★길이가 2 미만이면 합산 UI를 아예 안 그린다 → 단일 선과는 기존과 100% 동일하게 동작한다.
+let _srtMergeCands = [];
 let _srtGradeOn = false;   // (엑셀 호환용 — 항상 false. 수동 입력은 등급 탭 _srtGrade 사용)
 let _srtGrade = '일반';    // 선과 직접입력: 현재 선택된 브릭스 등급 탭
 
@@ -17526,10 +17529,21 @@ async function openSortingModal(id) {
   const productType = PRODUCT_TYPE_MAP[r.product] || '만감류';
   srtRenderSizeGrid(productType);
 
+  // 합산 선과 후보 목록. ★투입량 칸은 매번 원상복구부터 한다 —
+  //   직전에 합산으로 열었으면 읽기전용으로 잠겨 있어서, 단일 건을 열었을 때 못 고치게 된다.
+  const _srtIn0 = document.getElementById('srt-input-ct');
+  if (_srtIn0) { _srtIn0.readOnly = false; _srtIn0.style.background = ''; }
+  _srtMergeCands = _srtBuildCands(r);
+  _srtRenderMergeBox();
+
   srtUpdateTotals();
   document.getElementById('modal-sorting').style.display = 'flex';
-  document.getElementById('srt-input-ct').focus();
-  document.getElementById('srt-input-ct').select();
+  // ★합산 목록이 떠 있으면 투입량 칸은 읽기전용 합계다 — 커서는 실제로 고칠 수 있는
+  //   그 매지의 투입량 칸으로 보낸다(잠긴 칸에 커서가 가면 안 고쳐지는 줄 알고 헤맨다).
+  const _srtFocus = (_srtMergeCands.length > 1)
+    ? [...document.querySelectorAll('.srt-mg-in')].find(i => !i.disabled)
+    : document.getElementById('srt-input-ct');
+  if (_srtFocus) { _srtFocus.focus(); _srtFocus.select(); }
 }
 
 // 선과 직접입력 등급 목록: [일반] + 활성 브릭스 등급(sort_order). 마스터 없으면 [일반] 폴백.
@@ -17736,6 +17750,14 @@ function closeSortingModal() {
   document.getElementById('modal-sorting').style.display = 'none';
   _sortingInboundId = null;
   _srtExcel = null;
+  // 합산 상태 정리 — 남겨 두면 다음에 연 단일 건에서 남의 매지 목록이 보인다.
+  _srtMergeCands = [];
+  const _mb = document.getElementById('srt-merge-box');
+  if (_mb) { _mb.style.display = 'none'; _mb.innerHTML = ''; }
+  const _mp = document.getElementById('srt-merge-preview');
+  if (_mp) { _mp.style.display = 'none'; _mp.innerHTML = ''; }
+  const _mi = document.getElementById('srt-input-ct');
+  if (_mi) { _mi.readOnly = false; _mi.style.background = ''; }
   const re = document.getElementById('srt-excel-result');
   if (re) { re.style.display = 'none'; re.innerHTML = ''; }
 }
@@ -18024,6 +18046,474 @@ function srtUpdateTotals() {
       <span>결과 합계 <strong>${fmtN(outputTotal)} CT</strong></span>
       <span>차이 <strong style="color:${diffColor}">${sign}${fmtN(diff)} CT ${diffIcon} ${diffMsg}</strong></span>
     </div>`;
+
+  _srtRenderMergePreview();   // 합산으로 2건 이상 골라 뒀으면 분배 미리보기도 같은 입력으로 다시 그린다
+}
+
+// ── 합산 선과 ─────────────────────────────────────────────────────
+// 같은 농가·같은 품목의 미선과 매지 여러 건을 한 번에 돌리는 경우를 위한 보조.
+// ★저장 구조는 기존 그대로다 — 매지마다 sorting_results 1건 + sorting_details + inventory_records +
+//   processing_records를 만든다. 개수만 매지 수만큼 늘어난다. 그래야 차수 계산·완료 처리·공유 텍스트
+//   (buildSortingShareText)가 손대지 않아도 매지별로 예전과 똑같이 나온다.
+// ★안분 기준은 '투입량'이지 입고량이 아니다 — 입고 363CT라도 잔여 100CT만 넣었으면 100이 기준이다.
+
+const _SRT_ABN_KEYS  = ['waste', 'highacid', 'lowbrix', 'tiny', 'green', 'loss'];
+const _SRT_ABN_LABEL = { waste: '파치', highacid: '고산도', lowbrix: '저당도', tiny: '극소과', green: '청과', loss: '손실' };
+const _SRT_ABN_EL    = { waste: 'srt-waste', highacid: 'srt-highacid', lowbrix: 'srt-lowbrix', tiny: 'srt-tiny', green: 'srt-green', loss: 'srt-loss' };
+
+// 산출 한 항목(사이즈 1개 또는 비정상품 1종)을 투입 비율로 나눈다.
+// ★잔단수는 투입이 가장 큰 매지가 흡수한다 — 나눈 값의 합은 언제나 원래 값과 정확히 같다.
+//   가장 큰 매지 몫을 '총액 − 나머지 합'으로 마지막에 되계산하는 방식이라 총합 불일치가 생길 수 없다.
+//   (반올림한 diff를 더하는 방식은 0.05 같은 값에서 다시 어긋난다 — 그래서 diff를 반올림하지 않는다.)
+// ★매지가 하나면 나누지도 반올림하지도 않는다 — 단일 선과가 예전 값과 한 자리도 달라지지 않게.
+function _srtSplit(total, weights) {
+  const n = weights.length;
+  if (n === 1) return [total];
+  const sum = weights.reduce((a, b) => a + b, 0);
+  if (!(total > 0) || !(sum > 0)) return weights.map(() => 0);
+  const out = weights.map(w => Math.round(total * (w / sum) * 10) / 10);
+  let big = 0;
+  for (let i = 1; i < n; i++) if (weights[i] > weights[big]) big = i;
+  let others = 0;
+  out.forEach((v, i) => { if (i !== big) others += v; });
+  out[big] = Math.round((total - others) * 1e6) / 1e6;   // 부동소수 찌꺼기만 정리 — 값은 보존
+  return out;
+}
+
+// 합산 후보 = 누른 매지와 같은 농가 + 같은 품목 + 미선과 대상 + 잔여>0. 입고일 순.
+function _srtBuildCands(r) {
+  const list = inboundRecords.filter(x => x
+    && x.farm_name === r.farm_name && x.product === r.product
+    && _isUnsortedTarget(x) && getRemainingCT(x) > 0);
+  // ★누른 매지는 조건과 무관하게 항상 포함한다('선과 안 함'으로 표시된 건을 직접 열었을 수도 있다).
+  if (!list.some(x => String(x.id) === String(r.id))) list.push(r);
+  return list.sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))
+    || String(a.id).localeCompare(String(b.id)));
+}
+
+// 화면에 입력된 산출을 읽는다 — 미리보기와 저장이 같은 값을 보도록 한 곳에 모은다.
+// ★normalTotal은 예전과 같이 '입력칸 원값의 합'이다(_applyBrixMaxSize 이전). total_output_ct 기준이 안 바뀐다.
+function _srtReadOutput(product) {
+  let normalTotal = 0;
+  let sizeDetails = [];
+  document.querySelectorAll('.srt-size-input').forEach(inp => {
+    const v = parseFloat(inp.value) || 0;
+    normalTotal += v;
+    sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상', quality_grade: inp.dataset.grade || '일반' });
+  });
+  // 브릭스 분리 최대 사이즈 초과분 → '일반'으로 전환·같은 사이즈 합산(수량 보존) — 기존과 같은 위치에서 적용
+  sizeDetails = _applyBrixMaxSize(sizeDetails, product);
+  const abn = {};
+  _SRT_ABN_KEYS.forEach(k => { abn[k] = parseFloat(document.getElementById(_SRT_ABN_EL[k]).value) || 0; });
+  const abnormalTotal = _SRT_ABN_KEYS.reduce((a, k) => a + abn[k], 0);
+  return { sizeDetails, abn, normalTotal, abnormalTotal, outputTotal: normalTotal + abnormalTotal };
+}
+
+// 선택된 매지 + 현재 산출로 '매지별 분배안'을 만든다. 미리보기·확인 모달·저장이 모두 이걸 쓴다.
+function _srtPlan(sel) {
+  const r0 = inboundRecords.find(x => x.id === _sortingInboundId);
+  if (!r0 || !sel.length) return null;
+  const o = _srtReadOutput(r0.product);
+  const w = sel.map(s => s.input);
+  const totIn = w.reduce((a, b) => a + b, 0);
+  if (!(totIn > 0)) return null;
+
+  const per = sel.map(s => ({ ib: s.ib, input: s.input, rem: s.rem, pct: s.input / totIn * 100, sizes: [], abn: {}, normalTotal: 0, outputTotal: 0 }));
+  o.sizeDetails.forEach(d => { _srtSplit(d.ct, w).forEach((v, i) => per[i].sizes.push({ ...d, ct: v })); });
+  _SRT_ABN_KEYS.forEach(k => { _srtSplit(o.abn[k], w).forEach((v, i) => { per[i].abn[k] = v; }); });
+
+  if (sel.length === 1) {
+    // ★단일 매지는 예전 값을 그대로 쓴다 — 저장되는 합계가 한 자리도 달라지지 않게.
+    per[0].normalTotal = o.normalTotal;
+    per[0].outputTotal = o.outputTotal;
+  } else {
+    per.forEach(p => {
+      p.normalTotal = Math.round(p.sizes.reduce((a, d) => a + d.ct, 0) * 1e6) / 1e6;
+      p.outputTotal = Math.round((p.normalTotal + _SRT_ABN_KEYS.reduce((a, k) => a + p.abn[k], 0)) * 1e6) / 1e6;
+    });
+  }
+  return { out: o, per, totIn };
+}
+
+// 현재 체크된 매지와 투입량. 후보가 1건뿐(목록 숨김)이면 예전처럼 투입량 칸 하나만 본다.
+function _srtMergeSel() {
+  const r0 = inboundRecords.find(x => x.id === _sortingInboundId);
+  if (!r0) return [];
+  if (_srtMergeCands.length < 2) {
+    return [{ ib: r0, input: parseFloat(document.getElementById('srt-input-ct').value) || 0, rem: getRemainingCT(r0) }];
+  }
+  const inMap = {};
+  document.querySelectorAll('.srt-mg-in').forEach(i => { inMap[i.dataset.ibid] = i; });
+  const out = [];
+  document.querySelectorAll('.srt-mg-ck').forEach(ck => {
+    if (!ck.checked) return;
+    const ib = _srtMergeCands.find(x => String(x.id) === String(ck.dataset.ibid));
+    if (!ib) return;
+    const inp = inMap[ck.dataset.ibid];
+    out.push({ ib, input: parseFloat(inp && inp.value) || 0, rem: Math.round(getRemainingCT(ib) * 10) / 10 });
+  });
+  return out;
+}
+
+function _srtRenderMergeBox() {
+  const box = document.getElementById('srt-merge-box');
+  if (!box) return;
+  // ★후보가 자기 자신 하나뿐이면 영역을 통째로 숨긴다 — 기존 단일 선과 화면과 완전히 같아진다.
+  if (_srtMergeCands.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  const rows = _srtMergeCands.map(x => {
+    const rem = Math.round(getRemainingCT(x) * 10) / 10;
+    const dn  = (sortingResults || []).filter(s => String(s.inbound_record_id) === String(x.id)).length;
+    const on  = String(x.id) === String(_sortingInboundId);
+    const q   = _fsQ(String(x.id));
+    return '<tr style="border-top:1px solid #EDEDED">'
+      + '<td style="padding:5px 6px;text-align:center">'
+      +   '<input type="checkbox" class="srt-mg-ck" data-ibid="' + esc(String(x.id)) + '" ' + (on ? 'checked' : '')
+      +     ' onchange="_srtMergeToggle(\'' + q + '\')" style="cursor:pointer;width:15px;height:15px">'
+      + '</td>'
+      + '<td style="padding:5px 6px;white-space:nowrap">' + esc(x.date || '') + '</td>'
+      + '<td style="padding:5px 6px;text-align:right;white-space:nowrap;color:#6B7280">' + fmtN(x.quantity) + '</td>'
+      + '<td style="padding:5px 6px;white-space:nowrap;color:#6B7280;font-size:11px">' + (dn ? dn + '차까지 완료' : '선과 이력 없음') + '</td>'
+      + '<td style="padding:5px 6px;text-align:right;white-space:nowrap;color:#1565C0;font-weight:700">' + fmtN(rem) + '</td>'
+      + '<td style="padding:5px 6px;text-align:right;white-space:nowrap">'
+      +   '<input type="number" class="srt-mg-in" data-ibid="' + esc(String(x.id)) + '" min="0" max="' + rem + '" step="0.1"'
+      +     ' value="' + (on ? rem : '') + '" placeholder="0" ' + (on ? '' : 'disabled') + ' oninput="_srtMergeSync()"'
+      +     ' style="width:76px;padding:3px 5px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;text-align:right;background:' + (on ? '#fff' : '#F3F4F6') + '"> CT'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  box.style.display = '';
+  box.innerHTML = `
+    <div style="border:1px solid #FDE68A;background:#FFFBEB;border-radius:8px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+        <div style="font-size:12px;font-weight:700;color:#92400E">🧺 합산할 매지 <span style="font-weight:400;color:#B45309">같은 농가·품목의 미선과 매지를 함께 돌릴 때만 체크</span></div>
+        <div id="srt-mg-total" style="font-size:12px;color:#374151"></div>
+      </div>
+      <div style="overflow-x:auto;background:#fff;border:1px solid #FDE68A;border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <tr style="background:#FEF3C7;color:#92400E">
+            <th style="padding:5px 6px;width:34px"></th>
+            <th style="padding:5px 6px;text-align:left;white-space:nowrap">입고일</th>
+            <th style="padding:5px 6px;text-align:right;white-space:nowrap">입고량</th>
+            <th style="padding:5px 6px;text-align:left;white-space:nowrap">선과 이력</th>
+            <th style="padding:5px 6px;text-align:right;white-space:nowrap">잔여</th>
+            <th style="padding:5px 6px;text-align:right;white-space:nowrap">투입량</th>
+          </tr>
+          ${rows}
+        </table>
+      </div>
+    </div>`;
+  _srtMergeSync();
+}
+
+// 체크 전환 — 켜면 그 매지 잔여 전량이 기본값으로 들어간다(수정 가능). 끄면 칸을 비우고 잠근다.
+function _srtMergeToggle(ibid) {
+  const ck  = [...document.querySelectorAll('.srt-mg-ck')].find(c => String(c.dataset.ibid) === String(ibid));
+  const inp = [...document.querySelectorAll('.srt-mg-in')].find(i => String(i.dataset.ibid) === String(ibid));
+  const ib  = _srtMergeCands.find(x => String(x.id) === String(ibid));
+  if (!ck || !inp || !ib) return;
+  if (ck.checked) {
+    inp.disabled = false;
+    inp.style.background = '#fff';
+    if (!(parseFloat(inp.value) > 0)) inp.value = Math.round(getRemainingCT(ib) * 10) / 10;
+  } else {
+    inp.value = '';
+    inp.disabled = true;
+    inp.style.background = '#F3F4F6';
+  }
+  _srtMergeSync();
+}
+
+// 총 투입 CT를 다시 계산해 투입량 칸·요약·미리보기에 반영.
+// ★합산 목록이 보이는 동안 투입량 칸은 읽기전용 합계다 — 같은 숫자를 두 군데서 고칠 수 있으면 반드시 어긋난다.
+function _srtMergeSync() {
+  const sel = _srtMergeSel();
+  const tot = Math.round(sel.reduce((a, s) => a + s.input, 0) * 10) / 10;
+  const ct  = document.getElementById('srt-input-ct');
+  if (ct) { ct.value = tot > 0 ? tot : ''; ct.readOnly = true; ct.style.background = '#F3F4F6'; }
+  const over = sel.filter(s => s.input > s.rem + 1e-9);
+  const t = document.getElementById('srt-mg-total');
+  if (t) {
+    t.innerHTML = `선택 <strong>${sel.length}</strong>건 · 총 투입 <strong style="color:#1565C0;font-size:13px">${fmtN(tot)} CT</strong>`
+      + (over.length ? ` <span style="color:#DC2626;font-weight:700">⚠ 잔여 초과 ${over.length}건</span>` : '');
+  }
+  srtUpdateTotals();   // 합계 검증줄 + 분배 미리보기까지 여기서 이어서 갱신된다
+}
+
+// 매지별 분배 표 — 미리보기와 저장 전 확인 모달이 같은 표를 쓴다.
+// ★맨 아래 합계 행은 '나눈 값의 합 = 원래 산출'을 눈으로 확인하라고 있는 것이다.
+function _srtPlanTable(plan) {
+  const o    = plan.out;
+  const idxs = o.sizeDetails.map((d, i) => i).filter(i => o.sizeDetails[i].ct > 0);
+  const aks  = _SRT_ABN_KEYS.filter(k => o.abn[k] > 0);
+  const th   = s => `<th style="padding:4px 6px;text-align:right;white-space:nowrap;font-weight:600;color:#374151">${s}</th>`;
+  const td   = v => `<td style="padding:4px 6px;text-align:right;white-space:nowrap">${v ? fmtN(Math.round(v * 10) / 10) : '<span style="color:#D1D5DB">0</span>'}</td>`;
+  const szLbl = d => esc(d.size_code) + (d.quality_grade && d.quality_grade !== '일반'
+    ? `<br><span style="font-weight:400;color:#1D4ED8;font-size:10px">${esc(d.quality_grade)}</span>` : '');
+
+  const head = `<tr style="background:#F3F4F6">
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;font-weight:600;color:#374151">매지(입고일)</th>
+      ${th('투입')}${th('비율')}
+      ${idxs.map(i => th(szLbl(o.sizeDetails[i]))).join('')}
+      ${aks.map(k => th(_SRT_ABN_LABEL[k])).join('')}
+      ${th('결과합')}
+    </tr>`;
+  const body = plan.per.map(p => `<tr style="border-top:1px solid #EDEDED">
+      <td style="padding:4px 6px;white-space:nowrap">${esc(p.ib.date || '')} <span style="color:#9CA3AF;font-size:10px">입고 ${fmtN(p.ib.quantity)}</span></td>
+      ${td(p.input)}
+      <td style="padding:4px 6px;text-align:right;white-space:nowrap;color:#1565C0;font-weight:700">${p.pct.toFixed(1)}%</td>
+      ${idxs.map(i => td(p.sizes[i].ct)).join('')}
+      ${aks.map(k => td(p.abn[k])).join('')}
+      ${td(p.outputTotal)}
+    </tr>`).join('');
+  const foot = `<tr style="border-top:2px solid #D1D5DB;background:#FAFAFA;font-weight:700">
+      <td style="padding:4px 6px;white-space:nowrap">합계</td>
+      ${td(plan.totIn)}
+      <td style="padding:4px 6px;text-align:right;white-space:nowrap">100.0%</td>
+      ${idxs.map(i => td(o.sizeDetails[i].ct)).join('')}
+      ${aks.map(k => td(o.abn[k])).join('')}
+      ${td(o.normalTotal + o.abnormalTotal)}
+    </tr>`;
+  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px">${head}${body}${foot}</table></div>`;
+}
+
+// 2건 이상 선택했을 때만 나오는 하단 미리보기. 입력이 바뀌면 srtUpdateTotals를 타고 즉시 다시 그려진다.
+function _srtRenderMergePreview() {
+  const el = document.getElementById('srt-merge-preview');
+  if (!el) return;
+  if (_srtMergeCands.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const sel = _srtMergeSel();
+  if (sel.length < 2 || sel.some(s => !(s.input > 0))) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const plan = _srtPlan(sel);
+  if (!plan || plan.out.outputTotal <= 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `
+    <div style="border:1px solid #BFDBFE;background:#F8FBFF;border-radius:8px;padding:10px 12px">
+      <div style="font-size:12px;font-weight:700;color:#1E3A5F;margin-bottom:6px">🧮 매지별 분배 미리보기 <span style="font-weight:400;color:#6B7280">투입량 비율로 나눕니다</span></div>
+      ${_srtPlanTable(plan)}
+    </div>`;
+}
+
+// 저장 전 확인 — 분배 결과를 그대로 보여 주고 확인받는다.
+function _srtConfirmMerge(plan) {
+  return new Promise(resolve => {
+    document.getElementById('modal-srt-merge-confirm')?.remove();
+    const ov = document.createElement('div');
+    ov.id = 'modal-srt-merge-confirm';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    ov.innerHTML = `
+      <div style="background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="background:#EFF6FF;padding:16px 20px 13px">
+          <div style="font-weight:700;font-size:15px;color:#1E3A5F">합산 선과 저장 확인</div>
+          <div style="font-size:12px;color:#3B82F6;margin-top:2px">${plan.per.length}개 매지에 각각 선과 기록이 만들어집니다 · 총 투입 ${fmtN(Math.round(plan.totIn * 10) / 10)} CT</div>
+        </div>
+        <div style="padding:14px 20px;overflow:auto;flex:1">${_srtPlanTable(plan)}</div>
+        <div style="padding:12px 20px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #E5E7EB">
+          <button id="smc-cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer;font-family:inherit">취소</button>
+          <button id="smc-ok" style="padding:8px 18px;border-radius:8px;border:none;background:#1D4ED8;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">저장</button>
+        </div>
+      </div>`;
+    const close = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') close(false); };
+    // 바깥 클릭으로는 안 닫는다 — 입력을 다 해 놓고 실수로 닫히면 손실이 크다(showConfirmDanger와 같은 규칙).
+    ov.querySelector('#smc-cancel').addEventListener('click', () => close(false));
+    ov.querySelector('#smc-ok').addEventListener('click', () => close(true));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(ov);
+    if (document.activeElement) document.activeElement.blur();
+    ov.querySelector('#smc-cancel').focus();
+  });
+}
+
+// 매지 1건분 저장 — 단일 선과와 합산 선과가 같은 경로를 쓴다(테이블·컬럼 전부 기존 그대로).
+// ★strict=true(합산)면 재고 INSERT 실패도 예외로 올린다 — 부분 생성을 남기지 않기 위해서다.
+//   단일 선과(strict=false)는 예전 그대로 토스트만 띄우고 넘어간다(동작 변경 없음).
+// ★opts.track에 배열을 주면 헤더 생성 직후 그 배열에 등록한다(호출부의 롤백 목록).
+async function _srtWriteOne(r, seq, p, opts = {}) {
+  const strict = !!opts.strict;
+  const { sortingDate, operator, note, inputCt, remaining, sizeDetails, abn, normalTotal, outputTotal } = p;
+  const { waste, highacid, lowbrix, tiny, green, loss } = abn;
+
+  // 1. 헤더
+  const headerRows = await sbInsert('sorting_results', {
+    inbound_record_id: r.id,
+    sequence_number: seq,
+    sorting_date: sortingDate,
+    operator_name: operator || null,
+    input_ct: inputCt,
+    total_output_ct: outputTotal,
+    loss_ct: loss || null,
+    status: '완료',
+    note: note || null,
+    created_by: 'admin'
+  });
+  const headerId = headerRows[0].id;
+  const ret = { srId: headerId, ibId: r.id, seq, locBefore: r.location, locChanged: false };
+  // ★헤더를 만든 즉시 되돌릴 목록에 넣는다 — 이 매지를 쓰던 도중에 실패해도 반쪽으로 남지 않게.
+  //   (다 쓴 뒤에 등록하면, 정작 실패한 그 매지가 롤백 대상에서 빠진다.)
+  if (opts.track) opts.track.push(ret);
+
+  // 2. 상세 (사이즈별 + 비정상품) — CT=0인 행은 저장 안 함(불필요 레코드 누적 방지)
+  //    집계는 모두 category별 sum/사이즈맵이라 0 행 유무와 결과 동일.
+  const allDetails = [
+    ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', quality_grade: d.quality_grade, note: null })),
+    { sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null },
+    { sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null },
+    { sorting_result_id: headerId, size_code: null, ct: lowbrix,  category: '저당도', note: null },
+    { sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null },
+    { sorting_result_id: headerId, size_code: null, ct: green,    category: '청과',   note: null },
+    { sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null },
+  ].filter(d => Number(d.ct) > 0);
+  for (const d of allDetails) await sbInsert('sorting_details', d);
+
+  // 2-1. inventory_records 자동 등록 (정상품만)
+  // void 처리는 실패해도 INSERT는 계속 진행
+  try {
+    const existing = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&or=(is_void.eq.false,is_void.is.null)&select=id`);
+    for (const row of existing) await sbUpdate('inventory_records', row.id, { is_void: true });
+  } catch (voidErr) {
+    console.warn('[6단계] 기존 inventory_records void 처리 실패 (무시):', voidErr);
+  }
+  const invRows = sizeDetails.filter(d => d.ct > 0);
+  console.log('[6단계] sizeDetails:', JSON.stringify(sizeDetails));
+  console.log('[6단계] invRows (ct>0):', JSON.stringify(invRows));
+  console.log('[6단계] r.farm_name:', r.farm_name, '/ r.product:', r.product, '/ sortingDate:', sortingDate, '/ headerId:', headerId);
+  let invInsertOk = 0;
+  for (const d of invRows) {
+    const insertData = {
+      date: sortingDate, farm_name: r.farm_name, product: r.product,
+      size_code: d.size_code, quantity: d.ct, location: null,
+      source_type: 'sorting', sorting_result_id: headerId, is_void: false,
+      quality_grade: d.quality_grade, note: null, created_by: 'admin'
+    };
+    console.log('[6단계] INSERT 시도:', JSON.stringify(insertData));
+    try {
+      const result = await sbInsert('inventory_records', insertData);
+      console.log('[6단계] INSERT 성공:', JSON.stringify(result));
+      invInsertOk++;
+    } catch (rowErr) {
+      console.error('[6단계] INSERT 실패:', rowErr.message, '/ 데이터:', JSON.stringify(insertData));
+      // ★합산 저장은 여기서 멈추고 위에서 통째로 되돌린다 — 매지 하나만 반쪽으로 남는 게 제일 나쁘다.
+      if (strict) throw new Error(`재고 등록 실패(${r.date} 매지): ${rowErr.message}`);
+      showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 선과품 재고에서 직접 입력 필요');
+      break;
+    }
+  }
+  console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
+
+  // 6-2단계. inventory_records 파치/부산물 등록 (파치·고산도·저당도·극소과·청과)
+  // 크기·상태 자동 매핑(4-B): 고산도/저당도→상태, 극소과→크기, 청과→상태. source_type은 그대로 유지.
+  const pachiItems = [
+    { value: waste,    sourceType: 'pachi',          sizeGroup: null,     condition: null },
+    { value: highacid, sourceType: 'pachi_highacid', sizeGroup: null,     condition: '고산도' },
+    { value: lowbrix,  sourceType: 'pachi_lowbrix',  sizeGroup: null,     condition: '저당도' },
+    { value: tiny,     sourceType: 'pachi_tiny',     sizeGroup: '극소과', condition: null },
+    { value: green,    sourceType: 'pachi_green',    sizeGroup: null,     condition: '청과' },
+  ];
+  for (const item of pachiItems) {
+    if (item.value <= 0) continue;
+    try {
+      try {
+        const exPachi = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&source_type=eq.${item.sourceType}&or=(is_void.eq.false,is_void.is.null)&select=id`);
+        for (const row of exPachi) await sbUpdate('inventory_records', row.id, { is_void: true });
+      } catch(e) { console.warn(`[8단계] ${item.sourceType} void 처리 실패 (무시):`, e); }
+      await sbInsert('inventory_records', {
+        date: sortingDate, farm_name: r.farm_name, product: r.product,
+        size_code: null, quantity: item.value, location: null,
+        source_type: item.sourceType, sorting_result_id: headerId,
+        pachi_size_group: item.sizeGroup, pachi_condition: item.condition,
+        is_void: false, note: null, created_by: 'admin'
+      });
+      console.log(`[8단계] ${item.sourceType} 등록 완료:`, item.value, 'CT');
+    } catch(pachiErr) {
+      if (strict) throw new Error(`파치 재고 등록 실패(${r.date} 매지 ${item.sourceType}): ${pachiErr.message}`);
+      console.warn(`[8단계] ${item.sourceType} 등록 실패 (무시):`, pachiErr.message);
+    }
+  }
+
+  // 3. processing_records로 잔여재고 차감
+  const procRow = await dbInsertProcessing({
+    inbound_id: r.id,
+    date: sortingDate,
+    process_type: '선과',
+    quantity: inputCt,
+    note: `${seq}차 선과 (결과#${headerId})`,
+    staff: operator || 'admin'
+  });
+  processingRecords.push(procRow);
+
+  // 3-1. 분산 위치 차감: 수량 명시된 분산 입고(예 "1층(10)/지하(30)/냉장고(60)")만 sort_order 순 차감
+  const _locParts = parseLocationStr(r.location);
+  if (_locParts.some(q => q.qty !== null)) {
+    _locParts.sort((a, b) => {
+      const ao = storageLocations.find(l => l.name === a.name)?.sort_order ?? 9999;
+      const bo = storageLocations.find(l => l.name === b.name)?.sort_order ?? 9999;
+      return ao - bo;
+    });
+    let _rem = inputCt;
+    for (const part of _locParts) {
+      if (_rem <= 0 || part.qty === null) continue;
+      const take = Math.min(part.qty, _rem);
+      part.qty = Math.round((part.qty - take) * 10) / 10;
+      _rem     = Math.round((_rem - take) * 10) / 10;
+    }
+    const newLocParts = _locParts.filter(q => q.qty !== null && q.qty > 0);
+    const newLoc = newLocParts.length ? newLocParts.map(q => `${q.name}(${q.qty})`).join('/') : null;
+    await dbUpdateInbound(r.id, { location: newLoc });
+    r.location = newLoc;
+    ret.locChanged = true;
+  }
+
+  // 5. audit_log
+  const parts = [`정상 ${fmtN(normalTotal)}CT`];
+  if (waste    > 0) parts.push(`파치 ${fmtN(waste)}CT`);
+  if (highacid > 0) parts.push(`고산도 ${fmtN(highacid)}CT`);
+  if (lowbrix  > 0) parts.push(`저당도 ${fmtN(lowbrix)}CT`);
+  if (tiny     > 0) parts.push(`극소과 ${fmtN(tiny)}CT`);
+  if (green    > 0) parts.push(`청과 ${fmtN(green)}CT`);
+  if (loss     > 0) parts.push(`손실 ${fmtN(loss)}CT`);
+  await dbInsertAuditLog({
+    target_table: 'inbound_records', target_id: r.id,
+    before_val: { remaining: fmtN(remaining) }, after_val: { processed: fmtN(inputCt), seq },
+    reason: `선과 처리 ${seq}차: ${r.farm_name} ${r.product} ${fmtN(inputCt)}CT → ${parts.join(' + ')}${p.auditExtra || ''}`,
+    staff: operator || 'admin'
+  });
+
+  return ret;
+}
+
+// 합산 저장 중간에 실패했을 때 이번에 만든 것을 되돌린다 — 부분 생성을 남기지 않기 위해서다.
+// ★삭제 순서·방식은 선과 취소(cancelSortingResult)와 같다. 되돌리기까지 실패하면 콘솔에 남기고
+//   호출부가 사용자에게 '수동 확인 필요'로 알린다 — 조용히 넘어가면 유령 기록이 남는다.
+async function _srtRollback(done) {
+  const failed = [];
+  for (const d of done) {
+    try {
+      let res = await fetch(`${SUPABASE_URL}/rest/v1/sorting_details?sorting_result_id=eq.${d.srId}`, { method: 'DELETE', headers: { ...SB_HEADERS } });
+      if (!res.ok) throw new Error(`상세 삭제 HTTP ${res.status}`);
+      res = await fetch(`${SUPABASE_URL}/rest/v1/inventory_records?sorting_result_id=eq.${d.srId}`, { method: 'DELETE', headers: { ...SB_HEADERS } });
+      if (!res.ok) throw new Error(`재고 삭제 HTTP ${res.status}`);
+      await sbDeleteStrict('sorting_results', `id=eq.${d.srId}`);
+      const procs = processingRecords.filter(p => p.inbound_id === d.ibId && p.process_type === '선과' && p.note && p.note.includes(`결과#${d.srId}`));
+      for (const p of procs) {
+        try { await sbDeleteStrict('processing_records', `id=eq.${p.id}`); }
+        catch (e) { console.warn('[합산 선과] 롤백 processing 삭제 실패:', e.message); }
+      }
+      processingRecords = processingRecords.filter(p => !procs.some(x => x.id === p.id));
+      // 분산 위치를 깎았으면 원래 값으로 되돌린다
+      if (d.locChanged) {
+        const ib = inboundRecords.find(x => String(x.id) === String(d.ibId));
+        try { await dbUpdateInbound(d.ibId, { location: d.locBefore }); if (ib) ib.location = d.locBefore; }
+        catch (e) { console.warn('[합산 선과] 롤백 위치 복원 실패:', e.message); }
+      }
+      console.log('[합산 선과] 롤백 완료:', d.srId);
+    } catch (e) {
+      console.error('[합산 선과] 롤백 실패:', d.srId, e);
+      failed.push(`${d.seq}차(결과#${d.srId})`);
+    }
+  }
+  return failed;
 }
 
 async function saveSortingResult() {
@@ -18037,42 +18527,42 @@ async function saveSortingResult() {
 
   const sortingDate = document.getElementById('srt-date').value;
   const operator    = document.getElementById('srt-operator').value.trim();
-  const inputCt     = parseFloat(document.getElementById('srt-input-ct').value) || 0;
   const note        = document.getElementById('srt-note').value.trim();
-  const waste       = parseFloat(document.getElementById('srt-waste').value)    || 0;
-  const highacid    = parseFloat(document.getElementById('srt-highacid').value) || 0;
-  const lowbrix     = parseFloat(document.getElementById('srt-lowbrix').value)  || 0;
-  const tiny        = parseFloat(document.getElementById('srt-tiny').value)     || 0;
-  const green       = parseFloat(document.getElementById('srt-green').value)    || 0;
-  const loss        = parseFloat(document.getElementById('srt-loss').value)     || 0;
 
-  const remaining  = getRemainingCT(r);
+  // 합산 목록이 안 보이면 sel은 '누른 매지 1건 + 투입량 칸' 하나뿐이다 — 예전 흐름과 같은 값이 된다.
+  const sel    = _srtMergeSel();
+  const merged = sel.length > 1;
+  const inputCt = Math.round(sel.reduce((a, s) => a + s.input, 0) * 10) / 10;
 
-  if (!sortingDate)         { alert('선과일을 입력하세요.'); return; }
-  if (!operator)            { alert('작업자를 선택하세요.'); return; }
-  if (inputCt <= 0)         { alert('투입량을 입력하세요.'); return; }
-  if (inputCt > remaining)  { alert(`투입량(${fmtN(inputCt)}CT)이 잔여재고(${fmtN(remaining)}CT)를 초과합니다.`); return; }
+  if (!sortingDate)  { alert('선과일을 입력하세요.'); return; }
+  if (!operator)     { alert('작업자를 선택하세요.'); return; }
+  if (!sel.length)   { alert('선과할 매지를 하나 이상 선택하세요.'); return; }
+  if (inputCt <= 0)  { alert('투입량을 입력하세요.'); return; }
+  // ★매지별로 각각 검사한다 — 합만 맞아도 한 매지가 제 잔여를 넘으면 안 된다.
+  for (const s of sel) {
+    if (!(s.input > 0)) { alert(`${s.ib.date} 매지의 투입량을 입력하세요.`); return; }
+    if (s.input > s.rem + 1e-9) {
+      alert(`${merged ? s.ib.date + ' 매지의 ' : ''}투입량(${fmtN(s.input)}CT)이 잔여재고(${fmtN(s.rem)}CT)를 초과합니다.`);
+      return;
+    }
+  }
 
-  let normalTotal = 0;
-  let sizeDetails = [];
-  document.querySelectorAll('.srt-size-input').forEach(inp => {
-    const v = parseFloat(inp.value) || 0;
-    normalTotal += v;
-    sizeDetails.push({ size_code: inp.dataset.size, ct: v, category: '정상', quality_grade: inp.dataset.grade || '일반' });
-  });
-  // 브릭스 분리 최대 사이즈 초과분 → '일반'으로 전환·같은 사이즈 합산(수량 보존) — sorting_details·inventory_records 공통 반영
-  sizeDetails = _applyBrixMaxSize(sizeDetails, r.product);
+  const plan = _srtPlan(sel);
+  if (!plan) { alert('투입량을 확인하세요.'); return; }
+  const o = plan.out;
+  if (o.outputTotal === 0) { alert('선과 결과를 입력하세요.'); return; }
 
-  const abnormalTotal = waste + highacid + lowbrix + tiny + green + loss;
-  const outputTotal   = normalTotal + abnormalTotal;
-  if (outputTotal === 0) { alert('선과 결과를 입력하세요.'); return; }
-
-  const diffPct = inputCt > 0 ? Math.abs((outputTotal - inputCt) / inputCt) * 100 : 0;
+  const diffPct = inputCt > 0 ? Math.abs((o.outputTotal - inputCt) / inputCt) * 100 : 0;
   if (diffPct > 5) {
     const ok = await showConfirmEdit(
       '투입량과 결과 차이 확인',
-      `차이 ${diffPct.toFixed(1)}% · 투입 ${fmtN(inputCt)} CT / 결과 ${fmtN(outputTotal)} CT. 그래도 저장할까요?`
+      `차이 ${diffPct.toFixed(1)}% · 투입 ${fmtN(inputCt)} CT / 결과 ${fmtN(o.outputTotal)} CT. 그래도 저장할까요?`
     );
+    if (!ok) return;
+  }
+  // 합산일 때만 매지별 분배 결과를 표로 보여 주고 한 번 더 확인받는다.
+  if (merged) {
+    const ok = await _srtConfirmMerge(plan);
     if (!ok) return;
   }
 
@@ -18080,13 +18570,15 @@ async function saveSortingResult() {
   const _saveBtn = document.getElementById('srt-save-btn');
   if (_saveBtn) { _saveBtn.disabled = true; _saveBtn.dataset.orig = _saveBtn.textContent; _saveBtn.textContent = '처리 중...'; }
 
+  const done = [];   // 이번에 만든 것 — 중간 실패 시 되돌릴 대상
   try {
     // ★저장 직전 DB 재확인 — 화면은 다른 사람이 방금 등록한 차수를 모른다(2026-08-25 이중 등록 사고).
-    //   여기서 걸러야 하는 이유: 위 `inputCt > remaining` 검사는 메모리(getRemainingCT) 기준이라
+    //   여기서 걸러야 하는 이유: 위 `s.input > s.rem` 검사는 메모리(getRemainingCT) 기준이라
     //   내 화면이 열려 있는 동안 늘어난 투입을 못 본다.
-    let _db;
+    // ★선택된 전 매지를 먼저 다 확인한다 — 하나라도 걸리면 아무것도 만들지 않는다(부분 저장 금지).
+    let states;
     try {
-      _db = await _dbSortingState(r);
+      states = await Promise.all(sel.map(s => _dbSortingState(s.ib)));
     } catch (e) {
       // ★조용히 통과하지 않는다 — 확인을 못 했으면 저장하지 않는다.
       alert(`잔여 확인에 실패해 저장을 중단했습니다.
@@ -18095,160 +18587,38 @@ async function saveSortingResult() {
 (${e.message || e})`);
       return;
     }
-    if (inputCt > _db.remaining + 1e-9) {   // 소수점 오차로 잘못 막지 않게 미세 여유
-      const L = _db.last;
-      const who = L
-        ? `${ftm(L.created_at)}에 ${L.operator_name || '다른 담당자'}님이 ${L.sequence_number}차 ${fmtN(L.input_ct)}CT를 이미 등록했습니다.`   // alert는 평문 — esc 불필요
-        : '다른 곳에서 이 입고의 처리가 이미 등록됐습니다.';
-      alert(`⚠ ${who}
+    for (let i = 0; i < sel.length; i++) {
+      if (sel[i].input > states[i].remaining + 1e-9) {   // 소수점 오차로 잘못 막지 않게 미세 여유
+        const L = states[i].last;
+        const who = L
+          ? `${ftm(L.created_at)}에 ${L.operator_name || '다른 담당자'}님이 ${L.sequence_number}차 ${fmtN(L.input_ct)}CT를 이미 등록했습니다.`   // alert는 평문 — esc 불필요
+          : '다른 곳에서 이 입고의 처리가 이미 등록됐습니다.';
+        alert(`⚠ ${merged ? `[${sel[i].ib.date} 매지] ` : ''}${who}
 
-현재 잔여 ${fmtN(_db.remaining)}CT — 투입 ${fmtN(inputCt)}CT는 저장할 수 없습니다.
-화면을 새로고침해 확인하세요.`);
-      return;
-    }
-    // ★차수도 DB 기준 최대+1로 다시 정한다 — 모달을 열 때 정한 값(_sortingSeq)을 그대로 쓰면
-    //   그 사이에 남이 등록한 차수와 번호가 겹친다.
-    _sortingSeq = _db.nextSeq;
-
-    // 1. 헤더
-    const headerRows = await sbInsert('sorting_results', {
-      inbound_record_id: _sortingInboundId,
-      sequence_number: _sortingSeq,
-      sorting_date: sortingDate,
-      operator_name: operator || null,
-      input_ct: inputCt,
-      total_output_ct: outputTotal,
-      loss_ct: loss || null,
-      status: '완료',
-      note: note || null,
-      created_by: 'admin'
-    });
-    const headerId = headerRows[0].id;
-
-    // 2. 상세 (사이즈별 + 비정상품) — CT=0인 행은 저장 안 함(불필요 레코드 누적 방지)
-    //    집계는 모두 category별 sum/사이즈맵이라 0 행 유무와 결과 동일.
-    const allDetails = [
-      ...sizeDetails.map(d => ({ sorting_result_id: headerId, size_code: d.size_code, ct: d.ct, category: '정상', quality_grade: d.quality_grade, note: null })),
-      { sorting_result_id: headerId, size_code: null, ct: waste,    category: '파치',   note: null },
-      { sorting_result_id: headerId, size_code: null, ct: highacid, category: '고산도', note: null },
-      { sorting_result_id: headerId, size_code: null, ct: lowbrix,  category: '저당도', note: null },
-      { sorting_result_id: headerId, size_code: null, ct: tiny,     category: '극소과', note: null },
-      { sorting_result_id: headerId, size_code: null, ct: green,    category: '청과',   note: null },
-      { sorting_result_id: headerId, size_code: null, ct: loss,     category: '손실',   note: null },
-    ].filter(d => Number(d.ct) > 0);
-    for (const d of allDetails) await sbInsert('sorting_details', d);
-
-    // 2-1. inventory_records 자동 등록 (정상품만)
-    // void 처리는 실패해도 INSERT는 계속 진행
-    try {
-      const existing = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&or=(is_void.eq.false,is_void.is.null)&select=id`);
-      for (const row of existing) await sbUpdate('inventory_records', row.id, { is_void: true });
-    } catch (voidErr) {
-      console.warn('[6단계] 기존 inventory_records void 처리 실패 (무시):', voidErr);
-    }
-    const invRows = sizeDetails.filter(d => d.ct > 0);
-    console.log('[6단계] sizeDetails:', JSON.stringify(sizeDetails));
-    console.log('[6단계] invRows (ct>0):', JSON.stringify(invRows));
-    console.log('[6단계] r.farm_name:', r.farm_name, '/ r.product:', r.product, '/ sortingDate:', sortingDate, '/ headerId:', headerId);
-    let invInsertOk = 0;
-    for (const d of invRows) {
-      const insertData = {
-        date: sortingDate, farm_name: r.farm_name, product: r.product,
-        size_code: d.size_code, quantity: d.ct, location: null,
-        source_type: 'sorting', sorting_result_id: headerId, is_void: false,
-        quality_grade: d.quality_grade, note: null, created_by: 'admin'
-      };
-      console.log('[6단계] INSERT 시도:', JSON.stringify(insertData));
-      try {
-        const result = await sbInsert('inventory_records', insertData);
-        console.log('[6단계] INSERT 성공:', JSON.stringify(result));
-        invInsertOk++;
-      } catch (rowErr) {
-        console.error('[6단계] INSERT 실패:', rowErr.message, '/ 데이터:', JSON.stringify(insertData));
-        showToast('⚠️ 선과 결과는 저장됐으나 재고 등록 실패. 선과품 재고에서 직접 입력 필요');
-        break;
-      }
-    }
-    console.log(`[6단계] 완료: ${invInsertOk}/${invRows.length}건 등록`);
-
-    // 6-2단계. inventory_records 파치/부산물 등록 (파치·고산도·저당도·극소과·청과)
-    // 크기·상태 자동 매핑(4-B): 고산도/저당도→상태, 극소과→크기, 청과→상태. source_type은 그대로 유지.
-    const pachiItems = [
-      { value: waste,    sourceType: 'pachi',          sizeGroup: null,     condition: null },
-      { value: highacid, sourceType: 'pachi_highacid', sizeGroup: null,     condition: '고산도' },
-      { value: lowbrix,  sourceType: 'pachi_lowbrix',  sizeGroup: null,     condition: '저당도' },
-      { value: tiny,     sourceType: 'pachi_tiny',     sizeGroup: '극소과', condition: null },
-      { value: green,    sourceType: 'pachi_green',    sizeGroup: null,     condition: '청과' },
-    ];
-    for (const item of pachiItems) {
-      if (item.value <= 0) continue;
-      try {
-        try {
-          const exPachi = await sbGet('inventory_records', `sorting_result_id=eq.${headerId}&source_type=eq.${item.sourceType}&or=(is_void.eq.false,is_void.is.null)&select=id`);
-          for (const row of exPachi) await sbUpdate('inventory_records', row.id, { is_void: true });
-        } catch(e) { console.warn(`[8단계] ${item.sourceType} void 처리 실패 (무시):`, e); }
-        await sbInsert('inventory_records', {
-          date: sortingDate, farm_name: r.farm_name, product: r.product,
-          size_code: null, quantity: item.value, location: null,
-          source_type: item.sourceType, sorting_result_id: headerId,
-          pachi_size_group: item.sizeGroup, pachi_condition: item.condition,
-          is_void: false, note: null, created_by: 'admin'
-        });
-        console.log(`[8단계] ${item.sourceType} 등록 완료:`, item.value, 'CT');
-      } catch(pachiErr) {
-        console.warn(`[8단계] ${item.sourceType} 등록 실패 (무시):`, pachiErr.message);
+현재 잔여 ${fmtN(states[i].remaining)}CT — 투입 ${fmtN(sel[i].input)}CT는 저장할 수 없습니다.
+화면을 새로고침해 확인하세요.${merged ? '\n\n(합산 저장이라 나머지 매지도 저장하지 않았습니다.)' : ''}`);
+        return;
       }
     }
 
-    // 3. processing_records로 잔여재고 차감
-    const procRow = await dbInsertProcessing({
-      inbound_id: _sortingInboundId,
-      date: sortingDate,
-      process_type: '선과',
-      quantity: inputCt,
-      note: `${_sortingSeq}차 선과 (결과#${headerId})`,
-      staff: operator || 'admin'
-    });
-    processingRecords.push(procRow);
-
-    // 3-1. 분산 위치 차감: 수량 명시된 분산 입고(예 "1층(10)/지하(30)/냉장고(60)")만 sort_order 순 차감
-    const _locParts = parseLocationStr(r.location);
-    if (_locParts.some(p => p.qty !== null)) {
-      _locParts.sort((a, b) => {
-        const ao = storageLocations.find(l => l.name === a.name)?.sort_order ?? 9999;
-        const bo = storageLocations.find(l => l.name === b.name)?.sort_order ?? 9999;
-        return ao - bo;
-      });
-      let _rem = inputCt;
-      for (const part of _locParts) {
-        if (_rem <= 0 || part.qty === null) continue;
-        const take = Math.min(part.qty, _rem);
-        part.qty = Math.round((part.qty - take) * 10) / 10;
-        _rem     = Math.round((_rem - take) * 10) / 10;
-      }
-      const newLocParts = _locParts.filter(p => p.qty !== null && p.qty > 0);
-      const newLoc = newLocParts.length ? newLocParts.map(p => `${p.name}(${p.qty})`).join('/') : null;
-      await dbUpdateInbound(r.id, { location: newLoc });
-      r.location = newLoc;
+    // ★매지별로 저장 — 구조는 예전과 같고 개수만 매지 수만큼 늘어난다.
+    //   차수는 모달을 열 때 정한 값이 아니라 방금 읽은 DB 기준 최대+1을 쓴다(번호 겹침 방지).
+    for (let i = 0; i < sel.length; i++) {
+      const p = plan.per[i];
+      await _srtWriteOne(sel[i].ib, states[i].nextSeq, {
+        sortingDate, operator, note,
+        inputCt: sel[i].input, remaining: states[i].remaining,
+        sizeDetails: p.sizes, abn: p.abn,
+        normalTotal: p.normalTotal, outputTotal: p.outputTotal,
+        auditExtra: merged ? ` [합산 선과 ${sel.length}매지 중 ${p.pct.toFixed(1)}%]` : ''
+      }, { strict: merged, track: done });   // ★done 등록은 _srtWriteOne이 헤더 직후에 한다
     }
-
-    // 5. audit_log
-    const parts = [`정상 ${fmtN(normalTotal)}CT`];
-    if (waste    > 0) parts.push(`파치 ${fmtN(waste)}CT`);
-    if (highacid > 0) parts.push(`고산도 ${fmtN(highacid)}CT`);
-    if (lowbrix  > 0) parts.push(`저당도 ${fmtN(lowbrix)}CT`);
-    if (tiny     > 0) parts.push(`극소과 ${fmtN(tiny)}CT`);
-    if (green    > 0) parts.push(`청과 ${fmtN(green)}CT`);
-    if (loss     > 0) parts.push(`손실 ${fmtN(loss)}CT`);
-    await dbInsertAuditLog({
-      target_table: 'inbound_records', target_id: _sortingInboundId,
-      before_val: { remaining: fmtN(remaining) }, after_val: { processed: fmtN(inputCt), seq: _sortingSeq },
-      reason: `선과 처리 ${_sortingSeq}차: ${r.farm_name} ${r.product} ${fmtN(inputCt)}CT → ${parts.join(' + ')}`,
-      staff: operator || 'admin'
-    });
+    _sortingSeq = done[done.length - 1].seq;
 
     closeSortingModal();
-    showToast(`${_sortingSeq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
+    showToast(merged
+      ? `합산 선과 완료 — ${done.length}개 매지 · 총 ${fmtN(inputCt)} CT`
+      : `${done[0].seq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
     await loadAndRenderInv();
     renderInboundList();
     if (document.getElementById('sc-tab-bar')) {
@@ -18257,7 +18627,18 @@ async function saveSortingResult() {
       else                          { _renderScDoneProductOptions();   _renderScDoneTable(); }
     }
   } catch (e) {
-    alert('선과 처리 저장 오류: ' + e.message);
+    // ★부분 생성 방지 — 합산 저장 중간에 실패했으면 이번에 만든 것을 전부 되돌린다.
+    //   단일 저장은 되돌릴 앞 매지가 없으므로 예전처럼 오류만 알린다.
+    let rbMsg = '';
+    if (merged && done.length) {
+      const failed = await _srtRollback(done);
+      rbMsg = failed.length
+        ? `\n\n⚠ 되돌리기에 실패한 기록이 있습니다: ${failed.join(', ')}\n선과 이력에서 직접 취소해 주세요.`
+        : `\n\n앞서 저장된 ${done.length}건은 되돌렸습니다. 아무것도 저장되지 않았습니다.`;
+      await loadAndRenderInv();
+      renderInboundList();
+    }
+    alert('선과 처리 저장 오류: ' + e.message + rbMsg);
   } finally {
     _sortingSaving = false;
     if (_saveBtn) { _saveBtn.disabled = false; _saveBtn.textContent = _saveBtn.dataset.orig || '✅ 선과 완료'; }

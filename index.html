@@ -1817,6 +1817,8 @@
     <div style="overflow-y:auto;flex:1;padding:0 2px">
       <!-- 입고 정보 -->
       <div id="srt-ib-info" style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
+      <!-- 합산 선과 대상(같은 농가·품목의 미선과 매지). 후보가 자기 자신뿐이면 숨김 = 기존 화면과 동일 -->
+      <div id="srt-merge-box" style="display:none;margin-bottom:14px"></div>
       <!-- 선과 정보 -->
       <div class="form-grid" style="margin-bottom:12px">
         <div class="fg">
@@ -1882,6 +1884,8 @@
       </div>
       <!-- 합계 검증 -->
       <div id="srt-check" style="background:#F5F5F5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px"></div>
+      <!-- 매지별 분배 미리보기(2건 이상 선택했을 때만) -->
+      <div id="srt-merge-preview" style="display:none;margin-bottom:12px"></div>
       <!-- 메모 -->
       <div class="fg" style="margin-bottom:4px">
         <label>메모</label>
@@ -2030,6 +2034,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=25"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=590"></script>
+<script src="src/app.js?v=591"></script>
 </body>
 </html>
