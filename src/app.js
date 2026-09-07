@@ -4222,6 +4222,7 @@ function renderUpcomingHarvest() {
           <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
+        ${_hvAddrLine(x.farm)}
         <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
@@ -4421,8 +4422,21 @@ function _hvDdayTone(dd) {
   return { fg: '#6B7280', bg: '#F3F4F6', bd: '#E5E7EB' };
 }
 
-// 기본 펼침 = 먼저 보라고 만든 두 그룹(대기·확인 필요). 나머지는 접힌 채로 둔다.
-function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : (g.kind === 'stale' || g.kind === 'wait'); }
+// 농가명 옆 주소 — 이름만으론 어디로 가는 농가인지 헷갈려서 붙인다.
+// farms에 주소가 없으면 아무것도 붙이지 않는다(빈 괄호·'-' 같은 걸 지어내지 않는다).
+function _hvAddrTag(farm, max) {
+  const a = (gf(farm).addr || '').trim();
+  if (!a) return '';
+  return `<span title="${esc(a)}" style="font-size:11px;color:#9CA3AF;font-weight:400;max-width:${max || 240}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</span>`;
+}
+function _hvAddrLine(farm) {
+  const a = (gf(farm).addr || '').trim();
+  if (!a) return '';
+  return `<div title="${esc(a)}" style="font-size:10px;color:#9CA3AF;margin:0 0 3px;padding-left:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</div>`;
+}
+
+// 기본 펼침 = '대기'만. '확인 필요'는 배지로 눈에 띄므로 접어 둔다(눌러서 편다).
+function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : (g.kind === 'wait'); }
 
 function _hvProgToggle(farm) {
   const g = _hvProgGroups().find(x => x.farm === farm);
@@ -4434,8 +4448,8 @@ function _hvProgToggle(farm) {
 // ── 전 농가 일괄 펼침/접기 ─────────────────────────────────────
 // ★버튼 라벨 기준은 '과반'이다 — 절반 넘게 펼쳐져 있으면 '모두 접기'로 바뀐다.
 //   입출고 요약의 _inoutCatToggleAll은 '전부(every)' 기준인데, 여기는 기본값으로 이미 펼쳐진
-//   '확인 필요' 농가가 섞여 있어 every로 하면 거의 항상 '모두 펼치기'로만 보인다.
-// ★일괄 조작은 기본값 규칙(_hvProgIsOpen의 'stale만 펼침')을 농가마다 덮어쓴다 — '모두'가 그 뜻이다.
+//   '대기' 농가가 섞여 있어 every로 하면 거의 항상 '모두 펼치기'로만 보인다.
+// ★일괄 조작은 기본값 규칙(_hvProgIsOpen의 'wait만 펼침')을 농가마다 덮어쓴다 — '모두'가 그 뜻이다.
 //   _hvProgOpen은 메모리에만 있으므로 새로고침하면 기본값으로 돌아간다(의도된 동작).
 function _hvProgAllOpen() {
   const gs = _hvProgGroups();
@@ -4483,7 +4497,7 @@ function _hvProgCard(g) {
     return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
       <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
-        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>
+        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm)}
         ${g.planned ? `<span style="font-size:11px;color:#1565C0;font-weight:600">수확 ${esc(g.planned.slice(5).replace('-', '/'))} 예정</span>` : ''}
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <span style="font-size:10px;font-weight:700;color:${t.fg};background:${t.bg};border:1px solid ${t.bd};border-radius:10px;padding:1px 7px;white-space:nowrap">${esc(dayTxt)}</span>
@@ -4517,7 +4531,7 @@ function _hvProgCard(g) {
   return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
       <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
-        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>
+        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm)}
         ${g.items.length ? `<span style="display:flex;flex-wrap:wrap;gap:3px">${g.items.map(it => `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(it)}">${esc(it)}</span>`).join('')}</span>` : ''}
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           ${chip}<span style="font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
