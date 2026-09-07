@@ -149,7 +149,7 @@ let _matrixBatchRegistry = {};
 let invSizeConfig = {};
 let inventoryRecords = [];
 let _invFilter   = { product: '', farm: '' };
-let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id }
+let _invSrMap    = {};   // sorting_result_id → { sorting_date, inbound_record_id, sort_method }
 let _invDateMode = localStorage.getItem('inv_date_mode') || 'inbound';
 let _invAgeDays  = Math.max(1, parseInt(localStorage.getItem('inv_age_days') || '7', 10));
 let _pachiViewMode = 'usage';          // 파치 하위 분류축: none(품목만)|size|condition|usage|location. ★항상 사용처별(판매 단위)로 시작 — 세션 중 전환은 가능하되 저장하지 않음
@@ -5940,7 +5940,8 @@ async function loadAndRenderInv() {
     const srIds = [...new Set(invRecs.filter(r => r.sorting_result_id).map(r => r.sorting_result_id))];
     if (srIds.length > 0) {
       try {
-        const srRows = await sbGet('sorting_results', `id=in.(${srIds.join(',')})&select=id,sorting_date,inbound_record_id`);
+        // ★sort_method도 같이 받아 둔다 — 재고 매트릭스 배치 배지가 배치를 타고 읽는다(추가 조회 없음).
+        const srRows = await sbGet('sorting_results', `id=in.(${srIds.join(',')})&select=id,sorting_date,inbound_record_id,sort_method`);
         _invSrMap = Object.fromEntries(srRows.map(sr => [sr.id, sr]));
       } catch(e) { _invSrMap = {}; }
     } else { _invSrMap = {}; }
@@ -8493,7 +8494,7 @@ function _renderInvMatrix(product, recs, auditMode) {
     const _rowTitle = audit ? `${esc(batch.farm)} · 클릭: 이 배치 ${_invOutboundSub ? '전량 출고' : '전체 확인/해제'}` : esc(batch.farm);
     h += `<div style="${C}background:${firstBg};flex-direction:column;align-items:flex-start;justify-content:center;padding:4px 8px;position:sticky;left:0;z-index:2;border-right:1px solid #E5E7EB${audit ? ';cursor:pointer' : ''}" title="${_rowTitle}"${_rowClk}>
       <span style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;max-width:${FARM_W - 16}px;overflow:hidden;text-overflow:ellipsis;display:block">${esc(batch.farm)}</span>
-      <span style="font-size:10px;color:${dateColor}">${esc(dateLabel)}</span>
+      <span style="font-size:10px;color:${dateColor};display:flex;align-items:center;gap:3px;max-width:${FARM_W - 16}px">${esc(dateLabel)}${_srtMethodBadge((_invSrMap[batch.groupId] || {}).sort_method, { short: true, fs: 9 })}</span>
     </div>`;
     displaySizes.forEach(sz => {
       const val = batch.sizes[sz] || 0;
@@ -14090,6 +14091,18 @@ function _applyBrixMaxSize(list, product) {
   return order.map(k => map[k]);
 }
 
+// 선과 방식(sorting_results.sort_method) 배지 — 값이 없으면 아무것도 안 내놓는다.
+// ★값이 비는 경우가 정상이다: 감귤류(묻지 않음)와 이 기능 이전의 과거 기록 전부가 NULL이다.
+// ★스타일은 새로 만들지 않고 기존 .badge 계열을 쓴다(기계=파랑 b-info, 손=보라 b-pur).
+//   short:true는 자리가 좁은 곳(재고 매트릭스 농가열 120px)용 — 툴팁에 전체 이름이 남는다.
+function _srtMethodBadge(m, opt) {
+  if (!m) return '';
+  const o = opt || {};
+  const cls = m === '손선과' ? 'b-pur' : 'b-info';
+  const txt = o.short ? String(m).replace('선과', '') : m;
+  return `<span class="badge ${cls}" style="font-size:${o.fs || 10}px;padding:1px 6px" title="${esc(m)}">${esc(txt)}</span>`;
+}
+
 let _sortingInboundId = null;
 let _sortingSeq = 1;
 let _sortingSaving = false;
@@ -17527,6 +17540,12 @@ async function openSortingModal(id) {
   _srtGradeOn = false;      // 엑셀 호환 경로용(항상 false)
   _srtGrade = '일반';        // 등급 탭 기본값
   const productType = PRODUCT_TYPE_MAP[r.product] || '만감류';
+  // 선과 방식 — 만감류만 묻는다. 감귤류는 칸 자체를 숨기고 저장값도 null로 둔다(기존 흐름 그대로).
+  // ★기본값을 넣지 않고 미선택으로 둔다 — 기계가 기본인 것처럼 보이면 손선과를 그냥 지나친다.
+  const _mFg = document.getElementById('srt-method-fg');
+  const _mSel = document.getElementById('srt-method');
+  if (_mSel) _mSel.value = '';
+  if (_mFg) _mFg.style.display = (productType === '만감류') ? '' : 'none';
   srtRenderSizeGrid(productType);
 
   // 합산 선과 후보 목록. ★투입량 칸은 매번 원상복구부터 한다 —
@@ -18332,7 +18351,7 @@ function _srtConfirmMerge(plan) {
 // ★opts.track에 배열을 주면 헤더 생성 직후 그 배열에 등록한다(호출부의 롤백 목록).
 async function _srtWriteOne(r, seq, p, opts = {}) {
   const strict = !!opts.strict;
-  const { sortingDate, operator, note, inputCt, remaining, sizeDetails, abn, normalTotal, outputTotal } = p;
+  const { sortingDate, operator, note, sortMethod, inputCt, remaining, sizeDetails, abn, normalTotal, outputTotal } = p;
   const { waste, highacid, lowbrix, tiny, green, loss } = abn;
 
   // 1. 헤더
@@ -18343,6 +18362,7 @@ async function _srtWriteOne(r, seq, p, opts = {}) {
     operator_name: operator || null,
     input_ct: inputCt,
     total_output_ct: outputTotal,
+    sort_method: sortMethod || null,   // 만감류만 값이 있다(감귤류·과거 기록은 NULL)
     loss_ct: loss || null,
     status: '완료',
     note: note || null,
@@ -18534,8 +18554,13 @@ async function saveSortingResult() {
   const merged = sel.length > 1;
   const inputCt = Math.round(sel.reduce((a, s) => a + s.input, 0) * 10) / 10;
 
+  // 선과 방식 — 만감류일 때만 받고 필수. 감귤류는 칸이 숨겨져 있어 언제나 빈 값 → null로 저장된다.
+  const isManGam   = (PRODUCT_TYPE_MAP[r.product] || '만감류') === '만감류';
+  const sortMethod = isManGam ? (document.getElementById('srt-method')?.value || '') : '';
+
   if (!sortingDate)  { alert('선과일을 입력하세요.'); return; }
   if (!operator)     { alert('작업자를 선택하세요.'); return; }
+  if (isManGam && !sortMethod) { alert('선과 방식(기계선과/손선과)을 선택하세요.'); return; }
   if (!sel.length)   { alert('선과할 매지를 하나 이상 선택하세요.'); return; }
   if (inputCt <= 0)  { alert('투입량을 입력하세요.'); return; }
   // ★매지별로 각각 검사한다 — 합만 맞아도 한 매지가 제 잔여를 넘으면 안 된다.
@@ -18606,7 +18631,7 @@ async function saveSortingResult() {
     for (let i = 0; i < sel.length; i++) {
       const p = plan.per[i];
       await _srtWriteOne(sel[i].ib, states[i].nextSeq, {
-        sortingDate, operator, note,
+        sortingDate, operator, note, sortMethod,
         inputCt: sel[i].input, remaining: states[i].remaining,
         sizeDetails: p.sizes, abn: p.abn,
         normalTotal: p.normalTotal, outputTotal: p.outputTotal,
@@ -18667,6 +18692,7 @@ async function showSortingHistory(id, btnEl) {
         <span style="color:#6B7280;margin-right:6px">${dateLabel}</span>
         <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
         ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
+        ${_srtMethodBadge(row.sort_method, { fs: 9 })}
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0">
         <button onclick="openSortingShareText('${row.id}')" style="font-size:11px;padding:2px 8px;border:1px solid #1565C0;border-radius:4px;color:#1565C0;background:#fff;cursor:pointer;white-space:nowrap">📋 공유</button>
@@ -18722,6 +18748,8 @@ async function buildSortingShareText(srId) {
   // 선과CT: '전체 NCT 중 MCT 선과' — 입고 총량(inbound_records.quantity) 기준. 못 구하면 기존 표기
   const totalQty = Number(ir.quantity) || 0;
   L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
+  // 선과 방식 — 만감류에만 값이 있다. 없으면 줄 자체를 넣지 않는다(0 생략과 같은 규칙).
+  if (sr.sort_method) L.push(`선과 방식\t${sr.sort_method}`);
   // 비정상품: 값 있는 줄만(0 생략)
   // ★앞 3개는 사무실에서 쓰던 기존 형식이라 라벨·순서 그대로. 누락됐던 극소과·청과·손실만 뒤에 추가.
   const abn = [['파치', catSum('파치')], ['9브릭스 이하 저당도', catSum('저당도')], ['고산도', catSum('고산도')],

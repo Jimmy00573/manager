@@ -1837,6 +1837,15 @@
           <label>투입량 (CT) *</label>
           <input type="number" id="srt-input-ct" min="1" placeholder="CT" oninput="srtUpdateTotals()">
         </div>
+        <!-- 선과 방식 — 만감류만 노출(감귤류는 기계가 기본이라 묻지 않는다). openSortingModal에서 토글 -->
+        <div class="fg" id="srt-method-fg" style="display:none">
+          <label>선과 방식 *</label>
+          <select id="srt-method">
+            <option value="">선택하세요</option>
+            <option value="기계선과">기계선과</option>
+            <option value="손선과">손선과</option>
+          </select>
+        </div>
       </div>
       <!-- 정상품 사이즈 -->
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
@@ -2034,6 +2043,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=25"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=591"></script>
+<script src="src/app.js?v=592"></script>
 </body>
 </html>
