@@ -4330,10 +4330,12 @@ const _HV_PROG_KIND = {
   active: { icon: '🌱', label: '진행중',    bg: '#EFF8FF', bd: '#BBDEFB', fg: '#1565C0' },
   done:   { icon: '🏁', label: '종료',      bg: '#F5F5F5', bd: '#E0E0E0', fg: '#616161' },
 };
-// ★그룹 순서 = 진행중(현재) → 대기(미래) → 종료(과거). 시간 축 순서이자 보는 빈도 순이다.
-//   '확인 필요'만 그 축 밖에 있다 — 시간이 아니라 신호이고 대개 0건이라, 생겼을 때만 맨 위에 뜬다
-//   ("방치 의심을 맨 위에 — 먼저 보라고 만든 섹션"이라는 이 화면의 원래 원칙 그대로).
-const _HV_PROG_ORDER = ['stale', 'active', 'wait', 'done'];
+// ★그룹 순서 = 진행중(현재) → 대기(미래) → 확인 필요 → 종료(과거).
+//   앞의 둘과 마지막은 시간 축 순서이자 보는 빈도 순이다. '확인 필요'만 그 축 밖에 있다 —
+//   시간이 아니라 신호라서 어디에 끼울지가 애매하다. 예전엔 맨 위였는데, 이 화면은 전체를
+//   훑는 용도라 '문제 먼저'보다 '오늘 일 먼저'가 맞아서 종료 앞으로 내렸다.
+//   ★대신 아래로 내려가 지나치는 일이 없도록, 위 요약 칩의 '확인 필요' 건수만 빨갛고 굵게 둔다.
+const _HV_PROG_ORDER = ['active', 'wait', 'stale', 'done'];
 
 // ★그룹 안 정렬 — '급한 순'의 뜻이 그룹마다 다르므로 하나로 못 묶는다.
 const _HV_PROG_SORT = {
@@ -4365,7 +4367,7 @@ function _hvProgSortAll(arr) {
     || (_HV_PROG_SORT[a.kind] ? _HV_PROG_SORT[a.kind](a, b) : 0)
     || (a.farm || '').localeCompare(b.farm || '', 'ko'));   // 끝까지 같으면 농가명(순서가 흔들리지 않게)
 }
-const _hvProgOpen = {};   // farm -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 상태별 기본값(확인 필요만 펼침).
+const _hvProgOpen = {};   // farm -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 기본값(전부 접힘).
 
 // 농가별로 차수를 모아 상태를 매긴다. 렌더와 토글이 같은 판정을 쓰도록 순수 함수로 분리.
 function _hvProgGroups() {
@@ -4435,8 +4437,9 @@ function _hvAddrLine(farm) {
   return `<div title="${esc(a)}" style="font-size:10px;color:#9CA3AF;margin:0 0 3px;padding-left:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</div>`;
 }
 
-// 기본 펼침 = '대기'만. '확인 필요'는 배지로 눈에 띄므로 접어 둔다(눌러서 편다).
-function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : (g.kind === 'wait'); }
+// 기본 펼침 = 없음(전 그룹 접힘). 전체를 훑는 화면이라 처음엔 농가 목록만 보이는 게 낫다.
+// ★한 번 접거나 편 농가는 _hvProgOpen에 남아 그 상태를 유지한다(새로고침하면 다시 전부 접힘).
+function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : false; }
 
 function _hvProgToggle(farm) {
   const g = _hvProgGroups().find(x => x.farm === farm);
@@ -4447,9 +4450,9 @@ function _hvProgToggle(farm) {
 
 // ── 전 농가 일괄 펼침/접기 ─────────────────────────────────────
 // ★버튼 라벨 기준은 '과반'이다 — 절반 넘게 펼쳐져 있으면 '모두 접기'로 바뀐다.
-//   입출고 요약의 _inoutCatToggleAll은 '전부(every)' 기준인데, 여기는 기본값으로 이미 펼쳐진
-//   '대기' 농가가 섞여 있어 every로 하면 거의 항상 '모두 펼치기'로만 보인다.
-// ★일괄 조작은 기본값 규칙(_hvProgIsOpen의 'wait만 펼침')을 농가마다 덮어쓴다 — '모두'가 그 뜻이다.
+//   입출고 요약의 _inoutCatToggleAll은 '전부(every)' 기준인데, 여기는 사용자가 몇 곳만 펴 둔
+//   상태가 흔해서 every로 하면 거의 항상 '모두 펼치기'로만 보인다(기준은 '과반' 그대로 둔다).
+// ★일괄 조작은 기본값(전부 접힘)을 농가마다 덮어쓴다 — '모두'가 그 뜻이다.
 //   _hvProgOpen은 메모리에만 있으므로 새로고침하면 기본값으로 돌아간다(의도된 동작).
 function _hvProgAllOpen() {
   const gs = _hvProgGroups();
@@ -4557,7 +4560,9 @@ function renderHarvestProgress() {
       <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
         ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
           const k = _HV_PROG_KIND[kd];
-          return `<span style="font-size:11px;font-weight:600;color:${k.fg};background:${k.bg};border:0.5px solid ${k.bd};border-radius:10px;padding:1px 8px">${k.icon} ${k.label} ${cnt[kd]}</span>`;
+          // ★'확인 필요'는 그룹이 목록 아래쪽에 접힌 채 있어서, 여기 건수가 유일하게 늘 보이는 신호다.
+          const nTxt = kd === 'stale' ? `<strong style="color:#DC2626;font-weight:800">${cnt[kd]}</strong>` : cnt[kd];
+          return `<span style="font-size:11px;font-weight:600;color:${k.fg};background:${k.bg};border:0.5px solid ${k.bd};border-radius:10px;padding:1px 8px">${k.icon} ${k.label} ${nTxt}</span>`;
         }).join('')}
         <button type="button" onclick="_hvProgToggleAll()" style="font-size:11px;color:#2563EB;background:none;border:none;cursor:pointer;padding:2px 4px;font-family:inherit;white-space:nowrap">${_hvProgAllOpen() ? '모두 접기' : '모두 펼치기'}</button>
       </div>
