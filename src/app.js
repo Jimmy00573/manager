@@ -4891,12 +4891,56 @@ async function saveHarvestEdit() {
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
   const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
+  const prev = harvests.find(h => h.id === _editHarvestId);   // 변경 전 값 — 배차 동기화 판단에만 쓴다
   try {
     await dbUpdateHarvest(_editHarvestId, data);
     harvests = harvests.map(h => h.id === _editHarvestId ? { ...h, ...data } : h);
     CM('harvest'); renderCal();
+    // ★저장은 위에서 이미 끝났다 — 아래는 '제안'이라 실패해도 수확 일정을 되돌리지 않는다.
+    // ★농가까지 바뀐 경우는 건드리지 않는다 — 옛 배차는 옛 농가 것이라 날짜만 옮기면 어느 쪽과도 안 맞는다.
+    if (prev && prev.date && prev.date !== date && prev.farm === farm) {
+      if (await _syncDispHarvestDate(farm, prev.date, date)) renderCal();   // 배차가 바뀌었으면 경고 배지까지 다시 그린다
+    }
   } catch (e) { alert('오류: ' + e.message); }
 }
+
+// ── 수확일 변경 → 연결 배차의 '수확예정일' 동기화 ──────────────────
+// ★배차 매칭 규칙이 _dispForHarvest(dispatches.harvest === 수확일 && farm 일치)라,
+//   수확 일정 날짜만 옮기면 하루만 어긋나도 매칭이 끊겨 배차를 잡아 뒀는데도
+//   '콘테이너 없음' 경고가 뜬다(2026-09 양효선 건: 배차 9/8 vs 수확 9/9).
+// ★배송일(dispatches.date)은 절대 안 건드린다 — '수확 전날 배송' 같은 간격은 사람이 정한 것이다.
+//   옮기는 건 수확예정일(harvest) 하나뿐이다.
+// ★배출완료된 배차도 대상에 넣되, 확인창에 상태를 적어 사람이 판단하게 한다(지난 배차를 말없이 고치지 않는다).
+// ★반환값: 실제로 배차를 고쳤으면 true(호출부가 화면을 다시 그리게).
+async function _syncDispHarvestDate(farm, oldDate, newDate) {
+  const linked = dispatches.filter(d => d && d.harvest === oldDate && d.farm === farm);
+  if (!linked.length) return false;   // 연결 배차가 없으면 묻지 않는다 — 기존 저장 흐름 그대로
+
+  // ★showConfirmEdit은 msg를 esc()로만 넣어 줄바꿈이 살지 않는다 → 한 줄로 잇는다(재고 등록 확인창과 같은 방식).
+  const md = s => String(s || '').slice(5).replace('-', '/');
+  const lines = linked
+    .map(d => `${md(d.date)} ${d.ctype || '종류미상'} ${fmtN(d.qty)}개(${d.status || '상태미상'})`)
+    .join(' · ');
+  const ok = await showConfirmEdit(
+    '연결된 배차의 수확예정일도 변경',
+    `배차 ${linked.length}건의 수확예정일을 ${newDate}로 바꿉니다(배송일은 그대로). — ${lines}`
+  );
+  if (!ok) return false;   // 취소 = 수확 일정만 저장하고 배차는 손대지 않는다
+
+  // ★성공한 것만 메모리에 반영한다 — 중간에 실패하면 화면과 DB가 갈린다.
+  const okIds = [];
+  try {
+    for (const d of linked) { await dbUpdateDispatch(d.id, { harvest: newDate }); okIds.push(d.id); }
+  } catch (e) {
+    alert('수확 일정은 저장됐지만 연결된 배차의 수확예정일을 못 고쳤습니다.\n\n'
+      + `배차 목록에서 수확예정일을 ${newDate}로 직접 고쳐 주세요.\n`
+      + `(안 고치면 그 농가에 '콘테이너 없음' 경고가 계속 뜹니다.)\n\n` + (e.message || e));
+  }
+  if (!okIds.length) return false;
+  dispatches = dispatches.map(d => okIds.includes(d.id) ? { ...d, harvest: newDate } : d);
+  return true;
+}
+
 async function autoSetHarvestStatus(farm, date, item, status) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   let h = harvests.find(x => x.farm === farm && x.date === date);
