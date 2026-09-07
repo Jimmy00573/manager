@@ -18221,19 +18221,23 @@ function _srtRenderMergeBox() {
     const dn  = (sortingResults || []).filter(s => String(s.inbound_record_id) === String(x.id)).length;
     const on  = String(x.id) === String(_sortingInboundId);
     const q   = _fsQ(String(x.id));
+    // 좁은 모달에 6열을 넣어야 해서 표시만 줄인다 — 원문은 전부 title(툴팁)에 남긴다.
+    const md   = String(x.date || '').slice(5).replace('-', '/');   // 연도 제거: 같은 해 매지끼리 견주는 화면이다
+    const hist = dn ? dn + '차' : '—';
     return '<tr style="border-top:1px solid #EDEDED">'
-      + '<td style="padding:5px 6px;text-align:center">'
+      + '<td style="padding:5px 2px;text-align:center">'
       +   '<input type="checkbox" class="srt-mg-ck" data-ibid="' + esc(String(x.id)) + '" ' + (on ? 'checked' : '')
       +     ' onchange="_srtMergeToggle(\'' + q + '\')" style="cursor:pointer;width:15px;height:15px">'
       + '</td>'
-      + '<td style="padding:5px 6px;white-space:nowrap">' + esc(x.date || '') + '</td>'
-      + '<td style="padding:5px 6px;text-align:right;white-space:nowrap;color:#6B7280">' + fmtN(x.quantity) + '</td>'
-      + '<td style="padding:5px 6px;white-space:nowrap;color:#6B7280;font-size:11px">' + (dn ? dn + '차까지 완료' : '선과 이력 없음') + '</td>'
-      + '<td style="padding:5px 6px;text-align:right;white-space:nowrap;color:#1565C0;font-weight:700">' + fmtN(rem) + '</td>'
-      + '<td style="padding:5px 6px;text-align:right;white-space:nowrap">'
+      + '<td style="padding:5px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + esc(x.date || '') + ' 입고">' + esc(md) + '</td>'
+      + '<td style="padding:5px 3px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6B7280" title="입고 ' + fmtN(x.quantity) + 'CT">' + fmtN(x.quantity) + '</td>'
+      + '<td class="srt-mg-hist" style="padding:5px 3px;text-align:center;white-space:nowrap;color:#6B7280;font-size:11px" title="'
+      +     (dn ? dn + '차까지 완료' : '선과 이력 없음') + '">' + esc(hist) + '</td>'
+      + '<td style="padding:5px 3px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1565C0;font-weight:700" title="잔여 ' + fmtN(rem) + 'CT">' + fmtN(rem) + '</td>'
+      + '<td style="padding:5px 3px;text-align:right">'
       +   '<input type="number" class="srt-mg-in" data-ibid="' + esc(String(x.id)) + '" min="0" max="' + rem + '" step="0.1"'
       +     ' value="' + (on ? rem : '') + '" placeholder="0" ' + (on ? '' : 'disabled') + ' oninput="_srtMergeSync()"'
-      +     ' style="width:76px;padding:3px 5px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;text-align:right;background:' + (on ? '#fff' : '#F3F4F6') + '"> CT'
+      +     ' style="width:100%;max-width:64px;padding:3px 4px;border:1px solid #D1D5DB;border-radius:5px;font-size:12px;text-align:right;box-sizing:border-box;background:' + (on ? '#fff' : '#F3F4F6') + '">'
       + '</td>'
       + '</tr>';
   }).join('');
@@ -18245,15 +18249,17 @@ function _srtRenderMergeBox() {
         <div style="font-size:12px;font-weight:700;color:#92400E">🧺 합산할 매지 <span style="font-weight:400;color:#B45309">같은 농가·품목의 미선과 매지를 함께 돌릴 때만 체크</span></div>
         <div id="srt-mg-total" style="font-size:12px;color:#374151"></div>
       </div>
-      <div style="overflow-x:auto;background:#fff;border:1px solid #FDE68A;border-radius:6px">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <div style="background:#fff;border:1px solid #FDE68A;border-radius:6px">
+        <!-- ★table-layout:fixed + % 폭 — 내용이 길어도 표가 모달 밖으로 밀려나지 않는다(가로 스크롤 없음).
+             '이력' 열은 폰 폭에서 style.css의 .srt-mg-hist 규칙이 접는다(정보 우선순위 최하). -->
+        <table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px">
           <tr style="background:#FEF3C7;color:#92400E">
-            <th style="padding:5px 6px;width:34px"></th>
-            <th style="padding:5px 6px;text-align:left;white-space:nowrap">입고일</th>
-            <th style="padding:5px 6px;text-align:right;white-space:nowrap">입고량</th>
-            <th style="padding:5px 6px;text-align:left;white-space:nowrap">선과 이력</th>
-            <th style="padding:5px 6px;text-align:right;white-space:nowrap">잔여</th>
-            <th style="padding:5px 6px;text-align:right;white-space:nowrap">투입량</th>
+            <th style="padding:5px 2px;width:9%"></th>
+            <th style="padding:5px 3px;text-align:left;width:18%">입고일</th>
+            <th style="padding:5px 3px;text-align:right;width:14%">입고</th>
+            <th class="srt-mg-hist" style="padding:5px 3px;text-align:center;width:13%">이력</th>
+            <th style="padding:5px 3px;text-align:right;width:16%">잔여</th>
+            <th style="padding:5px 3px;text-align:right;width:30%">투입 CT</th>
           </tr>
           ${rows}
         </table>
@@ -18308,14 +18314,14 @@ function _srtPlanTable(plan) {
     ? `<br><span style="font-weight:400;color:#1D4ED8;font-size:10px">${esc(d.quality_grade)}</span>` : '');
 
   const head = `<tr style="background:#F3F4F6">
-      <th style="padding:4px 6px;text-align:left;white-space:nowrap;font-weight:600;color:#374151">매지(입고일)</th>
+      <th style="padding:4px 6px;text-align:left;white-space:nowrap;font-weight:600;color:#374151">매지</th>
       ${th('투입')}${th('비율')}
       ${idxs.map(i => th(szLbl(o.sizeDetails[i]))).join('')}
       ${aks.map(k => th(_SRT_ABN_LABEL[k])).join('')}
       ${th('결과합')}
     </tr>`;
   const body = plan.per.map(p => `<tr style="border-top:1px solid #EDEDED">
-      <td style="padding:4px 6px;white-space:nowrap">${esc(p.ib.date || '')} <span style="color:#9CA3AF;font-size:10px">입고 ${fmtN(p.ib.quantity)}</span></td>
+      <td style="padding:4px 6px;white-space:nowrap" title="${esc(p.ib.date || '')} 입고 ${fmtN(p.ib.quantity)}CT">${esc(String(p.ib.date || '').slice(5).replace('-', '/'))}</td>
       ${td(p.input)}
       <td style="padding:4px 6px;text-align:right;white-space:nowrap;color:#1565C0;font-weight:700">${p.pct.toFixed(1)}%</td>
       ${idxs.map(i => td(p.sizes[i].ct)).join('')}
