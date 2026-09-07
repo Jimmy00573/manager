@@ -17546,8 +17546,8 @@ async function openSortingModal(id) {
 
   // 입고 정보
   document.getElementById('srt-ib-info').innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 16px">
-      <div><span style="color:#6B7280">농가</span> <strong>${esc(r.farm_name)}</strong></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr));gap:4px 16px">
+      <div style="min-width:0;overflow-wrap:anywhere"><span style="color:#6B7280">농가</span> <strong>${esc(r.farm_name)}</strong></div>
       <div><span style="color:#6B7280">품목</span> <strong>${esc(r.product)}</strong>
         <span style="font-size:11px;color:#6B7280;margin-left:4px">(${PRODUCT_TYPE_MAP[r.product] || '만감류'})</span></div>
       <div><span style="color:#6B7280">입고일</span> ${r.date}</div>
@@ -17629,7 +17629,7 @@ function srtRenderSizeGrid(productType) {
   const grades = _srtGradeLabels();
   if (!grades.includes(_srtGrade)) _srtGrade = '일반';   // 방어
 
-  const innerGrid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px';
+  const innerGrid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(min(72px,100%),1fr));gap:6px';
 
   // 등급 탭 버튼
   const tabs = grades.map(g => {
@@ -18249,10 +18249,15 @@ function _srtRenderMergeBox() {
         <div style="font-size:12px;font-weight:700;color:#92400E">🧺 합산할 매지 <span style="font-weight:400;color:#B45309">같은 농가·품목의 미선과 매지를 함께 돌릴 때만 체크</span></div>
         <div id="srt-mg-total" style="font-size:12px;color:#374151"></div>
       </div>
-      <div style="background:#fff;border:1px solid #FDE68A;border-radius:6px">
-        <!-- ★table-layout:fixed + % 폭 — 내용이 길어도 표가 모달 밖으로 밀려나지 않는다(가로 스크롤 없음).
+      <div style="overflow-x:auto;background:#fff;border:1px solid #FDE68A;border-radius:6px">
+        <!-- ★table-layout:fixed + % 폭 — 표는 래퍼 폭에 딱 맞춰지므로 가로 스크롤바는 실제로 안 생긴다.
+             래퍼의 overflow-x:auto는 스크롤용이 아니라 '폭 방어선'이다 — 이게 있어야 래퍼가
+             스크롤 컨테이너가 되어 최소 폭이 0이 되고, 표가 모달을 밖으로 밀어내지 못한다.
              '이력' 열은 폰 폭에서 style.css의 .srt-mg-hist 규칙이 접는다(정보 우선순위 최하). -->
-        <table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px">
+        <!-- ★min-width:0 필수 — style.css의 전역 'table { min-width:700px }'(169행)이 모든 표에 걸린다.
+             그게 살아 있으면 이 표는 모달 안(약 380px)에서도 700px로 벌어져 모달을 밖으로 밀어낸다.
+             전역 규칙은 목록형 표들이 기대는 값이라 건드리지 않고, 이 표에서만 푼다. -->
+        <table style="width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:12px">
           <tr style="background:#FEF3C7;color:#92400E">
             <th style="padding:5px 2px;width:9%"></th>
             <th style="padding:5px 3px;text-align:left;width:18%">입고일</th>
