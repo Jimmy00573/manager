@@ -10745,12 +10745,6 @@ function openInvEntryModal() {
                 <option value="">선택</option>
               </select>
             </div>
-            <div>
-              <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">위치</label>
-              <select id="iem-location" style="width:100%;height:38px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;box-sizing:border-box;min-width:0">
-                <option value="">선택 안 함</option>
-              </select>
-            </div>
           </div>
           <div style="margin-bottom:12px">
             <label style="font-size:12px;color:#6B7280;font-weight:600;display:block;margin-bottom:4px">당도 등급</label>
@@ -10801,10 +10795,6 @@ function openInvEntryModal() {
     prodEl.innerHTML = buildProductOptgroupHTML();
     if (cur) prodEl.value = cur;
   }
-
-  // 위치 드롭다운 갱신
-  const iemLocEl = document.getElementById('iem-location');
-  if (iemLocEl) iemLocEl.innerHTML = buildLocOptHtml();
 
   // 당도 등급 드롭다운 채우기 (일반 + 활성 브릭스 등급, sort_order 순) + 초기화
   const iemGradeEl = document.getElementById('iem-grade');
@@ -10907,7 +10897,6 @@ async function saveInvEntry() {
   const date     = document.getElementById('iem-date')?.value;
   const farm     = document.getElementById('iem-farm')?.value;
   const product  = document.getElementById('iem-product')?.value;
-  const location = document.getElementById('iem-location')?.value || null;
   const note     = document.getElementById('iem-note')?.value?.trim() || null;
 
   if (!date)    return alert('날짜를 선택해주세요.');
@@ -10945,8 +10934,11 @@ async function saveInvEntry() {
   if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
 
   try {
-    // ★공통 1세트 — 날짜·농가·품목·위치·비고는 등급별로 달라지지 않는다. 등급만 행마다 붙인다.
-    const base = { date, farm_name: farm, product, location, source_type: 'manual', note };
+    // ★공통 1세트 — 날짜·농가·품목·비고는 등급별로 달라지지 않는다. 등급만 행마다 붙인다.
+    // ★location은 항상 null이다 — 선과품 재고는 그룹핑·표시·필터가 전부 농가+배치 기준이라
+    //   위치를 보는 화면이 없다(위치별 뷰는 파치 전용 _pachiView('location')). 입력칸도 그래서 뺐다.
+    //   ※기존 행에 남아 있는 값은 그대로 둔다 — 재고 수정 모달의 '위치' 표시가 그 값을 계속 보여 준다.
+    const base = { date, farm_name: farm, product, location: null, source_type: 'manual', note };
     await Promise.all(toSave.map(r => dbInsertInventoryRecord({
       ...base, size_code: r.size_code, quantity: r.quantity, quality_grade: r.quality_grade
     })));
