@@ -4,6 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🍊 시트리앙 통합관리</title>
+
+  <!-- ── PWA(홈 화면 추가) ─────────────────────────────────────────
+       ★서비스워커는 두지 않는다 — 오프라인 캐시가 옛 app.js를 붙들면
+         index.html의 ?v= 캐시 버스팅과 정면으로 충돌한다(배포해도 안 바뀌는 사고).
+         여기 있는 건 아이콘·이름·전체화면 설정뿐이라 네트워크 동작은 그대로다.
+       ★아이콘/매니페스트는 저장소 루트에 둔다. Vercel은 빌드 없는 정적 배포에서
+         public/ 폴더가 있으면 그쪽을 사이트 루트로 삼아, public/에 넣으면
+         /manifest.json이 404가 나고 기존 index.html·src/ 서빙까지 흔들린다. -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#2E7D32">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="시트리앙">
+
   <link rel="stylesheet" href="src/style.css?v=31">
 </head>
 <body>
