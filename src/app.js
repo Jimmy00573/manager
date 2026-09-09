@@ -1317,7 +1317,9 @@ function popSels() {
   const ibf = document.getElementById('ib-farm');
   if (ibf) {
     const v = ibf.value;
-    ibf.innerHTML = buildSupplierOptHtml();
+    ibf.innerHTML = buildInboundSupplierOptHtml();
+    // 고르는 중이던 이름이 목록에서 빠졌으면(마스터 수정·비활성 등) 값을 잃지 않게 붙여 준다 — 다른 select의 '(목록에 없음)'과 같은 처리.
+    if (v && ![...ibf.options].some(o => o.value === v)) ibf.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(v)} (목록에 없음)</option>`);
     ibf.value = v;
   }
   const soFarm = document.getElementById('so-farm');
@@ -6066,6 +6068,29 @@ function buildSupplierOptHtml() {
   const actP = partners.filter(p => p.is_active !== false);
   if (actP.length) html += '<optgroup label="거래처">' + actP.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('') + '</optgroup>';
   return html;
+}
+
+// 입고 등록 공급처(ib-farm) 전용 목록 — 카테고리별 optgroup + 가나다 정렬 + 비입고처 제외.
+// ★buildSupplierOptHtml과 나눠 둔다. 그쪽은 수동 거래(mtx-partner)에서 '출고처'로도 쓰여
+//   공판장을 빼면 안 되고, 재고 직접입력(iem-farm)·선과 엑셀(sg-farm)도 그 목록을 쓴다.
+//   여기서 거르는 건 '우리에게 입고를 시키지 않는 대상'뿐이다.
+// 제외 대상:
+//   · category='공판장' — 우리가 파는 곳이지 입고가 들어오는 곳이 아니다.
+//   · category='농가' partners('농가 반납') — 콘테이너 반납 대상 이름이지 공급처가 아니다.
+//   · _IB_SUP_EXCLUDE — 시스템 내부용 이름.
+// ★실측(2026-09-09): inbound_records에 이름이 걸린 partners는 생귤탱귤·남원농협·서귀포농협 3곳뿐이라
+//   위 제외로 사라지는 기존 입고 건은 없다. 값(value)은 이름 그대로라 저장·검색 호환도 그대로.
+const _IB_SUP_EXCLUDE = ['실사확인'];   // 실사 출고 사유용 내부 이름 — 실제 입고처가 아니다
+function buildInboundSupplierOptHtml() {
+  const byKo = (a, b) => (a.name || '').localeCompare(b.name || '', 'ko');   // ★단순 문자열 비교는 한글 순서가 어긋난다
+  const grp = (label, list) => list.length
+    ? `<optgroup label="${esc(label)}">` + list.map(x => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('') + '</optgroup>'
+    : '';
+  const cat = c => partners.filter(p => p.is_active !== false && p.category === c && !_IB_SUP_EXCLUDE.includes(p.name)).sort(byKo);
+  return '<option value="">선택</option>'
+    + grp('농가', [...farms].sort(byKo))
+    + grp('농협', cat('농협'))
+    + grp('거래처', cat('거래처'));
 }
 // ── 농가·공급처 검색형 선택 (공용) ─────────────────────────────
 // 농가가 55곳이라 드롭다운에서 못 찾고, 모바일 비중이 높아 datalist는 조작이 불편하다.
