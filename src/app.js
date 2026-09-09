@@ -1226,7 +1226,7 @@ function afF(p) {
 function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv(p + '-car', d.car || ''); }
 
 // 배차 대상 종류(농가/농협/거래처)별 대상명 <option> HTML — 농가면 farms, 농협이면 _nhfOptHtml(category='농협'),
-// 거래처면 _extNameOptHtml(거래처+공판장).
+// 거래처면 _extNameOptHtml(PARTNER_CATS의 extName 유형 = 거래처·공판장·마트).
 // ★등록 폼(dp-farm)과 수정 모달(ed-farm)이 같은 소스를 쓰도록 분리했다. 한쪽만 농가 목록을 쓰다가
 //   농협·거래처 배차를 수정할 수 없던 버그(2026-08-20)가 났다 — 목록 구성은 여기 한 곳에서만 정한다.
 function _dispTargetOptHtml(tt) {
@@ -6074,13 +6074,14 @@ function buildSupplierOptHtml() {
 // ★buildSupplierOptHtml과 나눠 둔다. 그쪽은 수동 거래(mtx-partner)에서 '출고처'로도 쓰여
 //   공판장을 빼면 안 되고, 재고 직접입력(iem-farm)·선과 엑셀(sg-farm)도 그 목록을 쓴다.
 //   여기서 거르는 건 '우리에게 입고를 시키지 않는 대상'뿐이다.
-// 제외 대상:
-//   · category='공판장' — 우리가 파는 곳이지 입고가 들어오는 곳이 아니다.
-//   · category='농가' partners('농가 반납') — 콘테이너 반납 대상 이름이지 공급처가 아니다.
+// 넣는 유형은 _IB_SUP_CATS 한 줄로 정한다(표시 순서도 그 순서). 여기 없는 유형은 안 뜬다:
+//   · '공판장'·'마트' — 우리가 파는 곳이지 입고가 들어오는 곳이 아니다.
+//   · '농가' partners('농가 반납') — 콘테이너 반납 대상 이름이지 공급처가 아니다(농가 그룹은 farms에서 따로 만든다).
 //   · _IB_SUP_EXCLUDE — 시스템 내부용 이름.
 // ★실측(2026-09-09): inbound_records에 이름이 걸린 partners는 생귤탱귤·남원농협·서귀포농협 3곳뿐이라
 //   위 제외로 사라지는 기존 입고 건은 없다. 값(value)은 이름 그대로라 저장·검색 호환도 그대로.
 const _IB_SUP_EXCLUDE = ['실사확인'];   // 실사 출고 사유용 내부 이름 — 실제 입고처가 아니다
+const _IB_SUP_CATS = ['농협', '거래처'];   // ★입고 공급처에 넣을 partners.category(이 순서대로 optgroup). 새 유형이 입고처면 여기에 추가.
 function buildInboundSupplierOptHtml() {
   const byKo = (a, b) => (a.name || '').localeCompare(b.name || '', 'ko');   // ★단순 문자열 비교는 한글 순서가 어긋난다
   const grp = (label, list) => list.length
@@ -6089,8 +6090,7 @@ function buildInboundSupplierOptHtml() {
   const cat = c => partners.filter(p => p.is_active !== false && p.category === c && !_IB_SUP_EXCLUDE.includes(p.name)).sort(byKo);
   return '<option value="">선택</option>'
     + grp('농가', [...farms].sort(byKo))
-    + grp('농협', cat('농협'))
-    + grp('거래처', cat('거래처'));
+    + _IB_SUP_CATS.map(c => grp(c, cat(c))).join('');
 }
 // ── 농가·공급처 검색형 선택 (공용) ─────────────────────────────
 // 농가가 55곳이라 드롭다운에서 못 찾고, 모바일 비중이 높아 datalist는 조작이 불편하다.
@@ -6343,17 +6343,35 @@ function _eibEffSize(orig) {
   return (c === null && orig && orig.size_distribution && _parseSizeDist(orig.size_distribution) === null) ? orig.size_distribution : c;
 }
 
-// 출고처(partner) → 콘테이너 target_type 매핑. partners.category 기준.
-// 농협→'농협', 거래처/공판장→'거래처', 농가→'농가', 미지정→'거래처'. getTargetContainerHold 집계 대상 판정에 사용.
+// ── partners.category 정의 한 곳 ──────────────────────────────
+// ★유형이 등록 폼·수정 모달·배지 색·집계 판정·외부용기 목록 5~6곳에 따로 적혀 있어
+//   한 곳을 빠뜨리면 같은 거래처가 화면마다 다른 유형으로 갈렸다. 이제 여기가 유일한 출처다.
+//   새 유형을 추가할 땐 이 배열에 한 줄 넣고, 입고 공급처에도 넣을 유형이면 _IB_SUP_CATS에 이름만 추가.
+//   badge   = 목록 배지 색(파스텔 배경 + 진한 글자)
+//   extName = 외부용기 반입·반납의 '거래처' 이름 목록(_extNameOptHtml)에 들어가는지
+//   target  = 콘테이너 집계 target_type(_partnerTargetType) 판정값
+const PARTNER_CATS = [
+  { name: '농가',   badge: 'background:#E8F5E9;color:#2E7D32', extName: false, target: '농가' },
+  { name: '거래처', badge: 'background:#F3F4F6;color:#6B7280', extName: true,  target: '거래처' },
+  { name: '농협',   badge: 'background:#CCFBF1;color:#0F766E', extName: false, target: '농협' },
+  { name: '공판장', badge: 'background:#FEF3C7;color:#B45309', extName: true,  target: '거래처' },
+  { name: '마트',   badge: 'background:#EDE9FE;color:#6D28D9', extName: true,  target: '거래처' },
+];
+const PARTNER_CAT_DEFAULT = '거래처';   // category 미지정 행의 판정값(기존 동작 그대로)
+function pCat(name) { return PARTNER_CATS.find(c => c.name === name) || PARTNER_CATS.find(c => c.name === PARTNER_CAT_DEFAULT); }
+// 유형 select <option> HTML — 등록 폼(pt-category)·수정 모달(pe-category) 공용.
+function partnerCatOptHtml(selected) {
+  const cur = PARTNER_CATS.some(c => c.name === selected) ? selected : PARTNER_CAT_DEFAULT;
+  return PARTNER_CATS.map(c => `<option value="${esc(c.name)}"${c.name === cur ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+
+// 출고처(partner) → 콘테이너 target_type 매핑. partners.category 기준(PARTNER_CATS.target).
+// 농협→'농협', 거래처/공판장/마트→'거래처', 농가→'농가', 미지정→'거래처'. getTargetContainerHold 집계 대상 판정에 사용.
 // partners에 없는 이름은 farms(농가 마스터) 조회 — 수동 거래에서 농가를 직접 고를 수 있어서(농가는 partners에 없음).
 // ★partners에서 찾히면 기존 판정 그대로 → 기존 호출부(D-1 부분출고 등) 동작 불변.
 function _partnerTargetType(name) {
   const p = partners.find(x => x.name === name);
-  if (p) {
-    if (p.category === '농협') return '농협';
-    if (p.category === '농가') return '농가';
-    return '거래처';   // 거래처/공판장/미지정
-  }
+  if (p) return pCat(p.category).target;
   if (farms.some(f => f.name === name)) return '농가';
   return '거래처';
 }
@@ -6366,11 +6384,12 @@ function _nhfOptHtml() {
     .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
 }
 
-// 외부용기 반입/반납 이름 옵션 — 소유(owner_type)별 필터. 농협은 _nhfOptHtml 재사용, 거래처는 거래처+공판장.
+// 외부용기 반입/반납 이름 옵션 — 소유(owner_type)별 필터. 농협은 _nhfOptHtml 재사용,
+// 거래처 쪽은 PARTNER_CATS의 extName 유형(거래처·공판장·마트) — 용기는 파는 곳에서도 딸려 온다.
 function _extNameOptHtml(ownerType) {
   if (ownerType !== '거래처') return _nhfOptHtml();
   return '<option value="">거래처 선택</option>' + partners
-    .filter(p => (p.category === '거래처' || p.category === '공판장') && p.is_active !== false)
+    .filter(p => !!PARTNER_CATS.find(c => c.name === p.category)?.extName && p.is_active !== false)   // ★미지정은 예전대로 제외(pCat 기본값을 쓰면 안 된다)
     .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || (a.name || '').localeCompare(b.name || '', 'ko'))
     .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
 }
@@ -7547,13 +7566,13 @@ function renderPartnerCfg() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...partners].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
   const usageLabelMap = { in:'입고처', out:'출고처', both:'둘다' };
-  const catStyle = { 농가: 'background:#E8F5E9;color:#2E7D32', 거래처: 'background:#F3F4F6;color:#6B7280', 농협: 'background:#CCFBF1;color:#0F766E', 공판장: 'background:#FEF3C7;color:#B45309' };
+  // 배지 색은 PARTNER_CATS 한 곳에서(유형을 늘려도 여기 손댈 게 없다)
   const rows = sorted.map((p, i) => {
     const usageLabel = usageLabelMap[p.usage || 'both'];
-    const cat = p.category || '거래처';
+    const cat = p.category || PARTNER_CAT_DEFAULT;
     const isFirst = i === 0, isLast = i === sorted.length - 1;
     return `<tr>
-    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis"><span style="font-size:10px;padding:1px 6px;border-radius:8px;margin-right:5px;${catStyle[cat] || catStyle['거래처']}">${esc(cat)}</span>${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
+    <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis"><span style="font-size:10px;padding:1px 6px;border-radius:8px;margin-right:5px;${pCat(cat).badge}">${esc(cat)}</span>${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
     <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
     ${isAdm ? `<td style="width:170px;white-space:nowrap;text-align:right">
       <button class="btn" onclick="movePartner('${p.id}',-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
@@ -7573,12 +7592,7 @@ function renderPartnerCfg() {
     </div>
     ${isAdm ? `<div style="display:flex;gap:8px;margin-bottom:14px">
       <input id="pt-name" type="text" placeholder="거래처명 입력" style="flex:1;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
-      <select id="pt-category" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" title="유형">
-        <option value="농가">농가</option>
-        <option value="거래처" selected>거래처</option>
-        <option value="농협">농협</option>
-        <option value="공판장">공판장</option>
-      </select>
+      <select id="pt-category" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" title="유형">${partnerCatOptHtml()}</select>
       <select id="pt-usage" style="padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         <option value="both">둘다</option>
         <option value="in">입고처</option>
@@ -7620,7 +7634,7 @@ async function addPartner() {
   if (!name) return nameEl?.focus();
   if (partners.some(p => p.name === name)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
   const usage = document.getElementById('pt-usage')?.value || 'both';
-  const category = document.getElementById('pt-category')?.value || '거래처';
+  const category = document.getElementById('pt-category')?.value || PARTNER_CAT_DEFAULT;
   try {
     const row = await dbInsertPartner({ name, usage, category, sort_order: partners.length + 1, is_active: true });
     partners.push(row);
@@ -7637,7 +7651,9 @@ function editPartner(id) {
   _editPartnerId = id;
   document.getElementById('pe-name').value = p.name || '';
   document.getElementById('pe-usage').value = p.usage || 'both';
-  const peCat = document.getElementById('pe-category'); if (peCat) peCat.value = p.category || '거래처';
+  // ★index.html에 유형 <option>이 고정돼 있어 새 유형을 추가할 때마다 빠뜨렸다 → 열 때 PARTNER_CATS로 채운다.
+  const peCat = document.getElementById('pe-category');
+  if (peCat) peCat.innerHTML = partnerCatOptHtml(p.category);
   document.getElementById('pe-tel').value = p.tel || '';
   document.getElementById('pe-addr').value = p.addr || '';
   document.getElementById('pe-memo').value = p.memo || '';
@@ -7652,7 +7668,7 @@ async function savePartnerEdit() {
   if (!name) return alert('거래처명을 입력해주세요.');
   if (partners.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
   const usage = document.getElementById('pe-usage').value || 'both';
-  const category = document.getElementById('pe-category')?.value || '거래처';
+  const category = document.getElementById('pe-category')?.value || PARTNER_CAT_DEFAULT;
   const tel   = document.getElementById('pe-tel').value.trim() || null;
   const addr  = document.getElementById('pe-addr').value.trim() || null;
   const memo  = document.getElementById('pe-memo').value.trim() || null;
