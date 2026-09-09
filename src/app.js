@@ -6699,14 +6699,17 @@ function _ibcAddRow(id, key = 'ib') {
   const badge = !isOthers
     ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#DBEAFE;color:#1D4ED8">우리·회수</span>`
     : isNhf
-      ? `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#CCFBF1;color:#0F766E">농협·반납</span>`
+      ? `<span id="${ctx.pre}-bdg-${t.id}" style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#CCFBF1;color:#0F766E">농협·반납</span>`
       : `<span style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#FFEDD5;color:#C2410C">농가·반납</span>`;
   // 운반구는 개수를 적어도 입고 수량에 안 들어간다 — 줄에서 바로 보이게 알린다(칩에도 같은 문구가 있다).
   const noQtyBadge = ctHoldsFruit(t) ? ''
     : `<span title="원물을 담는 용기가 아니라 입고 수량 합계에서 빠집니다" style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#F3F4F6;color:#6B7280">수량 미반영</span>`;
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
+  // 농협 것과 거래처 것은 같은 종류(콘테이너·파렛트) 마스터를 쓰고 owner_type으로만 갈린다.
+  // ★거래처용 종류를 따로 만들지 않는다 — 종류가 갈라지면 잔여 집계가 두 벌로 쪼개진다.
   const extraInput = isNhf
-    ? `<select id="${ctx.pre}-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_nhfOptHtml()}</select>` +
+    ? `<select id="${ctx.pre}-own-${t.id}" onchange="_ibcOwnSync('${key}','${t.id}')" style="flex:0 0 76px;${inpS}"><option>농협</option><option>거래처</option></select>` +
+      `<select id="${ctx.pre}-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_extNameOptHtml('농협')}</select>` +
       `<input type="text" id="${ctx.pre}-f-${t.id}" placeholder="특징(선택)" style="flex:1;min-width:70px;${inpS}">`
     : isOthers
       ? `<input type="text" id="${ctx.pre}-f-${t.id}" placeholder="특징(락카·주기 등)" style="flex:1;min-width:110px;${inpS}">`
@@ -6725,6 +6728,26 @@ function _ibcAddRow(id, key = 'ib') {
   _ibcSyncGroups(key);
   _ibcSyncQty(key);
   setTimeout(() => document.getElementById(`${ctx.pre}-q-${t.id}`)?.focus(), 30);
+}
+// 입고 콘테이너 줄의 소유(농협/거래처) 값. select가 없으면 '농협'(기존 동작).
+function _ibcOwnerOf(pre, tid) {
+  return document.getElementById(`${pre}-own-${tid}`)?.value || '농협';
+}
+// 소유 select 변경 → 대상명 옵션(_extNameOptHtml)과 배지 문구를 같이 갱신.
+// ★외부용기 반입·반납 폼의 _extNameSync와 같은 일을 하지만 id 모양이 달라(접미사 -{종류id}) 따로 둔다.
+function _ibcOwnSync(key, tid) {
+  const ctx = _IBC_CTX[key];
+  if (!ctx) return;
+  const owner = _ibcOwnerOf(ctx.pre, tid);
+  const sel = document.getElementById(`${ctx.pre}-nhf-${tid}`);
+  if (sel) {
+    const v = sel.value;
+    sel.innerHTML = _extNameOptHtml(owner);
+    sel.value = [...sel.options].some(o => o.value === v) ? v : '';   // 소유가 바뀌면 목록에 없는 이름은 비운다
+    sel.style.borderColor = '#D1D5DB';
+  }
+  const bdg = document.getElementById(`${ctx.pre}-bdg-${tid}`);
+  if (bdg) bdg.textContent = `${owner}·반납`;
 }
 function _ibcRemoveRow(id, key = 'ib') {
   const ctx = _IBC_CTX[key];
@@ -6895,13 +6918,15 @@ function _validateInboundContainers(key = 'ib') {
     const qty = parseInt(document.getElementById(`${ctx.pre}-q-${t.id}`)?.value, 10) || 0;
     if (qty <= 0) { sel.style.borderColor = '#D1D5DB'; return; }
     if (sel.value.trim()) { sel.style.borderColor = '#D1D5DB'; return; }
-    bad.push({ t, sel });
+    bad.push({ t, sel, owner: _ibcOwnerOf(ctx.pre, t.id) });
   });
   if (!bad.length) return true;
   bad.forEach(b => { b.sel.style.borderColor = '#DC2626'; });
-  alert(`농협 콘테이너(${bad.map(b => b.t.name).join(', ')})의 농협명을 선택하세요.\n\n`
-    + `어느 농협 것인지 모르면 반납 관리가 안 되므로 저장하지 않았습니다.\n`
-    + `농협명을 선택한 뒤 다시 저장해 주세요.`);
+  // 소유가 종류마다 다를 수 있어 '종류·이름칸'을 각각 알린다.
+  const nameLbl = o => (o === '거래처' ? '거래처명' : '농협명');
+  alert(`외부 콘테이너(${bad.map(b => `${b.t.name}·${nameLbl(b.owner)}`).join(', ')})를 선택하세요.\n\n`
+    + `어느 곳 것인지 모르면 반납 관리가 안 되므로 저장하지 않았습니다.\n`
+    + `대상을 선택한 뒤 다시 저장해 주세요.`);
   bad[0].sel.focus();
   return false;
 }
@@ -6922,8 +6947,9 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
     const qty = parseInt(document.getElementById(`${ctx.pre}-q-${t.id}`)?.value, 10) || 0;
     if (qty <= 0) return;
     const feature = document.getElementById(`${ctx.pre}-f-${t.id}`)?.value?.trim() || null;
-    const nhf = document.getElementById(`${ctx.pre}-nhf-${t.id}`)?.value?.trim() || null;   // 농협명(nhf 종류만)
-    jobs.push({ t, qty, feature, nhf });
+    const nhf = document.getElementById(`${ctx.pre}-nhf-${t.id}`)?.value?.trim() || null;   // 농협·거래처명(nhf 종류만)
+    const ownerType = _ibcOwnerOf(ctx.pre, t.id);                                          // '농협'(기본) | '거래처'
+    jobs.push({ t, qty, feature, nhf, ownerType });
   });
   if (!jobs.length) return;
   // 연결 키: 수동 거래면 manual_tx_id, 입고면 inbound_id (둘 다 삭제 cascade용)
@@ -6938,7 +6964,7 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
     // 농협 콘테이너는 농협명 필수(농협별 관리). 없으면 이 항목만 건너뜀(own 폴백 금지).
     // ★이중 안전장치 — 정상 흐름에선 저장 전 _validateInboundContainers가 막으므로 여기 도달하지 않음.
     if (j.t.owner === 'nhf' && !j.nhf) {
-      alert(`농협 콘테이너(${j.t.name})는 농협명이 필요합니다. 이 항목은 저장하지 않았습니다.`);
+      alert(`외부 콘테이너(${j.t.name})는 ${j.ownerType === '거래처' ? '거래처명' : '농협명'}이 필요합니다. 이 항목은 저장하지 않았습니다.`);
       continue;
     }
     try {
@@ -6946,7 +6972,8 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
         const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...link });
         if (row) picks.unshift(row);
       } else if (j.t.owner === 'nhf') {
-        const row = await dbInsertNhfIn({ date, nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff, inbound_id: inbId, ...link });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
+        // 농협/거래처는 owner_type으로만 가른다 — 종류 마스터는 하나 그대로(거래처용 종류를 새로 만들지 않는다).
+        const row = await dbInsertNhfIn({ date, owner_type: j.ownerType || '농협', nhf: j.nhf, type: j.t.name, qty: j.qty, feature: j.feature, staff, inbound_id: inbId, ...link });   // 입고 삭제 cascade 연동(picks·own_ins와 동일)
         if (row) nhfIns.unshift(row);
       } else {
         // 농가것(farm) → own_ins(반납대기)
@@ -6961,6 +6988,8 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
   jobs.forEach(j => {
     const q = document.getElementById(`${ctx.pre}-q-${j.t.id}`); if (q) q.value = '';
     const f = document.getElementById(`${ctx.pre}-f-${j.t.id}`); if (f) f.value = '';
+    const ow = document.getElementById(`${ctx.pre}-own-${j.t.id}`);
+    if (ow) { ow.value = '농협'; _ibcOwnSync(opts.ctx || 'ib', j.t.id); }   // 이름 목록·배지까지 기본(농협)으로 원복
     const nh = document.getElementById(`${ctx.pre}-nhf-${j.t.id}`); if (nh) nh.value = '';
   });
   renderOwn(); renderPick(); renderNhf(); renderDash();
@@ -11737,7 +11766,7 @@ function _mtxFillInContainers(txId) {
   const rows = [
     ...picks.filter(p => same(p.manual_tx_id) && p.type === '원물수거').map(p => ({ name: p.ctype, qty: p.qty, feature: null, nhf: null })),
     ...ownIns.filter(o => same(o.manual_tx_id)).map(o => ({ name: o.ctype, qty: o.qty, feature: o.feature, nhf: null })),
-    ...nhfIns.filter(n => same(n.manual_tx_id)).map(n => ({ name: n.type, qty: n.qty, feature: n.feature, nhf: n.nhf })),
+    ...nhfIns.filter(n => same(n.manual_tx_id)).map(n => ({ name: n.type, qty: n.qty, feature: n.feature, nhf: n.nhf, ownerType: n.owner_type === '거래처' ? '거래처' : '농협' })),
   ];
   rows.forEach(r => {
     const t = containerTypes.find(x => x.name === r.name && x.is_active !== false);
@@ -11745,6 +11774,9 @@ function _mtxFillInContainers(txId) {
     _ibcAddRow(t.id, 'mtx');
     const q = document.getElementById(`mibc-q-${t.id}`);   if (q) q.value = r.qty ?? '';
     const f = document.getElementById(`mibc-f-${t.id}`);   if (f && r.feature) f.value = r.feature;
+    // ★소유를 먼저 맞춘 뒤 이름을 넣는다 — _ibcOwnSync가 이름 <option> 목록을 갈아끼우므로 순서가 바뀌면 값이 지워진다.
+    const ow = document.getElementById(`mibc-own-${t.id}`);
+    if (ow && r.ownerType) { ow.value = r.ownerType; _ibcOwnSync('mtx', t.id); }
     const nh = document.getElementById(`mibc-nhf-${t.id}`); if (nh && r.nhf) nh.value = r.nhf;
   });
 }
