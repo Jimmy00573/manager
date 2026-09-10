@@ -16823,14 +16823,24 @@ function _renderScProductOptions() {
   processingRecords.filter(p => p.process_type === '선과').forEach(p => {
     srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
   });
-  const prods = [...new Set(
-    inboundRecords.filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
-      .map(r => r.product).filter(Boolean)
-  )].sort();
-  const cur = [...sel.options].slice(1).map(o => o.value);
-  if (JSON.stringify(cur) !== JSON.stringify(prods)) {
-    sel.innerHTML = '<option value="">전체 품목</option>' +
-      prods.map(p => `<option value="${esc(p)}"${_scProduct === p ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  // 품목별 잔여 CT — ★_renderScTable 3번과 같은 대상·잔여 식(입고량 − 처리량). 새 계산식 만들지 말 것.
+  //   검색·카테고리·우선 필터 적용 전 전체 기준(표 위 '미선과 잔여' 카드와 같은 숫자).
+  const remByProd = {};
+  let remTotal = 0;
+  inboundRecords.filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0).forEach(r => {
+    const rem = r.quantity - (pm[r.id] || 0);
+    remTotal += rem;
+    if (r.product) remByProd[r.product] = (remByProd[r.product] || 0) + rem;
+  });
+  const prods = Object.keys(remByProd).sort();
+  // ★value는 품목명 그대로(_scProduct 필터 호환). 잔여는 표시 문구에만.
+  const opts = [['', `전체 품목 (${fmtCT(remTotal)}CT)`]]
+    .concat(prods.map(p => [p, `${p} (${fmtCT(remByProd[p])}CT)`]));
+  // 문구까지 비교 — 품목 구성이 같아도 잔여가 바뀌면 다시 그린다.
+  const cur = [...sel.options].map(o => [o.value, o.textContent]);
+  if (JSON.stringify(cur) !== JSON.stringify(opts)) {
+    sel.innerHTML = opts.map(([v, label]) =>
+      `<option value="${esc(v)}"${v && _scProduct === v ? ' selected' : ''}>${esc(label)}</option>`).join('');
   } else {
     sel.value = _scProduct;
   }
@@ -16958,7 +16968,7 @@ function _renderScDoneTable() {
 //   공유하는 것: _isUnsortedTarget(대상 판정) · IB_CAT_SORT_ORDER(카테고리 정렬 순서).
 //   ★이 둘은 반드시 같이 움직여야 한다. 한쪽에만 새 판정 조건을 만들면 목록이 어긋난다.
 //
-// 흐름: 1 기준 데이터 → 2 경과일 등급 → 3 대상·잔여 → 4 필터 → 5 정렬 → 6 출력
+// 흐름: 1 기준 데이터 → 2 경과일 등급 → 3 대상·잔여 → 4 필터 → 5 정렬 → 5-1 품목 묶음 → 6 출력
 //
 // 읽는 전역: inboundRecords, processingRecords, _scSearch, _scProduct, _scCategory,
 //            _scPriOnly, _scSortCol 계열, URGENCY_THRESHOLD_HIGH/MID
@@ -17079,6 +17089,38 @@ function _renderScTable() {
   }
 
   // ==================================================================
+  // 5-1. 품목별 묶음 — 표시 전용, 품목 '전체'일 때만
+  // ==================================================================
+  // 선과기 세팅 때문에 실제 작업은 한 품목을 몰아서 한다 → 화면도 품목별로 묶는다.
+  // ★위 5번 정렬 결과를 순서 그대로 품목별로 나눠 담기만 한다 → 그룹 안 순서 = 5번 정렬
+  //   (기본 카테고리→입고일 · 헤더 클릭 · 진행중 먼저 전부 그대로). 그룹 순서만 잔여 CT 합 많은 품목 먼저.
+  // ★잔여 합은 필터된 rows 기준(화면에 보이는 행의 합). 드롭다운 숫자는 필터 전 전체라 다를 수 있다.
+  // 특정 품목을 고르면 이미 좁혀졌으므로 헤더 없이 평면 목록(기존과 동일).
+  // _scGrpHead: 행 index → 그 행 앞에 끼울 그룹 머리 <tr>. 6번 행 렌더에서 붙인다.
+  const _scGrpHead = {};
+  if (!_scProduct && rows.length) {
+    const byProd = new Map();
+    rows.forEach(r => {
+      const k = r.product || '';
+      if (!byProd.has(k)) byProd.set(k, []);
+      byProd.get(k).push(r);
+    });
+    const grps = [...byProd.entries()]
+      .map(([p, list]) => ({ p, list, rem: list.reduce((s, r) => s + r.remaining, 0) }))
+      .sort((a, b) => b.rem - a.rem || a.p.localeCompare(b.p, 'ko'));
+    rows = [];
+    grps.forEach(g => {
+      // 품목 배지는 itemColor 기존 구조 그대로(수확 진행현황·캘린더와 같은 모양). nowrap — 표 폭 안에서 한 줄.
+      _scGrpHead[rows.length] = `<tr><td colspan="10" style="padding:7px 8px;background:#F9FAFB;border-top:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;white-space:nowrap">
+        <span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(g.p)}">${esc(g.p || '품목 미지정')}</span>
+        <span style="font-size:12px;color:#6B7280;margin-left:6px">${g.list.length}건</span>
+        <span style="font-size:12px;font-weight:700;color:#1565C0;margin-left:6px">잔여 ${fmtCT(g.rem)} CT</span>
+      </td></tr>`;
+      rows.push(...g.list);
+    });
+  }
+
+  // ==================================================================
   // 6. 건수 표시 + 표 출력
   // ==================================================================
   // ★열 폭 colgroup이 이 함수 안 인라인에 있다(입고내역은 index.html에 있음 — 위 주석 참고).
@@ -17105,19 +17147,20 @@ function _renderScTable() {
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
       <colgroup>
         <!-- 농가=농가명+⭐+차수배지+비율칩, 품목=칩 전체 표시 위해 확대(모바일은 sc-table-wrap 가로 스크롤로 흡수) -->
-        <col style="width:190px"><col style="width:100px"><col style="width:62px">
-        <col style="width:70px"><col style="width:70px"><col style="width:50px"><col style="width:100px">
+        <!-- 입고일을 맨 왼쪽 — 입고내역 목록(renderInboundList)과 같은 위치. 열 폭 합계(867px)는 그대로 -->
+        <col style="width:70px"><col style="width:190px"><col style="width:100px"><col style="width:62px">
+        <col style="width:70px"><col style="width:50px"><col style="width:100px">
         <col style="width:70px"><col style="width:85px"><col style="width:70px">
       </colgroup>
       <thead><tr>
-        ${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
-        ${thS('date','입고일')}${thS('elapsed','경과')}${thN('진행')}
+        ${thS('date','입고일')}${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
+        ${thS('elapsed','경과')}${thN('진행')}
         ${thN('위치')}${thN('품질')}${thN('액션')}
       </tr></thead>
       <tbody>
         ${rows.length === 0
           ? `<tr><td colspan="10" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 항목이 없습니다</td></tr>`
-          : rows.map(r => {
+          : rows.map((r, i) => {
               const u = urgency(r.date);
               const srtCnt = srtCntMap[r.id] || 0;
               const isDoing = srtCnt >= 1;
@@ -17144,14 +17187,14 @@ function _renderScTable() {
               const doingBadge = isDoing
                 ? ` <span style="background:#FEF3C7;color:#B45309;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;white-space:nowrap">${srtCnt}차</span>`
                 : '';
-              return `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
+              return (_scGrpHead[i] || '') + `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
+                <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
                   ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
                 <td style="padding:6px 4px">${catBadge}</td>
                 <td style="padding:6px 4px;text-align:right;font-weight:700;color:${isDoing ? '#C2410C' : '#1565C0'}">${fmtN(r.remaining)}</td>
-                <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px 4px;font-size:12px;font-weight:600;color:${u.color};white-space:nowrap">${u.icon} ${u.label}</td>
                 <td style="padding:4px 2px;text-align:center">${progressCell}</td>
                 <td style="padding:6px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#374151" title="${esc(r.location || '')}">
