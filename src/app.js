@@ -2325,11 +2325,15 @@ function tripBadge(trip) {
 // ★예약 배차는 완료 처리를 잊으면 조용히 쌓인다. 날짜 그룹의 '⚠ 지연' 표시는 대기 탭을 열어야 보이므로,
 //   이 칩은 어느 탭에 있든 목록 위에 뜬다(0건이면 아무것도 그리지 않아 예전 화면 그대로).
 // ★날짜 비교는 td()(로컬) 기준 문자열 비교 — toISOString은 UTC로 밀려 하루 어긋난다.
+// 지난 배송 예정 = 배차완료(아직 안 나감)인데 예정일이 오늘보다 앞. 현황판 칩과 재고 요약 경고 띠가 같이 쓴다.
+function _dispOverdueCount() {
+  const today = td();
+  return (dispatches || []).filter(d => d.status === '배차완료' && d.date && d.date < today).length;
+}
 function _renderDispOverdueWarn() {
   const el = document.getElementById('disp-overdue-warn');
   if (!el) return;
-  const today = td();
-  const n = dispatches.filter(d => d.status === '배차완료' && d.date && d.date < today).length;
+  const n = _dispOverdueCount();
   if (!n) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
   el.innerHTML = kpiChip(`⚠ 지난 배송 예정 ${n}건`, "switchDT('w')");
@@ -12747,11 +12751,18 @@ function renderInvSummary() {
   const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
   const priorityByProduct = {};
   let priorityCount = 0;
+  // high(빨강) 단계 — 위와 같은 대상 중 URGENCY_THRESHOLD_HIGH일 이상. 경고 띠·미선과 행 색 표시용(2026-09-11).
+  const priorityHighByProduct = {};
+  let priorityHighCount = 0;
   inboundRecords.filter(_isUnsortedTarget).forEach(r => {
     const rem = r.quantity - (processedByInbound[r.id] || 0);
     if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_MID) {
       priorityCount++;
       priorityByProduct[r.product] = (priorityByProduct[r.product] || 0) + 1;
+      if (daysSince(r.date) >= URGENCY_THRESHOLD_HIGH) {
+        priorityHighCount++;
+        priorityHighByProduct[r.product] = (priorityHighByProduct[r.product] || 0) + 1;
+      }
     }
   });
 
@@ -12856,6 +12867,33 @@ function renderInvSummary() {
     <span style="font-size:13px;color:#374151">최근 ${flowN}일 <span style="font-size:11px;color:#9CA3AF">(${_flowMD(flowFrom)}~${_flowMD(_flowToday)})</span> — 입고 <b>${fmtCT(flowInCt)}</b> → 선과 <b>${fmtCT(flowSortCt)}</b> → <span title="${_flowOutTip}" style="cursor:help;border-bottom:1px dotted #9CA3AF">출고 <b>${fmtCT(flowOutCt)}</b></span> CT</span>
     <span title="입고 − 선과 (출고는 적체 계산에 넣지 않음)" style="font-size:12px;font-weight:700;color:${_flowBlCol};white-space:nowrap">적체 ${_flowBlTxt} CT</span>
   </div>`;
+
+  // ── 경고 띠 (2026-09-11) — 조치가 필요한 신호를 KPI·흐름 아래 한 줄로 모은다. 표시만(집계는 7번·주스·배차 그대로).
+  //   ★항목 0이면 생략, 전부 0이면 띠 자체를 안 그린다(정상일 때 시야 방해 금지).
+  //   ★콘테이너 음수는 넣지 않는다 — 시스템 이전 미등록분이라 조치 대상이 아님(확정 방침).
+  //   색 두 단계: 빨강 #DC2626 = 즉시 조치(품절·high 경과·지난 배송) / 주황 #D97706 = 주의(부족·mid 경과). 빨강 먼저.
+  //   ★폰 폭에서 두 줄로 늘지 않게 nowrap(넘치면 가로 스크롤) + 항목 3개 넘으면 '외 N건'.
+  //   클릭 = 새 화면 없이 이동: 미선과 → 섹션 1 스크롤 / 주스 → 주스 탭 / 지난 배송 → 배차 현황판.
+  const _wJTotals = Object.values(_juiceProductMap()).map(bs => bs.reduce((s, b) => s + (b.remaining_bottles || 0), 0));
+  const _wJuiceOut = _wJTotals.filter(t => juiceStatusOf(t) === JST_OUT).length;
+  const _wJuiceLow = _wJTotals.filter(t => juiceStatusOf(t) === JST_LOW).length;
+  const _wDispOver = _dispOverdueCount();
+  const _wUnsMid = priorityCount - priorityHighCount;   // mid 이상 · high 미만
+  const _wCanNav = !['staff', 'airport'].includes(sessionStorage.getItem('citrus_role'));   // T()가 막는 역할엔 탭 이동 링크 없음
+  const _wItems = [
+    priorityHighCount > 0 && { red: true,  txt: `미선과 ${priorityHighCount}건 ${URGENCY_THRESHOLD_HIGH}일 경과`, on: "_sumGo('sum-sec-uns')" },
+    _wJuiceOut > 0        && { red: true,  txt: `주스 품절 ${_wJuiceOut}종`, on: "invTab('juice')" },
+    _wDispOver > 0        && { red: true,  txt: `지난 배송 예정 ${_wDispOver}건`, on: _wCanNav ? "T('transport');switchDT('w')" : '' },
+    _wUnsMid > 0          && { red: false, txt: `미선과 ${_wUnsMid}건 ${URGENCY_THRESHOLD_MID}일 경과`, on: "_sumGo('sum-sec-uns')" },
+    _wJuiceLow > 0        && { red: false, txt: `주스 부족 ${_wJuiceLow}종`, on: "invTab('juice')" },
+  ].filter(Boolean);
+  const _wItem = it => `<span${it.on ? ` onclick="${it.on}"` : ''} style="color:${it.red ? '#DC2626' : '#D97706'};font-weight:700${it.on ? ';cursor:pointer;text-decoration:underline dotted' : ''}">${it.txt}</span>`;
+  const _wAnyRed = _wItems.some(it => it.red);
+  const warnHtml = _wItems.length
+    ? `<div id="sum-warn-band" style="${CARD};padding:8px 14px;font-size:13px;white-space:nowrap;overflow-x:auto;background:${_wAnyRed ? '#FEF2F2' : '#FFFBEB'};border-color:${_wAnyRed ? '#FCA5A5' : '#FCD34D'}">⚠ ${
+        _wItems.slice(0, 3).map(_wItem).join(' <span style="color:#9CA3AF">·</span> ')}${
+        _wItems.length > 3 ? ` <span style="color:#6B7280">외 ${_wItems.length - 3}건</span>` : ''}</div>`
+    : '';
 
   // ==================================================================
   // 9. 입출고 요약 — 입고 탭 (하루치, _summaryDate 기준)
@@ -13126,26 +13164,33 @@ function renderInvSummary() {
       const pct = ct / unsTotalCt * 100;
       return `<div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#1F2937"><span style="width:8px;height:8px;border-radius:50%;background:${barColor(p)};flex-shrink:0;display:inline-block"></span>${esc(p)} ${fmtCT(ct)} CT (${pct.toFixed(1)}%)</div>`;
     }).join('');
-    const chips = barEntriesSorted
-      .filter(([p]) => priorityByProduct[p])
-      .map(([p]) => `<span style="background:#FCEBEB;color:#A32D2D;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600">⚠ ${esc(p)} ${priorityByProduct[p]}건 경과</span>`)
-      .join('');
+    // 품목별 '⚠ N건 경과' 칩은 아래 표의 품목 행 배지로 통합했다(2026-09-11) — 같은 숫자를 두 곳에 두지 않는다.
     return `<div style="padding:10px 16px 14px">
       <div style="display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:10px">${labelGrid}</div>
       <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;width:100%">${segments}</div>
-      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">${chips}</div>` : ''}
     </div>`;
   })() : '';
 
   // 섹션 1: 미선과 (원물 / 소과 / 합계)
-  const unsHtml = `<div style="${CARD}">${secHdr(1, '미선과 재고', '단위: CT')}
+  // ★행 색(2026-09-11): 그 품목에 경과 건이 있으면 합계 글자색 + '⚠ N건 경과' 배지. high 1건이라도 있으면 빨강, 아니면 주황.
+  //   기준은 7번 집계(priorityByProduct / priorityHighByProduct) 그대로 — 새 계산 없음. 경고 띠가 id로 이 카드에 스크롤한다.
+  const _unsAgeCol = p => priorityHighByProduct[p] ? '#DC2626' : priorityByProduct[p] ? '#D97706' : '';
+  const unsHtml = `<div id="sum-sec-uns" style="${CARD};scroll-margin-top:70px">${secHdr(1, '미선과 재고', '단위: CT')}
     ${barHtml}
     <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:360px">
       <thead><tr><th ${THL}>품목</th><th ${THR}>원물 (CT)</th><th ${THR}>소과 (CT)</th><th ${THR}>합계 (CT)</th></tr></thead>
       <tbody>${unsEntries.length
         ? unsEntries.map(([p, v]) => {
             const total = v.raw + v.small;
-            return `<tr><td style="${TL}">${productChip(p)}</td><td style="${TR}">${v.raw ? fmtCT(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtCT(v.small) : DASH}</td><td ${TRhl}>${fmtCT(total)}</td></tr>`;
+            const col = _unsAgeCol(p);
+            const n = priorityByProduct[p] || 0, nh = priorityHighByProduct[p] || 0;
+            const badge = col
+              ? ` <span title="${URGENCY_THRESHOLD_MID}일+ ${n}건${nh ? ` (그중 ${URGENCY_THRESHOLD_HIGH}일+ ${nh}건)` : ''}" style="font-size:10px;font-weight:700;color:#fff;background:${col};border-radius:4px;padding:1px 6px;white-space:nowrap">⚠ ${n}건 경과</span>`
+              : '';
+            const totAttr = col
+              ? `class="sum-td-hl" style="padding:7px 10px;border:1px solid #F3F4F6;font-size:13px;text-align:right;font-weight:700;color:${col}"`
+              : TRhl;
+            return `<tr><td style="${TL}">${productChip(p)}${badge}</td><td style="${TR}">${v.raw ? fmtCT(v.raw) : DASH}</td><td style="${TR}">${v.small ? fmtCT(v.small) : DASH}</td><td ${totAttr}>${fmtCT(total)}</td></tr>`;
           }).join('')
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
@@ -13315,7 +13360,7 @@ function renderInvSummary() {
   // ==================================================================
   // 16. 최종 출력 — 위에서 만든 조각을 화면 순서대로 붙인다
   // ==================================================================
-  // 순서: KPI → 흐름 → 입출고 → 1.미선과 → 2.만감선과 → 3.감귤선과 → (4.파치 + 5.주스·청 2열)
+  // 순서: KPI → 흐름 → 경고 띠(있을 때만) → 입출고 → 1.미선과 → 2.만감선과 → 3.감귤선과 → (4.파치 + 5.주스·청 2열)
   el.innerHTML = `<div>
     <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
       <div>
@@ -13324,7 +13369,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${flowHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
+    ${kpiHtml}${flowHtml}${warnHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
     <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
 }
@@ -13422,6 +13467,8 @@ function _inoutCatToggleAll() {
 function setSummaryDate(d) { if (d) { _summaryDate = d; renderInvSummary(); } }
 function setSummaryKind(k) { _summaryKind = k; renderInvSummary(); }
 function setInvFlowDays(n) { _invFlowDays = n; renderInvSummary(); }   // 흐름 줄 기간 토글(3/7/14일)
+// 재고 요약 경고 띠 → 같은 화면의 해당 섹션으로 스크롤(새 화면 없음).
+function _sumGo(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function toggleSummaryOpen() {
   _summaryOpen = !_summaryOpen;
   localStorage.setItem('summary_open', _summaryOpen ? '1' : '0');
@@ -20860,6 +20907,33 @@ function _jbColGroup(isAdm) {
 // 열 개수 — '배치 없음' 빈 행의 colspan용. ★_jbColGroup이 내보내는 col 수와 반드시 같아야 한다.
 function _JB_COLS(isAdm) { return 5 + (isAdm ? 1 : 0); }
 
+// ── 주스·청 제품 상태 · 목록 — 주스 탭(renderJuiceSection)과 재고 요약 경고 띠가 같이 쓴다.
+//   (원래 renderJuiceSection 안 지역 함수였다 — 경고 띠가 같은 기준으로 세도록 2026-09-11 전역으로 올림)
+// ★경계는 여기 한 곳: 0 이하 = 품절 · 0 < 잔여 < 기준 = 부족 · 기준 이상 = 정상.
+//   비교 기준값의 근거(단위 환산을 안 하는 이유)는 juiceLowThreshold 선언부 주석 참고.
+// ★기준 0은 '부족(⚠) 경고 끄기'다 — 품절(⛔)은 기준과 무관한 사실이라 끄지 않는다.
+const JST_OUT = 0, JST_LOW = 1, JST_OK = 2;   // 정렬 순서와 같다(작을수록 급함)
+function isJuiceLow(total) { return juiceLowThreshold > 0 && total < juiceLowThreshold; }
+function juiceStatusOf(total) { return total <= 0 ? JST_OUT : (isJuiceLow(total) ? JST_LOW : JST_OK); }
+// 제품 목록 { 제품명: [잔여>0 배치…] } — ★잔여 0인 제품도 빈 배열로 남긴다(품절이 화면에서 통째로 사라지던 문제).
+//   목록 = 활성 마스터 ∪ 잔여가 남은 배치의 제품.
+//   · invJuiceMasters는 dbGetJuiceMasters가 `is_active=eq.true`로만 받아온다 → 비활성 제품은 여기 없다.
+//   · ★뒤쪽 합집합(배치 쪽)을 빼면 안 된다. 마스터를 비활성으로 돌려도 창고에 남은 물량은 계속 보여야 한다
+//     (콘테이너 OT/OT_ACTIVE와 같은 논리). 결과적으로 **비활성 + 잔여 0**인 제품만 목록에서 빠진다.
+function _juiceProductMap() {
+  const productMap = {};
+  invJuiceBatches.filter(b => !b.is_void && b.remaining_bottles > 0).forEach(b => {
+    const p = b.product_name || '기타';
+    if (!productMap[p]) productMap[p] = [];
+    productMap[p].push(b);
+  });
+  invJuiceMasters.forEach(m => {
+    const p = m.product_name;
+    if (p && !productMap[p]) productMap[p] = [];
+  });
+  return productMap;
+}
+
 function renderJuiceSection() {
   const el = document.getElementById('inv-juice-section');
   if (!el) return;
@@ -20868,34 +20942,13 @@ function renderJuiceSection() {
   // 배치 기반 재고 표시
   const isCheong = name => (name || '').trim().endsWith('청');
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const activeBatches = invJuiceBatches.filter(b => !b.is_void && b.remaining_bottles > 0);
-
   // ── 제품 상태 판정 ────────────────────────────────────────────
-  // ★경계는 여기 한 곳에서만 정한다: 0 이하 = 품절 · 0 < 잔여 < 기준 = 부족 · 기준 이상 = 정상.
-  //   비교 기준값의 근거(단위 환산을 안 하는 이유)는 juiceLowThreshold 선언부 주석 참고.
-  // ★기준 0은 '부족(⚠) 경고 끄기'다 — 품절(⛔)은 기준과 무관한 사실이라 끄지 않는다.
-  const isJuiceLow = total => juiceLowThreshold > 0 && total < juiceLowThreshold;
-  const JST_OUT = 0, JST_LOW = 1, JST_OK = 2;   // 정렬 순서와 같다(작을수록 급함)
-  const juiceStatusOf = total => total <= 0 ? JST_OUT : (isJuiceLow(total) ? JST_LOW : JST_OK);
+  // ★경계·목록 규칙은 전역 juiceStatusOf · _juiceProductMap 한 곳(재고 요약 경고 띠와 공용). 여기서 다시 정의하지 말 것.
   const JUICE_OUT_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#991B1B;border-radius:4px;padding:1px 6px;white-space:nowrap">⛔ 품절</span>`;
   const JUICE_LOW_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#DC2626;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠ 재고 부족</span>`;
   const juiceBadgeOf = st => st === JST_OUT ? JUICE_OUT_BADGE : st === JST_LOW ? JUICE_LOW_BADGE : '';
 
-  const productMap = {};
-  activeBatches.forEach(b => {
-    const p = b.product_name || '기타';
-    if (!productMap[p]) productMap[p] = [];
-    productMap[p].push(b);
-  });
-  // ★잔여 0인 제품도 목록에 남긴다 — 가장 급한 상태(품절)가 화면에서 통째로 사라지던 문제.
-  //   목록 = 활성 마스터 ∪ 잔여가 남은 배치의 제품.
-  //   · invJuiceMasters는 dbGetJuiceMasters가 `is_active=eq.true`로만 받아온다 → 비활성 제품은 여기 없다.
-  //   · ★뒤쪽 합집합(배치 쪽)을 빼면 안 된다. 마스터를 비활성으로 돌려도 창고에 남은 물량은 계속 보여야 한다
-  //     (콘테이너 OT/OT_ACTIVE와 같은 논리). 결과적으로 **비활성 + 잔여 0**인 제품만 목록에서 빠진다.
-  invJuiceMasters.forEach(m => {
-    const p = m.product_name;
-    if (p && !productMap[p]) productMap[p] = [];
-  });
+  const productMap = _juiceProductMap();   // 목록 = 활성 마스터 ∪ 잔여 배치 — 규칙은 _juiceProductMap 주석 참고
 
   const totalOf = p => (productMap[p] || []).reduce((s, b) => s + (b.remaining_bottles || 0), 0);
   const productKeys = Object.keys(productMap).sort((a, b) => {
