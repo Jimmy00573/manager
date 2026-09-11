@@ -2325,11 +2325,15 @@ function tripBadge(trip) {
 // ★예약 배차는 완료 처리를 잊으면 조용히 쌓인다. 날짜 그룹의 '⚠ 지연' 표시는 대기 탭을 열어야 보이므로,
 //   이 칩은 어느 탭에 있든 목록 위에 뜬다(0건이면 아무것도 그리지 않아 예전 화면 그대로).
 // ★날짜 비교는 td()(로컬) 기준 문자열 비교 — toISOString은 UTC로 밀려 하루 어긋난다.
+// 지난 배송 예정 = 배차완료(아직 안 나감)인데 예정일이 오늘보다 앞. 판정 기준 한 곳 — 다른 곳에서 셀 일이 생기면 이걸 쓸 것.
+function _dispOverdueCount() {
+  const today = td();
+  return (dispatches || []).filter(d => d.status === '배차완료' && d.date && d.date < today).length;
+}
 function _renderDispOverdueWarn() {
   const el = document.getElementById('disp-overdue-warn');
   if (!el) return;
-  const today = td();
-  const n = dispatches.filter(d => d.status === '배차완료' && d.date && d.date < today).length;
+  const n = _dispOverdueCount();
   if (!n) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
   el.innerHTML = kpiChip(`⚠ 지난 배송 예정 ${n}건`, "switchDT('w')");
@@ -20860,6 +20864,33 @@ function _jbColGroup(isAdm) {
 // 열 개수 — '배치 없음' 빈 행의 colspan용. ★_jbColGroup이 내보내는 col 수와 반드시 같아야 한다.
 function _JB_COLS(isAdm) { return 5 + (isAdm ? 1 : 0); }
 
+// ── 주스·청 제품 상태 · 목록 — 판정 기준 한 곳. 다른 화면에서 주스 상태를 셀 일이 생기면 이걸 쓸 것(규칙 복사 금지).
+//   (원래 renderJuiceSection 안 지역 함수였다 — 2026-09-11 전역으로 올림)
+// ★경계는 여기 한 곳: 0 이하 = 품절 · 0 < 잔여 < 기준 = 부족 · 기준 이상 = 정상.
+//   비교 기준값의 근거(단위 환산을 안 하는 이유)는 juiceLowThreshold 선언부 주석 참고.
+// ★기준 0은 '부족(⚠) 경고 끄기'다 — 품절(⛔)은 기준과 무관한 사실이라 끄지 않는다.
+const JST_OUT = 0, JST_LOW = 1, JST_OK = 2;   // 정렬 순서와 같다(작을수록 급함)
+function isJuiceLow(total) { return juiceLowThreshold > 0 && total < juiceLowThreshold; }
+function juiceStatusOf(total) { return total <= 0 ? JST_OUT : (isJuiceLow(total) ? JST_LOW : JST_OK); }
+// 제품 목록 { 제품명: [잔여>0 배치…] } — ★잔여 0인 제품도 빈 배열로 남긴다(품절이 화면에서 통째로 사라지던 문제).
+//   목록 = 활성 마스터 ∪ 잔여가 남은 배치의 제품.
+//   · invJuiceMasters는 dbGetJuiceMasters가 `is_active=eq.true`로만 받아온다 → 비활성 제품은 여기 없다.
+//   · ★뒤쪽 합집합(배치 쪽)을 빼면 안 된다. 마스터를 비활성으로 돌려도 창고에 남은 물량은 계속 보여야 한다
+//     (콘테이너 OT/OT_ACTIVE와 같은 논리). 결과적으로 **비활성 + 잔여 0**인 제품만 목록에서 빠진다.
+function _juiceProductMap() {
+  const productMap = {};
+  invJuiceBatches.filter(b => !b.is_void && b.remaining_bottles > 0).forEach(b => {
+    const p = b.product_name || '기타';
+    if (!productMap[p]) productMap[p] = [];
+    productMap[p].push(b);
+  });
+  invJuiceMasters.forEach(m => {
+    const p = m.product_name;
+    if (p && !productMap[p]) productMap[p] = [];
+  });
+  return productMap;
+}
+
 function renderJuiceSection() {
   const el = document.getElementById('inv-juice-section');
   if (!el) return;
@@ -20868,34 +20899,13 @@ function renderJuiceSection() {
   // 배치 기반 재고 표시
   const isCheong = name => (name || '').trim().endsWith('청');
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const activeBatches = invJuiceBatches.filter(b => !b.is_void && b.remaining_bottles > 0);
-
   // ── 제품 상태 판정 ────────────────────────────────────────────
-  // ★경계는 여기 한 곳에서만 정한다: 0 이하 = 품절 · 0 < 잔여 < 기준 = 부족 · 기준 이상 = 정상.
-  //   비교 기준값의 근거(단위 환산을 안 하는 이유)는 juiceLowThreshold 선언부 주석 참고.
-  // ★기준 0은 '부족(⚠) 경고 끄기'다 — 품절(⛔)은 기준과 무관한 사실이라 끄지 않는다.
-  const isJuiceLow = total => juiceLowThreshold > 0 && total < juiceLowThreshold;
-  const JST_OUT = 0, JST_LOW = 1, JST_OK = 2;   // 정렬 순서와 같다(작을수록 급함)
-  const juiceStatusOf = total => total <= 0 ? JST_OUT : (isJuiceLow(total) ? JST_LOW : JST_OK);
+  // ★경계·목록 규칙은 전역 juiceStatusOf · _juiceProductMap 한 곳. 여기서 다시 정의하지 말 것.
   const JUICE_OUT_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#991B1B;border-radius:4px;padding:1px 6px;white-space:nowrap">⛔ 품절</span>`;
   const JUICE_LOW_BADGE = `<span style="font-size:10px;font-weight:700;color:#fff;background:#DC2626;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠ 재고 부족</span>`;
   const juiceBadgeOf = st => st === JST_OUT ? JUICE_OUT_BADGE : st === JST_LOW ? JUICE_LOW_BADGE : '';
 
-  const productMap = {};
-  activeBatches.forEach(b => {
-    const p = b.product_name || '기타';
-    if (!productMap[p]) productMap[p] = [];
-    productMap[p].push(b);
-  });
-  // ★잔여 0인 제품도 목록에 남긴다 — 가장 급한 상태(품절)가 화면에서 통째로 사라지던 문제.
-  //   목록 = 활성 마스터 ∪ 잔여가 남은 배치의 제품.
-  //   · invJuiceMasters는 dbGetJuiceMasters가 `is_active=eq.true`로만 받아온다 → 비활성 제품은 여기 없다.
-  //   · ★뒤쪽 합집합(배치 쪽)을 빼면 안 된다. 마스터를 비활성으로 돌려도 창고에 남은 물량은 계속 보여야 한다
-  //     (콘테이너 OT/OT_ACTIVE와 같은 논리). 결과적으로 **비활성 + 잔여 0**인 제품만 목록에서 빠진다.
-  invJuiceMasters.forEach(m => {
-    const p = m.product_name;
-    if (p && !productMap[p]) productMap[p] = [];
-  });
+  const productMap = _juiceProductMap();   // 목록 = 활성 마스터 ∪ 잔여 배치 — 규칙은 _juiceProductMap 주석 참고
 
   const totalOf = p => (productMap[p] || []).reduce((s, b) => s + (b.remaining_bottles || 0), 0);
   const productKeys = Object.keys(productMap).sort((a, b) => {
