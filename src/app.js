@@ -9468,6 +9468,8 @@ function onPachiChkChange() {
   const bar = document.getElementById('pachi-bulk-bar');
   const cnt = document.getElementById('pachi-bulk-count');
   if (cnt) cnt.textContent = checked.length;
+  const outCnt = document.getElementById('pachi-bulk-out-count');   // '📤 선택 N행 출고' 버튼의 N
+  if (outCnt) outCnt.textContent = checked.length;
   if (bar) bar.style.display = checked.length > 0 ? 'flex' : 'none';
   const all = document.getElementById('pachi-chk-all');
   if (all) {
@@ -9564,7 +9566,7 @@ function _renderPachiAuditBar() {
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
       <button onclick="_pachiClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
       <button onclick="outboundUncheckedPachiAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}행 출고</button>
-      <button onclick="deleteUncheckedPachiAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}행 삭제</button>
+      <button onclick="deleteUncheckedPachiAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}행 삭제(데이터 정정)</button>
     </div>
   </div>`;
 }
@@ -9847,6 +9849,129 @@ async function applyPachiBulk() {
     alert('일괄 지정 실패: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '적용'; }
   }
+}
+
+// ===== 파치 일괄 출고 (일괄 지정 체크 행 전량 → 고른 출고처) — 2026-09-11 =====
+// 배경: 공판장 출고를 파치 실사 '미확인 삭제'로 처리해(2026-07~08, 25건 91.4CT) 출고 기록이 안 남았다.
+//   삭제는 void만 하므로 매출·거래처 실적에서 통째로 빠진다. 선택한 행을 실제 출고처로 내보내는 길을 연다.
+// ★건별 저장은 _auditOutboundInvRec(실사 출고와 공용) 한 곳 — 출고 생성 로직을 여기 복제하지 않는다.
+//   순서도 그 함수 그대로: 출고 기록 → 재고 void → 감사로그. ref_detail이 붙어 출고 목록에서 취소 가능.
+// ★출고 기록 단위 = 재고 기록(inventory_records) 1건당 1건(Jimmy 결정). 화면 한 행이 여러 건의 묶음일 수 있다.
+// ★대상은 일괄 지정과 같은 기준(체크된 행 중 레거시·입고 파치 제외) — 입고 파치는 체크박스 자체가 없다.
+// ★전량 출고만. 부분 수량은 행 ⋮ → 출고(savePachiOutbound).
+function _pachiBulkOutTargets() {
+  const rows = _pachiCheckedRegIds().map(id => _pachiRowRegistry[id]).filter(r => r && !r.isLegacy && !r.isInbound);
+  const recs = [];
+  rows.forEach(row => (row.ids || []).forEach(id => {
+    const rec = inventoryRecords.find(x => String(x.id) === String(id));
+    if (rec && !rec.is_void && (Number(rec.quantity) || 0) > 0) recs.push(rec);
+  }));
+  return { rows, recs, ct: recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0) };
+}
+
+function openPachiBulkOutModal() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const { rows, recs, ct } = _pachiBulkOutTargets();
+  if (!recs.length) { alert('출고할 재고가 있는 행이 없습니다.'); return; }
+  const MAX_SHOW = 8;
+  const listHtml = rows.slice(0, MAX_SHOW).map(row =>
+    `<li style="margin:2px 0">${esc(row.farm || '(농가없음)')} · ${esc(row.product || '')} · ${esc(row.pachiKind || '파치')} · ${fmtCT(row.ct)}CT</li>`).join('')
+    + (rows.length > MAX_SHOW ? `<li style="margin:2px 0;color:#9CA3AF">…외 ${rows.length - MAX_SHOW}행</li>` : '');
+  const IS = 'width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box';
+  const LS = 'font-size:12px;color:#6B7280;display:block;margin-bottom:4px';
+  document.getElementById('ob-title').textContent = `📤 파치 일괄 출고 — ${rows.length}행 · ${fmtCT(ct)} CT`;
+  document.getElementById('ob-body').innerHTML = `
+    <div style="padding:16px">
+      <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#1E3A5F">
+        <div style="font-weight:700;margin-bottom:4px">선택 ${rows.length}행 · 재고 ${recs.length}건 · ${fmtCT(ct)} CT — 전량 출고</div>
+        <ul style="margin:0;padding-left:18px">${listHtml}</ul>
+        <div style="margin-top:6px;color:#6B7280">일부 수량만 내보낼 때는 행 ⋮ → 출고를 쓰세요.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div><label style="${LS}">출고일 *</label>
+          <input type="date" id="pbo-date" value="${td()}" max="${td()}" style="${IS}">
+        </div>
+        <div><label style="${LS}">출고처 *</label>
+          <select id="ob-partner" style="${IS}"><option value="">선택</option></select>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="${LS}">사유 / 메모</label>
+        <input type="text" id="pbo-note" placeholder="(선택) 예: 엄궁 출고" style="${IS}">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button id="pbo-save-btn" class="btn pri" onclick="savePachiBulkOutbound()" style="flex:1;padding:10px;font-size:14px">📤 ${recs.length}건 출고</button>
+        <button class="btn" onclick="document.getElementById('modal-outbound').style.display='none'" style="padding:10px 20px">취소</button>
+      </div>
+    </div>`;
+  // ★열 때의 재고 id를 잡아 둔다 — 요약에서 사람이 본 그 건들만 나간다(저장 사이 체크가 바뀌어도).
+  window._pachiBulkOutCtx = { recIds: recs.map(r => r.id) };
+  popOutboundPartners();   // 파치 1행 출고(openPachiOutboundModal)와 같은 출고처 목록(공판장 포함)
+  document.getElementById('modal-outbound').style.display = 'flex';
+}
+
+async function savePachiBulkOutbound() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const ctx = window._pachiBulkOutCtx;
+  if (!ctx || !ctx.recIds || !ctx.recIds.length) return;
+  const date    = document.getElementById('pbo-date')?.value;
+  const partner = document.getElementById('ob-partner')?.value;
+  const note    = document.getElementById('pbo-note')?.value?.trim() || null;
+  if (!date)       return alert('출고일을 입력해주세요.');
+  if (date > td()) return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
+  if (!partner)    return alert('출고처를 선택해주세요.');
+  // 모달을 연 뒤 다른 곳에서 출고·삭제된 건이 있으면 일부만 내보내지 않고 시작 전에 멈춘다.
+  const recs = ctx.recIds.map(id => inventoryRecords.find(x => String(x.id) === String(id)));
+  if (recs.some(r => !r || r.is_void || !((Number(r.quantity) || 0) > 0)))
+    return alert('선택한 재고 중 이미 출고·삭제된 건이 있습니다.\n창을 닫고 다시 선택해주세요.');
+  const ct = recs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const ok = await showConfirmEdit(`${recs.length}건 · ${fmtCT(ct)} CT를 출고할까요?`, `출고처 ${partner} · 출고일 ${date} · 선택한 재고 전량`);
+  if (!ok) return;
+
+  const btn = document.getElementById('pbo-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
+  const worker = sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const reason = `파치 일괄 출고 → ${partner}${note ? ': ' + note : ''}`;
+  const traces = [];   // 건별 진행 { ob, voided } — _auditOutboundInvRec가 채운다
+  let failErr = null, failRec = null;
+  for (const r of recs) {
+    const trace = {};
+    traces.push(trace);
+    try {
+      await _auditOutboundInvRec(r, { kind: 'pachi', date, worker, reason, partner, note: note || '일괄 출고', trace });
+    } catch (e) { failErr = e; failRec = r; break; }
+  }
+
+  if (failErr) {
+    // ★부분 저장 방지 — 하나라도 실패하면 이번에 만든 출고를 전부 되돌린다.
+    //   · 재고까지 빠진 건(voided) → 기존 cancelOutbound(ref_detail로 재고 복구 + 출고 void + 감사로그).
+    //   · 기록만 생기고 재고 차감 전에 멈춘 건 → cancelOutbound를 쓰면 재고가 부푼다. 출고 기록만 void.
+    //   cancelOutbound는 오류를 스스로 삼키므로(알림만) 성공 여부는 invOutbounds에서 빠졌는지로 본다.
+    const undoFail = [];
+    for (const t of traces) {
+      if (!t.ob) continue;
+      try {
+        if (t.voided) {
+          await cancelOutbound(t.ob.id);
+          if (invOutbounds.some(x => String(x.id) === String(t.ob.id))) undoFail.push(t.ob.id);
+        } else {
+          await sbUpdate('outbound_records', t.ob.id, { is_void: true });
+          const i = invOutbounds.findIndex(x => String(x.id) === String(t.ob.id));
+          if (i >= 0) invOutbounds.splice(i, 1);
+        }
+      } catch (e2) { undoFail.push(t.ob.id); }
+    }
+    renderInvSummary(); renderPachiSection();
+    if (btn) { btn.disabled = false; btn.textContent = `📤 ${recs.length}건 출고`; }
+    alert(`출고 중 오류가 나서 이번 출고를 모두 되돌렸습니다.${failRec ? `\n(${failRec.farm_name || ''} · ${failRec.product || ''})` : ''}\n\n${failErr.message}`
+      + (undoFail.length ? `\n\n⚠ 되돌리기 실패 ${undoFail.length}건 — 출고 목록에서 확인 후 취소해주세요.` : ''));
+    return;
+  }
+
+  document.getElementById('modal-outbound').style.display = 'none';
+  window._pachiBulkOutCtx = null;
+  renderInvSummary(); renderPachiSection();   // 재렌더 → 체크 초기화
+  showToast(`📤 파치 ${recs.length}건 · ${fmtCT(ct)} CT 출고 완료 → ${partner}`);
 }
 
 
@@ -16240,8 +16365,12 @@ async function deleteUncheckedInvAudit() {
   else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
 }
 
-// ── 실사 미확인 재고 1건 출고 (공용) ────────────────────────────────
-// ★쓰는 곳 2곳: 선과품 실사(outboundUncheckedInvAudit) · 파치 실사(outboundUncheckedPachiAudit).
+// ── 재고 1건 전량 출고 (공용) — 원래 '실사 미확인 출고'용 ─────────────────
+// ★쓰는 곳 3곳: 선과품 실사(outboundUncheckedInvAudit) · 파치 실사(outboundUncheckedPachiAudit)
+//                · 파치 일괄 출고(savePachiBulkOutbound, 2026-09-11 — 출고처를 골라 넘긴다).
+//   partner·note를 안 넘기면 예전과 똑같이 '실사출고'·'실사 출고'가 들어간다(실사 두 곳은 인자 안 바꿈).
+// ★trace(선택): 넘기면 진행 단계를 적어 둔다 — trace.ob(출고 기록이 생김) · trace.voided(재고까지 빠짐).
+//   일괄 출고가 중간 실패 시 되돌릴 때 '어디까지 됐는지'를 알아야 해서 둔 것. 동작은 바꾸지 않는다.
 // ★순서 고정: 출고 기록 → 원본 재고 void → 감사로그.
 //   기록이 먼저여야 삽입 실패 시 재고가 그대로 남아 '아무 일도 안 일어난 것'이 된다
 //   (savePachiOutbound·부분출고와 같은 원칙). 반대 순서는 재고만 사라지고 단서가 0이 된다.
@@ -16250,15 +16379,15 @@ async function deleteUncheckedInvAudit() {
 //     'pachi'   … source_type='pachi'   + size_code 없음           (savePachiOutbound와 같은 짝)
 //   나머지(ref_detail·kg 환산·void·감사로그)는 한 벌뿐이다 — 복제하면 한쪽만 고쳐져 조용히 어긋난다.
 // ★실패는 삼키지 않는다 — 그대로 던져서 호출부가 루프를 멈추고 몇 건까지 됐는지 알리게 한다.
-async function _auditOutboundInvRec(r, { kind, date, worker, reason }) {
+async function _auditOutboundInvRec(r, { kind, date, worker, reason, partner = '실사출고', note = '실사 출고', trace = null }) {
   const qty      = Number(r.quantity) || 0;
   const kgPer    = (productWeights && r.product && productWeights[r.product] != null) ? Number(productWeights[r.product]) : 17;
   const isSorted = kind === 'sorting';
   // 1) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
   const payload = {
     date, product: r.product, size_code: isSorted ? r.size_code : null, quantity: qty, unit: 'CT',
-    partner_name: '실사출고', source_type: isSorted ? 'sorting' : 'pachi',
-    farm_name: r.farm_name || null, note: '실사 출고', is_void: false,
+    partner_name: partner, source_type: isSorted ? 'sorting' : 'pachi',
+    farm_name: r.farm_name || null, note, is_void: false,
     created_by: worker,
     ref_detail: [{ table: 'inventory_records', id: r.id, amount: qty, voided: true }],
     weight_kg: qty * kgPer
@@ -16266,16 +16395,18 @@ async function _auditOutboundInvRec(r, { kind, date, worker, reason }) {
   if (isSorted) payload.quality_grade = r.quality_grade || '일반';
   const ob = await dbInsertOutboundRecord(payload);
   if (ob) invOutbounds.unshift(ob);
+  if (trace) trace.ob = ob;
   // 2) 원본 재고 차감(미확인=전량 나감 → void)
   await sbUpdate('inventory_records', r.id, { quantity: 0, is_void: true });
   r.quantity = 0; r.is_void = true;
   const inv = inventoryRecords.find(x => x.id === r.id);
   if (inv) { inv.quantity = 0; inv.is_void = true; }
+  if (trace) trace.voided = true;
   // 3) 감사로그(되돌릴 수 있게)
   await dbInsertAuditLog({
     target_table: 'inventory_records', target_id: r.id,
     before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
-    after_val: { outbound: '실사출고', quantity: 0, is_void: true },
+    after_val: { outbound: partner, quantity: 0, is_void: true },
     reason, staff: worker
   });
 }
@@ -20750,6 +20881,7 @@ function renderPachiSection() {
     <div id="pachi-bulk-bar" style="display:none;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#EEF2FF;border-bottom:1px solid #E5E7EB">
       <span style="font-size:13px;font-weight:700;color:#3730A3"><span id="pachi-bulk-count">0</span>건 선택</span>
       <button class="btn pri" onclick="openPachiBulkModal()" style="padding:6px 14px;font-size:13px">일괄 지정</button>
+      <button onclick="openPachiBulkOutModal()" style="padding:6px 14px;font-size:13px;font-weight:600;background:#1565C0;color:#fff;border:1px solid #1565C0;border-radius:6px;cursor:pointer;font-family:inherit">📤 선택 <span id="pachi-bulk-out-count">0</span>행 출고</button>
       <button class="btn" onclick="clearPachiChecks()" style="padding:6px 14px;font-size:13px">선택 해제</button>
     </div>` : '';
 
