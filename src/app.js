@@ -5175,16 +5175,53 @@ function getDistGroupTooltip(groupId) {
   return '분산: ' + members.map(m => `${m.location || '?'} ${fmtN(m.quantity)}CT`).join(', ') + ` (총 ${fmtN(total)}CT)`;
 }
 
+// ── 위치별 재고 = 미선과(입고 잔여) + 파치(inventory_records). 반환 { 위치명: { uns, pachi, total, pachiN } }
+// ★미선과 쪽 대상: 선과품·파치·청과 입고 제외(카테고리 기준, 2026-09-11 Jimmy 결정).
+//   · 선과품 입고는 처리 기록이 안 붙어 잔여가 영원히 입고량 그대로다 → 넣으면 유령 재고(당시 냉장고2 896CT 등).
+//   · 파치·청과 입고는 inventory_records 파치 행으로 전환돼 아래 파치 쪽에서 센다 → 넣으면 이중 계상.
+//   · '선과 안 함'(exclude_from_unsorted)은 실물이 그 위치에 있으므로 포함 — 그래서 _isUnsortedTarget을 안 쓴다.
+// ★파치 쪽 대상: is_void 아님 · quantity>0 · (source_type 'pachi…' 또는 pachi_size_group 있음). sorting·manual 제외.
+//   선과품은 위치 관리 대상이 아니다(배치로 관리, 대부분 location 비어 있음 — 넣으면 '(없음)' 더미).
+// ★"위치(수량)/위치(수량)" 옛 분산 표기는 parseLocationStr로 계속 푼다(데이터는 정리됐지만 로직은 유지).
+// ★위치가 빈 파치는 위치 합계에 안 넣는다 — 미지정 카드(buildLocStockCards)가 합계 한 줄로만 보인다.
+function _locUnsIncluded(r) {
+  return !!r && !r.is_void && !['선과품', '파치', '청과'].includes(r.inbound_category || '상품');
+}
+function _locPachiRecs() {
+  return (inventoryRecords || []).filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0
+    && r.source_type !== 'sorting' && r.source_type !== 'manual'
+    && (String(r.source_type || '').startsWith('pachi') || (r.pachi_size_group != null && r.pachi_size_group !== '')));
+}
+const _LOC_UNREG_BADGE = '<span style="font-size:10px;color:#9CA3AF;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:8px;padding:0 6px;font-weight:600" title="위치 마스터에 없는 이름 — 설정 > 위치 관리에서 등록하거나 데이터의 위치를 고칠 것">미등록</span>';
+// 합계 옆 작은 내역. 파치 0이면 생략(그땐 합계 = 미선과라 내역이 군더더기).
+function _locBreakdown(st) {
+  return st && st.pachi > 0 ? `<span style="font-size:11px;color:#888;font-weight:400">(미선과 ${fmtCT(st.uns)} · 파치 ${fmtCT(st.pachi)})</span>` : '';
+}
+// 카드 표 끝 파치 합계 한 줄 — 파치 위치 수정은 파치 화면 담당이라 이동 버튼 없음.
+function _locPachiRow(ct, n) {
+  if (!(ct > 0)) return '';
+  return `<tr style="background:#FAF5FF"><td colspan="3" style="color:#6D28D9;font-weight:600">파치 ${n}건</td><td style="text-align:right;font-weight:600;color:#6D28D9">${fmtCT(ct)}</td><td colspan="2" style="color:#aaa;font-size:11px">파치 화면에서 관리</td></tr>`;
+}
+
 function computeLocStock() {
   const pm = _ibProcessedMap();
   const map = {};
-  inboundRecords.filter(r => !r.is_void).forEach(r => {
+  const add = (name, key, q) => {
+    if (!map[name]) map[name] = { uns: 0, pachi: 0, total: 0, pachiN: 0 };
+    map[name][key] += q;
+    map[name].total += q;
+    if (key === 'pachi') map[name].pachiN++;
+  };
+  inboundRecords.filter(_locUnsIncluded).forEach(r => {
     if (!r.location) return;
     const rem = r.quantity - (pm[r.id] || 0);
     if (rem <= 0) return;
-    parseLocationStr(r.location).forEach(({ name, qty }) => {
-      map[name] = (map[name] || 0) + (qty !== null ? Math.min(qty, rem) : rem);
-    });
+    parseLocationStr(r.location).forEach(({ name, qty }) => add(name, 'uns', qty !== null ? Math.min(qty, rem) : rem));
+  });
+  _locPachiRecs().forEach(r => {
+    if (!r.location) return;
+    const q = Number(r.quantity) || 0;
+    parseLocationStr(r.location).forEach(({ name, qty }) => add(name, 'pachi', qty !== null ? Math.min(qty, q) : q));
   });
   return map;
 }
@@ -5453,10 +5490,10 @@ async function saveMoveLocation() {
 
 function buildLocStockCards(locStock) {
   const pm = _ibProcessedMap();
-  // 위치별로 입고 레코드 그룹핑
+  // 위치별로 입고 레코드 그룹핑 — ★computeLocStock과 같은 대상(_locUnsIncluded). 다르면 표와 카드 숫자가 갈린다.
   const locMap = {};   // locName → [{r, allocQty}]
   const unassigned = [];
-  inboundRecords.filter(r => !r.is_void).forEach(r => {
+  inboundRecords.filter(_locUnsIncluded).forEach(r => {
     const rem = r.quantity - (pm[r.id] || 0);
     if (rem <= 0) return;
     if (!r.location) { unassigned.push({ r, allocQty: rem }); return; }
@@ -5473,15 +5510,17 @@ function buildLocStockCards(locStock) {
     }
   });
 
+  // 카드 목록 = 마스터 순서 + 데이터에만 있는 이름(미등록). ★미등록을 조용히 빼면 그 재고가 사라져 보인다.
   const allLocNames = [
     ...storageLocations.map(l => l.name),
-    ...Object.keys(locMap).filter(n => !storageLocations.some(l => l.name === n))
+    ...Object.keys(locStock).filter(n => !storageLocations.some(l => l.name === n))
   ];
 
   const cards = allLocNames.map(name => {
     const entries = locMap[name] || [];
-    const total = entries.reduce((s, e) => s + e.allocQty, 0);
-    if (!total) return '';
+    const st = locStock[name] || { uns: 0, pachi: 0, total: 0, pachiN: 0 };
+    const total = st.total;   // ★합계 = 미선과 + 파치(computeLocStock). 용량 %도 이 값 기준
+    if (!(total > 0)) return '';
     const loc = storageLocations.find(l => l.name === name);
     const cap = loc?.capacity_ct;
     const pct = cap ? Math.min(100, Math.round(total / cap * 100)) : null;
@@ -5498,9 +5537,10 @@ function buildLocStockCards(locStock) {
       </tr>`;
     }).join('');
     return `<div class="loc-stock-card">
-      <div class="loc-stock-hdr">
-        <span style="font-weight:700">${esc(name)}</span>
-        <span style="font-size:13px;color:#1565C0;font-weight:700">${total.toLocaleString()} CT</span>
+      <div class="loc-stock-hdr" style="flex-wrap:wrap">
+        <span style="font-weight:700${loc ? '' : ';color:#9CA3AF'}">${esc(name)}</span>${loc ? '' : _LOC_UNREG_BADGE}
+        <span style="font-size:13px;color:#1565C0;font-weight:700">${fmtCT(total)} CT</span>
+        ${_locBreakdown(st)}
         ${cap ? `<span style="font-size:12px;color:#888">(최대 ${cap} CT · ${pct}%)</span>` : ''}
       </div>
       ${cap ? `<div style="background:#e0e0e0;border-radius:4px;height:6px;margin:6px 0 10px">
@@ -5508,13 +5548,17 @@ function buildLocStockCards(locStock) {
       </div>` : ''}
       <div class="tbl-wrap" style="margin:0"><table style="font-size:12px">
         <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">배정 CT</th><th style="text-align:right">잔여</th><th></th></tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${rows}${_locPachiRow(st.pachi, st.pachiN)}</tbody>
       </table></div>
     </div>`;
   }).filter(Boolean);
 
-  const unCard = unassigned.length ? (() => {
-    const total = unassigned.reduce((s, e) => s + e.allocQty, 0);
+  // 미지정 = 위치 없는 미선과 입고 + 위치 없는 파치(합계 한 줄). ★위치 합계(computeLocStock)에는 안 들어간다.
+  const _unPachi = _locPachiRecs().filter(r => !r.location);
+  const _unPachiCt = _unPachi.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const unCard = (unassigned.length || _unPachiCt > 0) ? (() => {
+    const unsCt = unassigned.reduce((s, e) => s + e.allocQty, 0);
+    const total = unsCt + _unPachiCt;
     const rows = unassigned.map(({ r, allocQty }) =>
       `<tr>
         <td>${r.date}</td>
@@ -5526,13 +5570,14 @@ function buildLocStockCards(locStock) {
       </tr>`
     ).join('');
     return `<div class="loc-stock-card" style="border-color:#e0e0e0">
-      <div class="loc-stock-hdr">
+      <div class="loc-stock-hdr" style="flex-wrap:wrap">
         <span style="font-weight:700;color:#888">미지정</span>
-        <span style="font-size:13px;color:#888;font-weight:700">${total.toLocaleString()} CT</span>
+        <span style="font-size:13px;color:#888;font-weight:700">${fmtCT(total)} CT</span>
+        ${_locBreakdown({ uns: unsCt, pachi: _unPachiCt })}
       </div>
       <div class="tbl-wrap" style="margin:0"><table style="font-size:12px">
         <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">잔여 CT</th><th></th><th></th></tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${rows}${_locPachiRow(_unPachiCt, _unPachi.length)}</tbody>
       </table></div>
     </div>`;
   })() : '';
@@ -5545,7 +5590,14 @@ function renderStorageLocations() {
   const el = document.getElementById('inv-loc-div');
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const locStock = computeLocStock();
+  // ★재고 전역(inboundRecords·inventoryRecords)은 재고관리 탭 진입 때만 채워진다. 설정에서 먼저 열면 빈 배열 —
+  //   그걸 '재고 0'으로 그리면 조용한 오판이 된다. 둘 다 비었으면 미집계로 표시한다(같은 Promise.all로 함께 채워짐).
+  const _locLoaded = inboundRecords.length > 0 || inventoryRecords.length > 0;
+  const locStock = _locLoaded ? computeLocStock() : {};
+  // 현재 재고 칸: 합계 크게 + 내역 작게(파치 0이면 내역 생략).
+  const _locStockCell = st => st && st.total > 0
+    ? `<strong style="color:#1565C0">${fmtCT(st.total)} CT</strong>${st.pachi > 0 ? `<div>${_locBreakdown(st)}</div>` : ''}`
+    : '<span style="color:#bbb">—</span>';
   const zones = [...new Set(storageLocations.map(l => l.zone).filter(Boolean))];
   const datalist = `<datalist id="loc-zone-dl">${zones.map(z => `<option value="${esc(z)}">`).join('')}</datalist>`;
 
@@ -5553,8 +5605,7 @@ function renderStorageLocations() {
   const sortedLocs = [...storageLocations].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
   const rows = sortedLocs.map((loc, i) => {
     const isFirst = i === 0, isLast = i === sortedLocs.length - 1;
-    const stock = locStock[loc.name];
-    const stockStr = stock > 0 ? `<strong style="color:#1565C0">${stock.toLocaleString()} CT</strong>` : '<span style="color:#bbb">—</span>';
+    const stockStr = _locLoaded ? _locStockCell(locStock[loc.name]) : '<span style="color:#bbb">미집계</span>';
     const activeChip = loc.is_active !== false
       ? '<span style="color:#059669;font-size:12px;font-weight:600">● 사용</span>'
       : '<span style="color:#bbb;font-size:12px">○ 미사용</span>';
@@ -5571,6 +5622,16 @@ function renderStorageLocations() {
       </td>` : '<td></td>'}
     </tr>`;
   }).join('');
+  // ★위치 마스터에 없는 이름(데이터에만 있음) — 조용히 빼면 그 재고가 사라져 보인다. 회색 '미등록'으로 끝에 붙인다.
+  const unregRows = Object.keys(locStock)
+    .filter(n => locStock[n].total > 0 && !storageLocations.some(l => l.name === n))
+    .map(n => `<tr style="color:#9CA3AF">
+      <td style="font-size:12px">—</td>
+      <td style="font-weight:600">${esc(n)} ${_LOC_UNREG_BADGE}</td>
+      <td style="text-align:right">${_locStockCell(locStock[n])}</td>
+      <td><span style="font-size:12px">미등록</span></td>
+      <td></td>
+    </tr>`).join('');
 
   el.innerHTML = `${datalist}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -5580,14 +5641,15 @@ function renderStorageLocations() {
       </div>
       ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="openLocModal(null)">+ 위치 추가</button>` : ''}
     </div>
-    ${storageLocations.length ? `
+    ${_locLoaded ? '' : `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:8px 12px;font-size:12px;color:#8D6E00;margin-bottom:10px">⚠ 재고 데이터를 아직 불러오지 않아 현재 재고를 집계하지 않았습니다. <b>재고관리</b> 탭을 한 번 연 뒤 다시 보세요.</div>`}
+    ${storageLocations.length || unregRows ? `
     <div class="tbl-wrap"><table>
       <thead><tr><th>구역</th><th>위치명</th><th style="text-align:right">현재 재고</th><th>상태</th><th></th></tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows}${unregRows}</tbody>
     </table></div>` : `<div class="empty">등록된 위치가 없습니다.</div>`}
     <div style="margin-top:24px">
       <div style="font-size:14px;font-weight:700;margin-bottom:14px">📊 위치별 재고 현황</div>
-      ${buildLocStockCards(locStock)}
+      ${_locLoaded ? buildLocStockCards(locStock) : '<div class="empty">미집계 — 재고관리 탭을 먼저 열어 주세요.</div>'}
     </div>`;
 }
 
