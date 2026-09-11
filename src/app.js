@@ -182,8 +182,10 @@ let _pendingInboundInsert = null;
 let _ibKind = 'raw';
 let _priSectionOpen = false;
 let _invAgeDaysTimer = null;
-let URGENCY_THRESHOLD_HIGH = 21;
-let URGENCY_THRESHOLD_MID  = 14;
+// 경과일 기준 기본값. ★DB settings 'urgency_thresholds'가 있으면 그 값이 덮는다(loadUrgencySettings).
+//   2026-09-11 실측 회전 2~6일에 맞춰 21/14 → 7/3. 운영 값은 설정 > ⚠ 우선처리 기준에서 바꾼다.
+let URGENCY_THRESHOLD_HIGH = 7;
+let URGENCY_THRESHOLD_MID  = 3;
 let ibViewMode = 'list';
 let ibFilterCat = '';
 let ibFilterSrc = '';
@@ -8174,6 +8176,7 @@ function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
+let _invFlowDays = 7;    // 재고 요약 흐름 줄 기간(3|7|14일). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 7일)
 
 // ══════════════════════════════════════════════════════════════════
 // 전체 데이터 백업 (JSON 내보내기)
@@ -12691,6 +12694,37 @@ function renderInvSummary() {
   });
 
   // ==================================================================
+  // 7-1. 기간 흐름 집계 — 최근 N일 입고 → 선과 → 출고 (표시 전용)
+  // ==================================================================
+  // 읽는 데이터: inboundRecords · sortingResults · invOutbounds — 이미 메모리에 있는 배열만(추가 조회 없음).
+  // ★기간 = [오늘−(N−1), 오늘]. 로컬 날짜 문자열(ymd/td)로 비교 — toISOString은 UTC라 하루 밀린다.
+  // ★입고 = _isUnsortedTarget(미선과 대상) 입고량 합 / 선과 = sorting_results.input_ct(sorting_date 기준)
+  //   출고 = CT 출고 전부(선과품·부분출고·파치·미선과). 주스(병)는 단위가 달라 흐름·툴팁 모두에서 뺀다.
+  // ★적체 = 입고 − 선과만. 출고는 참고 표시 — 미선과가 쌓이는지 보는 지표라 출고를 섞지 않는다.
+  // ★KPI 일수 환산은 토글과 무관하게 항상 최근 7일 선과 일평균으로 계산한다.
+  const _flowToday = td();
+  const _flowFrom = n => { const dt = new Date(_flowToday + 'T00:00:00'); dt.setDate(dt.getDate() - (n - 1)); return ymd(dt); };
+  const _flowSortCt = from => (sortingResults || [])
+    .filter(s => s.sorting_date && s.sorting_date >= from && s.sorting_date <= _flowToday)
+    .reduce((a, s) => a + (Number(s.input_ct) || 0), 0);
+  const flowN = _invFlowDays;
+  const flowFrom = _flowFrom(flowN);
+  const flowInCt = inboundRecords
+    .filter(r => _isUnsortedTarget(r) && r.date && r.date >= flowFrom && r.date <= _flowToday)
+    .reduce((a, r) => a + (Number(r.quantity) || 0), 0);
+  const flowSortCt = _flowSortCt(flowFrom);
+  const _FLOW_OUT_SRC = { sorting: '선과품', inventory_partial: '부분출고', pachi: '파치', unsorted: '미선과' };
+  const flowOutBy = { sorting: 0, inventory_partial: 0, pachi: 0, unsorted: 0 };
+  invOutbounds.forEach(o => {
+    if (o.is_void || !Object.prototype.hasOwnProperty.call(flowOutBy, o.source_type)) return;
+    if (!o.date || o.date < flowFrom || o.date > _flowToday) return;
+    flowOutBy[o.source_type] += Number(o.quantity) || 0;
+  });
+  const flowOutCt = Object.values(flowOutBy).reduce((a, v) => a + v, 0);
+  const flowBacklog = flowInCt - flowSortCt;
+  const sortAvg7 = _flowSortCt(_flowFrom(7)) / 7;   // 0이면 KPI 일수 표시 생략(0으로 나누기 방지)
+
+  // ==================================================================
   // 8. KPI 집계 — 위 2·4·5·6번 결과를 화면 상단 카드용 숫자로 요약
   // ==================================================================
   // 새로 읽는 데이터 없음. 앞에서 만든 맵만 합산한다.
@@ -12727,7 +12761,10 @@ function renderInvSummary() {
   // ★kpiChip은 전역 헬퍼로 옮겼다(배차 현황판과 공용). 여기 호출부는 그대로 — 인자 1개면 출력이 예전과 같다.
   const kpiHtml = `<div class="sum-kpi-grid">
     ${unsTotalCt > 0 ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
-      priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : '', false, 'uns') : ''}
+      // 일수 환산 = 잔여 ÷ 최근 7일 선과 일평균. 반올림 정수(일별 편차가 커 소수점은 과한 정밀도). 선과 0이면 생략.
+      (sortAvg7 > 0 ? kpiSub(`<span title="잔여 ${fmtCT(unsTotalCt)} CT ÷ 최근 7일 선과 일평균 ${fmtCT(sortAvg7)} CT" style="cursor:help">${
+        unsTotalCt / sortAvg7 < 1 ? '1일치 미만' : `약 ${Math.round(unsTotalCt / sortAvg7)}일치`}</span>`) : '') +
+      (priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : ''), false, 'uns') : ''}
     ${manGamTotalKg > 0 ? kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
       (manGamItems ? kpiSub(`${manGamItems}개 품목`) : '') +
       `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}kg</span></div>`,
@@ -12742,6 +12779,20 @@ function renderInvSummary() {
       '', true, 'juice') : ''}
     ${boxTotalNet > 0 ? kpiCard('가공품', fmtN(Math.round(boxTotalNet)), '박스',
       '', true, 'juice') : ''}
+  </div>`;
+
+  // ── 흐름 줄 (7-1 결과). KPI='지금 얼마', 흐름='어떻게 변하는 중' → KPI 바로 아래.
+  //   ★입출고 카드(하루치) 안에 넣지 않는다 — 하루 집계와 기간 집계가 한 카드에 섞이면 헷갈린다.
+  const _flowMD = ds => `${parseInt(ds.slice(5, 7))}/${parseInt(ds.slice(8, 10))}`;
+  const _flowBtn = n => `<button type="button" onclick="setInvFlowDays(${n})" style="padding:3px 10px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid ${flowN === n ? '#1565C0' : '#D1D5DB'};background:${flowN === n ? '#1565C0' : '#fff'};color:${flowN === n ? '#fff' : '#374151'}">${n}일</button>`;
+  const _flowOutTip = Object.keys(_FLOW_OUT_SRC).map(k => `${_FLOW_OUT_SRC[k]} ${fmtCT(flowOutBy[k])}`).join(' / ') + ' CT';
+  const _flowBlCol = flowBacklog > 0 ? '#C2410C' : flowBacklog < 0 ? '#15803D' : '#6B7280';   // 양수=쌓임(주황) · 음수=줄어듦(초록)
+  const _flowBlTxt = (flowBacklog > 0 ? '+' : flowBacklog < 0 ? '−' : '±') + fmtCT(Math.abs(flowBacklog));
+  const flowHtml = `<div style="${CARD};padding:10px 16px;display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0">🔄 흐름</span>
+    <div style="display:flex;gap:4px;flex-shrink:0">${[3, 7, 14].map(_flowBtn).join('')}</div>
+    <span style="font-size:13px;color:#374151">최근 ${flowN}일 <span style="font-size:11px;color:#9CA3AF">(${_flowMD(flowFrom)}~${_flowMD(_flowToday)})</span> — 입고 <b>${fmtCT(flowInCt)}</b> → 선과 <b>${fmtCT(flowSortCt)}</b> → <span title="${_flowOutTip}" style="cursor:help;border-bottom:1px dotted #9CA3AF">출고 <b>${fmtCT(flowOutCt)}</b></span> CT</span>
+    <span title="입고 − 선과 (출고는 적체 계산에 넣지 않음)" style="font-size:12px;font-weight:700;color:${_flowBlCol};white-space:nowrap">적체 ${_flowBlTxt} CT</span>
   </div>`;
 
   // ==================================================================
@@ -13202,7 +13253,7 @@ function renderInvSummary() {
   // ==================================================================
   // 16. 최종 출력 — 위에서 만든 조각을 화면 순서대로 붙인다
   // ==================================================================
-  // 순서: KPI → 입출고 → 1.미선과 → 2.만감선과 → 3.감귤선과 → (4.파치 + 5.주스·청 2열)
+  // 순서: KPI → 흐름 → 입출고 → 1.미선과 → 2.만감선과 → 3.감귤선과 → (4.파치 + 5.주스·청 2열)
   el.innerHTML = `<div>
     <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
       <div>
@@ -13211,7 +13262,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
+    ${kpiHtml}${flowHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
     <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
 }
@@ -13308,6 +13359,7 @@ function _inoutCatToggleAll() {
 
 function setSummaryDate(d) { if (d) { _summaryDate = d; renderInvSummary(); } }
 function setSummaryKind(k) { _summaryKind = k; renderInvSummary(); }
+function setInvFlowDays(n) { _invFlowDays = n; renderInvSummary(); }   // 흐름 줄 기간 토글(3/7/14일)
 function toggleSummaryOpen() {
   _summaryOpen = !_summaryOpen;
   localStorage.setItem('summary_open', _summaryOpen ? '1' : '0');
