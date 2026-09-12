@@ -4162,8 +4162,11 @@ function renderCal() {
 // ★표시 대상 판정 — 그날(dStr)에 걸치는 수확:
 //   ① 그날 시작       h.date === dStr
 //   ② 기간에 포함     h.date <= dStr <= h.end_date   (종료일이 잡힌 여러 날 수확)
-//   ③ 끝나지 않은 진행 h.status === '수확중' && h.date < dStr && !h.end_date
-//   ★③이 "수확이 며칠 걸리는 경우"를 받는다 — 종료일을 안 넣고 진행 중이면 계속 따라온다.
+//   ③ 끝나지 않은 진행 h.status === '수확중' && h.date < dStr   (종료일 유무·경과와 무관)
+//   ★③이 "수확이 며칠 걸리는 경우"를 받는다 — 진행 중이면 완료 처리할 때까지 계속 따라온다.
+//   ★2026-09-13: 예전엔 ③에 `!h.end_date`가 붙어 '종료일 없는 진행'만 잡았다. 수확이 예정보다 길어져
+//     종료일(end_date)이 지났는데 안 늘리면 ②·③ 어디에도 안 걸려 카드에서 사라졌다(문기덕 황금향 9/12~9/12, 9/13에 누락).
+//     수확중인데 안 보이는 건 어떤 경우에도 잘못이라 뺐다. 종료일이 지난 건 카드에 '예정 M/D +N일' 배지로 구분한다.
 //   ★'수확완료'는 ③에 안 걸리므로 끝난 날 이후로는 사라진다(①②로만 남는다).
 //   ※calGetEvents에도 비슷한 식이 있지만 그쪽은 `dStr <= td()` 제한이 있어 내일·모레엔 안 맞는다. 그래서 따로 둔다.
 //
@@ -4175,7 +4178,7 @@ function _upcomingHarvestsOn(dStr) {
   return harvests.filter(h =>
     h.date === dStr
     || (h.date <= dStr && h.end_date && h.end_date >= dStr)
-    || (h.status === '수확중' && h.date < dStr && !h.end_date)
+    || (h.status === '수확중' && h.date < dStr)
   );
 }
 // 그 수확(농가+수확일)에 잡힌 배차 — 종류별로 합친다. 한 농가에 여러 배차가 있을 수 있다.
@@ -4249,6 +4252,13 @@ function renderUpcomingHarvest() {
       const stBadge = st === '수확중'
         ? `<span class="badge b-info" style="font-size:10px">▶ 진행 ${dayNo}일째</span>`
         : `<span class="badge ${_hvStBadge[st] || 'b-warn'}" style="font-size:10px">${esc(st)}</span>`;
+      // 종료 예정일이 지났는데 아직 수확중 — '예정 9/12 +1일'. 시작일은 옆 '진행 N일째'가 보여 준다.
+      //   ★표시만 한다. 종료일을 자동으로 늘리거나 상태를 바꾸지 않는다(완료 처리는 사람이).
+      const overDays = (st === '수확중' && x.end_date && x.end_date < day.dStr)
+        ? Math.floor((new Date(day.dStr + 'T00:00:00') - new Date(x.end_date + 'T00:00:00')) / 86400000) : 0;
+      const overBadge = overDays > 0
+        ? `<span class="badge b-warn" style="font-size:10px" title="종료 예정일(${esc(x.end_date)})이 지났지만 아직 수확중입니다">예정 ${esc(calFmtShort(x.end_date))} +${overDays}일</span>`
+        : '';
       const holdN = getFCS(x.farm).hold || 0;
       // ★세 갈래로 나눈다:
       //   신규 배송 있음        → 보유만 담담히
@@ -4269,7 +4279,7 @@ function renderUpcomingHarvest() {
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
         ${_hvAddrLine(x.farm)}
-        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
