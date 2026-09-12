@@ -100,6 +100,29 @@ function _ctClass(v) { return _CT_CLASS[ctNorm(v)] || _CT_CLASS[v] || ''; }
 // 종류 배지(아이콘 + 종류명) — 표의 '종류' 열용. 값이 없으면 빈 배지 대신 '-'.
 // ※ 비슷한 셋의 역할 구분: getFCtypes의 칩은 '아이콘 + 수량', ctB()는 배지 테두리 없는 '아이콘 + 이름'(배차 표 등).
 function _ctBadge(v) { return v ? `<span class="ct ${_ctClass(v)}">${_ctIcon(v)} ${esc(v)}</span>` : '-'; }
+// 이 종류 이름이 마스터에서 '비활성'인가 — 기존 값을 보여 주는 자리의 '(사용 안 함)' 표기용.
+// ★같은 이름의 활성 행이 하나라도 있으면 활성으로 본다(이름 중복은 무결성 점검이 따로 잡는다).
+// ★마스터에 아예 없는 이름은 false — 호출부가 '(목록에 없음)' 등으로 따로 구분한다.
+function _ctIsInactive(v) {
+  const k = ctNorm(v);
+  if (!k) return false;
+  const hit = (containerTypes || []).filter(t => t && ctNorm(t.name) === k);
+  return hit.length > 0 && hit.every(t => t.is_active === false);
+}
+// 농협·거래처 것(owner='nhf') 종류 <option> — 외부용기 반입·반납 폼과 수정 모달이 같이 쓴다.
+// ★새로 고르는 목록은 활성만. cur(기존 값)가 목록에 없으면 그 값을 표기와 함께 붙여 선택해 둔다 —
+//   옵션에 없으면 select.value가 조용히 비고, 그대로 저장하면 종류가 바뀐다(배차 수정 모달 6f1e575와 같은 원칙).
+// 반환 null = 마스터에 nhf 활성 종류가 없음(로드 실패 등) → 호출부가 기존 옵션을 그대로 둔다.
+function _nhfTypeOptHtml(cur) {
+  const act = (containerTypes || []).filter(t => t && t.owner === 'nhf' && t.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  if (!act.length) return null;
+  let html = act.map(t => `<option value="${esc(t.name)}"${t.name === cur ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+  if (cur && !act.some(t => t.name === cur)) {
+    html += `<option value="${esc(cur)}" selected>${esc(cur)} (${_ctIsInactive(cur) ? '사용 안 함' : '목록에 없음'})</option>`;
+  }
+  return html;
+}
 // settings의 초기재고는 종류 이름을 키로 쓴다 — 옛 키가 남아 있어도 0으로 떨어지지 않게 읽는 시점에 흡수.
 function ctNormStockKeys(obj) {
   const out = {};
@@ -1693,6 +1716,15 @@ async function savePickEdit() {
 }
 
 // ── 모달: 외부용기 수정
+// 농협·거래처 용기 수정 모달의 종류 칸. ★예전엔 자유 입력칸이라 값은 남았지만 오타·옛 이름을 막지 못했다.
+//   목록 = 활성 종류 + 기존 값(비활성이면 '(사용 안 함)'). 기존 값이 비어 있으면 '(없음)'을 골라 둔다 —
+//   첫 종류가 자동 선택된 채 저장되면 빈 값이 조용히 다른 종류로 바뀐다.
+//   마스터를 못 읽었으면(null) 예전 자유 입력칸 그대로.
+function _extEditTypeHtml(cur) {
+  const opts = _nhfTypeOptHtml(cur || '');
+  if (opts == null) return `<input id="em-type" value="${esc(cur || '')}">`;
+  return `<select id="em-type">${cur ? '' : '<option value="" selected>(없음)</option>'}${opts}</select>`;
+}
 function openExtEdit(tp, id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   _XT = tp; _XI = id;
@@ -1709,11 +1741,11 @@ function openExtEdit(tp, id) {
   } else if (tp === 'nhfIn') {
     const o = nhfIns.find(x => x.id === id); if (!o) return;
     title.textContent = '✏️ 농협 용기 반입 수정';
-    body.innerHTML = `<div class="fg"><label>반입일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>소유</label><select id="em-owner-type"><option${o.owner_type==='거래처'?'':' selected'}>농협</option><option${o.owner_type==='거래처'?' selected':''}>거래처</option></select></div><div class="fg"><label>농협명</label><input id="em-nhf" value="${esc(o.nhf||'')}"></div><div class="fg"><label>종류</label><input id="em-type" value="${esc(o.type||'')}"></div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>구매 내용</label><input id="em-goods" value="${esc(o.goods||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div><div class="fg"><label>원물 여부</label><div class="checkbox-row"><input type="checkbox" id="em-empty"${o.is_empty === true ? ' checked' : ''}><label for="em-empty" class="dist-label">📦 빈 콘테이너로 받음${o.inbound_id ? ' (입고 연결분 — 자동 계산 우선)' : ''}</label></div></div>`;
+    body.innerHTML = `<div class="fg"><label>반입일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>소유</label><select id="em-owner-type"><option${o.owner_type==='거래처'?'':' selected'}>농협</option><option${o.owner_type==='거래처'?' selected':''}>거래처</option></select></div><div class="fg"><label>농협명</label><input id="em-nhf" value="${esc(o.nhf||'')}"></div><div class="fg"><label>종류</label>${_extEditTypeHtml(o.type)}</div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>구매 내용</label><input id="em-goods" value="${esc(o.goods||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div><div class="fg"><label>원물 여부</label><div class="checkbox-row"><input type="checkbox" id="em-empty"${o.is_empty === true ? ' checked' : ''}><label for="em-empty" class="dist-label">📦 빈 콘테이너로 받음${o.inbound_id ? ' (입고 연결분 — 자동 계산 우선)' : ''}</label></div></div>`;
   } else if (tp === 'nhfOut') {
     const o = nhfOuts.find(x => x.id === id); if (!o) return;
     title.textContent = '✏️ 농협 용기 반납 수정';
-    body.innerHTML = `<div class="fg"><label>반납일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>소유</label><select id="em-owner-type"><option${o.owner_type==='거래처'?'':' selected'}>농협</option><option${o.owner_type==='거래처'?' selected':''}>거래처</option></select></div><div class="fg"><label>농협명</label><input id="em-nhf" value="${esc(o.nhf||'')}"></div><div class="fg"><label>종류</label><input id="em-type" value="${esc(o.type||'')}"></div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>방법</label><input id="em-method" value="${esc(o.method||'')}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div>`;
+    body.innerHTML = `<div class="fg"><label>반납일자</label><input id="em-date" type="date" value="${esc(o.date||'')}"></div><div class="fg"><label>소유</label><select id="em-owner-type"><option${o.owner_type==='거래처'?'':' selected'}>농협</option><option${o.owner_type==='거래처'?' selected':''}>거래처</option></select></div><div class="fg"><label>농협명</label><input id="em-nhf" value="${esc(o.nhf||'')}"></div><div class="fg"><label>종류</label>${_extEditTypeHtml(o.type)}</div><div class="fg"><label>수량</label><input id="em-qty" type="number" value="${o.qty||0}"></div><div class="fg"><label>방법</label><input id="em-method" value="${esc(o.method||'')}"></div><div class="fg"><label>특징</label><input id="em-feature" value="${esc(o.feature||'')}"></div><div class="fg"><label>담당직원</label><input id="em-staff" value="${esc(o.staff||'')}"></div>`;
   }
   document.getElementById('modal-ext').style.display = 'flex';
 }
@@ -1874,7 +1906,7 @@ function openDispEdit(id) {
   const curCt = ctNorm(d.ctype) || '';
   ect.innerHTML = OT_ACTIVE.map(t => `<option value="${esc(t)}">${_ctIcon(t)} ${esc(t)}</option>`).join('');
   if (curCt && !OT_ACTIVE.includes(curCt)) {
-    ect.insertAdjacentHTML('beforeend', `<option value="${esc(curCt)}">${_ctIcon(curCt)} ${esc(curCt)} (목록에 없음)</option>`);
+    ect.insertAdjacentHTML('beforeend', `<option value="${esc(curCt)}">${_ctIcon(curCt)} ${esc(curCt)} (${_ctIsInactive(curCt) ? '사용 안 함' : '목록에 없음'})</option>`);
   }
   ect.value = curCt || OT_ACTIVE[0] || '';   // ★'황제' 하드코딩 대신 목록 첫 종류
   document.getElementById('ed-harvest').value = d.harvest || '';
@@ -3179,8 +3211,9 @@ function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
   const holds = _qrHoldTypes(farm, targetType);
   // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 잔여를 모르므로 전체 활성 종류를 잔여 없이 보여준다.
   _RC_STATE[pre] = holds.length ? holds.map(x => ({ t: x.t, q: x.q })) : OT_ACTIVE.map(t => ({ t, q: null }));
+  // ★나가 있는 종류는 비활성이어도 보여 준다 — 되받는 자리라 빼면 그 잔여가 영영 회수 불가로 묶인다. 표기만 붙인다.
   wrap.innerHTML = _RC_STATE[pre].map((x, i) =>
-    `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
+    `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${_ctIsInactive(x.t) ? ' <small style="font-weight:400;color:#9CA3AF">(사용 안 함)</small>' : ''}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
       <input id="${pre}-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" oninput="_rcQtyChanged('${pre}')"></label>`).join('');
   _rcQtyChanged(pre);
 }
@@ -3368,7 +3401,8 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
     : OT_ACTIVE.map(t => ({ t, q: null }));                    // 폴백: 잔여를 모르므로 null
   const cells = _qrTypes.map((x, i) => {
     const pre = (single && x.q != null) ? Math.min(defQty || x.q, x.q) : '';
-    return `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
+    // ★비활성이어도 나가 있으면 보여 준다(회수 폼 _syncRecoveryCtypeSel과 같은 이유) — 표기만 붙인다.
+    return `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${_ctIsInactive(x.t) ? ' <small style="font-weight:400;color:#9CA3AF">(사용 안 함)</small>' : ''}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
       <input id="qr-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" value="${pre}" oninput="_qrQtyChanged()"></label>`;
   }).join('');
   const m = document.createElement('div');
@@ -3540,8 +3574,12 @@ function renderDash() {
   const th = farms.reduce((s, f) => s + getFCS(f.name).hold, 0);
   const on = [...new Set(ownIns.map(o => o.farm))]; const to = on.reduce((s, n) => s + gOwnSt(n).left, 0);
   const nk = [...new Set([...nhfIns.map(o => o.nhf + '||' + o.type), ...nhfOuts.map(o => o.nhf + '||' + o.type)])];
-  const nc = nk.filter(k => { const [n, t] = k.split('||'); return t.includes('콘테이너') && nhfOwner(n, t) === '농협'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
-  const np = nk.filter(k => { const [n, t] = k.split('||'); return t.includes('파렛트') && nhfOwner(n, t) === '농협'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
+  // ★콘테이너/파렛트 구분은 이름 문자열이 아니라 마스터 holds_fruit(원물 용기 / 운반구)로 한다.
+  //   예전 t.includes('파렛트')는 파렛을 4종(농협파렛·KPP파렛…)으로 나누자 전부 놓쳐 '농협 파렛트'가 0이 됐다.
+  //   ※마스터에 '파렛' 전용 구분은 없다 — nhf 운반구가 지금은 파렛뿐이라 운반구 = 파렛트로 센다.
+  //   마스터에 없는 이름은 ctHoldsFruit가 원물(true)로 보므로 '농협 콘테이너' 쪽에 들어간다. 종류가 빈 기록은 예전처럼 어느 쪽에도 안 센다.
+  const nc = nk.filter(k => { const [n, t] = k.split('||'); return t && ctHoldsFruit(t) && nhfOwner(n, t) === '농협'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
+  const np = nk.filter(k => { const [n, t] = k.split('||'); return !ctHoldsFruit(t) && nhfOwner(n, t) === '농협'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
   const partnerLeft = nk.filter(k => { const [n, t] = k.split('||'); return nhfOwner(n, t) === '거래처'; }).reduce((s, k) => { const [n, t] = k.split('||'); return s + gNhfSt(n, t).left; }, 0);
   // 농협行(우리 콘테이너가 농협에 나감) 회수 목록 — target_type='농협' 배차/픽의 농협명 distinct, hold>0만. getNhfContainerHold(C-1). ※'농협 콘테이너'(농협것)와 다름.
   const nhfHoldList = [...new Set([...dispatches.filter(d => d.target_type === '농협').map(d => d.farm), ...picks.filter(p => p.target_type === '농협').map(p => p.farm)])]
@@ -6733,6 +6771,19 @@ function popCtypeSels() {
     const el = document.getElementById(id);
     if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
   });
+  // 농협·거래처 용기 반입/반납 종류 — nhf 활성 종류.
+  // ★예전엔 index.html에 '콘테이너/파렛트'가 박혀 있어 마스터를 안 읽었다. 파렛을 4종으로 나누고 '파렛트'를 끈 뒤에도
+  //   이 두 폼만 옛 이름을 계속 골라 저장됐다(2026-09-13 반납 2건 — 특징란에 'Kpp3'를 손으로 적음).
+  // ★신규 입력 폼이라 기존 값 보존 표기는 안 붙인다 — 고르던 값이 비활성이 되면 첫 종류로 돌아간다.
+  //   '선택' 빈 옵션 없이 첫 종류(기본 '콘테이너')가 골라져 있는 건 예전과 같다.
+  const nhfOpts = _nhfTypeOptHtml('');
+  if (nhfOpts != null) ['ni-type', 'no-type'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = nhfOpts;
+    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  });
   renderIbContainerSection();   // 입고 모달 콘테이너 섹션도 종류 변경 시 갱신
 }
 
@@ -6816,6 +6867,10 @@ function _ibcAddRow(id, key = 'ib') {
   // 운반구는 개수를 적어도 입고 수량에 안 들어간다 — 줄에서 바로 보이게 알린다(칩에도 같은 문구가 있다).
   const noQtyBadge = ctHoldsFruit(t) ? ''
     : `<span title="원물을 담는 용기가 아니라 입고 수량 합계에서 빠집니다" style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#F3F4F6;color:#6B7280">수량 미반영</span>`;
+  // 비활성 종류 줄 — 칩은 활성만 그리므로 여기 오는 건 수정 진입 시 기존 기록 복원(_mtxFillInContainers)뿐이다.
+  const inactBadge = t.is_active === false
+    ? `<span title="설정에서 끈 종류입니다 — 기존 기록이라 그대로 보존합니다" style="flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#F3F4F6;color:#6B7280">사용 안 함</span>`
+    : '';
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   // 농협 것과 거래처 것은 같은 종류(콘테이너·파렛트) 마스터를 쓰고 owner_type으로만 갈린다.
   // ★거래처용 종류를 따로 만들지 않는다 — 종류가 갈라지면 잔여 집계가 두 벌로 쪼개진다.
@@ -6831,7 +6886,7 @@ function _ibcAddRow(id, key = 'ib') {
   div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap';
   div.innerHTML = `
     <span style="flex:0 0 70px;font-size:13px;font-weight:500">${esc(t.name)}</span>
-    ${badge}${noQtyBadge}
+    ${badge}${noQtyBadge}${inactBadge}
     <input type="number" id="${ctx.pre}-q-${t.id}" min="0" placeholder="0" oninput="_ibcSyncQty('${key}')" style="flex:0 0 62px;${inpS}">
     <span style="font-size:12px;color:#6B7280">개</span>
     ${extraInput}
@@ -7022,7 +7077,8 @@ function _validateInboundContainers(key = 'ib') {
   const ctx = _IBC_CTX[key];
   if (!ctx) return true;
   if (!document.getElementById(ctx.sec)) return true;   // 콘테이너 섹션이 없는 화면
-  const nhfTypes = [...containerTypes].filter(t => t.is_active !== false && t.owner === 'nhf');
+  // ★활성 여부로 거르지 않는다 — 수정 진입 시 복원된 비활성 종류 줄도 농협명 검증을 받아야 한다(줄이 없는 종류는 아래서 건너뜀).
+  const nhfTypes = [...containerTypes].filter(t => t.owner === 'nhf');
   const bad = [];
   nhfTypes.forEach(t => {
     const sel = document.getElementById(`${ctx.pre}-nhf-${t.id}`);
@@ -7053,9 +7109,11 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
   if (!ctx) return;
   const el = document.getElementById(ctx.sec);
   if (!el || !farm) return;
-  const active = [...containerTypes].filter(t => t.is_active !== false);
+  // ★활성 여부로 거르지 않는다 — 입력칸(줄)이 있는 종류만 저장되고, 칩은 활성만 그리므로 신규 입력엔 비활성이 못 들어온다.
+  //   예전엔 활성만 봐서, 수동거래 수정(연결 기록 전부 삭제 → 재생성)에서 복원한 비활성 종류 줄이 조용히 저장에서 빠졌다.
+  const types = [...containerTypes];
   const jobs = [];
-  active.forEach(t => {
+  types.forEach(t => {
     const qty = parseInt(document.getElementById(`${ctx.pre}-q-${t.id}`)?.value, 10) || 0;
     if (qty <= 0) return;
     const feature = document.getElementById(`${ctx.pre}-f-${t.id}`)?.value?.trim() || null;
@@ -11988,7 +12046,13 @@ function openManualTxModal(editId = null) {
     if (g('mtx-note'))    g('mtx-note').value    = ed.note || '';
     // 연결된 콘테이너 배출 pick(있으면) 값 채우기(D-1b) — 출고 방향만(입고는 '원물수거'라 제외)
     const cpk = picks.find(p => String(p.manual_tx_id) === String(ed.id) && p.type === '배출');
-    if (g('mtx-ctype')) g('mtx-ctype').value = cpk?.ctype || '';
+    // ★옵션은 활성 종류만이라, 기존 값이 비활성·옛 이름이면 value가 조용히 ''이 된다 → 수정 저장(연결 기록 삭제 → 재생성) 때
+    //   배출 기록이 사라진다. 그래서 그 값을 표기와 함께 옵션으로 붙인다(배차 수정 모달과 같은 원칙).
+    const mct = g('mtx-ctype');
+    if (mct && cpk?.ctype && ![...mct.options].some(o => o.value === cpk.ctype)) {
+      mct.insertAdjacentHTML('beforeend', `<option value="${esc(cpk.ctype)}">${esc(cpk.ctype)} (${_ctIsInactive(cpk.ctype) ? '사용 안 함' : '목록에 없음'})</option>`);
+    }
+    if (mct) mct.value = cpk?.ctype || '';
     if (g('mtx-cqty'))  g('mtx-cqty').value  = cpk ? (cpk.qty ?? '') : '';
     // 입고 방향: 연결된 콘테이너(회수·농가·농협) 칩 복원(D-1c) — 복원 안 하면 수정 저장 시 소실됨
     if (_mtxDir === 'in') _mtxFillInContainers(ed.id);
@@ -12004,7 +12068,10 @@ function _mtxFillInContainers(txId) {
     ...nhfIns.filter(n => same(n.manual_tx_id)).map(n => ({ name: n.type, qty: n.qty, feature: n.feature, nhf: n.nhf, ownerType: n.owner_type === '거래처' ? '거래처' : '농협' })),
   ];
   rows.forEach(r => {
-    const t = containerTypes.find(x => x.name === r.name && x.is_active !== false);
+    // ★비활성 종류도 복원한다 — 수정 저장이 '연결 기록 전부 삭제 → 재생성'이라 여기서 빠지면 그 기록이 조용히 사라진다.
+    //   같은 이름의 활성 행이 있으면 그쪽을 먼저 쓴다(예전 동작 그대로).
+    const t = containerTypes.find(x => x.name === r.name && x.is_active !== false)
+      || containerTypes.find(x => x.name === r.name);
     if (!t) return;
     _ibcAddRow(t.id, 'mtx');
     const q = document.getElementById(`mibc-q-${t.id}`);   if (q) q.value = r.qty ?? '';
