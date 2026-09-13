@@ -414,9 +414,10 @@ function _loadFail(label) {
 }
 
 // 테이블별 최신 created_at 1건. 실패는 undefined로 두고 조용히 넘어감(앱이 멈추면 안 됨).
-async function _syncFetchLatest() {
+// tables(선택): 볼 테이블 — 안 넘기면 SYNC_TABLES(폴링·기준선, 예전과 같음). 재고 탭 재진입 확인이 3개만 넘겨 쓴다.
+async function _syncFetchLatest(tables = SYNC_TABLES) {
   const out = {};
-  await Promise.all(SYNC_TABLES.map(async t => {
+  await Promise.all(tables.map(async t => {
     try {
       const rows = await sbGet(t, 'select=created_at&order=created_at.desc&limit=1');
       out[t] = (Array.isArray(rows) && rows[0]?.created_at) || null;
@@ -6158,11 +6159,26 @@ let _catSysOk = false;
 let _catSysFromInv = false;    // 부팅 실패로 재고 조회가 다시 받아 대입했다 — 부팅이 늦게 끝나도 실패한 결과로 덮지 않게
 const _CATSYS_FAIL_LABELS = ['품목 분류', '사이즈 등급', '품목', '품목 사이즈 규칙'];   // db.js dbGetCategories 등의 _sbLoadFail 라벨
 
-function _invFetchStart(track = p => p) {
+// ★재진입 경량 확인(2026-09-13) — 재사용 직전에 이 세 테이블의 최신 created_at만 물어 '마지막 재고 조회' 때와 비교한다.
+//   폴링(60초)은 배너가 뜨기 전까지 남의 변경을 모르고, 그 사이 탭을 오가면 옛 재고를 봤다.
+//   ★updated_at 컬럼이 없어(created_at만) 수정(UPDATE)은 audit_logs 행이 같이 생길 때만 잡힌다 — 그래서 audit_logs를 넣었다.
+//   ★폴링 기준선(_syncBaseline)과는 따로 둔다 — 폴링은 '배너를 띄울지', 이건 '재고를 다시 받을지'라 기준 시점이 다르다.
+const _INV_FRESH_TABLES = ['inventory_records', 'outbound_records', 'audit_logs'];
+let _invFreshBase = null;      // 마지막 재고 조회 시작 시점의 세 테이블 최신값. null = 모름(→ 재사용하지 않음)
+let _invRenderedToken = -1;    // 화면에 마지막으로 그린 재고 조회 번호 — 같으면 재사용 때 다시 그리지 않는다(깜빡임 방지)
+const _invFreshAll = v => !!v && _INV_FRESH_TABLES.every(t => v[t] !== undefined);   // 세 곳 다 조회 성공(빈 테이블 null은 성공)
+
+// base(선택): 방금 받은 경량 확인 결과 — 있으면 기준선으로 그대로 쓰고(조회 전에 받은 값이라 안전), 없으면 조회와 같이 받는다.
+//   ★기준선을 조회와 '같이' 받으면, 그 찰나에 생긴 변경이 기준선엔 들어가고 조회엔 빠질 수 있다(다음 확인에서 못 잡음).
+//     부팅을 한 왕복 늦추지 않으려고 감수한다 — 경량 확인 뒤 재조회(base 있음)에는 이 틈이 없다.
+function _invFetchStart(track = p => p, base = null) {
   _invLoadWriteSeq = _sbWriteSeq;
   _invLoadOk = false;
   _invLoadPending = true;
   const token = ++_invLoadToken;
+  _invFreshBase = null;
+  (base ? Promise.resolve(base) : track(_syncFetchLatest(_INV_FRESH_TABLES)))
+    .then(b => { if (token === _invLoadToken) _invFreshBase = _invFreshAll(b) ? b : null; }, () => {});
   _invLoadP = _invFetch(track, token).finally(() => { if (token === _invLoadToken) _invLoadPending = false; });
   return _invLoadP;
 }
@@ -6245,11 +6261,24 @@ async function _invFetch(track, token) {
 //     하나라도 아니면 예전처럼 새로 받는다 — 탭 이동이 사실상 새로고침 노릇을 하던 안전성은 저장·변경 감지가 있을 때 그대로 남는다.
 //   ★저장 뒤 부르는 곳들(await loadAndRenderInv())은 인자 없이 부르므로 항상 새로 받는다(무변).
 async function loadAndRenderInv(opts = {}) {
+  const _baseOk = () => !!opts.reuse && !!_invLoadP && (_invLoadPending || _invLoadOk)
+    && _invLoadWriteSeq === _sbWriteSeq && !_syncBannerOn;
+  let reusable = _baseOk();
+  let base = null;
+  // ★끝난 조회를 재사용할 때만 경량 확인(3건). 진행 중인 조회(부팅 동시 시작)는 막 출발한 것이라 확인하지 않고 기다린다.
+  //   확인하는 동안은 로딩 창을 띄우지 않는다 — 지금 화면을 그대로 두고, 바뀐 게 있을 때만 다시 받아 그린다(깜빡임 방지).
+  if (reusable && !_invLoadPending) {
+    const latest = await _syncFetchLatest(_INV_FRESH_TABLES);
+    const same = _invFreshAll(latest) && !!_invFreshBase && _INV_FRESH_TABLES.every(t => latest[t] === _invFreshBase[t]);
+    // ★확인하는 사이 본인이 저장했거나 배너가 떴을 수 있다 — 조건을 다시 본다.
+    //   조회 실패(undefined)·기준선 모름이면 same=false → 조용히 재사용하지 않고 전체 재조회.
+    reusable = same && _baseOk();
+    if (!reusable && _invFreshAll(latest)) base = latest;   // 방금 받은 값을 새 조회의 기준선으로(조회 전에 받은 값이라 틈이 없다)
+    if (reusable && _invRenderedToken === _invLoadToken) return;   // 바뀐 것 없음 + 이미 그린 데이터 → 화면 그대로
+  }
   _invLoading = true;
   showLoading('재고 불러오는 중...');
-  const reusable = !!opts.reuse && !!_invLoadP && (_invLoadPending || _invLoadOk)
-    && _invLoadWriteSeq === _sbWriteSeq && !_syncBannerOn;
-  await (reusable ? _invLoadP : _invFetchStart());
+  await (reusable ? _invLoadP : _invFetchStart(undefined, base));
   // 화면용 셀렉트 채우기 — 예전엔 조회 안에 있었지만 위치·사용처·품목 마스터(부팅 대입)를 읽으므로 그리기 쪽으로 옮겼다.
   //   조회가 실패했으면 예전처럼 건너뛴다(예전엔 예외로 이 줄에 도달하지 않았다).
   if (_invLoadOk) {
@@ -6259,6 +6288,7 @@ async function loadAndRenderInv(opts = {}) {
   _invLoading = false;
   hideLoading();
   renderInvAll();
+  _invRenderedToken = _invLoadToken;
   // ★renderInvAll은 주스·청 섹션을 그리지 않는다(invTab('juice')에서만 그린다).
   //   T('inv')는 이 로드를 기다리지 않고 곧바로 invTab을 부르므로, 주스 탭이 열린 채로 들어오면
   //   데이터가 오기 전 빈 화면이 그대로 남는다 — 공항 계정은 항상 이 경로다. 로드 후 한 번 더 그린다.
