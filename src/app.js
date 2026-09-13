@@ -1607,6 +1607,8 @@ async function saveFarmEdit() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const name = document.getElementById('mf-name').value.trim();
   if (!name) { alert('농가명을 입력하세요'); return; }
+  // ★다른 농가와 같은 이름이면 cascade 확인창을 띄우기 '전에' 막는다 — 통과하면 두 농가 기록이 한 이름으로 합쳐진다.
+  if (_farmNameTaken(name, _editFarmId)) { alert(FARM_NAME_DUP_MSG); return; }
   const oldName = farms.find(f => f.id === _editFarmId)?.name;
   const data = {
     name, tel: document.getElementById('mf-tel').value, addr: document.getElementById('mf-addr').value,
@@ -1682,7 +1684,7 @@ async function saveFarmEdit() {
       farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
     }
     CM('farm'); popSels(); renderFarm(); renderDash(); renderCal();
-  } catch (e) { alert('오류: ' + e.message); }
+  } catch (e) { alert(_isUniqueViolation(e) ? FARM_NAME_DUP_MSG : '오류: ' + e.message); }
 }
 
 // ── 모달: 기사 수정
@@ -1791,16 +1793,32 @@ async function saveExtEdit() {
 }
 
 // ── 농가
+// ★농가명 중복 검사 — 등록 2곳(addFarm·fsAddNew)과 수정(saveFarmEdit)이 같이 쓴다.
+//   farms.name에 유니크 인덱스(farms_name_uniq, 2026-09-13)가 걸려 DB도 거부하지만, 저장 전에 먼저 막는다 —
+//   특히 수정은 이름으로 기록을 찾아 바꾸는 cascade가 있어, 다른 농가 이름으로 바뀌면 두 농가 기록이 합쳐져 되돌릴 수 없다.
+// ★앞뒤 공백을 떼고 비교한다(저장값에 공백이 섞여 있어도 같은 이름으로 본다). 자기 자신(exceptId)은 뺀다.
+const FARM_NAME_DUP_MSG = '이미 등록된 농가명입니다.';
+function _farmNameTaken(name, exceptId = null) {
+  const k = String(name || '').trim();
+  if (!k) return null;
+  return farms.find(f => f && f.id !== exceptId && String(f.name || '').trim() === k) || null;
+}
+// DB 유니크 위반(Postgres 23505)인가 — 검사를 통과해도 동시 등록 등으로 DB가 거부할 수 있다.
+//   ★이 경우 에러 원문("duplicate key value violates unique constraint ...")을 현장에 보이지 않는다.
+function _isUniqueViolation(e) {
+  const m = String((e && e.message) || e || '');
+  return m.includes('"23505"') || /duplicate key value|unique constraint/i.test(m);
+}
 async function addFarm() {
   const name = gv('f-name');
   if (!name) { alert('농가명을 입력하세요'); return; }
-  if (farms.find(f => f.name === name)) { alert('이미 등록된 농가입니다'); return; }
+  if (_farmNameTaken(name)) { alert(FARM_NAME_DUP_MSG); return; }
   try {
     const row = await dbInsertFarm({ name, tel: gv('f-tel'), addr: gv('f-addr'), variety: gv('f-variety'), contract: n('f-contract'), staff: gv('f-staff'), memo: gv('f-memo') });
     farms.push(row);
     clr('f-name', 'f-tel', 'f-addr', 'f-variety', 'f-contract', 'f-staff', 'f-memo');
     popSels(); renderFarm();
-  } catch (e) { alert('오류: ' + e.message); }
+  } catch (e) { alert(_isUniqueViolation(e) ? FARM_NAME_DUP_MSG : '오류: ' + e.message); }
 }
 async function delFarm(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
@@ -6350,7 +6368,7 @@ async function fsAddNew(selectId, name) {
   const nm = (name || '').trim();
   if (!nm) return;
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 농가를 등록할 수 있습니다.');
-  if (farms.some(f => f.name === nm)) return alert('이미 등록된 농가입니다.');
+  if (_farmNameTaken(nm)) return alert(FARM_NAME_DUP_MSG);
   if (partners.some(p => p.name === nm)) return alert(`"${nm}"은(는) 거래처로 등록돼 있습니다. 목록에서 거래처를 선택하세요.`);
   if (!confirm(`"${nm}"을(를) 새 농가로 등록할까요?
 
@@ -6361,7 +6379,7 @@ async function fsAddNew(selectId, name) {
     popSels(); renderFarm();          // 농가 목록 갱신 경로 — addFarm과 동일하게 재사용(다른 화면 드롭다운도 같이 갱신)
     fsPick(selectId, nm);
     showToast(`"${nm}" 농가 등록 완료 — 연락처·주소는 농가 관리에서 채워주세요.`);
-  } catch (e) { alert('농가 등록 오류: ' + e.message); }
+  } catch (e) { alert(_isUniqueViolation(e) ? FARM_NAME_DUP_MSG : '농가 등록 오류: ' + e.message); }
 }
 
 // 검색형으로 바꿀 select 목록.
