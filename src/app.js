@@ -1498,6 +1498,8 @@ async function _confirmMasterDelete(title, vals, refs) {
 }
 
 // 마스터별 참조 위치. ★새 테이블이 이 이름을 참조하게 되면 여기 한 줄 추가할 것.
+// ★_REF_FARM은 농가 삭제 확인(건수)과 농가명 변경 cascade(saveFarmEdit)가 같이 쓴다 — 참조처 목록은 여기 하나다.
+//   (2026-09-13 전엔 cascade가 목록을 따로 들고 있다가 출고·수동거래를 빠뜨려 매출·실적만 옛 이름으로 갈렸다.)
 const _REF_FARM = [
   { label: '입고',         table: 'inbound_records',     column: 'farm_name' },
   { label: '재고',         table: 'inventory_records',   column: 'farm_name' },
@@ -1509,6 +1511,9 @@ const _REF_FARM = [
   { label: '수확',         table: 'harvests',            column: 'farm' },
   { label: '수동거래',      table: 'manual_transactions', column: 'farm_name' },
   { label: '작업보고',      table: 'reports',             column: 'farm' },
+  // 레거시 재고 표(현재 0행) — 예전 cascade 목록에 있던 것. 0건이면 삭제 확인창엔 안 나온다(_collectRefs가 뺀다).
+  { label: '구 미선과 재고', table: 'inventory_unsorted',  column: 'farm_name' },
+  { label: '구 선과 재고',   table: 'inventory_sorted',    column: 'farm_name' },
 ];
 const _REF_PARTNER = [
   { label: '출고',         table: 'outbound_records',    column: 'partner_name' },
@@ -1608,42 +1613,59 @@ async function saveFarmEdit() {
     variety: document.getElementById('mf-variety').value, contract: parseInt(document.getElementById('mf-contract').value) || 0,
     staff: document.getElementById('mf-staff').value, memo: document.getElementById('mf-memo').value
   };
+  const renamed = !!oldName && oldName !== name;
+  // ★이름이 바뀌면 저장 '전에' 함께 바뀔 기록을 표별 건수로 보여 준다(건수는 DB count — 전역 배열은 재고 탭 밖에선 비어 있다).
+  //   연결 기록이 하나도 없으면 예전처럼 확인 없이 저장한다. 취소하면 연락처 등 다른 칸 수정도 저장하지 않는다(모달은 열린 채).
+  if (renamed) {
+    showToast('함께 바뀔 기록 확인 중...');
+    const hits = await _collectRefs({ name: oldName }, _REF_FARM);
+    if (hits.length) {
+      const unknown = hits.some(x => x.n === null);
+      const summary = hits.map(x => x.n === null ? `${x.label} 확인실패` : `${x.label} ${fmtN(x.n)}건`).join(' · ');
+      const ok = await showConfirmDanger({
+        title: `농가명 변경: '${oldName}' → '${name}'`,
+        subtitle: `함께 바뀌는 기록: ${summary}`,
+        resultNote: '위 기록의 농가명이 모두 새 이름으로 바뀝니다(취소·삭제 처리된 기록 포함 — 이력이 한 이름으로 이어지게).'
+          + (unknown ? ' 건수를 확인하지 못한 곳도 변경은 함께 시도합니다.' : ''),
+        confirmText: '변경', cancelText: '취소',
+      });
+      if (!ok) return;
+    }
+  }
   try {
     await dbUpdateFarm(_editFarmId, data);
-    farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
-    if (oldName && oldName !== name) {
-      const cascadeTables = [
-        { table: 'dispatches',         col: 'farm' },
-        { table: 'picks',              col: 'farm' },
-        { table: 'own_ins',            col: 'farm' },
-        { table: 'own_outs',           col: 'farm' },
-        { table: 'reports',            col: 'farm' },
-        { table: 'harvests',           col: 'farm' },
-        { table: 'inbound_records',    col: 'farm_name' },
-        { table: 'inventory_records',  col: 'farm_name' },
-        { table: 'inventory_unsorted', col: 'farm_name' },
-        { table: 'inventory_sorted',   col: 'farm_name' },
-      ];
-      const results = await Promise.all(cascadeTables.map(async ({ table, col }) => {
+    if (renamed) {
+      // ★대상 = _REF_FARM(삭제 확인과 같은 목록). 이름으로 참조하는 곳만(key 없음) — id 참조는 이름이 바뀌어도 그대로다.
+      // ★is_void 조건 없이 전부 바꾼다(예전 cascade와 같음) — 취소된 출고를 되살리거나 이력을 볼 때 옛 이름이 튀어나오지 않게.
+      const results = await Promise.all(_REF_FARM.filter(r => !r.key || r.key === 'name').map(async ({ label, table, column }) => {
         try {
-          const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${col}=eq.${encodeURIComponent(oldName)}`, {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${column}=eq.${encodeURIComponent(oldName)}`, {
             method: 'PATCH',
             headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-            body: JSON.stringify({ [col]: name })
+            body: JSON.stringify({ [column]: name })
           });
-          if (!res.ok) return { table, success: false, error: `HTTP ${res.status}` };
+          if (!res.ok) return { label, table, success: false, error: `HTTP ${res.status}` };
           const json = await res.json();
-          return { table, success: true, count: Array.isArray(json) ? json.length : 0 };
+          return { label, table, success: true, count: Array.isArray(json) ? json.length : 0 };
         } catch (e) {
-          return { table, success: false, error: e.message };
+          return { label, table, success: false, error: e.message };
         }
       }));
       const failed = results.filter(r => !r.success);
       if (failed.length > 0) {
-        const failedNames = failed.map(r => `${r.table}(${r.error})`).join(', ');
-        throw new Error(`농가명 변경 일부 실패: ${failedNames}\n수동 복구 필요할 수 있음`);
+        // ★saveDispEdit의 pick 동기화 실패와 같은 방식 — 본 저장은 됐다고 알리고, '같은 내용으로 다시 저장'이 복구가 되게 한다.
+        //   그래서 로컬 farms의 이름을 아직 옛 이름으로 둔다: 여기서 새 이름으로 바꾸면 다시 저장할 때 oldName === name이 되어
+        //   cascade가 안 돈다(예전 코드의 함정). PATCH는 '옛 이름인 행 → 새 이름'이라 몇 번 다시 돌려도 결과가 같다(멱등).
+        //   모달도 닫지 않는다 — 입력한 내용 그대로 [저장]만 다시 누르면 된다.
+        const ok = results.filter(r => r.success && r.count > 0);   // 0건 표까지 늘어놓으면 알림이 안 읽힌다
+        alert(`농가 정보는 저장됐지만, 일부 기록의 농가명을 못 바꿨습니다.\n\n`
+          + `실패: ${failed.map(r => `${r.label}(${r.table}: ${r.error})`).join(', ')}\n`
+          + (ok.length ? `바뀜: ${ok.map(r => `${r.label} ${fmtN(r.count)}건`).join(', ')}\n` : '')
+          + `\n지금은 실패한 곳만 옛 이름('${oldName}')으로 남아 있습니다.\n창을 닫지 말고 같은 내용으로 한 번 더 저장하면 맞춰집니다.`);
+        return;
       }
       console.log(`농가명 cascade 완료: ${results.map(r => `${r.table}: ${r.count}건`).join(', ')}`);
+      farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
       dispatches      = dispatches.map(d => d.farm === oldName ? { ...d, farm: name } : d);
       picks           = picks.map(p => p.farm === oldName ? { ...p, farm: name } : p);
       ownIns          = ownIns.map(o => o.farm === oldName ? { ...o, farm: name } : o);
@@ -1652,6 +1674,12 @@ async function saveFarmEdit() {
       harvests        = harvests.map(h => h.farm === oldName ? { ...h, farm: name } : h);
       inboundRecords  = inboundRecords.map(r => r.farm_name === oldName ? { ...r, farm_name: name } : r);
       inventoryRecords = inventoryRecords.map(r => r.farm_name === oldName ? { ...r, farm_name: name } : r);
+      invOutbounds    = invOutbounds.map(r => r.farm_name === oldName ? { ...r, farm_name: name } : r);
+      manualTransactions = manualTransactions.map(r => r.farm_name === oldName ? { ...r, farm_name: name } : r);
+      const total = results.reduce((s, r) => s + (r.count || 0), 0);
+      if (total > 0) showToast(`농가명 변경 — 기록 ${fmtN(total)}건 함께 변경`);
+    } else {
+      farms = farms.map(f => f.id === _editFarmId ? { ...f, ...data } : f);
     }
     CM('farm'); popSels(); renderFarm(); renderDash(); renderCal();
   } catch (e) { alert('오류: ' + e.message); }
