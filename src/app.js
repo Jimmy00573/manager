@@ -433,7 +433,11 @@ async function _syncRebase() {
 
 // ★본인 저장으로 배너가 뜨면 못 쓰는 기능이 됨 — 쓰기 직후 기준선을 최신으로 끌어올린다.
 //   sbInsert/sbUpdate/sbDelete/sbDeleteStrict가 호출(연속 저장은 디바운스로 한 번만).
+// 본인 쓰기 번호 — sbInsert/sbUpdate/sbDelete/sbDeleteStrict가 성공할 때마다 +1(_sbNotifyWrite → 여기).
+//   재고 탭 재진입 때 '마지막 재고 조회 뒤로 저장이 있었나'를 이것으로 본다(loadAndRenderInv의 재사용 판정).
+let _sbWriteSeq = 0;
 function _syncMarkSelfWrite() {
+  _sbWriteSeq++;
   _syncSelfWriting = true;
   clearTimeout(_syncRebaseTimer);
   _syncRebaseTimer = setTimeout(async () => {
@@ -564,8 +568,18 @@ async function initApp() {
     //   (loadProductWeights는 productWeights를 채울 뿐 다른 조회가 읽지 않는다. _syncOT는 containerTypes, _rebuildProductTypeMap은 catSys만 본다.)
     // ★실패 처리 무변: 뒤의 넷은 안에서 오류를 삼키고(_sbLoadFail·빈 배열/기본값) 절대 reject하지 않으므로 합쳐도 전체를 막지 않는다.
     //   전체가 막히는 건 예전처럼 loadAllData의 운송 기록 조회가 던질 때뿐이다(그때는 예전에도 뒤의 셋까지 안 불렀다).
+    // 품목 분류 — 재고 조회(_invFetch)가 이 약속을 기다렸다가 제대로 받았으면 다시 받지 않는다(중복 4건 제거).
+    //   _catSysOk는 이 조회가 끝나는 순간 정한다(부팅 전체가 끝날 때가 아니라) — 재고 조회가 그 사이 판단해야 하므로.
+    _catSysBootP = loadCategorySystem(track).catch(() => null)
+      .then(cs => { _catSysOk = !!cs && !_CATSYS_FAIL_LABELS.some(l => _loadFailures.includes(l)); return cs; });
+    // ★첫 화면이 재고 탭인 역할이면 재고 조회도 지금 같이 출발시킨다(그리기는 setRole→T('inv')가 결과를 기다려서).
+    //   역할은 아래 로그인 복원과 같은 값으로 판단한다(sessionStorage → '접속 유지'면 localStorage). 복원 코드 자체는 그대로 둔다.
+    //   ★기사·미로그인은 재고를 보지 않으므로 미리 받지 않는다(불필요 트래픽·권한).
+    const _bootRole = sessionStorage.getItem('citrus_role')
+      || (localStorage.getItem('citrus_keep') === '1' ? localStorage.getItem('citrus_role') : null);
+    if (OFFICE_ROLES.includes(_bootRole)) _invFetchStart(track);
     const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys, brixMaxData, , partnerData, manualTxData, ctypeData] = await Promise.all([
-      loadAllData(track), track(dbGetQualityCriteria()), track(dbGetLocations()), track(loadUrgencySettings()), track(dbGetPachiUsages()), track(dbGetBrixGrades()), track(dbGetPachiSizes()), track(dbGetPachiConditions()), loadCategorySystem(track).catch(() => null), track(loadBrixMaxSize()).catch(() => ({})),
+      loadAllData(track), track(dbGetQualityCriteria()), track(dbGetLocations()), track(loadUrgencySettings()), track(dbGetPachiUsages()), track(dbGetBrixGrades()), track(dbGetPachiSizes()), track(dbGetPachiConditions()), _catSysBootP, track(loadBrixMaxSize()).catch(() => ({})),
       track(loadProductWeights()),
       track(dbGetPartners()).catch(() => []), track(dbGetManualTransactions()).catch(() => []), track(dbGetContainerTypes()).catch(() => []),
     ]);
@@ -589,7 +603,8 @@ async function initApp() {
     pachiSizes = pachiSizeData || [];
     pachiConditions = pachiCondData || [];
     // 품목 마스터(수확·배차 품목 select용) — inv 탭 미방문 상태에서도 항상 사용 가능하게 부팅 시 로드
-    if (catSys) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; _rebuildProductTypeMap(); }
+    //   ★재고 조회가 (부팅 실패 때문에) 먼저 다시 받아 대입했으면 덮지 않는다.
+    if (catSys && !_catSysFromInv) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; _rebuildProductTypeMap(); }
     // ★아래 셋과 위 Promise.all의 마스터 조회들은 db.js에서 오류를 catch해 빈 배열을 돌려준다 —
     //   그래서 위의 .catch는 발동하지 않는다. 실패 라벨은 db.js의 _sbLoadFail에 붙어 있으니
     //   여기에 _loadFail을 또 넣지 말 것(중복).
@@ -670,7 +685,9 @@ async function initApp() {
     document.getElementById('pin-screen').style.display = 'flex';
   }
   _syncStart();   // 마지막 갱신 시각 표시 + 변경 감지 폴링 시작(알림만, 화면은 안 건드림)
-  hideLoading();
+  // ★재고 탭이 아직 불러오는 중이면 닫지 않는다 — 같은 로딩 창이라, 여기서 닫으면 재고 숫자가 채워지기 전 빈 화면이 보였다.
+  //   그때는 loadAndRenderInv가 끝나면서 닫는다.
+  if (!_invLoading) hideLoading();
 }
 
 // ── PIN 시스템
@@ -1121,7 +1138,7 @@ function T(id) {
   if (id === 'vehicle') renderVehicles();
   if (id === 'stats') renderStats();
   if (id === 'dboard') { if (_dbView === 'sched') renderDSchedule(); else renderDBoard(); }
-  if (id === 'inv') { loadAndRenderInv(); invTab('sum'); }
+  if (id === 'inv') { loadAndRenderInv({ reuse: true }); invTab('sum'); }   // reuse: 받아 둔 재고가 유효하면 다시 조회 안 함
   if (id === 'set') setTab('menu');
   if (id === 'export') {
     const t = td();
@@ -6123,26 +6140,60 @@ function ibListTab(t) {
   if (t === 'done') renderIbDoneView();
 }
 
-async function loadAndRenderInv() {
-  showLoading('재고 불러오는 중...');
+// ══ 재고 데이터 로드 ══════════════════════════════════════════════
+// ★조회(_invFetch)와 그리기(loadAndRenderInv)를 나눴다(2026-09-13) — 첫 화면이 재고 탭인 역할(관리자·직원·공항)은
+//   initApp이 부팅 조회와 '같은 시점에' 조회만 먼저 시작하고, 나중에 setRole→T('inv')가 그 결과를 기다려 그린다.
+//   예전엔 부팅 28건이 끝난 뒤에야 재고 약 20건이 출발해 왕복이 두 겹이었다.
+let _invLoadP = null;          // 마지막으로 시작한 재고 조회(진행 중이거나 끝남)
+let _invLoadPending = false;   // 그 조회가 아직 진행 중인가
+let _invLoadOk = false;        // 그 조회가 오류 없이 끝났나(재사용 조건)
+let _invLoadWriteSeq = -1;     // 그 조회를 시작할 때의 본인 쓰기 번호(_sbWriteSeq)
+let _invLoadToken = 0;         // ★늦게 끝난 옛 조회가 새 조회 결과를 덮지 않게 — 마지막 번호만 전역에 대입한다
+let _invLoading = false;       // loadAndRenderInv가 도는 중 — initApp 끝의 hideLoading이 재고 로딩 창을 먼저 닫지 않게
+// 품목 분류(categories·sizeGrades·itemDefs·itemSizeRules) — 부팅(initApp)이 이미 받는다.
+//   ★'받았다'의 기준: 부팅 조회가 끝났고 네 조회 중 실패(_sbLoadFail 라벨)가 하나도 없음. 빈 배열이어도 실패가 없으면 받은 것이다.
+//   실패가 있었으면 재고 조회가 예전처럼 다시 받는다(재시도 기회). 다른 곳에서 바꾼 품목은 새로고침해야 반영된다.
+let _catSysBootP = null;       // 부팅의 품목 분류 조회(진행 중일 수 있음)
+let _catSysOk = false;
+let _catSysFromInv = false;    // 부팅 실패로 재고 조회가 다시 받아 대입했다 — 부팅이 늦게 끝나도 실패한 결과로 덮지 않게
+const _CATSYS_FAIL_LABELS = ['품목 분류', '사이즈 등급', '품목', '품목 사이즈 규칙'];   // db.js dbGetCategories 등의 _sbLoadFail 라벨
+
+function _invFetchStart(track = p => p) {
+  _invLoadWriteSeq = _sbWriteSeq;
+  _invLoadOk = false;
+  _invLoadPending = true;
+  const token = ++_invLoadToken;
+  _invLoadP = _invFetch(track, token).finally(() => { if (token === _invLoadToken) _invLoadPending = false; });
+  return _invLoadP;
+}
+
+// 조회 + 재고 전역 대입만. 화면(DOM)은 건드리지 않는다 — 부팅 중에는 위치·사용처·품목 마스터가 아직 대입 전일 수 있다.
+async function _invFetch(track, token) {
   try {
-    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds, allOutbounds] = await Promise.all([
+    // 품목 분류: 부팅이 받는 중이면 기다렸다가, 제대로 받았으면 다시 받지 않는다(null = 이번엔 대입 안 함).
+    const catSysP = (_catSysBootP || Promise.resolve(null)).then(() => _catSysOk ? null : loadCategorySystem());
+    const SETTING_FAIL = null;   // 설정 조회 실패 표시 — sbGet은 성공하면 항상 배열이라 null과 안 겹친다
+    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds, allOutbounds, expiryRows, lowRows] = await Promise.all([
       // ★이 둘은 db.js에서 오류를 안 삼키고 던지므로 라벨을 여기서 붙인다.
       //   (내부에서 catch하는 함수들은 db.js 쪽에 _sbLoadFail이 들어가 있다 — 두 번 붙이지 말 것)
-      dbGetInbounds().catch(() => { _loadFail('입고 기록'); return []; }),
-      dbGetProcessings().catch(() => { _loadFail('선과 처리 기록'); return []; }),
-      dbGetUnsorted(null).catch(() => []),   // 0행 레거시 표 — 실패해도 영향 없어 라벨 없음
-      dbGetSorted(null), dbGetWaste(null),
-      loadSizeConfig(), loadCategorySystem(),
-      dbGetInventoryRecords().catch(() => []),
-      dbGetJuiceMasters().catch(() => []),
-      sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status').catch(() => { _loadFail('선과 결과'); return []; }),
-      dbGetJuiceBatches().catch(() => []),
+      track(dbGetInbounds()).catch(() => { _loadFail('입고 기록'); return []; }),
+      track(dbGetProcessings()).catch(() => { _loadFail('선과 처리 기록'); return []; }),
+      track(dbGetUnsorted(null)).catch(() => []),   // 0행 레거시 표 — 실패해도 영향 없어 라벨 없음
+      track(dbGetSorted(null)), track(dbGetWaste(null)),
+      track(loadSizeConfig()), catSysP,
+      track(dbGetInventoryRecords()).catch(() => []),
+      track(dbGetJuiceMasters()).catch(() => []),
+      track(sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status')).catch(() => { _loadFail('선과 결과'); return []; }),
+      track(dbGetJuiceBatches()).catch(() => []),
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
       //   주스분(현재 366건)은 아직 한도 아래지만 같은 테이블이라 같이 옮겨 둔다.
-      sbGetAll('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc').catch(() => { _loadFail('주스 출고'); return []; }),
-      sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc').catch(() => { _loadFail('출고 기록'); return []; })
+      track(sbGetAll('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc')).catch(() => { _loadFail('주스 출고'); return []; }),
+      track(sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc')).catch(() => { _loadFail('출고 기록'); return []; }),
+      // 주스 설정 2건 — 예전엔 위가 다 끝난 뒤 하나씩 기다렸다. 서로·위와 무관해 같이 보낸다(실패 시 직전 값 유지는 아래 그대로).
+      track(sbGet('settings', 'key=eq.juice_expiry_days')).catch(() => SETTING_FAIL),
+      track(sbGet('settings', 'key=eq.juice_low_threshold')).catch(() => SETTING_FAIL),
     ]);
+    if (token !== _invLoadToken) return;   // 그사이 더 새 조회가 시작됐다 — 이 결과는 버린다
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐
     if (newIn.length === 0 && legacyIn.length > 0) {
@@ -6163,31 +6214,49 @@ async function loadAndRenderInv() {
     invJuiceMasters = juiceMasters;
     invJuiceBatches = juiceBatches;
     invOutbounds = allOutbounds;
-    try {
-      const expiryRows = await sbGet('settings', 'key=eq.juice_expiry_days');
-      if (expiryRows && expiryRows[0]) juiceExpiryDays = parseInt(expiryRows[0].value) || 90;
-    } catch(e) {}
-    try {
+    if (expiryRows && expiryRows[0]) juiceExpiryDays = parseInt(expiryRows[0].value) || 90;   // 실패(null)·행 없음이면 그대로
+    if (lowRows !== SETTING_FAIL) {
       // 재고 부족 기준 — 행이 없으면(=한 번도 저장 안 함) 기본값. 조회 실패면 직전 값을 유지한다.
-      const lowRows = await sbGet('settings', 'key=eq.juice_low_threshold');
       const lv = lowRows && lowRows[0] ? parseInt(lowRows[0].value) : NaN;
       juiceLowThreshold = (!isNaN(lv) && lv >= 0) ? lv : JUICE_LOW_DEFAULT;
-    } catch(e) {}
-    categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
-    _rebuildProductTypeMap();   // ★items 로드 직후 — 품목 유형 판정표를 DB 기준으로 갱신
+    }
+    if (catSys) {   // null = 부팅이 이미 받음 → 다시 대입하지 않는다
+      _catSysFromInv = true;
+      categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules;
+      _rebuildProductTypeMap();   // ★items 로드 직후 — 품목 유형 판정표를 DB 기준으로 갱신
+    }
     inventoryRecords = invRecs;
     // sorting_results 날짜 데이터 enrichment
     const srIds = [...new Set(invRecs.filter(r => r.sorting_result_id).map(r => r.sorting_result_id))];
     if (srIds.length > 0) {
       try {
         // ★sort_method도 같이 받아 둔다 — 재고 매트릭스 배치 배지가 배치를 타고 읽는다(추가 조회 없음).
+        // ★재고 기록의 선과 결과 id가 있어야 만들 수 있는 조회라 위 Promise.all에 못 넣는다(순차가 맞다).
         const srRows = await sbGet('sorting_results', `id=in.(${srIds.join(',')})&select=id,sorting_date,inbound_record_id,sort_method`);
-        _invSrMap = Object.fromEntries(srRows.map(sr => [sr.id, sr]));
-      } catch(e) { _invSrMap = {}; }
+        if (token === _invLoadToken) _invSrMap = Object.fromEntries(srRows.map(sr => [sr.id, sr]));
+      } catch(e) { if (token === _invLoadToken) _invSrMap = {}; }
     } else { _invSrMap = {}; }
+    if (token === _invLoadToken) _invLoadOk = true;
+  } catch(e) { console.error('재고 로드 오류:', e); _loadFail('재고 화면'); }   // ★여기까지 오면 재고 화면 전체가 빈 상태 — 콘솔만으론 아무도 모른다
+}
+
+// 재고 탭 그리기. opts.reuse = 탭 진입(T('inv'))에서만 true — 이미 받은 재고를 쓸 수 있으면 다시 조회하지 않는다.
+//   ★재사용 조건(셋 다): 마지막 조회가 진행 중이거나 성공 / 그 뒤로 본인 저장 없음(_sbWriteSeq) / 변경 감지 배너가 안 떠 있음.
+//     하나라도 아니면 예전처럼 새로 받는다 — 탭 이동이 사실상 새로고침 노릇을 하던 안전성은 저장·변경 감지가 있을 때 그대로 남는다.
+//   ★저장 뒤 부르는 곳들(await loadAndRenderInv())은 인자 없이 부르므로 항상 새로 받는다(무변).
+async function loadAndRenderInv(opts = {}) {
+  _invLoading = true;
+  showLoading('재고 불러오는 중...');
+  const reusable = !!opts.reuse && !!_invLoadP && (_invLoadPending || _invLoadOk)
+    && _invLoadWriteSeq === _sbWriteSeq && !_syncBannerOn;
+  await (reusable ? _invLoadP : _invFetchStart());
+  // 화면용 셀렉트 채우기 — 예전엔 조회 안에 있었지만 위치·사용처·품목 마스터(부팅 대입)를 읽으므로 그리기 쪽으로 옮겼다.
+  //   조회가 실패했으면 예전처럼 건너뛴다(예전엔 예외로 이 줄에 도달하지 않았다).
+  if (_invLoadOk) {
     popInvProductSelects();
     popLocSelects(); popUsageSelects();
-  } catch(e) { console.error('재고 로드 오류:', e); _loadFail('재고 화면'); }   // ★여기까지 오면 재고 화면 전체가 빈 상태 — 콘솔만으론 아무도 모른다
+  }
+  _invLoading = false;
   hideLoading();
   renderInvAll();
   // ★renderInvAll은 주스·청 섹션을 그리지 않는다(invTab('juice')에서만 그린다).
