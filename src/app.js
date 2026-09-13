@@ -9692,10 +9692,17 @@ async function savePachiEdit() {
   const canEditMemo = !row.isLegacy;
   const btn = document.getElementById('pachi-edit-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+  // ★감사로그용 수정 전 값 — 저장 전에 떠 둔다(아래에서 inventoryRecords를 새 값으로 바꾸므로).
+  //   재고 UPDATE는 updated_at이 없어 audit_logs 행이 있어야만 다른 화면의 변경 감지(폴링·재고 탭 경량 확인)가 잡는다.
+  //   ★복사본으로 뜬다 — 참조로 두면 아래 루프가 같은 객체를 새 값으로 바꿔 '변경 없음'으로 비교된다.
+  const _pvRecs = row.ids.map(id => inventoryRecords.find(r => String(r.id) === String(id))).filter(Boolean).map(r => ({ ...r }));
+  const _pv0 = _pvRecs[0] || {};
+  let _pvQty = null;   // { from, to } — 수량을 실제로 바꿨을 때만
   try {
     if (canEditQty) {
       const newQty = parseFloat(document.getElementById('pachi-edit-ct')?.value);
       if (isNaN(newQty) || newQty < 0) return alert('유효한 수량을 입력해주세요.');
+      if (Number(_pv0.quantity) !== newQty) _pvQty = { from: _pv0.quantity ?? null, to: newQty };
       await sbUpdate('inventory_records', row.ids[0], { quantity: newQty });
       const rec = inventoryRecords.find(r => String(r.id) === String(row.ids[0]));
       if (rec) rec.quantity = newQty;
@@ -9719,6 +9726,32 @@ async function savePachiEdit() {
       await sbUpdate('inventory_records', id, { farm_name: newFarm, usage: newUsage, location: newLoc, pachi_size_group: newSize, pachi_condition: newCondition, ..._auditPatch });
       const rec = inventoryRecords.find(r => String(r.id) === String(id));
       if (rec) { rec.farm_name = newFarm; rec.usage = newUsage; rec.location = newLoc; rec.pachi_size_group = newSize; rec.pachi_condition = newCondition; if (_pachiAuditMode) rec.audit_checked_at = _auditPatch.audit_checked_at; }
+    }
+    // ★감사로그 — 수량·농가·사용처·위치·크기·상태 중 하나라도 실제로 바뀌었을 때만 1건(한 행이 기록 여러 개여도 1건).
+    //   메모만·실사 확인 표시만 바뀐 경우는 남기지 않는다(재고 숫자·합계에 영향 없음).
+    //   ★기록 실패가 저장 흐름(창 닫기·다시 그리기)을 막지 않게 콘솔 경고만 — 저장은 이미 끝났다.
+    //   이력 화면 diff는 라벨 있는 필드만 보여 주므로(AUDIT_FIELD_LABELS) 바뀐 내용 요약을 사유에 적는다.
+    const _nv = v => (v === '' || v === undefined) ? null : v;
+    const _pvFields = [['farm_name', '농가', newFarm], ['usage', '사용처', newUsage], ['location', '위치', newLoc], ['pachi_size_group', '크기', newSize], ['pachi_condition', '상태', newCondition]];
+    const _pvChanged = _pvFields.filter(([k, , nv]) => _pvRecs.some(r => _nv(r[k]) !== _nv(nv)));
+    if (_pvQty || _pvChanged.length) {
+      const before = { product: _pv0.product ?? null, count: row.ids.length }, after = { product: _pv0.product ?? null, count: row.ids.length };
+      if (_pvQty) { before.quantity = _pvQty.from; after.quantity = _pvQty.to; }
+      _pvChanged.forEach(([k, , nv]) => { before[k] = _nv(_pv0[k]); after[k] = _nv(nv); });
+      if (!('farm_name' in before)) { before.farm_name = _nv(_pv0.farm_name); after.farm_name = _nv(newFarm); }   // 이력 화면 맥락(농가) 표시용
+      // 한 행이 기록 여러 개면 기록마다 수정 전 값이 다를 수 있다 — 되돌릴 수 있게 기록별로도 담는다.
+      if (_pvRecs.length > 1 && _pvChanged.length) before.items = _pvRecs.map(r => ({ id: r.id, ...Object.fromEntries(_pvChanged.map(([k]) => [k, _nv(r[k])])) }));
+      const summary = [
+        ...(_pvQty ? [`수량 ${fmtN(_pvQty.from)}→${fmtN(_pvQty.to)}`] : []),
+        // 첫 기록은 그대로인데 다른 기록만 달랐으면 'A→A'로 읽히므로 '(일부)'로 적는다
+        ..._pvChanged.map(([k, lbl, nv]) => _nv(_pv0[k]) !== _nv(nv) ? `${lbl} ${_nv(_pv0[k]) ?? '-'}→${_nv(nv) ?? '-'}` : `${lbl} →${_nv(nv) ?? '-'}(일부)`),
+      ].join(' · ');
+      await dbInsertAuditLog({
+        target_table: 'inventory_records', target_id: row.ids[0],
+        before_val: before, after_val: after,
+        reason: `파치 수정: ${summary}${row.ids.length > 1 ? ` (${row.ids.length}건)` : ''}`,
+        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      }).catch(e => console.warn('파치 수정 이력 기록 실패:', e.message));
     }
     document.getElementById('modal-pachi-edit').style.display = 'none';
     renderInvSummary(); renderPachiSection();
@@ -10101,9 +10134,32 @@ async function applyPachiBulk() {
 
   const btn = document.getElementById('pachi-bulk-apply-btn');
   if (btn) { btn.disabled = true; btn.textContent = '적용 중...'; }
+  // ★감사로그는 작업당 1건 — 행마다 남기면 수십~수백 행 일괄지정 한 번에 audit_logs가 그만큼 는다.
+  //   변경 감지는 1건이면 충분하고, 되돌릴 수 있게 기록별 수정 전 값은 before_val.items에 담는다.
+  //   수정 전 값은 여기서 뜬다(아래 루프가 inventoryRecords를 새 값으로 바꾸므로).
+  const _pbKeys = Object.keys(patch);
+  const _pbBefore = new Map(ids.map(id => {
+    const r = inventoryRecords.find(x => String(x.id) === String(id)) || {};
+    return [String(id), Object.fromEntries(_pbKeys.map(k => [k, r[k] ?? null]))];
+  }));
+  const _pbDone = [];   // 실제로 적용된 id — 중간 실패여도 된 만큼은 이력에 남긴다
+  let _pbLogged = false;   // 성공 경로에서 남긴 뒤 다시 그리기가 예외를 던져 catch로 가도 두 번 남기지 않게
+  const _pbAudit = async () => {
+    if (_pbLogged || !_pbDone.length) return;
+    _pbLogged = true;
+    const lbl = { pachi_size_group: '크기', pachi_condition: '상태', usage: '사용처' };
+    await dbInsertAuditLog({
+      target_table: 'inventory_records', target_id: _pbDone[0],
+      before_val: { count: _pbDone.length, items: _pbDone.map(id => ({ id, ..._pbBefore.get(String(id)) })) },
+      after_val: { count: _pbDone.length, ...patch },
+      reason: `파치 일괄지정 ${_pbDone.length}건: ${_pbKeys.map(k => `${lbl[k]}→${patch[k] ?? '비움'}`).join(' · ')}${_pbDone.length < ids.length ? ` (${ids.length}건 중 ${_pbDone.length}건만 처리)` : ''}`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(e => console.warn('파치 일괄지정 이력 기록 실패:', e.message));   // 기록 실패가 저장 결과를 바꾸지 않게
+  };
   try {
     for (const id of ids) {
       await sbUpdate('inventory_records', id, patch);
+      _pbDone.push(id);
       const rec = inventoryRecords.find(r => String(r.id) === String(id));
       if (rec) {
         if ('pachi_size_group' in patch) rec.pachi_size_group = patch.pachi_size_group;
@@ -10111,11 +10167,13 @@ async function applyPachiBulk() {
         if ('usage'            in patch) rec.usage            = patch.usage;
       }
     }
+    await _pbAudit();
     const m = document.getElementById('modal-pachi-bulk');
     if (m) m.remove();
     renderInvSummary(); renderPachiSection();   // 재렌더 → 체크 초기화
     showToast(`${rows.length}건 일괄 지정 완료`);
   } catch(e) {
+    await _pbAudit();   // 실패 전까지 적용된 만큼
     alert('일괄 지정 실패: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '적용'; }
   }
@@ -12641,8 +12699,27 @@ async function saveOutboundEdit() {
   const note = (document.getElementById('obe-note')?.value || '').trim();
   if (!date) { alert('출고일을 입력해주세요.'); return; }
   if (date > td()) { alert('출고일은 오늘 이후로 지정할 수 없습니다.'); return; }
+  // ★감사로그용 수정 전 값(아래에서 invOutbounds를 새 값으로 바꾸므로 먼저 떠 둔다).
+  const _obPrev = invOutbounds.find(x => String(x.id) === String(_obEditId));
+  const _obBefore = _obPrev ? { date: _obPrev.date ?? null, partner_name: _obPrev.partner_name ?? null, note: _obPrev.note ?? null } : null;
   try {
     await sbUpdate('outbound_records', _obEditId, { date, partner_name: partner || null, note: note || null });
+    // ★감사로그 — 날짜·거래처·메모 중 실제로 바뀐 게 있을 때만(수정 전 값을 모르면 바뀐 것으로 보고 남긴다).
+    //   출고 수정은 새 행이 안 생겨 이 기록이 있어야 다른 화면의 변경 감지가 잡는다. 기록 실패는 저장 흐름을 막지 않는다.
+    const _obAfter = { date, partner_name: partner || null, note: note || null };
+    const _obChanged = !_obBefore || Object.keys(_obAfter).some(k => (_obBefore[k] || null) !== (_obAfter[k] || null));
+    if (_obChanged) {
+      const parts = _obBefore
+        ? [['date', '출고일'], ['partner_name', '거래처'], ['note', '메모']].filter(([k]) => (_obBefore[k] || null) !== (_obAfter[k] || null)).map(([k, l]) => `${l} ${_obBefore[k] ?? '-'}→${_obAfter[k] ?? '-'}`)
+        : [];
+      await dbInsertAuditLog({
+        target_table: 'outbound_records', target_id: _obEditId,
+        before_val: { product: _obPrev?.product ?? null, farm_name: _obPrev?.farm_name ?? null, quantity: _obPrev?.quantity ?? null, ...(_obBefore || {}) },
+        after_val: { product: _obPrev?.product ?? null, farm_name: _obPrev?.farm_name ?? null, quantity: _obPrev?.quantity ?? null, ..._obAfter },
+        reason: `출고 수정${parts.length ? ': ' + parts.join(' · ') : ''}`,
+        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      }).catch(e => console.warn('출고 수정 이력 기록 실패:', e.message));
+    }
     const r = invOutbounds.find(x => String(x.id) === String(_obEditId));
     if (r) { r.date = date; r.partner_name = partner || null; r.note = note || null; }
     document.getElementById('modal-ob-edit')?.remove();
@@ -21250,11 +21327,27 @@ async function deleteManualPachi(idsStr, label) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (!(await showConfirmDanger({ title: '파치 기록 삭제', items: label ? [label] : [], confirmText: '삭제' }))) return;
   const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
+  // ★감사로그용 삭제 전 값(아래에서 inventoryRecords에서 빼므로 먼저 떠 둔다).
+  const recs = ids.map(id => inventoryRecords.find(r => String(r.id) === String(id))).filter(Boolean);
+  const done = [];   // 실제로 무효 처리된 id — 중간에 실패해도 된 만큼은 이력에 남긴다(변경 감지가 그걸로 잡는다)
   try {
-    for (const id of ids) await sbUpdate('inventory_records', id, { is_void: true });
+    for (const id of ids) { await sbUpdate('inventory_records', id, { is_void: true }); done.push(id); }
     inventoryRecords = inventoryRecords.filter(r => !ids.includes(String(r.id)));
     renderInvSummary(); renderPachiSection();
   } catch(e) { alert('삭제 오류: ' + e.message); }
+  // ★감사로그 1건(한 행이 기록 여러 개여도) — updated_at이 없어 이 행이 있어야 다른 화면이 삭제를 감지한다.
+  //   기록 실패는 삭제 결과를 바꾸지 않으므로 콘솔 경고만.
+  if (done.length) {
+    const r0 = recs[0] || {};
+    const qty = recs.filter(r => done.includes(String(r.id))).reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+    await dbInsertAuditLog({
+      target_table: 'inventory_records', target_id: done[0],
+      before_val: { product: r0.product ?? null, farm_name: r0.farm_name ?? null, date: r0.date ?? null, quantity: qty, count: done.length, ids: done },
+      after_val: null,
+      reason: `파치 삭제${label ? `: ${label}` : ''}${done.length < ids.length ? ` (${ids.length}건 중 ${done.length}건만 처리)` : ''}`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(err => console.warn('파치 삭제 이력 기록 실패:', err.message));
+  }
 }
 
 // ── [화면: 재고관리 > 주스/청] 원물 배치(invJuiceBatches)·제품별 재고. 제품별 이력 모달은 이 섹션 내 histAll 참고.
