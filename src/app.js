@@ -7370,6 +7370,31 @@ async function editBrixGrade(id) {
   const label = prompt('새 등급명을 입력하세요.', g.label)?.trim();
   if (!label) return;
   if (brixGrades.some(x => x.label === label && x.id !== id)) return alert(`"${label}"은 이미 등록된 등급입니다.`);
+  // ★이름이 바뀔 때만 — 기존 기록이 옛 이름으로 남는다는 걸 저장 전에 알린다(저장 자체는 아래 그대로).
+  //   quality_grade는 id가 아니라 이름 문자열 복사라, 마스터만 바뀌고 재고·출고는 옛 이름으로 남아 같은 등급이 둘로 갈린다
+  //   (2026-09-13 '9브릭스 이하'→'8브릭스 이하': 재고 31행·출고 106행 잔존, SQL로 수동 정리).
+  // ★기존 기록을 일괄로 바꾸지 않는다 — 과거 출고 이력을 바꿀지는 사람이 판단할 일이다.
+  // ★세는 건 이미 로드된 배열만(추가 조회 없음). 단 둘 다 재고 탭(loadAndRenderInv)에서만 채워진다 —
+  //   비어 있으면 '0건'이 아니라 '미집계'로 보고 모달을 띄운다(0으로 믿고 조용히 통과하는 게 이 경고가 막으려는 사고다).
+  if (label !== g.label) {
+    const old = g.label;
+    const invKnown = inventoryRecords.length > 0, obKnown = invOutbounds.length > 0;
+    const invN = inventoryRecords.filter(r => !r.is_void && r.quality_grade === old).length;
+    const obN = invOutbounds.filter(r => !r.is_void && r.quality_grade === old).length;
+    if (!invKnown || !obKnown || invN + obN > 0) {
+      const part = (known, n) => known ? `${fmtN(n)}행` : '미집계';
+      const subtitle = (invKnown && obKnown)
+        ? `기존 기록 ${fmtN(invN + obN)}건(재고 ${fmtN(invN)}행 / 출고 ${fmtN(obN)}행)이 '${old}'으로 남습니다.`
+        : `기존 기록(재고 ${part(invKnown, invN)} / 출고 ${part(obKnown, obN)})이 '${old}'으로 남을 수 있습니다. 재고 탭을 아직 열지 않아 건수를 다 세지 못했습니다.`;
+      const ok = await showConfirmDanger({
+        title: `등급 이름 변경: '${old}' → '${label}'`,
+        subtitle,
+        resultNote: '이름만 바뀌고 기존 기록은 그대로입니다. 과거 기록도 새 이름으로 바꾸려면 관리자에게 요청하세요.',
+        confirmText: '계속', cancelText: '취소',
+      });
+      if (!ok) return;
+    }
+  }
   try {
     const updated = await dbUpdateBrixGrade(id, { label });
     const idx = brixGrades.findIndex(x => x.id === id);
