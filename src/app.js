@@ -543,10 +543,32 @@ function _syncStart() {
 // ── 앱 초기화
 async function initApp() {
   showLoading('데이터 불러오는 중...');
+  // ★로딩 진행 표시(N/전체) — 멈춘 건지 기다리는 건지 보이게. 요청 하나가 끝날 때마다 숫자만 바꾼다.
+  //   전체 개수는 아래 Promise.all 배열을 만드는 순간(동기) 다 세어지므로, 첫 완료 전에 확정된다.
+  //   ★로딩 창이 이미 닫혔으면 건드리지 않는다 — 한 요청이 실패해 먼저 끝난 뒤 늦게 도착한 응답이 창을 다시 띄우면 안 된다.
+  let _bootDone = 0, _bootTotal = 0;
+  const track = p => {
+    _bootTotal++;
+    const upd = () => {
+      _bootDone++;
+      const el = document.getElementById('loading-overlay');
+      if (el && el.style.display !== 'none') el.innerHTML = `<span style="font-size:24px">🍊</span> 데이터 불러오는 중… ${_bootDone}/${_bootTotal}`;
+    };
+    Promise.resolve(p).then(upd, upd);   // 결과·실패는 원래 약속(p)이 그대로 Promise.all로 전한다 — 여기선 세기만
+    return p;
+  };
 
   try {
-    await loadProductWeights();
-    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys, brixMaxData] = await Promise.all([loadAllData(), dbGetQualityCriteria(), dbGetLocations(), loadUrgencySettings(), dbGetPachiUsages(), dbGetBrixGrades(), dbGetPachiSizes(), dbGetPachiConditions(), loadCategorySystem().catch(() => null), loadBrixMaxSize().catch(() => ({}))]);
+    // ★부팅 조회는 전부 한 번에 병렬로 보낸다(2026-09-13). 예전엔 품목 중량 1건을 먼저 기다리고, 끝에 거래처 → 수동거래 →
+    //   콘테이너 종류를 한 줄로 기다려 왕복이 4번 더해졌다. 서로 읽는 값이 없다 — 대입·후처리 순서만 아래에서 지킨다.
+    //   (loadProductWeights는 productWeights를 채울 뿐 다른 조회가 읽지 않는다. _syncOT는 containerTypes, _rebuildProductTypeMap은 catSys만 본다.)
+    // ★실패 처리 무변: 뒤의 넷은 안에서 오류를 삼키고(_sbLoadFail·빈 배열/기본값) 절대 reject하지 않으므로 합쳐도 전체를 막지 않는다.
+    //   전체가 막히는 건 예전처럼 loadAllData의 운송 기록 조회가 던질 때뿐이다(그때는 예전에도 뒤의 셋까지 안 불렀다).
+    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys, brixMaxData, , partnerData, manualTxData, ctypeData] = await Promise.all([
+      loadAllData(track), track(dbGetQualityCriteria()), track(dbGetLocations()), track(loadUrgencySettings()), track(dbGetPachiUsages()), track(dbGetBrixGrades()), track(dbGetPachiSizes()), track(dbGetPachiConditions()), loadCategorySystem(track).catch(() => null), track(loadBrixMaxSize()).catch(() => ({})),
+      track(loadProductWeights()),
+      track(dbGetPartners()).catch(() => []), track(dbGetManualTransactions()).catch(() => []), track(dbGetContainerTypes()).catch(() => []),
+    ]);
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -569,12 +591,12 @@ async function initApp() {
     // 품목 마스터(수확·배차 품목 select용) — inv 탭 미방문 상태에서도 항상 사용 가능하게 부팅 시 로드
     if (catSys) { categories = catSys.cats; sizeGrades = catSys.grades; itemDefs = catSys.itemList; itemSizeRules = catSys.rules; _rebuildProductTypeMap(); }
     // ★아래 셋과 위 Promise.all의 마스터 조회들은 db.js에서 오류를 catch해 빈 배열을 돌려준다 —
-    //   그래서 여기 .catch는 발동하지 않는다. 실패 라벨은 db.js의 _sbLoadFail에 붙어 있으니
+    //   그래서 위의 .catch는 발동하지 않는다. 실패 라벨은 db.js의 _sbLoadFail에 붙어 있으니
     //   여기에 _loadFail을 또 넣지 말 것(중복).
-    partners = await dbGetPartners().catch(() => []);
-    manualTransactions = await dbGetManualTransactions().catch(() => []);
-    containerTypes = await dbGetContainerTypes().catch(() => []);
-    _syncOT();   // ★OT/OT_ACTIVE는 이 마스터에서 나온다 — 로드 실패 시엔 기본 3종이 그대로 남는다
+    partners = partnerData;
+    manualTransactions = manualTxData;
+    containerTypes = ctypeData;
+    _syncOT();   // ★OT/OT_ACTIVE는 이 마스터에서 나온다(반드시 containerTypes 대입 뒤) — 로드 실패 시엔 기본 3종이 그대로 남는다
   } catch (e) {
     console.error('데이터 로드 실패:', e);
     alert('⚠ 데이터를 불러오지 못했습니다.\n\nsupabase-client.js에서 URL과 API 키를 확인해 주세요.\n\n' + e.message);

@@ -70,12 +70,13 @@ async function dbGetReports() { return sbGet('reports', 'order=date.desc,created
 async function dbInsertReport(data) { const r = await sbInsert('reports', data); return r[0]; }
 async function dbDeleteReport(id) { return sbDelete('reports', id); }
 
-async function loadAllData() {
+// track(선택): 요청 하나하나를 받아 그대로 돌려주는 함수 — initApp의 로딩 진행 표시(N/전체)용. 안 넘기면 예전과 같다.
+async function loadAllData(track = p => p) {
   const [farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests, vehicles] = await Promise.all([
     dbGetFarms(), dbGetDrivers(), dbGetDispatches(), dbGetPicks(),
     dbGetOwnIns(), dbGetOwnOuts(), dbGetNhfIns(), dbGetNhfOuts(),
     dbGetReports(), getStockSettings(), dbGetHarvests(), dbGetVehicles()
-  ]);
+  ].map(track));
   return { farms, drivers, dispatches, picks, ownIns, ownOuts, nhfIns, nhfOuts, reports, stockData, harvests, vehicles };
 }
 
@@ -289,10 +290,10 @@ async function dbInsertItemSizeRule(data) { const r = await sbInsert('item_size_
 async function dbUpdateItemSizeRule(id, data) { const r = await sbUpdate('item_size_rules', id, data); return r[0]; }
 async function dbDeleteItemSizeRule(id) { return sbDelete('item_size_rules', id); }
 
-async function loadCategorySystem() {
+async function loadCategorySystem(track = p => p) {   // track: loadAllData와 같음(안 넘기면 예전과 같다)
   const [cats, grades, itemList, rules] = await Promise.all([
     dbGetCategories(), dbGetSizeGrades(), dbGetItems(), dbGetItemSizeRules()
-  ]);
+  ].map(track));
   return { cats, grades, itemList, rules };
 }
 
