@@ -2676,15 +2676,20 @@ function onPickTypeChange() {
 }
 
 // ── 자가 콘테이너
+// ★반입·반납 4개 폼(addOwnIn·addOwnOut·addNhfIn·addNhfOut)은 종류 칩으로 여러 줄을 받는다(_IBC_CTX oi·oo·ni·no).
+//   순서: 공통칸 검사 → 줄 전량 검증 → (2줄 이상이면) 확인창 → 한 번의 POST로 줄마다 한 행. 줄 하나면 예전과 같은 한 행·확인창 없음.
 async function addOwnIn() {
-  const date = gv('oi-date'), farm = gv('oi-farm'), qty = n('oi-qty');
-  if (!date || !farm || !qty) { alert('반입일자, 농가명, 수량을 입력하세요'); return; }
+  const date = gv('oi-date'), farm = gv('oi-farm');
+  if (!date || !farm) { alert('반입일자, 농가명을 입력하세요'); return; }
+  const rows = _extCtRows('oi');
+  if (!_extCtValidate(rows, '콘테이너 종류를 눌러 추가하고 수량을 입력하세요')) return;
   if (!gv('oi-staff')) { alert('담당 기사를 선택하세요'); return; }
+  if (!(await _extCtConfirm(`${farm} 반입 ${rows.length}종 등록`, rows))) return;
   try {
     // is_empty: 체크했을 때만 true. 안 하면 null(모름) — 반납 3분류에서 보수적으로 '확인필요'로 남는다.
     const isEmpty = document.getElementById('oi-empty')?.checked || null;
-    const row = await dbInsertOwnIn({ date, farm, qty, ctype: gv('oi-ctype') || null, feature: gv('oi-feature'), staff: gv('oi-staff'), is_empty: isEmpty });
-    ownIns.unshift(row); clr('oi-qty', 'oi-feature', 'oi-staff');
+    const saved = await _extCtInsert('own_ins', { date, farm, staff: gv('oi-staff'), is_empty: isEmpty }, rows, 'ctype');
+    ownIns.unshift(...saved); _ibcResetRows('oi'); clr('oi-staff');
     const ckEmpty = document.getElementById('oi-empty'); if (ckEmpty) ckEmpty.checked = false;   // clr은 value만 비움 — 체크박스는 따로
     renderOwn(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
@@ -2692,31 +2697,25 @@ async function addOwnIn() {
 async function addOwnOut() {
   const date = gv('oo-date');
   const farm = gv('oo-farm');
-  const qty = n('oo-qty');
 
-  if (!date || !farm || !qty) {
-    alert('반납일자, 농가명, 수량을 입력하세요');
+  if (!date || !farm) {
+    alert('반납일자, 농가명을 입력하세요');
     return;
   }
+  const rows = _extCtRows('oo');
+  if (!_extCtValidate(rows, '콘테이너 종류를 눌러 추가하고 수량을 입력하세요')) return;
 
   if (!gv('oo-staff')) {
     alert('담당 기사를 선택하세요');
     return;
   }
+  if (!(await _extCtConfirm(`${farm} 반납 ${rows.length}종 등록`, rows))) return;
 
   try {
-    const row = await dbInsertOwnOut({
-      date,
-      farm,
-      qty,
-      ctype: gv('oo-ctype') || null,
-      method: gv('oo-method'),
-      feature: gv('oo-feature'),
-      staff: gv('oo-staff')
-    });
+    const saved = await _extCtInsert('own_outs', { date, farm, method: gv('oo-method'), staff: gv('oo-staff') }, rows, 'ctype');
 
-    ownOuts.unshift(row);
-    clr('oo-qty', 'oo-staff', 'oo-feature');
+    ownOuts.unshift(...saved);
+    _ibcResetRows('oo'); clr('oo-staff');
     renderOwn();
     renderDash();
   } catch (e) {
@@ -2972,23 +2971,30 @@ function showConfirmEdit(title, msg = '') {
 
 // ── 농협
 async function addNhfIn() {
-  const date = gv('ni-date'), nhf = gv('ni-nhf'), type = gv('ni-type'), qty = n('ni-qty');
-  if (!date || !nhf || !qty) { alert('반입일자, 농협명, 수량을 입력하세요'); return; }
+  const date = gv('ni-date'), nhf = gv('ni-nhf');
+  if (!date || !nhf) { alert('반입일자, 농협명을 입력하세요'); return; }
+  const rows = _extCtRows('ni');
+  if (!_extCtValidate(rows, '용기 종류를 눌러 추가하고 수량을 입력하세요')) return;
+  if (!(await _extCtConfirm(`${nhf} 반입 ${rows.length}종 등록`, rows))) return;
   try {
     // is_empty: 체크했을 때만 true. 안 하면 null(모름) — 반납 3분류에서 보수적으로 '확인필요'로 남는다.
     const isEmpty = document.getElementById('ni-empty')?.checked || null;
-    const row = await dbInsertNhfIn({ date, owner_type: gv('ni-owner-type') || '농협', nhf, type, feature: gv('ni-feature'), qty, goods: gv('ni-goods'), staff: gv('ni-staff'), is_empty: isEmpty });
-    nhfIns.unshift(row); clr('ni-qty', 'ni-goods', 'ni-staff', 'ni-feature');
+    // ★구매 내용(goods)·원물 여부·담당은 한 번 받은 것이라 줄마다 같은 값으로 들어간다.
+    const saved = await _extCtInsert('nhf_ins', { date, owner_type: gv('ni-owner-type') || '농협', nhf, goods: gv('ni-goods'), staff: gv('ni-staff'), is_empty: isEmpty }, rows, 'type');
+    nhfIns.unshift(...saved); _ibcResetRows('ni'); clr('ni-goods', 'ni-staff');
     const ckEmpty = document.getElementById('ni-empty'); if (ckEmpty) ckEmpty.checked = false;   // clr은 value만 비움 — 체크박스는 따로
     renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function addNhfOut() {
-  const date = gv('no-date'), nhf = gv('no-nhf'), type = gv('no-type'), qty = n('no-qty');
-  if (!date || !nhf || !qty) { alert('반납일자, 농협명, 수량을 입력하세요'); return; }
+  const date = gv('no-date'), nhf = gv('no-nhf');
+  if (!date || !nhf) { alert('반납일자, 농협명을 입력하세요'); return; }
+  const rows = _extCtRows('no');
+  if (!_extCtValidate(rows, '용기 종류를 눌러 추가하고 수량을 입력하세요')) return;
+  if (!(await _extCtConfirm(`${nhf} 반납 ${rows.length}종 등록`, rows))) return;
   try {
-    const row = await dbInsertNhfOut({ date, owner_type: gv('no-owner-type') || '농협', nhf, type, method: gv('no-method'), feature: gv('no-feature'), qty, staff: gv('no-staff') });
-    nhfOuts.unshift(row); clr('no-qty', 'no-staff', 'no-feature'); renderNhf(); renderDash();
+    const saved = await _extCtInsert('nhf_outs', { date, owner_type: gv('no-owner-type') || '농협', nhf, method: gv('no-method'), staff: gv('no-staff') }, rows, 'type');
+    nhfOuts.unshift(...saved); _ibcResetRows('no'); clr('no-staff'); renderNhf(); renderDash();
   } catch (e) { alert('오류: ' + e.message); }
 }
 async function delNhf(id, t) {
@@ -6972,6 +6978,9 @@ function popCtypeSels() {
     if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
   });
   renderIbContainerSection();   // 입고 모달 콘테이너 섹션도 종류 변경 시 갱신
+  // 외부용기 반입·반납 폼의 종류 칩(여러 종류 입력) — 종류 구성이 바뀔 때만 다시 그린다(입력 중인 줄 보존).
+  //   ★위 oi-ctype·oo-ctype·ni-type·no-type select는 이 칩으로 대체돼 index.html에 없다(없으면 위 코드가 건너뛴다).
+  ['ni', 'no', 'oi', 'oo'].forEach(_extCtRender);
 }
 
 // 콘테이너 칩 UI 컨텍스트 — 같은 UI를 여러 화면에서 쓰기 위한 id prefix 모음.
@@ -6988,6 +6997,15 @@ const _IBC_CTX = {
     head: '<div style="font-size:12px;color:#6B7280;margin-bottom:6px">🧺 콘테이너 <span style="color:#9CA3AF;font-weight:400">(함께 들어온 콘테이너 — 우리것=회수, 남의것=반납대기 자동 기록)</span></div>',
     hint: '종류를 눌러 추가 · 여러 종류 동시 입력 가능',
   },
+  // ── 외부용기 반입·반납 폼(2026-09-14) — 여러 종류를 한 번에 등록. 대상(농협·거래처명/농가)·날짜·작업자는 폼 공통 1세트.
+  //   ★예전엔 종류 select 하나라, 파렛 두 종류가 같이 오가면 한 줄에 몰아 적고 특징란에 손으로 썼다
+  //     (9/9 남원농협 반납 'Kpp8,남원노랑 6' 14장이 농협파렛 한 줄로 → KPP·농협파렛 잔여가 8장씩 어긋남).
+  //   owners: 보여 줄 소유 그룹(_IBC_OWNER_GROUPS.key). ext: 폼 공통 대상이 있어 줄마다의 농협명·소유 select,
+  //   소유 배지, '수량 미반영'(입고 수량 합계 전용 안내)을 그리지 않는다. 둘 다 없는 ib·mtx는 예전과 똑같다.
+  ni: { sec: 'ni-ct-sec', rows: 'ni-ct-rows', pre: 'nict', head: '', hint: '종류를 눌러 추가 · 여러 종류를 한 번에 등록할 수 있습니다', owners: ['nhf'], ext: true },
+  no: { sec: 'no-ct-sec', rows: 'no-ct-rows', pre: 'noct', head: '', hint: '종류를 눌러 추가 · 여러 종류를 한 번에 등록할 수 있습니다', owners: ['nhf'], ext: true },
+  oi: { sec: 'oi-ct-sec', rows: 'oi-ct-rows', pre: 'oict', head: '', hint: '종류를 눌러 추가 · 여러 종류를 한 번에 등록할 수 있습니다', owners: ['farm'], ext: true },
+  oo: { sec: 'oo-ct-sec', rows: 'oo-ct-rows', pre: 'ooct', head: '', hint: '종류를 눌러 추가 · 여러 종류를 한 번에 등록할 수 있습니다', owners: ['farm'], ext: true },
 };
 
 // 콘테이너 종류 칩의 소유별 그룹. ★test는 _saveInboundContainers 저장 분기와 같은 식(ours→picks / nhf→nhf_ins / 그 외→own_ins)
@@ -7020,12 +7038,13 @@ function renderIbContainerSection(key = 'ib') {
   if (!active.length) { el.innerHTML = ''; return; }
   // 소유별로 묶어 표시 — 종류 이름만으로는 소유를 알 수 없어(농협 것 이름이 '콘테이너') 오선택 사고가 있었음.
   // ★그룹 판정은 _saveInboundContainers 저장 분기와 동일한 식이라 라벨과 실제 저장 위치가 항상 일치.
-  const groups = _IBC_OWNER_GROUPS.map(g => ({ ...g, items: active.filter(g.test) })).filter(g => g.items.length);
+  const groups = _IBC_OWNER_GROUPS.filter(g => !ctx.owners || ctx.owners.includes(g.key))   // owners 없으면 전 그룹(ib·mtx 예전 그대로)
+    .map(g => ({ ...g, items: active.filter(g.test) })).filter(g => g.items.length);
   const chipsHtml = groups.map(g => `
       <div id="${ctx.pre}-grp-${g.key}" style="margin-top:7px">
-        <div style="font-size:10px;color:#9CA3AF;margin-bottom:3px">${g.label} <span style="color:#C7CBD1">· ${g.hint}</span></div>
+        ${ctx.ext ? '' : `<div style="font-size:10px;color:#9CA3AF;margin-bottom:3px">${g.label} <span style="color:#C7CBD1">· ${g.hint}</span></div>`}
         <div style="display:flex;flex-wrap:wrap;gap:6px">${g.items.map(t =>
-          `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid ${g.bd};border-radius:16px;background:${g.bg};font-size:12px;color:${g.fg};cursor:pointer;font-family:inherit">${esc(t.name)}${ctHoldsFruit(t) ? '' : '<span style="font-size:10px;opacity:.7"> 수량 미반영</span>'} +</button>`
+          `<button type="button" id="${ctx.pre}-chip-${t.id}" onclick="_ibcAddRow('${t.id}','${key}')" style="padding:4px 10px;border:1px solid ${g.bd};border-radius:16px;background:${g.bg};font-size:12px;color:${g.fg};cursor:pointer;font-family:inherit">${esc(t.name)}${(ctx.ext || ctHoldsFruit(t)) ? '' : '<span style="font-size:10px;opacity:.7"> 수량 미반영</span>'} +</button>`
         ).join('')}</div>
       </div>`).join('');
   el.innerHTML = `${ctx.head}
@@ -7061,6 +7080,22 @@ function _ibcAddRow(id, key = 'ib') {
   const inpS = 'padding:5px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
   // 농협 것과 거래처 것은 같은 종류(콘테이너·파렛트) 마스터를 쓰고 owner_type으로만 갈린다.
   // ★거래처용 종류를 따로 만들지 않는다 — 종류가 갈라지면 잔여 집계가 두 벌로 쪼개진다.
+  // ★외부용기 폼(ctx.ext)은 대상이 폼 공통이라 줄에는 수량·특징만 — 소유 배지·수량 미반영도 뺀다(그 폼엔 입고 수량 합계가 없다).
+  if (ctx.ext) {
+    const div = document.createElement('div');
+    div.id = `${ctx.pre}-row-${t.id}`;
+    div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap';
+    div.innerHTML = `
+    <span style="flex:0 0 70px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.name)}">${esc(t.name)}</span>
+    <input type="number" id="${ctx.pre}-q-${t.id}" min="1" step="1" inputmode="numeric" placeholder="수량" style="flex:0 0 64px;width:64px;min-width:0;box-sizing:border-box;${inpS}">
+    <span style="font-size:12px;color:#6B7280">개</span>
+    <input type="text" id="${ctx.pre}-f-${t.id}" placeholder="특징(선택)" style="flex:1 1 90px;min-width:0;box-sizing:border-box;${inpS}">
+    <button type="button" onclick="_ibcRemoveRow('${t.id}','${key}')" style="flex:0 0 auto;border:none;background:none;color:#9CA3AF;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
+    document.getElementById(ctx.rows)?.appendChild(div);
+    _ibcSyncGroups(key);
+    setTimeout(() => document.getElementById(`${ctx.pre}-q-${t.id}`)?.focus(), 30);
+    return;
+  }
   const extraInput = isNhf
     ? `<select id="${ctx.pre}-own-${t.id}" onchange="_ibcOwnSync('${key}','${t.id}')" style="flex:0 0 76px;${inpS}"><option>농협</option><option>거래처</option></select>` +
       `<select id="${ctx.pre}-nhf-${t.id}" style="flex:1 1 110px;min-width:90px;${inpS}">${_extNameOptHtml('농협')}</select>` +
@@ -7123,6 +7158,57 @@ function _ibcResetRows(key = 'ib') {
     if (c) c.style.display = '';
   });
   _ibcSyncGroups(key);
+}
+
+// ── 외부용기 반입·반납 폼(ni·no·oi·oo) 여러 종류 입력 ─────────────────────────
+// 칩 영역 그리기 — ★종류 구성(활성·소유 그룹)이 바뀔 때만 다시 그린다.
+//   popCtypeSels는 renderOwn마다 불리므로 매번 그리면 입력하던 줄이 지워진다(배차 폼 _dpRenderCtypeQty의 sig와 같은 방식).
+function _extCtRender(key) {
+  const ctx = _IBC_CTX[key];
+  const el = ctx && document.getElementById(ctx.sec);
+  if (!el) return;
+  const sig = containerTypes.filter(t => t.is_active !== false && _IBC_OWNER_GROUPS.some(g => ctx.owners.includes(g.key) && g.test(t)))
+    .map(t => `${t.id}:${t.name}:${t.sort_order}`).join('|');
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  renderIbContainerSection(key);
+}
+// 추가된 줄을 화면 순서대로 [{ t, qty, raw, feature, qEl }] — 저장·검증·확인창이 이것 하나를 쓴다.
+function _extCtRows(key) {
+  const ctx = _IBC_CTX[key];
+  const box = ctx && document.getElementById(ctx.rows);
+  if (!box) return [];
+  return [...box.children].map(div => {
+    const tid = div.id.slice(`${ctx.pre}-row-`.length);
+    const t = containerTypes.find(x => String(x.id) === tid);
+    const qEl = document.getElementById(`${ctx.pre}-q-${tid}`);
+    const raw = (qEl?.value || '').trim();
+    return t ? { t, raw, qty: Number(raw), feature: document.getElementById(`${ctx.pre}-f-${tid}`)?.value?.trim() || '', qEl } : null;
+  }).filter(Boolean);
+}
+// 전량 검증 — 하나라도 틀리면 그 칸을 빨갛게 하고 false(아무것도 저장하지 않는다).
+function _extCtValidate(rows, emptyMsg) {
+  rows.forEach(r => { if (r.qEl) r.qEl.style.borderColor = '#D1D5DB'; });
+  if (!rows.length) { alert(emptyMsg); return false; }
+  const bad = rows.filter(r => !/^\d+$/.test(r.raw) || r.qty <= 0);   // 예전 n()처럼 정수 개수만(0·소수·빈칸 거부)
+  if (bad.length) {
+    bad.forEach(r => { if (r.qEl) r.qEl.style.borderColor = '#DC2626'; });
+    alert(`수량을 확인하세요: ${bad.map(r => r.t.name).join(', ')}\n\n1 이상의 정수로 입력해야 합니다. 저장하지 않았습니다.`);
+    bad[0].qEl?.focus();
+    return false;
+  }
+  return true;
+}
+// 여러 줄일 때만 확인창(줄별 요약). ★한 줄이면 예전처럼 확인 없이 바로 저장한다(단일 입력 흐름 무변).
+async function _extCtConfirm(title, rows) {
+  if (rows.length < 2) return true;
+  const total = rows.reduce((s, r) => s + r.qty, 0);
+  return showConfirmEdit(title, `${rows.map(r => `${r.t.name} ${fmtN(r.qty)}`).join(' · ')} = 합계 ${fmtN(total)}개`);
+}
+// 줄마다 한 행 — ★한 번의 POST(배열)로 넣는다. PostgREST는 한 요청을 한 문장으로 처리해 전부 들어가거나 전부 실패한다(부분 저장 없음).
+async function _extCtInsert(table, common, rows, typeCol) {
+  const payload = rows.map(r => ({ ...common, [typeCol]: r.t.name, qty: r.qty, feature: r.feature }));
+  return sbInsert(table, payload);
 }
 // 콘테이너 종류별 수량 합계 (우리것+남의것 전체, 추가된 줄만)
 // ★운반구(holds_fruit=false: 파렛트·리어카)는 뺀다 — 원물을 담지 않으니 입고 CT가 아니다.
