@@ -2466,7 +2466,7 @@ function renderHarvestNoDisp() {
   const today = td();
   const todayHarvFarms = harvests.filter(h =>
     h.date === today ||
-    (h.status === '수확중' && !h.end_date && h.date < today)
+    _hvIsOngoing(h, today)   // ★종료일이 지난 진행 중 수확도 포함 — 수확 중인데 배차가 없으면 알려야 한다
   );
   const todayDispFarms = new Set(dispatches.filter(d => d.date === today).map(d => d.farm));
   const missing = todayHarvFarms.filter(h => !todayDispFarms.has(h.farm));
@@ -3888,12 +3888,22 @@ function calFmtShort(s) {
   const d = new Date(s + 'T00:00:00');
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
+// ★'시작일 뒤에도 이어지는 진행 중 수확'인가 — 수확중이면 종료일(end_date) 유무·경과와 무관하게 진행 중으로 본다.
+//   완료 처리하면 status가 바뀌어 자연히 빠진다.
+// ★예전엔 쓰는 곳마다 `&& !h.end_date`가 붙어, 수확이 예정보다 길어져 종료일이 지나면 진행 중인데도 화면에서 사라졌다
+//   (2026-09-13 문기덕 9/12~9/12). 같은 구멍이 다시 생기지 않게 이 판정은 여기 한 곳에서만 한다 —
+//   다가오는 수확(_upcomingHarvestsOn) · 달력(calGetEvents) · 금일 수확 이어받기(renderCal) · 배차 누락 경고(renderHarvestNoDisp).
+// ※그날 시작(h.date===dStr)·기간 포함(date~end_date)은 쓰는 곳마다 조합이 달라(배차 누락 경고는 기간 포함을 안 본다) 묶지 않았다.
+function _hvIsOngoing(h, dStr) {
+  return h.status === '수확중' && !!h.date && h.date < dStr;
+}
 function calGetEvents(dStr) {
   const fromDisp = dispatches.filter(d => d.harvest === dStr);
+  // ③ 이어받기는 오늘까지만(dStr <= td()) — 미래 칸에 진행 중 수확을 미리 늘어놓지 않는다(내일 이후는 다가오는 수확 카드 몫).
   const fromHarvest = harvests.filter(h =>
     h.date === dStr ||
     (h.date <= dStr && h.end_date && h.end_date >= dStr) ||
-    (h.status === '수확중' && h.date < dStr && dStr <= td() && !h.end_date)
+    (dStr <= td() && _hvIsOngoing(h, dStr))
   ).map(h => ({
     ...h, harvest: h.date, driver: null, qty: null, ctype: null,
     status: h.status || '배차없음'
@@ -3984,7 +3994,7 @@ function renderCal() {
   const calTodayEvents = calGetEvents(todayStr);
   // 수확중이지만 오늘 날짜가 아닌 항목도 추가 (진행 중 carry-forward)
   const ongoingHarvests = harvests.filter(h =>
-    h.status === '수확중' && h.date < todayStr &&
+    _hvIsOngoing(h, todayStr) &&
     !calTodayEvents.find(e => e.farm === h.farm)
   );
   // 농가 기준 중복 제거. 같은 농가에 배차+수확 이벤트가 둘 다면 수확 이벤트 우선(수확 관리 목적).
@@ -4162,7 +4172,7 @@ function renderCal() {
 // ★표시 대상 판정 — 그날(dStr)에 걸치는 수확:
 //   ① 그날 시작       h.date === dStr
 //   ② 기간에 포함     h.date <= dStr <= h.end_date   (종료일이 잡힌 여러 날 수확)
-//   ③ 끝나지 않은 진행 h.status === '수확중' && h.date < dStr   (종료일 유무·경과와 무관)
+//   ③ 끝나지 않은 진행 _hvIsOngoing(h, dStr) = 수확중 && h.date < dStr   (종료일 유무·경과와 무관)
 //   ★③이 "수확이 며칠 걸리는 경우"를 받는다 — 진행 중이면 완료 처리할 때까지 계속 따라온다.
 //   ★2026-09-13: 예전엔 ③에 `!h.end_date`가 붙어 '종료일 없는 진행'만 잡았다. 수확이 예정보다 길어져
 //     종료일(end_date)이 지났는데 안 늘리면 ②·③ 어디에도 안 걸려 카드에서 사라졌다(문기덕 황금향 9/12~9/12, 9/13에 누락).
@@ -4178,7 +4188,7 @@ function _upcomingHarvestsOn(dStr) {
   return harvests.filter(h =>
     h.date === dStr
     || (h.date <= dStr && h.end_date && h.end_date >= dStr)
-    || (h.status === '수확중' && h.date < dStr)
+    || _hvIsOngoing(h, dStr)
   );
 }
 // 그 수확(농가+수확일)에 잡힌 배차 — 종류별로 합친다. 한 농가에 여러 배차가 있을 수 있다.
