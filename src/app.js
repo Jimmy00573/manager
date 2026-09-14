@@ -7403,6 +7403,11 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
   //   ★이전엔 'admin' 하드코딩이라 누가 받았는지 알 수 없었다(2026-08-20 기준 nhf_ins 46건·own_ins 1건이 전부 admin).
   //   ★수동거래(mtx) 경로엔 기사 필드가 없어 opts.staff가 비어 있다 → 로그인 계정으로 떨어진다.
   const staff = opts.staff || sessionStorage.getItem('citrus_adm_user') || 'admin';
+  // 우리 콘테이너 회수 pick의 기사·차량 — 입고 수송기사(opts.staff)만 쓴다. ★로그인 계정 폴백은 넣지 않는다:
+  //   picks.driver는 '누가 실어 왔나'라 사무실 계정 이름이 들어가면 틀린 기록이 된다. 없으면 예전처럼 비워 둔다
+  //   (기사 없는 옛 입고·수동거래 mtx 경로). 2026-09-14 전엔 아예 안 넘겨 입고 회수 64건이 담당자 빈칸이었다.
+  const pickDrv = opts.staff ? gd(opts.staff) : null;
+  const pickDriverPatch = opts.staff ? { driver: opts.staff, car: pickDrv?.car || null } : {};
   for (const j of jobs) {
     // 농협 콘테이너는 농협명 필수(농협별 관리). 없으면 이 항목만 건너뜀(own 폴백 금지).
     // ★이중 안전장치 — 정상 흐름에선 저장 전 _validateInboundContainers가 막으므로 여기 도달하지 않음.
@@ -7412,7 +7417,7 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
     }
     try {
       if (j.t.owner === 'ours') {
-        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...link });
+        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...pickDriverPatch, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...link });
         if (row) picks.unshift(row);
       } else if (j.t.owner === 'nhf') {
         // 농협/거래처는 owner_type으로만 가른다 — 종류 마스터는 하나 그대로(거래처용 종류를 새로 만들지 않는다).
@@ -18285,6 +18290,28 @@ async function saveInboundModal() {
       reclassification_source, reclassification_reason, original_work_date,
       driver_id, driver_name_manual: null,
       driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null };
+    // ── 연결된 원물수거 pick의 기사·차량 동기화 ─────────────────────────
+    // ★입고 기사가 바뀌었을 때만 — saveDispEdit(배차→배출 pick)과 같은 원칙: 한쪽만 고치면 콘테이너 이력의 담당자가 갈린다.
+    //   기사가 안 바뀐 수정에서는 건드리지 않는다(담당자가 비어 있던 옛 회수 기록 소급은 SQL로 따로 한다 — 코드 마이그레이션 금지).
+    // ★입고 본체·파치 재고·감사로그는 이미 끝났다. 여기 실패로 그걸 되돌리지 않는다(되돌리면 파치 사용량 되짚기가 틀어진다) —
+    //   대신 조용히 넘기지 않고 그 자리에서 다시 시도하게 한다(같은 내용 재저장은 '기사 변경 없음'이라 이 동기화가 안 돈다).
+    if (driver_id !== (prev.driver_id || null)) {
+      const nd = drivers.find(d => d.id === driver_id) || null;
+      const pickPatch = { driver: nd?.name || null, car: nd?.car || null };
+      let remain = picks.filter(p => String(p.inbound_id) === String(id) && p.type === '원물수거');
+      while (remain.length) {
+        const failed = [];
+        for (const p of remain) {
+          try { await dbUpdatePick(p.id, pickPatch); Object.assign(p, pickPatch); }
+          catch (pe) { failed.push(p); }
+        }
+        remain = failed;
+        if (remain.length && !(await showConfirmEdit('회수 기록 기사 변경 실패', `입고는 저장됐지만 연결된 회수 기록 ${remain.length}건의 담당 기사를 못 바꿨습니다. 다시 시도할까요?`))) {
+          alert(`회수 기록 ${remain.length}건은 담당 기사가 예전 값으로 남았습니다.\n콘테이너 이력의 담당자가 입고 기사와 다를 수 있습니다.`);
+          break;
+        }
+      }
+    }
     document.getElementById('modal-edit-inbound').style.display = 'none';
     _editInboundId = null;
     renderInvSummary(); renderInboundList();
