@@ -1396,8 +1396,9 @@ function popSels() {
   const waFarm = document.getElementById('wa-farm');
   if (waFarm) {
     const v = waFarm.value;
-    waFarm.innerHTML = '<option value="">(미지정)</option>' +
-      farms.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+    // ★파치 대상 = 입고 공급처와 같은 목록(농가·농협·거래처). 외부 반입 파치(예: 서귀포농협)를 입고 이름과 짝지을 수 있어야 한다.
+    //   (예전엔 farms만이라 농협 반입 파치를 대상 없이 저장했다 — 2026-09-14 사고)
+    waFarm.innerHTML = buildInboundSupplierOptHtml();
     if (v && [...waFarm.options].some(o => o.value === v)) waFarm.value = v;
   }
   const _fillDrvSel = (id, keepVal) => {
@@ -6520,7 +6521,7 @@ function _fsAttachAll() {
   attachFarmSearch('ed-farm',      { placeholder: '대상 검색' });   // 배차 수정 — 농가뿐 아니라 농협·거래처도 고른다
   attachFarmSearch('cal-add-farm', { placeholder: '농가 검색' });
   attachFarmSearch('rp-farm',      { placeholder: '농가 검색' });
-  attachFarmSearch('wa-farm',      { placeholder: '농가 검색 (선택 안 함 가능)' });
+  attachFarmSearch('wa-farm',      { placeholder: '농가·농협·거래처 검색' });   // 필수 여부는 출처(wa-origin)에 따라 라벨로 안내
   // 2차 — onchange가 걸린 곳. dp는 대상 종류에 따라 농가/농협/거래처로 목록이 바뀐다(refreshDpFarmOpts가 fsSync까지 함).
   attachFarmSearch('dp-farm',      { placeholder: '대상 검색' });
   attachFarmSearch('pk-farm',      { placeholder: '대상 검색' });   // 농가뿐 아니라 농협·거래처도 고른다
@@ -9708,11 +9709,8 @@ function openPachiEditModal(regId) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">날짜</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.date || '-')}</div></div>
-        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">농가</label>
-          <select id="pachi-edit-farm" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
-            <option value="">(미지정)</option>
-            ${farms.map(f => `<option value="${esc(f.name)}"${row.farm === f.name ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}
-          </select></div>
+        <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">대상</label>
+          <select id="pachi-edit-farm" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box"></select></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">품목</label>
           <div style="padding:8px;background:#F9FAFB;border-radius:6px;font-size:14px">${esc(row.product)}</div></div>
         <div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">출처</label>
@@ -9767,6 +9765,18 @@ function openPachiEditModal(regId) {
         <button id="pachi-edit-save-btn" class="btn pri" onclick="savePachiEdit()">저장</button>
       </div>
     </div>`;
+  // 대상(farm_name) — 등록 폼(wa-farm)과 같은 목록(농가·농협·거래처).
+  // ★목록에 없는 기존 값은 '(목록에 없음)'으로 붙여 유지한다. 예전엔 farms만 그려서 농협 이름(서귀포농협 등)이 든 파치를
+  //   열면 '(미지정)'이 선택되고, 위치만 고쳐 저장해도 farm_name이 null로 지워졌다.
+  const farmSel = document.getElementById('pachi-edit-farm');
+  if (farmSel) {
+    farmSel.innerHTML = buildInboundSupplierOptHtml();
+    if (farmSel.options[0]) farmSel.options[0].textContent = '(미지정)';
+    if (row.farm && ![...farmSel.options].some(o => o.value === row.farm)) {
+      farmSel.insertAdjacentHTML('beforeend', `<option value="${esc(row.farm)}">${esc(row.farm)} (목록에 없음)</option>`);
+    }
+    farmSel.value = row.farm || '';
+  }
   if (row.location) {
     const locSel = document.getElementById('pachi-edit-loc');
     if (locSel && [...locSel.options].some(o => o.value === row.location)) locSel.value = row.location;
@@ -21401,29 +21411,98 @@ async function deleteSorted(id) {
   } catch(e) { alert('삭제 오류: ' + e.message); }
 }
 
+// ── 파치 직접 등록 출처(wa-origin) ─────────────────────────────
+// ★왜: 외부(농협·거래처·농가)에서 들어온 파치를 대상 없이 직접 등록하면 입고·콘테이너 반입과 짝지을 방법이 없다
+//   (2026-09-14 서귀포농협 하우스귤 109CT — 반납 3분류에서 ❓확인필요로 빠짐).
+// ★입고를 자동으로 만들지 않는다. 선과 산출 파치·실사 보정분은 입고가 없는 게 정상이고,
+//   억지로 만들면 농가 정산·미선과 잔여가 틀어진다. 외부 반입일 때만 대상 필수 + 입고 등록을 '안내'한다.
+// 저장: inventory_records.pachi_origin — external(외부 반입)·sorting(선과 산출)·audit(실사 보정). 선택지는 index.html wa-origin.
+//   기존 pachi_manual 행은 null(소급 안 함). 집계·실사·일괄지정·화면 표시는 이 값을 읽지 않는다.
+function onWaOriginChange() {
+  const lb = document.getElementById('wa-farm-label');
+  if (lb) lb.textContent = gv('wa-origin') === 'external' ? '대상 *' : '대상 (선택)';
+}
+// 외부 반입 저장 후 안내 — [입고 등록하러 가기] true / [나중에] false. 강제하지 않는다(파치는 이미 저장됨).
+// ★매번 지우고 새로 만든다(옛 셸이 남는 함정 방지).
+function _waInboundPrompt(target) {
+  return new Promise(resolve => {
+    document.getElementById('modal-wa-inbound')?.remove();
+    const ov = document.createElement('div');
+    ov.id = 'modal-wa-inbound';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+    ov.innerHTML = `
+      <div style="background:#fff;border-radius:12px;width:100%;max-width:380px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="background:#EFF6FF;padding:18px 20px 14px">
+          <div style="font-weight:700;font-size:15px;color:#1E3A5F">이 파치의 입고도 등록하시겠습니까?</div>
+          <div style="font-size:13px;color:#374151;margin-top:8px;line-height:1.5">${target ? `<b>${esc(target)}</b> 파치가 저장되었습니다.<br>` : ''}콘테이너가 함께 왔다면 입고에서 등록해야 반납 내역이 맞습니다.</div>
+        </div>
+        <div style="padding:14px 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+          <button id="wai-later" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer;font-family:inherit">나중에</button>
+          <button id="wai-go" style="padding:8px 18px;border-radius:8px;border:none;background:#4F46E5;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">입고 등록하러 가기</button>
+        </div>
+      </div>`;
+    const close = v => { ov.remove(); resolve(v); };
+    ov.querySelector('#wai-later').onclick = () => close(false);
+    ov.querySelector('#wai-go').onclick = () => close(true);
+    ov.addEventListener('click', e => { if (e.target === ov) close(false); });
+    document.body.appendChild(ov);
+  });
+}
+// 입고 등록 폼으로 이동 — 미선과 탭 > 입고 내역 > 등록 폼 열기.
+// ★폼이 이미 열려 있으면(작성 중일 수 있음) 값은 건드리지 않는다. 닫혀 있을 때만 날짜·품목·공급처를 채워 준다(목록에 있는 값만).
+function _waGoInbound(p) {
+  invTab('uns'); ibTab('list');
+  const body = document.getElementById('ib-form-body');
+  if (body && !body._ibOpen) {
+    if (p.date) sv('ib-date', p.date);
+    const prod = document.getElementById('ib-product');
+    if (prod && p.product && [...prod.options].some(o => o.value === p.product)) { prod.value = p.product; prod.dispatchEvent(new Event('change')); }
+    const ibf = document.getElementById('ib-farm');
+    if (ibf && p.target && [...ibf.options].some(o => o.value === p.target)) fsPick('ib-farm', p.target);
+    toggleIbForm();
+  }
+  document.getElementById('ib-form-toggle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function addWaste() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
   const date = gv('wa-date'), product = gv('wa-product');
   const qty = parseFloat(document.getElementById('wa-qty').value) || 0;
   const loc = gv('wa-loc');
+  const origin = gv('wa-origin'), target = gv('wa-farm');
+  if (!origin) return alert('출처를 선택하세요. (외부 반입 / 선과 산출 / 실사 보정)');
+  if (origin === 'external' && !target) return alert('외부 반입 파치는 대상(농가·농협·거래처)을 선택해야 합니다.');
   if (!date || !product || !qty || !loc) return alert('날짜, 품목, 수량, 위치는 필수입니다.');
   const data = {
-    date, product, farm_name: gv('wa-farm') || null,
+    date, product, farm_name: target || null,
     quantity: qty, location: loc, size_code: null,
     source_type: 'pachi_manual', usage: gv('wa-usage') || null,
     pachi_size_group: gv('wa-size') || null, pachi_condition: gv('wa-condition') || null,
-    note: gv('wa-memo') || null, is_void: false, created_by: 'admin'
+    note: gv('wa-memo') || null, is_void: false, created_by: 'admin',
+    pachi_origin: origin
   };
   const btn = document.getElementById('wa-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '등록 중...'; }
+  let saved = false;
   try {
-    const rows = await sbInsert('inventory_records', data);
+    let rows;
+    try { rows = await sbInsert('inventory_records', data); }
+    catch (e) {
+      // ★pachi_origin 컬럼이 아직 DB에 없을 때(DDL 적용 전) — 출처만 빼고 예전처럼 저장한다. 파치 등록 자체를 막지 않는다.
+      if (!String(e.message).includes('pachi_origin')) throw e;
+      console.warn('pachi_origin 컬럼 없음 — 출처 없이 저장:', e.message);
+      const { pachi_origin, ...rest } = data;
+      rows = await sbInsert('inventory_records', rest);
+    }
     inventoryRecords.unshift(rows[0]);
+    saved = true;
     renderInvSummary(); renderPachiSection();
     sv('wa-qty', ''); sv('wa-farm', ''); sv('wa-loc', ''); sv('wa-usage', ''); sv('wa-size', ''); sv('wa-condition', ''); sv('wa-memo', '');
+    sv('wa-origin', ''); onWaOriginChange(); fsSync('wa-farm');
     showToast('파치 등록 완료');
   } catch(e) { alert('등록 오류: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '등록'; } }
+  if (saved && origin === 'external' && await _waInboundPrompt(target)) _waGoInbound({ date, product, target });
 }
 
 async function deleteWaste(id, label) {

@@ -1371,7 +1371,16 @@
           </select>
         </div>
         <div class="fg"><label>수량(CT) *</label><input id="wa-qty" type="number" placeholder="0" min="0" step="0.1" onfocus="this.select()"></div>
-        <div class="fg"><label>농가 (선택)</label><select id="wa-farm"></select></div>
+        <!-- 출처(필수) — '외부 반입'이면 대상 필수 + 저장 후 입고 등록 안내(onWaOriginChange·addWaste). 입고는 만들지 않는다. -->
+        <div class="fg"><label>출처 *</label>
+          <select id="wa-origin" onchange="onWaOriginChange()">
+            <option value="">선택</option>
+            <option value="external">외부 반입</option>
+            <option value="sorting">선과 산출</option>
+            <option value="audit">실사 보정</option>
+          </select>
+        </div>
+        <div class="fg"><label id="wa-farm-label">대상 (선택)</label><select id="wa-farm"></select></div>
         <div class="fg"><label>위치 *</label>
           <select id="wa-loc"></select>
         </div>
@@ -2059,6 +2068,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=617"></script>
+<script src="src/app.js?v=618"></script>
 </body>
 </html>
