@@ -636,3 +636,11 @@ textarea {
   tr.dr > td.stk-r { opacity: 1; }
   tr.dr > td.stk-r > * { opacity: .5; }
 }
+
+/* ── 입고내역 목록 당도 그 자리 입력(startIbBrixEdit) ───────────────────────
+   품질 열(140px) 안에 범위·평균 두 칸을 세로로 쌓는다.
+   ★폰(1024px 이하)은 16px — iOS는 16px보다 작은 입력칸에 포커스하면 화면을 확대해 버린다. */
+.ib-brix-editor { display: flex; flex-direction: column; gap: 3px; }
+.ib-brix-editor input { width: 100%; box-sizing: border-box; padding: 3px 5px; border: 1px solid #7C3AED; border-radius: 4px; font-size: 12px; font-family: inherit; outline: none; background: #fff; }
+.ib-brix-editor input:disabled { opacity: .6; }
+@media (max-width: 1024px) { .ib-brix-editor input { font-size: 16px; } }

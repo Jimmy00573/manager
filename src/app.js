@@ -6558,7 +6558,6 @@ function _rangeComposeAcid(loId, hiId) {   // 산도: [값]~[값]
   if (!lo && !hi) return null;
   return (lo && hi) ? `${lo}~${hi}` : (lo || hi);
 }
-function _brixParseable(str) { return (str || '').split('~').some(p => /^\d{1,2}(초|중|후)?$/.test((p || '').trim())); }
 function _acidParseable(str) { return (str || '').split('~').some(p => _ACID_LVLS.includes((p || '').trim())); }
 // 기존 'min~max' → 당도 4 select 채움(비파싱 세그먼트·옵션 없는 값은 빈 값)
 function _brixRangeToSel(str, loNumId, loPosId, hiNumId, hiPosId) {
@@ -6574,10 +6573,15 @@ function _acidRangeToSel(str, loId, hiId) {
   setV(loId, (parts[0] || '').trim());
   setV(hiId, parts.length > 1 ? (parts[1] || '').trim() : '');
 }
-// 수정 폼 유효값 — 드롭다운 비었고 기존값이 비파싱이면 원문 보존(유실 방지)
+// 수정 폼 유효값 — 드롭다운을 안 건드렸으면(열 때 원본으로 채운 값 그대로) 원문을 보존한다(유실 방지).
+// ★예전 규칙은 '드롭다운이 비었고 원문이 전혀 해석 안 될 때'만 보존해서, 한 조각만 해석되는 값이 잘렸다:
+//   '11~14.1' → 드롭다운엔 11만 들어가 모달을 그냥 저장해도 '11'로 줄었다(실데이터 '11초~12초중' → '11초'도 같은 함정).
+//   목록 당도 입력(startIbBrixEdit)이 자유 입력이라 이런 값이 늘어나므로, '열 때 값과 같으면 원문'으로 바꿨다.
+//   드롭다운을 실제로 바꾼 경우에만 드롭다운 값이 저장된다.
+let _eibBrixInitSel = null;   // editInboundRow가 원본으로 드롭다운을 채운 직후의 조합값
 function _eibEffBrix(orig) {
   const c = _rangeComposeBrix('eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
-  return (c === null && orig && orig.brix_range && !_brixParseable(orig.brix_range)) ? orig.brix_range : c;
+  return (orig && orig.brix_range && c === _eibBrixInitSel) ? orig.brix_range : c;
 }
 function _eibEffAcid(orig) {
   const c = _rangeComposeAcid('eib-m-acid-min', 'eib-m-acid-max');
@@ -14369,7 +14373,9 @@ function toggleRowMenu(id, e, btnEl) {
 
 // showNums=true면 등급 칩 아래에 실측 수치(당도·산도 범위) 한 줄 추가. 입고내역 목록(renderInboundList)만 사용 —
 // 다른 호출부(농가카드·선과 대기 등)는 좁은 flex 행이라 기존 그대로 칩만.
-function qualityInline(r, showNums) {
+// opts.brixEdit(입고내역 목록·관리자만): 당도 줄을 눌러 그 자리에서 범위·평균당도를 입력(startIbBrixEdit).
+//   값이 없어도 '＋ 당도 입력' 자리표시자 줄을 보여 누를 수 있다는 걸 알린다. opts가 없으면 예전과 같은 출력(+평균당도 표시).
+function qualityInline(r, showNums, opts = {}) {
   const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
   const gChip = (lbl, val) => val ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid;${GS[val]};font-weight:700;white-space:nowrap">${lbl}${val}</span>` : '';
   // ★당·산 등급 배지 제거 — 당도는 수치(brix_range)가 원본이고, 산도는 없을 때가 많아 등급이 무의미했음.
@@ -14391,15 +14397,87 @@ function qualityInline(r, showNums) {
   //   진한 회색+굵게 + 콜론으로 라벨-값 관계를 드러냄(콜론은 2자로 폭 대비 효과가 큼).
   // 툴팁은 처음 보는 사람도 알 수 있게 풀어서('당도'·'산도'). ★값 없는 항목은 라벨도 안 나오게 조립.
   const numParts = showNums
-    ? [['당', '당도', r.brix_range], ['산', '산도', r.acidity_range]].filter(p => p[2])
+    ? [['당', '당도', r.brix_range], ['평균', '평균당도', r.brix_avg], ['산', '산도', r.acidity_range]].filter(p => p[2])
     : [];
-  const numLine = smallLine(
-    numParts.map(([, full, v]) => `${full} ${v}`).join(' · '),
-    numParts.map(([sh, , v]) => `<span style="color:#6B7280;font-weight:600">${sh}:</span> ${esc(v)}`).join(' · ')
-  );
+  const numRaw  = numParts.map(([, full, v]) => `${full} ${v}`).join(' · ');
+  const numHtml = numParts.map(([sh, , v]) => `<span style="color:#6B7280;font-weight:600">${sh}:</span> ${esc(v)}`).join(' · ');
+  let numLine = smallLine(numRaw, numHtml);
+  if (showNums && opts.brixEdit && r.id) {
+    // ★같은 한 줄을 누르는 자리로 쓴다(줄을 늘리지 않음). 당도·평균이 둘 다 없으면 앞에 자리표시자를 붙인다.
+    //   padding은 폰에서 손가락으로 누를 높이를 벌기 위한 것. stopPropagation — 행 클릭과 겹치지 않게.
+    const ph = '<span style="color:#A78BFA">＋ 당도 입력</span>';
+    const inner = (r.brix_range || r.brix_avg) ? numHtml : (numHtml ? `${ph} · ${numHtml}` : ph);
+    const idq = esc(String(r.id));
+    numLine = `<div data-ib-brix="${idq}" onclick="event.stopPropagation();startIbBrixEdit('${idq}')" title="${esc(numRaw ? numRaw + ' — 눌러서 당도 수정' : '눌러서 당도·평균당도 입력').replace(/"/g, '&quot;')}" style="font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;padding:3px 0;cursor:pointer">${inner}</div>`;
+  }
   const sdLine  = smallLine(showNums ? _sizeDistInline(r.size_distribution) : '');
   const chipLine = chips.length ? `<div style="display:flex;gap:3px;flex-wrap:wrap">${chips.join('')}</div>` : '';
   return chipLine + numLine + sdLine;   // 전부 없으면 '' — 기존과 동일(빈 줄 안 만듦)
+}
+
+// ── 입고내역 목록: 당도 그 자리 입력(관리자) ─────────────────────────────
+// ★당도는 입고 시점엔 없다(농가는 안 잰다) — 공장 검수에서 재서 나중에 채운다. 수정 모달은 무겁고 다른 값을 건드릴
+//   위험이 있어, 목록의 당도 줄을 눌러 범위·평균당도 두 칸만 바로 넣는 길을 둔다.
+// ★재고 실사 숫자 칩(startChipEdit)과 같은 패턴: Enter 저장 / Esc 취소 / 바깥으로 나가면 저장.
+//   칸이 둘이라 '범위 → 평균' 칸 이동은 바깥으로 치지 않는다(포커스가 편집 영역 안으로 옮겨가면 저장 안 함).
+// ★PATCH는 brix_range·brix_avg 두 컬럼만. 범위는 자유 입력(검수 측정값 '11.8-14.1' 등) —
+//   수정 모달 드롭다운이 다 표현 못 하는 값이어도 _eibEffBrix가 원문을 지킨다.
+// ★실패하면 조용히 넘기지 않는다: 알림 + 화면 값 원래대로(로컬 값은 성공한 뒤에만 바꾼다).
+function startIbBrixEdit(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_ibAuditMode) return;   // 실사 중엔 행 누르기가 체크 — 렌더에서도 끄지만 콘솔 호출까지 막는다
+  const el = document.querySelector(`#ib-tb [data-ib-brix="${CSS.escape(String(id))}"]`);
+  if (!el || el.querySelector('input')) return;
+  const r = inboundRecords.find(x => String(x.id) === String(id));
+  if (!r) return;
+  const oldHtml = el.innerHTML, oldStyle = el.getAttribute('style'), oldClick = el.getAttribute('onclick');
+  el.removeAttribute('onclick');   // 편집 중 칸 안을 눌러도 다시 시작하지 않게
+  el.style.whiteSpace = 'normal'; el.style.overflow = 'visible'; el.style.cursor = 'default';
+  el.innerHTML = `<div class="ib-brix-editor" onclick="event.stopPropagation()">
+      <input data-k="range" type="text" autocomplete="off" placeholder="당도 범위 예) 11.8-14.1">
+      <input data-k="avg" type="text" autocomplete="off" placeholder="평균당도 예) 12중후반">
+    </div>`;
+  const ed = el.firstElementChild;
+  const [inR, inA] = ed.querySelectorAll('input');
+  inR.value = r.brix_range || ''; inA.value = r.brix_avg || '';   // .value로 주입(이스케이프 문제 방지)
+  inR.focus(); inR.select();
+  let done = false;
+  const restore = () => { el.innerHTML = oldHtml; el.setAttribute('style', oldStyle); if (oldClick) el.setAttribute('onclick', oldClick); };
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    if (!save) return restore();
+    const nr = inR.value.trim() || null, na = inA.value.trim() || null;
+    const pr = r.brix_range || null, pa = r.brix_avg || null;
+    if (nr === pr && na === pa) return restore();   // 안 바뀌었으면 저장·이력 없음
+    inR.disabled = true; inA.disabled = true;
+    try {
+      await dbUpdateInbound(r.id, { brix_range: nr, brix_avg: na });
+    } catch (e) {
+      restore();
+      alert('당도 저장에 실패했습니다. 값은 저장 전 그대로입니다.\n\n' + e.message);
+      return;
+    }
+    r.brix_range = nr; r.brix_avg = na;
+    // ★감사로그 — inbound_records엔 updated_at이 없어 이 행이 있어야 다른 화면의 변경 감지가 잡는다.
+    //   기록 실패가 저장 결과를 바꾸지 않게 콘솔 경고만(파치 수정·삭제와 같은 원칙).
+    dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: r.id,
+      before_val: { brix_range: pr, brix_avg: pa }, after_val: { brix_range: nr, brix_avg: na },
+      reason: `당도 입력(입고 목록): ${r.farm_name || ''} ${_ibShareMD(r.date)} ${r.product || ''}`.trim(),
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(err => console.warn('당도 입력 이력 기록 실패:', err.message));
+    renderInboundList();
+    showToast('🍊 당도 저장 — ⋮ 메뉴 [당도 공유]로 복사할 수 있습니다');
+  };
+  ed.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  ed.addEventListener('focusout', e => {
+    if (e.relatedTarget && ed.contains(e.relatedTarget)) return;   // 범위 ↔ 평균 칸 이동
+    setTimeout(() => { if (!ed.contains(document.activeElement)) finish(true); }, 0);
+  });
 }
 
 function toggleMemo(id) {
@@ -14490,6 +14568,7 @@ function openQualityModal(id) {
       }</div>` : '';
   const measureBlock = [
     r.brix_range     ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">당도 범위</span>${esc(r.brix_range)}</div>` : '',
+    r.brix_avg       ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">평균당도</span>${esc(r.brix_avg)}</div>` : '',
     r.acidity_range  ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">산도 범위</span>${esc(r.acidity_range)}</div>` : '',
     r.size_distribution ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">크기 분포</span>${esc(r.size_distribution)}</div>` : '',
   ].filter(Boolean).join('');
@@ -14544,7 +14623,7 @@ const AUDIT_FIELD_LABELS = {
   date: '날짜', quantity: '수량(CT)', location: '위치', note: '메모',
   inbound_category: '카테고리', is_priority: '우선사용',
   brix_grade: '당도등급', acidity_grade: '산도등급', appearance_grade: '외관등급', defect_tags: '특이사항',
-  brix_range: '당도범위', acidity_range: '산도범위', size_distribution: '크기분포',
+  brix_range: '당도범위', brix_avg: '평균당도', acidity_range: '산도범위', size_distribution: '크기분포',
   is_void: '무효여부', exclude_from_unsorted: '선과 안 함',
   reclassification_source: '재선별출처', reclassification_reason: '재선별사유', original_work_date: '원본작업일',
   init: '초기재고'   // 콘테이너 초기재고(settings) — 라벨이 없으면 getAuditDiff가 걸러내 이력에 내용이 안 보인다
@@ -17242,7 +17321,8 @@ function renderInboundList() {
     const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
     const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
     const sortedBadge = isSorted ? `<span onclick="event.stopPropagation();openSortedInboundDetail('${r.id}')" style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과품 입고 내역">선과품 🔍</span>` : '';
-    const qInline = qualityInline(r, true);   // 입고내역 목록만 실측 수치 줄 표시
+    // 입고내역 목록만 실측 수치 줄 표시. 당도 그 자리 입력은 관리자만 — 재고 실사 중엔 행 누르기가 체크라 끈다(마이그레이션 필요 행 제외).
+    const qInline = qualityInline(r, true, { brixEdit: isAdm && !r._legacy && !_ibAuditMode });
     const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
     let driverCell;
     if (r.driver_id && r.driver?.name) {
@@ -17256,6 +17336,7 @@ function renderInboundList() {
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
          <button onclick="openInboundShareText('${r.id}')">📋 공유</button>
+         <button onclick="openInboundShareText('${r.id}','brix')">🍊 당도 공유</button>
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
          ${remaining > 0 ? `<button onclick="openUnsortedOutboundModal('${r.id}')">📤 출고</button>` : ''}
          ${_srtExcludable ? `<button onclick="toggleInboundSortExclude('${r.id}')">${isSrtExcluded ? '↩️ 선과 대상으로' : '🚫 선과 안 함'}</button>` : ''}
@@ -18082,6 +18163,17 @@ function editInboundRow(id) {
   setGradeVal('eib-m-appearance-grade', r.appearance_grade || null);   // ★당도·산도 등급 입력은 제거됨
   setDefectTags('eib-m-defect-wrap', r.defect_tags || null);
   _brixRangeToSel(r.brix_range, 'eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
+  _eibBrixInitSel = _rangeComposeBrix('eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
+  { // 드롭다운이 원문을 다 못 담으면 원문을 안내(칸을 안 건드리면 그대로 저장됨)
+    const rawEl = document.getElementById('eib-m-brix-raw');
+    const raw = r.brix_range || '';
+    if (rawEl) {
+      const partial = raw && _eibBrixInitSel !== raw;
+      rawEl.style.display = partial ? '' : 'none';
+      rawEl.textContent = partial ? `저장된 값: ${raw} — 칸을 고르지 않으면 이 값이 그대로 유지됩니다` : '';
+    }
+  }
+  const avgEl = document.getElementById('eib-m-brix-avg'); if (avgEl) avgEl.value = r.brix_avg || '';
   _acidRangeToSel(r.acidity_range, 'eib-m-acid-min', 'eib-m-acid-max');
   renderSizeDistInputs('eib-m', r.product, r.size_distribution);
   document.getElementById('eib-m-note').value = r.note || '';
@@ -18109,7 +18201,7 @@ function editInboundRow(id) {
   //   모달을 닫았다 다시 열면 이전 열림 상태가 남아 있으므로, 이 보정이 없으면 반대로 동작함.
   const eibAdvPanel = document.getElementById('eib-m-adv-quality');
   if (eibAdvPanel) {
-    const wantOpen = !!(r.brix_range || r.acidity_range || r.size_distribution);
+    const wantOpen = !!(r.brix_range || r.brix_avg || r.acidity_range || r.size_distribution);
     const isOpen = eibAdvPanel.style.display !== 'none';
     if (wantOpen !== isOpen) toggleAdvQuality('eib-m');
   }
@@ -18130,6 +18222,7 @@ async function closeEditInboundModal() {
       getGradeVal('eib-m-appearance-grade') !== (r.appearance_grade || null) ||
       getDefectTags('eib-m-defect-wrap') !== (r.defect_tags || null) ||
       _eibEffBrix(r) !== (r.brix_range || null) ||
+      ((document.getElementById('eib-m-brix-avg')?.value || '').trim() || null) !== (r.brix_avg || null) ||
       _eibEffAcid(r) !== (r.acidity_range || null) ||
       _eibEffSize(r) !== (r.size_distribution || null) ||
       document.getElementById('eib-m-priority').checked !== !!r.is_priority ||
@@ -18162,6 +18255,7 @@ async function saveInboundModal() {
   const defect_tags = getDefectTags('eib-m-defect-wrap');
   const _origIb = inboundRecords.find(x => String(x.id) === String(id));
   const brix_range = _eibEffBrix(_origIb);
+  const brix_avg = (document.getElementById('eib-m-brix-avg')?.value || '').trim() || null;   // 서술형 평균당도(목록 당도 입력과 같은 컬럼)
   const acidity_range = _eibEffAcid(_origIb);
   const size_distribution = _eibEffSize(_origIb);
   const is_priority = document.getElementById('eib-m-priority').checked;
@@ -18206,6 +18300,7 @@ async function saveInboundModal() {
     appearance_grade !== (prev.appearance_grade || null) ||
     defect_tags !== (prev.defect_tags || null) ||
     brix_range !== (prev.brix_range || null) ||
+    brix_avg !== (prev.brix_avg || null) ||
     acidity_range !== (prev.acidity_range || null) ||
     size_distribution !== (prev.size_distribution || null) ||
     is_priority !== !!prev.is_priority ||
@@ -18261,7 +18356,7 @@ async function saveInboundModal() {
   const updatePayload = {
     date, quantity: qty, location, note, inbound_category, is_priority,
     appearance_grade, defect_tags,
-    brix_range, acidity_range, size_distribution,
+    brix_range, brix_avg, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
     driver_id, driver_name_manual: null,
   };
@@ -18303,12 +18398,12 @@ async function saveInboundModal() {
         before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note,
           inbound_category: prev.inbound_category, is_priority: prev.is_priority,
           appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
-          brix_range: prev.brix_range, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
+          brix_range: prev.brix_range, brix_avg: prev.brix_avg ?? null, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
           reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date,
           driver_id: prev.driver_id },
         after_val: { date, quantity: qty, location, note, inbound_category, is_priority,
           appearance_grade, defect_tags,
-          brix_range, acidity_range, size_distribution,
+          brix_range, brix_avg, acidity_range, size_distribution,
           reclassification_source, reclassification_reason, original_work_date,
           driver_id },
         reason, staff: 'admin'
@@ -18318,7 +18413,7 @@ async function saveInboundModal() {
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx],
       date, quantity: qty, location, note, inbound_category, is_priority,
       appearance_grade, defect_tags,   // ★brix_grade·acidity_grade는 안 건드림 — 기존 값 보존
-      brix_range, acidity_range, size_distribution,
+      brix_range, brix_avg, acidity_range, size_distribution,
       reclassification_source, reclassification_reason, original_work_date,
       driver_id, driver_name_manual: null,
       driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null };
@@ -19744,7 +19839,9 @@ function _ibShareCluster(rows, target) {
   while (e < sorted.length - 1 && ts(sorted[e + 1]) - ts(sorted[e]) <= gap) e++;
   return sorted.slice(s, e + 1);
 }
-async function buildInboundShareText(inboundId) {
+// 공유 텍스트의 '같은 차' 묶음 — 전체 공유(buildInboundShareText)와 당도 공유(buildInboundBrixShareText)가 같이 쓴다.
+// ★두 공유가 따로 묶으면 같은 입고인데 당도 값이 서로 다르게 나올 수 있다 — 묶음·집는 규칙은 여기 한 곳.
+async function _ibShareGroup(inboundId) {
   const base = (await sbGet('inbound_records', `id=eq.${inboundId}`))[0];
   if (!base) throw new Error('입고 기록을 찾을 수 없습니다.');
   // ★같은 '날짜'만 서버에서 거르고 농가·품목은 JS로 거른다 — 둘 다 한글이라 쿼리에 그대로 넣으면 인코딩 사고가 난다.
@@ -19753,11 +19850,26 @@ async function buildInboundShareText(inboundId) {
   const sibs = (sameDay || []).filter(r => !r.is_void && r.farm_name === base.farm_name && r.product === base.product);
   const grp = _ibShareCluster(sibs.length ? sibs : [base], base)
     .sort((a, b) => _ibCatRank(a.inbound_category) - _ibCatRank(b.inbound_category));
-
-  const total = grp.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   // 값이 있는 첫 행에서 집는다. 품질·중량은 상품 행에만 저장되지만(143dcd9·이번 커밋),
   // 그 전에 등록된 건은 모든 행에 같은 값이 복사돼 있어 어느 쪽이든 같은 값이 나온다.
   const pick = k => { const r = grp.find(x => x[k] != null && x[k] !== ''); return r ? r[k] : ''; };
+  return { base, grp, pick };
+}
+// 당도만 뽑는 짧은 공유 — 검수에서 잰 당도를 업무 채팅방에 답글로 올릴 때.
+//   {농가명} {M/D} {품목}
+//   당도 {범위} / 평균 {평균당도}      ← 값 없는 쪽은 뺀다. 둘 다 없으면 null(호출부가 안내).
+async function buildInboundBrixShareText(inboundId) {
+  const { base, pick } = await _ibShareGroup(inboundId);
+  const range = String(pick('brix_range') || '').trim(), avg = String(pick('brix_avg') || '').trim();
+  if (!range && !avg) return null;
+  const head = [base.farm_name, _ibShareMD(base.date), base.product].filter(Boolean).join(' ');
+  const body = [range && `당도 ${range}`, avg && `평균 ${avg}`].filter(Boolean).join(' / ');
+  return [head, body].filter(Boolean).join('\n');
+}
+async function buildInboundShareText(inboundId) {
+  const { base, grp, pick } = await _ibShareGroup(inboundId);
+
+  const total = grp.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   const drv = drivers.find(d => String(d.id) === String(base.driver_id));
   const drvLine = drv ? [drv.name, (drv.note || '').trim()].filter(Boolean).join(' ') : '';
   const addr = (gf(base.farm_name).addr || '').trim();
@@ -19794,6 +19906,7 @@ async function buildInboundShareText(inboundId) {
   if (kgPerCt > 0) add('중량', `${_ibShareNum(kgPerCt)}kg`);
   add('크기', pick('size_distribution'));
   add('당도', pick('brix_range'));
+  add('평균당도', pick('brix_avg'));   // 서술형 평균(예: 12중후반대13초) — 값 있을 때만
   add('산도', pick('acidity_range'));
   add('콘테나', ctLine);
   // 특이사항 — 카테고리마다 메모가 다를 수 있다(상품 '색 잘남' / 대과 '왕1·왕2' / 소과 '00번 사이즈').
@@ -19808,9 +19921,12 @@ async function buildInboundShareText(inboundId) {
   if (noteLines.length) { L.push(`특이사항: ${noteLines[0]}`); noteLines.slice(1).forEach(n => L.push(n)); }
   return L.join('\n');
 }
-async function openInboundShareText(inboundId) {
+// mode 'brix' = 당도만 뽑는 짧은 공유(buildInboundBrixShareText). 모달·복사(copyInboundShareText)는 전체 공유와 같은 것을 쓴다.
+async function openInboundShareText(inboundId, mode) {
+  const isBrix = mode === 'brix';
   try {
-    const text = await buildInboundShareText(inboundId);
+    const text = isBrix ? await buildInboundBrixShareText(inboundId) : await buildInboundShareText(inboundId);
+    if (isBrix && text == null) { showToast('이 입고에는 당도·평균당도 값이 없습니다 — 목록의 당도 줄을 눌러 먼저 입력하세요'); return; }
     // ★모달 셸을 매번 지우고 다시 만든다 — 한 번만 만드는 방식은 옛 레이아웃이 남는 사고가 있었다.
     document.getElementById('modal-ib-share')?.remove();
     const m = document.createElement('div');
@@ -19819,12 +19935,12 @@ async function openInboundShareText(inboundId) {
     m.innerHTML = `
       <div style="background:#fff;border-radius:14px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:85vh">
         <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:14px;font-weight:700;color:#1565C0">📋 입고내역 공유</div>
+          <div style="font-size:14px;font-weight:700;color:#1565C0">${isBrix ? '🍊 당도 공유' : '📋 입고내역 공유'}</div>
           <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
         </div>
         <div style="padding:14px 18px;flex:1;overflow:auto">
-          <textarea id="ib-share-text" style="width:100%;box-sizing:border-box;height:320px;max-height:50vh;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;font-family:inherit;line-height:1.5;resize:vertical"></textarea>
-          <div style="font-size:11px;color:#9CA3AF;margin-top:6px">같은 차로 들어온 카테고리를 한 장으로 묶었습니다. 보내기 전 여기서 고칠 수 있습니다.</div>
+          <textarea id="ib-share-text" style="width:100%;box-sizing:border-box;height:${isBrix ? 90 : 320}px;max-height:50vh;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;font-family:inherit;line-height:1.5;resize:vertical"></textarea>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:6px">${isBrix ? '당도만 뽑았습니다(값 없는 항목은 뺌). 보내기 전 여기서 고칠 수 있습니다.' : '같은 차로 들어온 카테고리를 한 장으로 묶었습니다. 보내기 전 여기서 고칠 수 있습니다.'}</div>
         </div>
         <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
           <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">닫기</button>

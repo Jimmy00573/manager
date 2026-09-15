@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
-  <link rel="stylesheet" href="src/style.css?v=34">
+  <link rel="stylesheet" href="src/style.css?v=35">
 </head>
 <body>
 
@@ -1642,6 +1642,11 @@
                 <select id="eib-m-brix-max-num" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option></select>
                 <select id="eib-m-brix-max-pos" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>초</option><option>중</option><option>후</option></select>
               </div>
+              <!-- 드롭다운으로 다 표현 못 하는 저장값(목록에서 자유 입력한 '11.8-14.1' 등)을 보여 준다 — 칸을 안 건드리면 그 값이 유지된다(_eibEffBrix). -->
+              <div id="eib-m-brix-raw" style="display:none;font-size:11px;color:#B45309;margin-top:3px;line-height:1.4"></div>
+            </div>
+            <div class="fg"><label>평균당도 <small>(서술형)</small></label>
+              <input id="eib-m-brix-avg" type="text" autocomplete="off" placeholder="예) 12중후반대13초" style="padding:5px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box">
             </div>
             <div class="fg"><label>산도 범위 <small>(%)</small></label>
               <div style="display:flex;align-items:center;gap:3px">
@@ -2068,6 +2073,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=622"></script>
+<script src="src/app.js?v=623"></script>
 </body>
 </html>
