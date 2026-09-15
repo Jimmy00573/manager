@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
-  <link rel="stylesheet" href="src/style.css?v=32">
+  <link rel="stylesheet" href="src/style.css?v=33">
 </head>
 <body>
 
@@ -397,7 +397,7 @@
     </div>
     <div id="harvest-no-disp-sec" style="display:none;margin-bottom:12px"></div>
     <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
-    <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>시간대</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th class="disp-sms-col" style="display:none">문자</th><th></th></tr></thead><tbody id="disp-tb"></tbody></table>
+    <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>시간대</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th class="disp-sms-col" style="display:none">문자</th><th class="stk-r"></th></tr></thead><tbody id="disp-tb"></tbody></table>
     <div class="pagination" id="disp2-pg"></div></div>
   </div>
 
@@ -1301,7 +1301,7 @@
               <th class="sort-header" onclick="ibToggleSort('farm')">농가명<span id="ib-si-farm" class="sort-icon">↕</span></th>
               <th>품목</th><th>비율</th><th>카테고리</th>
               <th class="sort-header" onclick="ibToggleSort('qty')">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
-              <th>위치</th><th>수송기사</th><th>품질</th><th>메모</th><th></th>
+              <th>위치</th><th>수송기사</th><th>품질</th><th>메모</th><th class="stk-r"></th>
             </tr></thead>
             <tbody id="ib-tb"><tr><td colspan="11" class="empty">입고 기록 없음</td></tr></tbody>
           </table>
@@ -2068,6 +2068,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=619"></script>
+<script src="src/app.js?v=620"></script>
 </body>
 </html>

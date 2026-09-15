@@ -1471,6 +1471,13 @@ function gradeOf(r) { return (r && r.quality_grade) || '일반'; }
 function isNormalGrade(r) { return gradeOf(r) === '일반'; }
 function isGraded(r) { return !isNormalGrade(r); }   // 등급 있음(현재=고당, 향후=브릭스)
 function emr(c, m) { return `<tr><td colspan="${c}" class="empty">${m}</td></tr>`; }
+// 작업 열 고정(.stk-r, style.css)용 — tr 인라인 style 문자열에서 배경색을 뽑아 ';--stk-bg:색;'으로 돌려준다(없으면 '').
+// ★행 색 결정은 각 렌더 함수의 style 문자열 한 곳에 두고 여기서 읽기만 한다 — 색을 두 벌로 적으면 한쪽만 바뀌어 고정 칸만 튄다.
+// ★앞에 ';'를 붙인다 — 끝에 세미콜론이 없는 style(예: 'background:#FFFDE7') 뒤에 이어 붙여도 선언이 깨지지 않게.
+function _stkBgVar(style) {
+  const m = /background(?:-color)?:\s*([^;]+)/.exec(style || '');
+  return m ? `;--stk-bg:${m[1].trim()};` : '';
+}
 // 빨간 경고 칩 — 재고 요약 KPI 카드(renderInvSummary)와 배차 현황판(renderDDash)이 같이 쓴다.
 // ★스타일을 복사해 두 벌로 만들지 않는다(원래 renderInvSummary 안의 지역 const였다).
 // ★onClick을 안 주면 예전 출력과 한 글자도 다르지 않다 — 주면 눌리는 칩이 된다.
@@ -2609,7 +2616,7 @@ function renderDisp() {
     <td>${d.qty > 0 ? d.qty+'개' : '<span class="badge b-warn">미정</span>'}</td><td>${ctB(d.ctype)}</td><td>${d.harvest || '-'}</td><td>${esc(d.item || '-')}</td><td>${esc(d.car || '-')}</td>
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
     <td class="disp-sms-col"><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
-    <td><div style="display:flex;gap:4px;align-items:center">
+    <td class="stk-r"><div style="display:flex;gap:4px;align-items:center">
       ${!isAdm ? '' : d.status !== '배출완료'
         ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>`
         : `<button class="btn" style="background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="updDisp(${d.id},'배차완료')">↩ 되돌리기</button>`}
@@ -12188,14 +12195,14 @@ function renderOutboundHistory() {
         + `<button onclick="deleteManualTx('${r.id}')" style="background:none;border:1px solid #FCA5A5;color:#DC2626;font-size:11px;padding:3px 8px;border-radius:5px;cursor:pointer">삭제</button>`;
     }
     const rowBg = t.kind === 'in' ? 'background:#F3F4F6;' : '';
-    return `<tr style="${rowBg}border-bottom:1px solid #E5E7EB">
+    return `<tr style="${rowBg}${_stkBgVar(rowBg)}border-bottom:1px solid #E5E7EB">
       <td style="padding:7px 10px;white-space:nowrap;font-size:13px">${t.date}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(t.product)}${size}${expiry}${r.note ? `<br><span style="font-size:10px;color:#9CA3AF">📝 ${esc(r.note)}</span>` : ''}</td>
       <td style="padding:7px 10px">${kindBadge(t)}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(t.partner||'-')}${t.manual && t.farm ? `<br><span style="font-size:10px;color:#9CA3AF">농가: ${esc(t.farm)}</span>` : ''}</td>
       <td style="padding:7px 10px;text-align:right;font-weight:600;font-size:13px">${fmtN(t.qty)} ${esc(t.unit)}</td>
       <td style="padding:7px 10px;text-align:right;font-size:13px;white-space:nowrap">${amtCell}</td>
-      <td style="padding:7px 10px;text-align:center;white-space:nowrap">${actionCell}</td>
+      <td class="stk-r" style="padding:7px 10px;text-align:center;white-space:nowrap">${actionCell}</td>
     </tr>`;
   }
 
@@ -12302,14 +12309,14 @@ function renderOutboundHistory() {
         <span style="font-size:14px">${totalParts}</span>
       </div>
       <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:#F9FAFB;border-bottom:2px solid #E5E7EB">
+        <thead><tr style="background:#F9FAFB;--stk-bg:#F9FAFB;border-bottom:2px solid #E5E7EB">
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">일자</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">품목</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">구분</th>
           <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6B7280;font-weight:600">거래처/농가</th>
           <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">수량</th>
           <th style="padding:8px 10px;text-align:right;font-size:12px;color:#6B7280;font-weight:600">금액</th>
-          <th style="padding:8px 10px;text-align:center;font-size:12px;color:#6B7280;font-weight:600"></th>
+          <th class="stk-r" style="padding:8px 10px;text-align:center;font-size:12px;color:#6B7280;font-weight:600"></th>
         </tr></thead>
         <tbody>${bodyHtml}</tbody>
       </table></div>
@@ -14320,22 +14327,30 @@ let _expandedMemoId = null;
 let _allMemosExpanded = false;
 let _openMenuId = null;
 
+// 메뉴가 고정 열(.stk-r) 칸 안에 있으면 열린 동안만 그 칸을 위로 올린다 — sticky 칸은 쌓임 맥락이라
+// 안 올리면 펼친 메뉴가 아래 행들의 고정 칸에 가려진다(style.css .stk-open). 고정 열이 아닌 목록(농가별 보기)은 할 일 없음.
+function _rowMenuLift(menu, on) {
+  const cell = menu && menu.closest('.stk-r');
+  if (cell) cell.classList.toggle('stk-open', on);
+}
 function toggleRowMenu(id, e, btnEl) {
   if (e && e.stopPropagation) e.stopPropagation();
   if (_openMenuId && _openMenuId !== id) {
     const prev = document.getElementById(`row-menu-${_openMenuId}`);
-    if (prev) prev.style.display = 'none';
+    if (prev) { prev.style.display = 'none'; _rowMenuLift(prev, false); }
   }
   const menu = document.getElementById(`row-menu-${id}`);
   if (!menu) return;
   const isOpen = menu.style.display !== 'none';
   if (isOpen) {
     menu.style.display = 'none';
+    _rowMenuLift(menu, false);
     _openMenuId = null;
   } else {
     const btn = btnEl || (e && e.currentTarget);
     const rect = btn.getBoundingClientRect();
     menu.style.display = '';
+    _rowMenuLift(menu, true);
     const menuH = menu.offsetHeight;
     const top = (window.innerHeight - rect.bottom >= menuH + 4 || rect.top < menuH + 4)
       ? rect.bottom + 4
@@ -17254,7 +17269,7 @@ function renderInboundList() {
     const locCell = r.distribution_group_id
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
       : esc(r.location || '-');
-    return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}">
+    return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
@@ -17265,7 +17280,7 @@ function renderInboundList() {
       <td style="white-space:nowrap">${driverCell}</td>
       <td style="white-space:nowrap">${gradeCell}</td>
       <td>${memoCell}</td>
-      <td>${actionCell}</td>
+      <td class="stk-r">${actionCell}</td>
     </tr>`;
   })).join('');
   if (!_ibAuditMode) _renderIbPagination(totalFiltered);
@@ -21159,7 +21174,7 @@ function renderPachiSection() {
     const ctCell = `<td style="padding:7px 10px;text-align:right;font-weight:600">${fmtN(r.ct)}</td>`;
     const memoCell = `<td style="padding:7px 10px;font-size:12px;color:#666">${esc(r.memo || '-')}</td>`;
     const kebabCell = isAdm
-      ? `<td style="padding:4px 8px;text-align:center">
+      ? `<td class="stk-r" style="padding:4px 8px;text-align:center">
           <button class="pachi-kebab" onclick="togglePachiRowMenu(${regId},this)"
             style="background:none;border:none;cursor:pointer;font-size:18px;color:#6B7280;padding:4px 8px;border-radius:4px;line-height:1;font-family:inherit"
             title="메뉴">⋮</button></td>`
@@ -21204,7 +21219,7 @@ function renderPachiSection() {
           : ''}</td>`;
       }
     }
-    return `<tr ${idsAttr} style="${trStyle}">
+    return `<tr ${idsAttr} style="${trStyle}${_stkBgVar(trStyle)}">
       ${leadCell}
       <td style="padding:7px 10px;white-space:nowrap;color:#555;font-size:13px">${r.date || '-'}</td>
       <td style="padding:7px 10px;font-size:13px">${esc(r.farm || '-')}</td>
@@ -21380,7 +21395,7 @@ function renderPachiSection() {
       ${bulkBar}
       <div class="tbl-wrap">
         <table style="min-width:560px;width:100%;border-collapse:collapse">
-          <thead><tr style="background:#F9FAFB">
+          <thead><tr style="background:#F9FAFB;--stk-bg:#F9FAFB">
             ${isAdm ? (_pachiAuditMode
               ? '<th style="padding:7px 6px;border-bottom:1px solid #E5E7EB;width:34px;text-align:center;font-size:11px;color:#7C3AED" title="파치 실사">✓</th>'
               : '<th style="padding:7px 6px;border-bottom:1px solid #E5E7EB;width:34px;text-align:center"><input type="checkbox" id="pachi-chk-all" onchange="togglePachiCheckAll(this)" style="cursor:pointer;width:16px;height:16px;vertical-align:middle" title="전체 선택"></th>') : ''}
@@ -21395,7 +21410,7 @@ function renderPachiSection() {
             <th style="text-align:center;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">사용처</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">위치</th>
             <th style="text-align:left;padding:7px 10px;border-bottom:1px solid #E5E7EB;font-size:12px">메모</th>
-            ${isAdm ? '<th style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
+            ${isAdm ? '<th class="stk-r" style="padding:7px 10px;border-bottom:1px solid #E5E7EB;width:40px"></th>' : ''}
           </tr></thead>
           <tbody>${groupedHtml || `<tr><td colspan="${isAdm ? 13 : 11}" class="empty">파치 기록 없음</td></tr>`}</tbody>
         </table>
@@ -23143,7 +23158,7 @@ document.addEventListener('click', e => {
 
   if (_openMenuId && !e.target.closest('.row-menu') && !e.target.classList.contains('menu-trigger')) {
     const menu = document.getElementById(`row-menu-${_openMenuId}`);
-    if (menu) menu.style.display = 'none';
+    if (menu) { menu.style.display = 'none'; _rowMenuLift(menu, false); }
     _openMenuId = null;
   }
 });
