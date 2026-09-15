@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
-  <link rel="stylesheet" href="src/style.css?v=33">
+  <link rel="stylesheet" href="src/style.css?v=34">
 </head>
 <body>
 
@@ -336,7 +336,7 @@
   <div id="alert-detail"><div class="alert-cats"><div class="alert-cat"><div class="alert-cat-hdr fh">🟡 회수 필요 <span id="afc" class="alert-cnt w">0</span></div><div class="alert-cat-body" id="afb"></div></div><div class="alert-cat"><div class="alert-cat-hdr rh">🟢 반납 필요 <span id="arc" class="alert-cnt g">0</span></div><div class="alert-cat-body" id="arb"></div></div></div></div>
   <div class="sec-hdr"><div class="sec-title">농가별 콘테이너 현황</div><button class="sec-toggle" onclick="togS('farm-dash')"><span id="farm-dash-txt">간략히</span></button></div>
   <div id="farm-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="farm-dash-badges"></div></div>
-  <div id="farm-dash-detail"><div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="ftab-n" onclick="switchFT('n')">처리 필요</button><button class="dtab" id="ftab-o" onclick="switchFT('o')">정상</button></div><table><thead><tr><th>농가명</th><th>배출</th><th>원물수거</th><th>빈콘회수</th><th>농가보유</th><th>상태</th></tr></thead><tbody id="d-farm-tb"></tbody></table></div></div>
+  <div id="farm-dash-detail"><div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="ftab-n" onclick="switchFT('n')">처리 필요</button><button class="dtab" id="ftab-o" onclick="switchFT('o')">정상</button></div><table><thead><tr><th>농가명</th><th>배출</th><th>원물수거</th><th>빈콘회수</th><th>농가보유</th><th class="stk-r">상태</th></tr></thead><tbody id="d-farm-tb"></tbody></table></div></div>
   <div class="sec-hdr"><div class="sec-title">외부 용기 현황</div><button class="sec-toggle" onclick="togS('ext-dash')"><span id="ext-dash-txt">간략히</span></button></div>
   <div id="ext-dash-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="ext-dash-badges"></div></div>
   <div id="ext-dash-detail"><div class="ext-grid" id="ext-cards"></div></div>
@@ -423,7 +423,7 @@
       </div>
       <div class="form-actions"><button class="btn copy" id="pk-sms-btn" onclick="openPickSms()" style="display:none">📱 문자</button><button class="btn pri" onclick="addPick()">등록</button></div>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>기사</th><th>차량</th><th>비고</th><th>수정시간</th><th></th></tr></thead><tbody id="pick-tb"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>기사</th><th>차량</th><th>비고</th><th>수정시간</th><th class="stk-r"></th></tr></thead><tbody id="pick-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -441,7 +441,7 @@
       <div class="form-actions"><button class="btn pri" onclick="addOwnOut()">반납 등록</button></div>
     </div>
     <div class="sec-hdr"><div class="sec-title">농가별 현황 <span id="own-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div></div>
-    <div class="tbl-wrap"><table><thead><tr><th>농가명</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>특징</th><th>상태</th></tr></thead><tbody id="own-sum"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>농가명</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>특징</th><th class="stk-r">상태</th></tr></thead><tbody id="own-sum"></tbody></table></div>
     <div class="fold-bar" onclick="togF('own-tb')"><div class="fold-label">이동 내역 <span id="own-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="own-tb-icon" class="fold-icon">▼ 자세히</span></div>
     <div id="own-tb-wrap" style="display:none"><div class="tbl-wrap"><table class="xc-tbl"><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>방법</th><th>콘테이너 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="own-tb"></tbody></table></div></div>
   </div>
@@ -456,7 +456,7 @@
       <div class="form-actions"><button class="btn pri" onclick="addNhfOut()">반납 등록</button></div>
     </div>
     <div class="fold-bar" onclick="togF('nhf-sum')"><div class="fold-label">농협별 현황 <span id="nhf-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div><span id="nhf-sum-icon" class="fold-icon">▼ 자세히</span></div>
-    <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>소유</th><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
+    <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>소유</th><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th class="stk-r">상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
     <div class="fold-bar" onclick="togF('nhf-tb')"><div class="fold-label">이동 내역 <span id="nhf-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="nhf-tb-icon" class="fold-icon">▼ 자세히</span></div>
     <div id="nhf-tb-wrap" style="display:none"><div class="tbl-wrap"><table class="xc-tbl"><thead><tr><th>날짜</th><th>농협명</th><th>종류</th><th>구분</th><th>수량</th><th>방법</th><th>용기 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="nhf-tb"></tbody></table></div></div>
   </div>
@@ -478,7 +478,7 @@
       </div>
       <div class="form-actions"><button class="btn copy" onclick="previewBkMsg()">📋 문자 미리보기</button><button class="btn pri" onclick="addBkCol()">회수 등록</button></div>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>수량</th><th>기사</th><th>비고</th><th>문자</th></tr></thead><tbody id="bk-tb"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>수량</th><th>기사</th><th>비고</th><th class="stk-r">문자</th></tr></thead><tbody id="bk-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -2068,6 +2068,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=620"></script>
+<script src="src/app.js?v=621"></script>
 </body>
 </html>

@@ -2673,7 +2673,7 @@ function renderPick() {
     <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.car || '-')}</td>
     <td>${esc(p.note || '-')}</td>
     <td class="mtime">${p.updated_at ? '✏️ ' + ftm(p.updated_at) : '-'}</td>
-    <td><div style="display:flex;gap:4px">${isAdm ? `<button class="btn edt" onclick="openPickEdit(${p.id})">✏️</button>` : ''}${isAdm ? `<button class="btn del" onclick="delPick(${p.id})">삭제</button>` : ''}</div></td>
+    <td class="stk-r"><div style="display:flex;gap:4px">${isAdm ? `<button class="btn edt" onclick="openPickEdit(${p.id})">✏️</button>` : ''}${isAdm ? `<button class="btn del" onclick="delPick(${p.id})">삭제</button>` : ''}</div></td>
   </tr>`).join('');
 }
 
@@ -2781,7 +2781,7 @@ function renderOwn() {
   const ownRowHtml = (c, pending) => {
     const st = c.st, q = s => String(s).replace(/'/g, "&#39;"), bcl = pending ? 'b-warn' : 'b-ok';
     const retBtn = (pending && isAdm) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${q(c.farm)}','${q(c.ct)}')">↩ 반납</button>` : '';
-    return `<tr${pending ? '' : ' class="dr"'}><td class="nm">${esc(c.farm)}</td><td>${_ctBadge(c.ct)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge ${bcl}">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td><span class="badge ${bcl}">${pending ? '반납필요' : '정산완료'}</span>${retBtn}</td></tr>`;
+    return `<tr${pending ? '' : ' class="dr"'}><td class="nm">${esc(c.farm)}</td><td>${_ctBadge(c.ct)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge ${bcl}">${st.left}개</span></td><td>${esc(st.feature || '-')}</td><td class="stk-r"><span class="badge ${bcl}">${pending ? '반납필요' : '정산완료'}</span>${retBtn}</td></tr>`;
   };
   let rows = '';
   if (pend.length) rows += pend.map(c => ownRowHtml(c, true)).join('');
@@ -2832,7 +2832,7 @@ function renderBkCol() {
     <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
     <td>${p.qty > 0 ? p.qty+'개' : '-'}</td><td>${esc(p.driver || '-')}</td>
     <td>${esc(p.note || '-')}</td>
-    <td style="display:flex;gap:4px">
+    <td class="stk-r" style="display:flex;gap:4px">
       ${p.driver ? `<button class="btn copy" style="padding:4px 8px" onclick="openBkMsg({date:'${p.date}',farm:'${p.farm.replace(/'/g,"\\'")}',driver:'${(p.driver||'').replace(/'/g,"\\'")}',qty:${p.qty},note:'${(p.note||'').replace(/'/g,"\\'")}',dtel:''})">📱</button>` : ''}
       ${isAdm ? `<button class="btn del" onclick="delBkCol(${p.id})">삭제</button>` : ''}
     </td>
@@ -3108,8 +3108,8 @@ function renderNhf() {
   const bg = document.getElementById('nhf-sum-badge');
   if (bg) { bg.textContent = pend.length > 0 ? `반납필요 ${pend.length}건` : '모두 정산완료'; bg.className = 'badge ' + (pend.length > 0 ? 'b-warn' : 'b-ok'); bg.style.textTransform = 'none'; bg.style.fontSize = '11px'; }
   let rows = '';
-  if (pend.length) rows += pend.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${nhf.replace(/'/g,"&#39;")}','${type.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td>${_ctBadge(type)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
-  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return `<tr class="dr"><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td>${_ctBadge(type)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
+  if (pend.length) rows += pend.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); const retBtn = isAdm ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${nhf.replace(/'/g,"&#39;")}','${type.replace(/'/g,"&#39;")}')">↩ 반납</button>` : ''; return `<tr><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td>${_ctBadge(type)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-warn">${st.left}개</span></td><td class="stk-r"><span class="badge b-warn">반납필요</span>${retBtn}</td></tr>`; }).join('');
+  if (done.length) { rows += `<tr class="ddiv"><td colspan="7">── 정산 완료 ──</td></tr>`; rows += done.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return `<tr class="dr"><td>${ownerBadge(nhfOwner(nhf, type))}</td><td class="nm">${esc(nhf)}</td><td>${_ctBadge(type)}</td><td>${st.inQ}개</td><td>${st.outQ}개</td><td><span class="badge b-ok">${st.left}개</span></td><td class="stk-r"><span class="badge b-ok">정산완료</span></td></tr>`; }).join(''); }
   document.getElementById('nhf-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...nhfIns.map(o => ({ ...o, dir: '반입', xt: 'nhfIn', dm: o.goods ? '반입(' + o.goods + ')' : '-' })), ...nhfOuts.map(o => ({ ...o, dir: '반납', xt: 'nhfOut', dm: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('nhf-tb-badge'); if (tb) tb.textContent = all.length + '건';
@@ -3340,7 +3340,7 @@ function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '
 function renderFarmTbl() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; });
-  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${f.addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(f.addr)}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td>${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
+  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${f.addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(f.addr)}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
 }
@@ -5697,7 +5697,7 @@ function buildLocStockCards(locStock) {
         <td class="nm">${esc(r.farm_name)}</td>
         <td style="text-align:right;font-weight:600;color:#1565C0">${allocQty.toLocaleString()}</td>
         <td style="text-align:right;color:#888;font-size:12px">${rem.toLocaleString()} 잔여</td>
-        <td><button class="btn sm" onclick="openMoveModal('${r.id}')" title="이동" style="padding:3px 7px">🚚</button></td>
+        <td class="stk-r"><button class="btn sm" onclick="openMoveModal('${r.id}')" title="이동" style="padding:3px 7px">🚚</button></td>
       </tr>`;
     }).join('');
     return `<div class="loc-stock-card">
@@ -5711,7 +5711,7 @@ function buildLocStockCards(locStock) {
         <div style="width:${pct}%;background:${barColor};height:6px;border-radius:4px;transition:width .3s"></div>
       </div>` : ''}
       <div class="tbl-wrap" style="margin:0"><table style="font-size:12px">
-        <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">배정 CT</th><th style="text-align:right">잔여</th><th></th></tr></thead>
+        <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">배정 CT</th><th style="text-align:right">잔여</th><th class="stk-r"></th></tr></thead>
         <tbody>${rows}${_locPachiRow(st.pachi, st.pachiN)}</tbody>
       </table></div>
     </div>`;
@@ -5730,7 +5730,7 @@ function buildLocStockCards(locStock) {
         <td class="nm">${esc(r.farm_name)}</td>
         <td style="text-align:right;font-weight:600;color:#888">${allocQty.toLocaleString()}</td>
         <td></td>
-        <td><button class="btn sm" onclick="openMoveModal('${r.id}')" title="이동" style="padding:3px 7px">🚚</button></td>
+        <td class="stk-r"><button class="btn sm" onclick="openMoveModal('${r.id}')" title="이동" style="padding:3px 7px">🚚</button></td>
       </tr>`
     ).join('');
     return `<div class="loc-stock-card" style="border-color:#e0e0e0">
@@ -5740,7 +5740,7 @@ function buildLocStockCards(locStock) {
         ${_locBreakdown({ uns: unsCt, pachi: _unPachiCt })}
       </div>
       <div class="tbl-wrap" style="margin:0"><table style="font-size:12px">
-        <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">잔여 CT</th><th></th><th></th></tr></thead>
+        <thead><tr><th>날짜</th><th>품목</th><th>농가</th><th style="text-align:right">잔여 CT</th><th></th><th class="stk-r"></th></tr></thead>
         <tbody>${rows}${_locPachiRow(_unPachiCt, _unPachi.length)}</tbody>
       </table></div>
     </div>`;
@@ -5778,7 +5778,7 @@ function renderStorageLocations() {
       <td style="font-weight:600">${esc(loc.name)}${loc.capacity_ct ? `<span style="font-size:11px;color:#aaa;font-weight:400"> · 최대 ${loc.capacity_ct}CT</span>` : ''}</td>
       <td style="text-align:right">${stockStr}</td>
       <td>${activeChip}</td>
-      ${isAdm ? `<td style="white-space:nowrap">
+      ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
         <button class="btn" onclick="moveLocation(${loc.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
         <button class="btn" onclick="moveLocation(${loc.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
         <button class="btn edt" onclick="openLocModal(${loc.id})">수정</button>
@@ -5794,7 +5794,7 @@ function renderStorageLocations() {
       <td style="font-weight:600">${esc(n)} ${_LOC_UNREG_BADGE}</td>
       <td style="text-align:right">${_locStockCell(locStock[n])}</td>
       <td><span style="font-size:12px">미등록</span></td>
-      <td></td>
+      <td class="stk-r"></td>
     </tr>`).join('');
 
   el.innerHTML = `${datalist}
@@ -5808,7 +5808,7 @@ function renderStorageLocations() {
     ${_locLoaded ? '' : `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:8px 12px;font-size:12px;color:#8D6E00;margin-bottom:10px">⚠ 재고 데이터를 아직 불러오지 않아 현재 재고를 집계하지 않았습니다. <b>재고관리</b> 탭을 한 번 연 뒤 다시 보세요.</div>`}
     ${storageLocations.length || unregRows ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>구역</th><th>위치명</th><th style="text-align:right">현재 재고</th><th>상태</th><th></th></tr></thead>
+      <thead><tr><th>구역</th><th>위치명</th><th style="text-align:right">현재 재고</th><th>상태</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}${unregRows}</tbody>
     </table></div>` : `<div class="empty">등록된 위치가 없습니다.</div>`}
     <div style="margin-top:24px">
@@ -6845,7 +6845,7 @@ function renderContainerTypeCfg() {
     <td>${isAdm ? `<input id="ctc-s-${t.id}" type="number" value="${t.sort_order ?? ''}" style="${inp};width:60px">` : (t.sort_order ?? '—')}</td>
     <td style="text-align:center"><input type="checkbox" ${t.is_active !== false ? 'checked' : ''} ${isAdm ? '' : 'disabled'} onchange="toggleContainerTypeActive(${t.id}, this.checked)"></td>
     <td style="text-align:center"><input type="checkbox" ${ctHoldsFruit(t) ? 'checked' : ''} ${isAdm ? '' : 'disabled'} title="끄면 입고수량 자동합계에서 빠집니다(파렛트·리어카 등 운반구)" onchange="toggleContainerTypeHoldsFruit(${t.id}, this.checked)"></td>
-    ${isAdm ? `<td style="white-space:nowrap"><button class="btn edt" onclick="saveContainerType(${t.id})">저장</button><button class="btn del" onclick="deleteContainerType(${t.id})">삭제</button></td>` : '<td></td>'}
+    ${isAdm ? `<td class="stk-r" style="white-space:nowrap"><button class="btn edt" onclick="saveContainerType(${t.id})">저장</button><button class="btn del" onclick="deleteContainerType(${t.id})">삭제</button></td>` : '<td></td>'}
   </tr>`).join('');
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -6863,7 +6863,7 @@ function renderContainerTypeCfg() {
       <button class="btn pri" style="font-size:12px;padding:6px 14px;white-space:nowrap" onclick="addContainerType()">+ 추가</button>
     </div>` : ''}
     ${list.length ? `<div class="tbl-wrap"><table>
-      <thead><tr><th>종류명</th><th>소유</th><th>순서</th><th>사용</th><th>원물</th><th></th></tr></thead>
+      <thead><tr><th>종류명</th><th>소유</th><th>순서</th><th>사용</th><th>원물</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody></table></div>` : `<div class="empty">등록된 종류가 없습니다.</div>`}
     ${_stockInitCfgHtml(isAdm)}`;
 }
@@ -6885,7 +6885,7 @@ function _stockInitCfgHtml(isAdm) {
         : `<strong>${st.init.toLocaleString()}</strong>`}</td>
       <td style="text-align:right;color:#6B7280;white-space:nowrap">${st.out.toLocaleString()}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap">${st.remain.toLocaleString()}</td>
-      <td style="text-align:right">${isAdm ? `<button class="btn edt" onclick="saveStock('${t}')">저장</button>` : ''}</td>
+      <td class="stk-r" style="text-align:right">${isAdm ? `<button class="btn edt" onclick="saveStock('${t}')">저장</button>` : ''}</td>
     </tr>`;
   }).join('');
   return `<div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
@@ -6896,7 +6896,7 @@ function _stockInitCfgHtml(isAdm) {
       ${isAdm ? '' : '<br><span style="color:#C05800">※ 관리자만 바꿀 수 있습니다.</span>'}
     </div>
     <div class="tbl-wrap"><table>
-      <thead><tr><th>종류</th><th>초기재고</th><th style="text-align:right">순배출</th><th style="text-align:right">잔여</th><th></th></tr></thead>
+      <thead><tr><th>종류</th><th>초기재고</th><th style="text-align:right">순배출</th><th style="text-align:right">잔여</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -7464,7 +7464,7 @@ function renderPachiUsageCfg() {
     <td style="font-weight:600">${esc(u.name)}</td>
     <td style="color:#888;font-size:12px">${u.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="togglePachiUsageStock(${u.id}, this.checked)" ${u.include_in_stock !== false ? 'checked' : ''}></td>
-    ${isAdm ? `<td style="white-space:nowrap">
+    ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
       <button class="btn edt" onclick="editPachiUsage(${u.id})">수정</button>
       <button class="btn del" onclick="deletePachiUsage(${u.id})">삭제</button>
     </td>` : '<td></td>'}
@@ -7480,7 +7480,7 @@ function renderPachiUsageCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>사용처명</th><th>순서</th><th>재고 포함</th><th></th></tr></thead>
+      <thead><tr><th>사용처명</th><th>순서</th><th>재고 포함</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 사용처가 없습니다.</div>`}`;
 }
@@ -7553,7 +7553,7 @@ function renderBrixGradeCfg() {
     <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="toggleBrixGradeActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
     <td style="text-align:center"><input type="checkbox" onchange="toggleBrixGradeMerge(${g.id}, this.checked)" ${g.merge_to_normal !== false ? 'checked' : ''} title="켜면 브릭스 분리 최대 사이즈를 넘는 물건이 저장될 때 '일반'으로 합쳐집니다(고당 등급만 켤 것)"></td>
-    ${isAdm ? `<td style="white-space:nowrap">
+    ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
       <button class="btn" onclick="moveBrixGrade(${g.id},-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
       <button class="btn" onclick="moveBrixGrade(${g.id},1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
       <button class="btn edt" onclick="editBrixGrade(${g.id})">수정</button>
@@ -7572,7 +7572,7 @@ function renderBrixGradeCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>등급명</th><th>순서</th><th>활성</th><th>일반 합산</th><th></th></tr></thead>
+      <thead><tr><th>등급명</th><th>순서</th><th>활성</th><th>일반 합산</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 당도 등급 없음</div>`}
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid #E5E7EB">
@@ -7716,7 +7716,7 @@ function renderPachiSizeCfg() {
     <td style="font-weight:600">${esc(g.label)}</td>
     <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="togglePachiSizeActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
-    ${isAdm ? `<td style="white-space:nowrap">
+    ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
       <button class="btn edt" onclick="editPachiSize(${g.id})">수정</button>
       <button class="btn del" onclick="deletePachiSize(${g.id})">삭제</button>
     </td>` : '<td></td>'}
@@ -7732,7 +7732,7 @@ function renderPachiSizeCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>크기명</th><th>순서</th><th>활성</th><th></th></tr></thead>
+      <thead><tr><th>크기명</th><th>순서</th><th>활성</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 파치 크기 없음</div>`}`;
 }
@@ -7798,7 +7798,7 @@ function renderPachiConditionCfg() {
     <td style="font-weight:600">${esc(g.label)}</td>
     <td style="color:#888;font-size:12px">${g.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="togglePachiConditionActive(${g.id}, this.checked)" ${g.is_active !== false ? 'checked' : ''}></td>
-    ${isAdm ? `<td style="white-space:nowrap">
+    ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
       <button class="btn edt" onclick="editPachiCondition(${g.id})">수정</button>
       <button class="btn del" onclick="deletePachiCondition(${g.id})">삭제</button>
     </td>` : '<td></td>'}
@@ -7814,7 +7814,7 @@ function renderPachiConditionCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>상태명</th><th>순서</th><th>활성</th><th></th></tr></thead>
+      <thead><tr><th>상태명</th><th>순서</th><th>활성</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 파치 상태 없음</div>`}`;
 }
@@ -7926,7 +7926,7 @@ function renderJuiceMasterCfg() {
     <td style="font-weight:600">${esc(m.product_name)}</td>
     <td style="color:#888;font-size:12px">${esc(m.default_unit || '병')}</td>
     <td style="color:#888;font-size:12px;text-align:center">${m.default_per_box ?? '—'}</td>
-    ${isAdm ? `<td style="white-space:nowrap">
+    ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
       <button class="btn edt" onclick="editJuiceMaster('${m.id}')">수정</button>
       <button class="btn del" onclick="deleteJuiceMaster('${m.id}')">삭제</button>
     </td>` : '<td></td>'}
@@ -7941,7 +7941,7 @@ function renderJuiceMasterCfg() {
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>품명</th><th>단위</th><th style="text-align:center">박스당</th><th></th></tr></thead>
+      <thead><tr><th>품명</th><th>단위</th><th style="text-align:center">박스당</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 품명이 없습니다.</div>`}`;
 }
@@ -8013,7 +8013,7 @@ function renderPartnerCfg() {
     return `<tr>
     <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis"><span style="font-size:10px;padding:1px 6px;border-radius:8px;margin-right:5px;${pCat(cat).badge}">${esc(cat)}</span>${esc(p.name)}${p.tel||p.addr||p.memo ? `<div style="font-size:11px;color:#9CA3AF;font-weight:400;margin-top:2px">${p.tel?`📞${esc(p.tel)} `:''}${p.addr?`📍${esc(p.addr)} `:''}${p.memo?`📝${esc(p.memo)}`:''}` + '</div>' : ''}</td>
     <td style="width:80px"><span style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:6px">${usageLabel}</span></td>
-    ${isAdm ? `<td style="width:170px;white-space:nowrap;text-align:right">
+    ${isAdm ? `<td class="stk-r" style="width:170px;white-space:nowrap;text-align:right">
       <button class="btn" onclick="movePartner('${p.id}',-1)" ${isFirst ? 'disabled' : ''} title="위로" style="padding:2px 8px${isFirst ? ';opacity:.3;cursor:default' : ''}">▲</button>
       <button class="btn" onclick="movePartner('${p.id}',1)" ${isLast ? 'disabled' : ''} title="아래로" style="padding:2px 8px${isLast ? ';opacity:.3;cursor:default' : ''}">▼</button>
       <button class="btn edt" onclick="editPartner('${p.id}')">수정</button>
@@ -8041,7 +8041,7 @@ function renderPartnerCfg() {
     </div>` : ''}
     ${sorted.length ? `
     <div class="tbl-wrap"><table style="width:100%;table-layout:fixed">
-      <thead><tr><th>거래처명</th><th style="width:80px">용도</th><th style="width:170px"></th></tr></thead>
+      <thead><tr><th>거래처명</th><th style="width:80px">용도</th><th class="stk-r" style="width:170px"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 거래처가 없습니다.</div>`}`;
 }
@@ -8143,7 +8143,7 @@ function _renderCfgCatHTML() {
     ? categories.map(c => `<tr id="cat-tr-${c.id}" style="border-bottom:0.5px solid #f0f0f0">
         ${_cfgTD(esc(c.name))}
         ${_cfgTD(c.classification_type === 'grade' ? '🍊 등급형' : '🔢 과수형')}
-        <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+        <td class="stk-r" style="padding:4px 8px;text-align:center;white-space:nowrap">
           <button class="btn sm" onclick="editCatRow(${c.id})" style="margin-right:3px">수정</button>
           <button class="btn del sm" onclick="deleteCat(${c.id})">삭제</button>
         </td>
@@ -8156,7 +8156,7 @@ function _renderCfgCatHTML() {
         return `<tr id="item-tr-${i.id}" style="border-bottom:0.5px solid #f0f0f0">
           ${_cfgTD(`<strong>${esc(i.name)}</strong>`)}
           ${_cfgTD(cat ? esc(cat.name) : '-')}
-          <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+          <td class="stk-r" style="padding:4px 8px;text-align:center;white-space:nowrap">
             <button class="btn sm" onclick="editItemRow(${i.id})" style="margin-right:3px">수정</button>
             <button class="btn del sm" onclick="deleteItem(${i.id})">삭제</button>
           </td>
@@ -8170,7 +8170,7 @@ function _renderCfgCatHTML() {
     <div style="margin-bottom:20px">
       <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">카테고리 목록</div>
       <div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%;border-collapse:collapse">
-        <thead><tr>${_cfgTH('이름')}${_cfgTH('분류 방식')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+        <thead><tr>${_cfgTH('이름')}${_cfgTH('분류 방식')}<th class="stk-r" style="width:60px;background:#f5f5f5"></th></tr></thead>
         <tbody>${catRows}</tbody>
       </table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -8185,7 +8185,7 @@ function _renderCfgCatHTML() {
     <div>
       <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">품목 목록</div>
       <div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%;border-collapse:collapse">
-        <thead><tr>${_cfgTH('품목명')}${_cfgTH('카테고리')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+        <thead><tr>${_cfgTH('품목명')}${_cfgTH('카테고리')}<th class="stk-r" style="width:60px;background:#f5f5f5"></th></tr></thead>
         <tbody>${itemRows}</tbody>
       </table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -8207,7 +8207,7 @@ function _renderCfgGradeHTML() {
         ${_cfgTD(g.sort_order, true)}
         ${_cfgTD(`<strong>${esc(g.grade_name)}</strong>`)}
         ${_cfgTD(esc(g.group_name))}
-        <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+        <td class="stk-r" style="padding:4px 8px;text-align:center;white-space:nowrap">
           <button class="btn sm" onclick="editGradeRow(${g.id})" style="margin-right:3px">수정</button>
           <button class="btn del sm" onclick="deleteSizeGrade(${g.id})">삭제</button>
         </td>
@@ -8217,7 +8217,7 @@ function _renderCfgGradeHTML() {
   return `
     <div class="note" style="margin-bottom:10px">💡 ${esc(gradeCat.name)}의 크기 등급을 관리합니다. 현재 그룹: <strong>${groups || '없음'}</strong></div>
     <div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%;border-collapse:collapse">
-      <thead><tr>${_cfgTH('순서')}${_cfgTH('등급명')}${_cfgTH('그룹')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+      <thead><tr>${_cfgTH('순서')}${_cfgTH('등급명')}${_cfgTH('그룹')}<th class="stk-r" style="width:60px;background:#f5f5f5"></th></tr></thead>
       <tbody>${gradeRows}</tbody>
     </table></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -8240,7 +8240,7 @@ function _renderCfgRuleHTML() {
           ${_cfgTD(`<strong>${esc(r.group_name)}</strong>`)}
           ${_cfgTD(r.min_su + '수', true)}
           ${_cfgTD(r.max_su + '수', true)}
-          <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+          <td class="stk-r" style="padding:4px 8px;text-align:center;white-space:nowrap">
             <button class="btn sm" onclick="editRuleRow(${r.id})" style="margin-right:3px">수정</button>
             <button class="btn del sm" onclick="deleteItemRule(${r.id})">삭제</button>
           </td>
@@ -8249,7 +8249,7 @@ function _renderCfgRuleHTML() {
     return `<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
       <div style="background:#EEF2FF;padding:9px 12px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">${esc(item.name)}</div>
       <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse">
-        <thead><tr>${_cfgTH('그룹')}${_cfgTH('최소 수')}${_cfgTH('최대 수')}<th style="width:60px;background:#f5f5f5"></th></tr></thead>
+        <thead><tr>${_cfgTH('그룹')}${_cfgTH('최소 수')}${_cfgTH('최대 수')}<th class="stk-r" style="width:60px;background:#f5f5f5"></th></tr></thead>
         <tbody>${ruleRows}</tbody>
       </table></div>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#fafafa;border-top:1px solid var(--border)">
@@ -8269,7 +8269,7 @@ const _inp = (id, val, w) =>
 const _num = (id, val, w) =>
   `<input id="${id}" type="number" value="${val}" min="1" max="99" style="width:${w || '65px'};padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;text-align:center">`;
 const _actCell = (saveCall, cancelTab) =>
-  `<td style="padding:5px 8px;text-align:center;white-space:nowrap">
+  `<td class="stk-r" style="padding:5px 8px;text-align:center;white-space:nowrap">
     <button class="btn pri sm" onclick="${saveCall}">저장</button>
     <button class="btn sm" onclick="cancelEdit('${cancelTab}')" style="margin-left:3px">취소</button>
   </td>`;
@@ -22780,7 +22780,7 @@ async function renderAcctCfg() {
       <td style="text-align:center;font-size:12px">${active
         ? '<span style="color:#059669;font-weight:600">사용중</span>'
         : '<span style="color:#9CA3AF">중지</span>'}</td>
-      <td style="white-space:nowrap">
+      <td class="stk-r" style="white-space:nowrap">
         <button class="btn edt" onclick="resetAdmAccountPw('${a.id}')">비번 재설정</button>
         <button class="btn ${active ? 'del' : 'edt'}" onclick="toggleAdmAccount('${a.id}')">${active ? '중지' : '사용'}</button>
       </td>
@@ -22796,7 +22796,7 @@ async function renderAcctCfg() {
     </div>
     ${_acctRows.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>아이디</th><th>이름</th><th>권한</th><th style="text-align:center">상태</th><th></th></tr></thead>
+      <thead><tr><th>아이디</th><th>이름</th><th>권한</th><th style="text-align:center">상태</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 계정이 없습니다.</div>`}
 
