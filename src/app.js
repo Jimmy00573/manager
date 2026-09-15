@@ -4999,6 +4999,9 @@ function renderStats() {
       <div class="kpi"><div class="kpi-label">총 배출 수량</div><div class="kpi-val kv-bl">${totalQty.toLocaleString()}개</div></div>
       <div class="kpi"><div class="kpi-label">기간</div><div class="kpi-val" style="font-size:13px">${from} ~ ${to}</div></div>
     </div>
+    <!-- ★가로 스크롤 래퍼 — 전역 table{min-width:700px}로 폰에서 표가 카드 밖으로 넘치는데 body overflow-x:hidden에 잘려
+         오른쪽 '실적 비율' 열을 밀어서도 못 봤다. .tbl-wrap은 테두리·그림자가 붙어 데스크톱 모양이 바뀌므로 주스 배치표와 같은 맨 래퍼. -->
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
         <tr style="background:#f8f8f8;border-bottom:1px solid #e0e0e0">
@@ -5033,6 +5036,7 @@ function renderStats() {
         }).join('')}
       </tbody>
     </table>
+    </div>
   `;
 }
   
@@ -17863,8 +17867,9 @@ function _renderScTable() {
   };
   const thS = (col, label) =>
     `<th onclick="scSetSort('${col}')" style="cursor:pointer;white-space:nowrap;user-select:none;padding:6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label} ${sortInd(col)}</th>`;
-  const thN = label =>
-    `<th style="padding:6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label}</th>`;
+  // cls: 액션 열만 'stk-r'(폰 작업 열 고정, style.css) — 다른 머리칸 출력은 예전과 한 글자도 같다.
+  const thN = (label, cls) =>
+    `<th${cls ? ` class="${cls}"` : ''} style="padding:6px;background:#F9FAFB;border-bottom:2px solid #E5E7EB;font-size:12px;font-weight:600;color:#374151;text-align:left">${label}</th>`;
 
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
@@ -17878,7 +17883,7 @@ function _renderScTable() {
       <thead><tr>
         ${thS('date','입고일')}${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
         ${thS('elapsed','경과')}${thN('진행')}
-        ${thN('위치')}${thN('품질')}${thN('액션')}
+        ${thN('위치')}${thN('품질')}${thN('액션', 'stk-r')}
       </tr></thead>
       <tbody>
         ${rows.length === 0
@@ -17910,7 +17915,7 @@ function _renderScTable() {
               const doingBadge = isDoing
                 ? ` <span style="background:#FEF3C7;color:#B45309;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;white-space:nowrap">${srtCnt}차</span>`
                 : '';
-              return (_scGrpHead[i] || '') + `<tr style="background:${rowBg};border-bottom:1px solid #F3F4F6">
+              return (_scGrpHead[i] || '') + `<tr style="background:${rowBg}${_stkBgVar('background:' + rowBg)}border-bottom:1px solid #F3F4F6">
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
                   ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}
@@ -17924,7 +17929,7 @@ function _renderScTable() {
                   ${esc(r.location || '미지정')}
                 </td>
                 <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
-                <td style="padding:4px;text-align:center">
+                <td class="stk-r" style="padding:4px;text-align:center">
                   ${_scAdm ? `<button onclick="openSortingModal('${r.id}')"
                     style="background:${isDoing ? '#C2410C' : '#1565C0'};color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
                     ✂️ 입력
