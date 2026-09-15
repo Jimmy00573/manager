@@ -2782,7 +2782,8 @@ function renderOwn() {
   document.getElementById('own-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...ownIns.map(o => ({ ...o, dir: '반입', xt: 'ownIn', meth: '-' })), ...ownOuts.map(o => ({ ...o, dir: '반납', xt: 'ownOut', meth: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('own-tb-badge'); if (tb) tb.textContent = all.length + '건';
-  document.getElementById('own-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.farm)}</td><td><span class="badge ${o.dir === '반입' ? 'b-pur' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.meth)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px">${isAdm ? `<button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button>` : ''}${isAdm ? `<button class="btn del" onclick="delOwn(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button>` : ''}</td></tr>`).join('') : emr(8, '기록 없음');
+  // ★td의 xc-* 클래스는 폰 폭 카드 전환용(style.css '.xc-tbl') — renderNhf 이동 내역과 같은 클래스 체계.
+  document.getElementById('own-tb').innerHTML = all.length ? all.map(o => `<tr><td class="xc-date">${o.date}</td><td class="nm xc-nm">${esc(o.farm)}</td><td class="xc-dir"><span class="badge ${o.dir === '반입' ? 'b-pur' : 'b-ok'}">${o.dir}</span></td><td class="xc-qty">${o.qty}개</td><td class="xc-m${o.meth === '-' ? ' xc-none' : ''}">${esc(o.meth)}</td><td class="xc-m${o.feature ? '' : ' xc-none'}">${esc(o.feature || '-')}</td><td class="xc-m xc-staff${o.staff ? '' : ' xc-none'}">${esc(o.staff || '-')}</td><td class="xc-act" style="display:flex;gap:4px">${isAdm ? `<button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button>` : ''}${isAdm ? `<button class="btn del" onclick="delOwn(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button>` : ''}</td></tr>`).join('') : emr(8, '기록 없음');
 }
 
 // ── 빈콘 회수
@@ -3105,7 +3106,8 @@ function renderNhf() {
   document.getElementById('nhf-sum').innerHTML = rows || emr(7, '기록 없음');
   const all = [...nhfIns.map(o => ({ ...o, dir: '반입', xt: 'nhfIn', dm: o.goods ? '반입(' + o.goods + ')' : '-' })), ...nhfOuts.map(o => ({ ...o, dir: '반납', xt: 'nhfOut', dm: o.method || '-' }))].sort((a, b) => b.date > a.date ? 1 : -1);
   const tb = document.getElementById('nhf-tb-badge'); if (tb) tb.textContent = all.length + '건';
-  document.getElementById('nhf-tb').innerHTML = all.length ? all.map(o => `<tr><td>${o.date}</td><td class="nm">${esc(o.nhf)}</td><td>${_ctBadge(o.type)}</td><td><span class="badge ${o.dir === '반입' ? 'b-teal' : 'b-ok'}">${o.dir}</span></td><td>${o.qty}개</td><td>${esc(o.dm)}</td><td>${esc(o.feature || '-')}</td><td>${esc(o.staff || '-')}</td><td style="display:flex;gap:4px">${isAdm ? `<button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button>` : ''}${isAdm ? `<button class="btn del" onclick="delNhf(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button>` : ''}</td></tr>`).join('') : emr(9, '기록 없음');
+  // ★td의 xc-* 클래스는 폰 폭 카드 전환용(style.css '.xc-tbl') — 데스크톱 표에는 영향 없음. 열을 바꾸면 클래스도 같이 맞출 것.
+  document.getElementById('nhf-tb').innerHTML = all.length ? all.map(o => `<tr><td class="xc-date">${o.date}</td><td class="nm xc-nm">${esc(o.nhf)}</td><td class="xc-m">${_ctBadge(o.type)}</td><td class="xc-dir"><span class="badge ${o.dir === '반입' ? 'b-teal' : 'b-ok'}">${o.dir}</span></td><td class="xc-qty">${o.qty}개</td><td class="xc-m${o.dm === '-' ? ' xc-none' : ''}">${esc(o.dm)}</td><td class="xc-m${o.feature ? '' : ' xc-none'}">${esc(o.feature || '-')}</td><td class="xc-m xc-staff${o.staff ? '' : ' xc-none'}">${esc(o.staff || '-')}</td><td class="xc-act" style="display:flex;gap:4px">${isAdm ? `<button class="btn edt" onclick="openExtEdit('${o.xt}',${o.id})">✏️</button>` : ''}${isAdm ? `<button class="btn del" onclick="delNhf(${o.id},'${o.dir === '반입' ? 'i' : 'o'}')">삭제</button>` : ''}</td></tr>`).join('') : emr(9, '기록 없음');
 }
 
 // ── 기사 화면

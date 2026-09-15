@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
-  <link rel="stylesheet" href="src/style.css?v=31">
+  <link rel="stylesheet" href="src/style.css?v=32">
 </head>
 <body>
 
@@ -443,7 +443,7 @@
     <div class="sec-hdr"><div class="sec-title">농가별 현황 <span id="own-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div></div>
     <div class="tbl-wrap"><table><thead><tr><th>농가명</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>특징</th><th>상태</th></tr></thead><tbody id="own-sum"></tbody></table></div>
     <div class="fold-bar" onclick="togF('own-tb')"><div class="fold-label">이동 내역 <span id="own-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="own-tb-icon" class="fold-icon">▼ 자세히</span></div>
-    <div id="own-tb-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>방법</th><th>콘테이너 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="own-tb"></tbody></table></div></div>
+    <div id="own-tb-wrap" style="display:none"><div class="tbl-wrap"><table class="xc-tbl"><thead><tr><th>날짜</th><th>농가명</th><th>구분</th><th>수량</th><th>방법</th><th>콘테이너 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="own-tb"></tbody></table></div></div>
   </div>
   <div id="ext-n-div" style="display:none">
     <div class="ext-tabs"><button class="etab an" id="nt-i" onclick="nhfTab('i')">반입 기록</button><button class="etab" id="nt-o" onclick="nhfTab('o')">반납 기록</button></div>
@@ -458,7 +458,7 @@
     <div class="fold-bar" onclick="togF('nhf-sum')"><div class="fold-label">농협별 현황 <span id="nhf-sum-badge" class="badge b-warn" style="font-size:11px;text-transform:none"></span></div><span id="nhf-sum-icon" class="fold-icon">▼ 자세히</span></div>
     <div id="nhf-sum-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>소유</th><th>농협명·지점</th><th>종류</th><th>총 반입</th><th>총 반납</th><th>공장 보유</th><th>상태</th></tr></thead><tbody id="nhf-sum"></tbody></table></div></div>
     <div class="fold-bar" onclick="togF('nhf-tb')"><div class="fold-label">이동 내역 <span id="nhf-tb-badge" class="badge b-neu" style="font-size:11px;text-transform:none">0건</span></div><span id="nhf-tb-icon" class="fold-icon">▼ 자세히</span></div>
-    <div id="nhf-tb-wrap" style="display:none"><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농협명</th><th>종류</th><th>구분</th><th>수량</th><th>방법</th><th>용기 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="nhf-tb"></tbody></table></div></div>
+    <div id="nhf-tb-wrap" style="display:none"><div class="tbl-wrap"><table class="xc-tbl"><thead><tr><th>날짜</th><th>농협명</th><th>종류</th><th>구분</th><th>수량</th><th>방법</th><th>용기 특징</th><th>담당</th><th>작업</th></tr></thead><tbody id="nhf-tb"></tbody></table></div></div>
   </div>
   <div id="ext-b-div" style="display:none">
     <div class="form-card"><div class="form-title">⬜ 빈콘 회수 등록</div>
@@ -2068,6 +2068,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=618"></script>
+<script src="src/app.js?v=619"></script>
 </body>
 </html>

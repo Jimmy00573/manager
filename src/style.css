@@ -586,3 +586,30 @@ textarea {
   .modal-bg { padding: 10px; }
   .modal { padding: 16px; }
 }
+
+/* ── 외부 용기 이동 내역(nhf-tb·own-tb): 폰 폭에서 카드형 ─────────────────
+   전역 table{min-width:700px} 때문에 폰에서 표가 700px로 벌어져 맨 오른쪽 작업 열(✏️·삭제)이 화면 밖으로 나갔다
+   (표 안 가로 스크롤이라 "버튼이 없다"로 보임).
+   ★마크업은 한 벌이다 — renderNhf/renderOwn의 같은 <tr>에 xc-* 클래스만 달고, 640px 이하에서 CSS로 행을 카드처럼 편다.
+     렌더 함수를 복제하지 않으므로 열·권한 분기를 고칠 곳이 한 곳뿐이고, 화면을 돌려도 다시 그릴 필요가 없다.
+   ★전역 table 규칙은 건드리지 않는다 — .xc-tbl에만 min-width:0.
+   카드: 1줄 = 대상명 · 구분 · 수량 · (오른쪽) 작업 버튼 / 2줄 = 일자 · 종류 · 방법 · 특징 · 담당(작게). 값 없는 칸(xc-none)은 숨김. */
+@media (max-width: 640px) {
+  table.xc-tbl { min-width: 0; display: block; }
+  .xc-tbl thead { display: none; }
+  .xc-tbl tbody { display: block; }
+  .xc-tbl tr { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .xc-tbl tr:last-child { border-bottom: none; }
+  .xc-tbl tr::before { content: ''; order: 5; flex-basis: 100%; height: 0; }   /* 1줄/2줄 줄바꿈 */
+  .xc-tbl td { display: block; padding: 0; border-bottom: none; white-space: normal; background: none !important; }
+  .xc-tbl .xc-nm { order: 1; min-width: 0; font-size: 14px; }
+  .xc-tbl .xc-dir { order: 2; }
+  .xc-tbl .xc-qty { order: 3; font-weight: 600; }
+  .xc-tbl .xc-act { order: 4; margin-left: auto; }
+  .xc-tbl .xc-act:empty { display: none; }
+  .xc-tbl .xc-date, .xc-tbl .xc-m { order: 6; margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+  .xc-tbl .xc-m::before { content: '· '; color: var(--text-tertiary); }
+  .xc-tbl .xc-staff::before { content: '· 담당 '; }
+  .xc-tbl .xc-none { display: none; }
+  .xc-tbl td.empty { flex: 1 1 100%; padding: 20px 0; }
+}
