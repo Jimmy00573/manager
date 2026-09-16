@@ -257,7 +257,10 @@ let _XT = null, _XI = null;
 let _dt = 'w', _dt2 = 'w', _ft = 'n';
 let _dp = 1, _d2p = 1, _rp = 1;
 let _repOpen = false;
-let _pinHidden = {};
+// ★PIN 표시 상태 — 기본은 가림(옆 사람이 볼 수 있다). 한 번에 한 명만, 5초 뒤 자동으로 다시 가린다.
+//   예전엔 기사별 `_pinHidden` 맵이었고 값이 없으면 '보임'이라, 관리자 화면에선 모든 PIN이 처음부터 평문으로 떠 있었다.
+let _pinShownId = null, _pinShowTimer = null;
+const PIN_SHOW_MS = 5000;
 const foldSt = { 'own-tb': false, 'nhf-sum': false, 'nhf-tb': false };
 const secSt = { alert: true, 'disp-dash': true, 'farm-dash': true, 'ext-dash': true, 'bk-dash': true };
 
@@ -891,13 +894,33 @@ async function regenPin(id) {
   try {
     await dbUpdateDriver(id, { pin: np });
     drivers = drivers.map(d => d.id === id ? { ...d, pin: np } : d);
-    _pinHidden[id] = false;
+    _pinShowFor(id);   // 새 PIN을 잠깐 보여 준다(5초 뒤 자동 가림) — 예전엔 계속 노출됐다
     renderDrivers();
     await showConfirmEdit(`새 PIN: ${np}`, '기사에게 이 PIN을 전달해 주세요.');
   } catch (e) { alert('오류: ' + e.message); }
 }
 
-function togglePinVis(id) { if (sessionStorage.getItem('citrus_role') !== 'admin') return; _pinHidden[id] = !_pinHidden[id]; renderDrivers(); }
+// 지정한 기사의 PIN을 PIN_SHOW_MS 동안만 보인다. ★앞서 보이던 기사는 자동으로 가려진다(_pinShownId가 하나뿐).
+function _pinShowFor(id) {
+  if (_pinShowTimer) clearTimeout(_pinShowTimer);
+  _pinShownId = id;
+  _pinShowTimer = setTimeout(() => { _pinShowTimer = null; _pinShownId = null; renderDrivers(); }, PIN_SHOW_MS);
+}
+function _pinHideNow() {
+  if (_pinShowTimer) { clearTimeout(_pinShowTimer); _pinShowTimer = null; }
+  _pinShownId = null;
+}
+// ★조회는 audit_logs에 남기지 않는다 — audit_logs는 SYNC_TABLES·_INV_FRESH_TABLES의 '변경 감지' 신호로 쓰여서,
+//   아무것도 안 바꾼 조회 행이 들어가면 남의 화면에 '변경됨' 배너가 뜨고 재고를 통째로 다시 받는다.
+//   (더 센 권한인 재발급·차단조차 audit를 안 남긴다 — 조회만 남기면 불균형.) 기록이 꼭 필요하면 별도 테이블이 맞다.
+function togglePinVis(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const drv = drivers.find(d => d.id === id);
+  if (!drv || !drv.pin) return;   // 미설정은 볼 것이 없다(버튼도 안 그린다 — 콘솔 호출 대비)
+  if (_pinShownId === id) _pinHideNow();   // 한 번 더 누르면 즉시 가림
+  else _pinShowFor(id);
+  renderDrivers();
+}
 
 async function togglePinActive(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
@@ -2083,9 +2106,13 @@ function renderDrivers() {
   const el = document.getElementById('drv-list');
   if (!drivers.length) { el.innerHTML = '<div class="note">등록된 기사가 없습니다</div>'; return; }
   el.innerHTML = drivers.map((d, i) => {
-    const hidden = _pinHidden[d.id] === true;
-    const pinDisp = (!isAdm || hidden) ? '••••' : (d.pin || '----');
-    const pinColor = hidden ? '#999' : '#C05800';
+    // PIN: 기본 가림. 관리자가 👁 를 누른 한 명만, 그것도 5초 동안만 보인다. 미설정은 '(미설정)'.
+    const hasPin = !!d.pin;
+    const pinShown = isAdm && hasPin && _pinShownId === d.id;
+    const pinDisp = !hasPin ? '(미설정)' : (pinShown ? d.pin : '••••');
+    const pinStyle = !hasPin
+      ? 'font-size:13px;color:#9CA3AF'
+      : `font-family:monospace;font-size:20px;font-weight:700;letter-spacing:6px;color:${pinShown ? '#C05800' : '#999'};min-width:70px`;
     const isFirst = i === 0, isLast = i === drivers.length - 1;
     return `<div class="pin-mgmt">
       <div class="pm-top">
@@ -2102,9 +2129,9 @@ function renderDrivers() {
       </div>
       <div class="pm-pin-area">
         <span class="pm-pin-label">PIN</span>
-        <span style="font-family:monospace;font-size:20px;font-weight:700;letter-spacing:6px;color:${pinColor};min-width:70px">${pinDisp}</span>
+        <span style="${pinStyle}">${pinDisp}</span>
         <div class="pm-acts">
-          ${isAdm ? `<button class="btn-p hide" onclick="togglePinVis(${d.id})">${hidden ? '👁 보기' : '🙈 숨기기'}</button>` : ''}
+          ${isAdm && hasPin ? `<button class="btn-p hide" onclick="togglePinVis(${d.id})" title="${pinShown ? '바로 가림' : '5초 동안 보기'}">${pinShown ? '🙈 숨기기' : '👁 보기'}</button>` : ''}
           ${isAdm ? `<button class="btn-p regen" onclick="regenPin(${d.id})">🔄 재발급</button>` : ''}
           ${isAdm ? `<button class="btn-p ${d.pin_active !== false ? 'block' : 'unblock'}" onclick="togglePinActive(${d.id})">${d.pin_active !== false ? '🚫 차단' : '✅ 해제'}</button>` : ''}
         </div>
