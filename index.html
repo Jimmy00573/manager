@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
-  <link rel="stylesheet" href="src/style.css?v=35">
+  <link rel="stylesheet" href="src/style.css?v=36">
 </head>
 <body>
 
@@ -1118,13 +1118,9 @@
             <div id="ib-adv-quality" style="margin-top:8px"><!-- 입고 등록은 기본 열림(수정 폼 eib-m-는 기존대로 닫힘). 토글은 toggleAdvQuality가 style.display로 전환 -->
               <div class="form-grid">
                 <div class="fg"><label>당도 범위 <small>(Brix)</small></label>
-                  <div style="display:flex;align-items:center;gap:3px">
-                    <select id="ib-brix-min-num" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option></select>
-                    <select id="ib-brix-min-pos" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>초</option><option>중</option><option>후</option></select>
-                    <span style="color:#9CA3AF;font-size:12px">~</span>
-                    <select id="ib-brix-max-num" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option></select>
-                    <select id="ib-brix-max-pos" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>초</option><option>중</option><option>후</option></select>
-                  </div>
+                  <!-- 당도 범위 4칸은 app.js가 채운다(brixRangeSelsHtml) — 옵션(8~14·초중후)을 여기 하드코딩하면
+                       목록 인라인 편집·수정 모달과 갈린다(예전엔 이 묶음이 두 벌). id는 예전 그대로 ib-brix-min-num 등. -->
+                  <div id="ib-brix-range-wrap" style="display:flex;align-items:center;gap:3px"></div>
                 </div>
                 <div class="fg"><label>산도 범위 <small>(%)</small></label>
                   <div style="display:flex;align-items:center;gap:3px">
@@ -1635,13 +1631,9 @@
         <div id="eib-m-adv-quality" style="display:none;margin-top:8px">
           <div class="modal-grid">
             <div class="fg"><label>당도 범위 <small>(Brix)</small></label>
-              <div style="display:flex;align-items:center;gap:3px">
-                <select id="eib-m-brix-min-num" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option></select>
-                <select id="eib-m-brix-min-pos" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>초</option><option>중</option><option>후</option></select>
-                <span style="color:#9CA3AF;font-size:12px">~</span>
-                <select id="eib-m-brix-max-num" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option></select>
-                <select id="eib-m-brix-max-pos" style="padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0"><option value="">-</option><option>초</option><option>중</option><option>후</option></select>
-              </div>
+              <!-- 당도 범위 4칸은 app.js가 채운다(brixRangeSelsHtml) — 옵션(8~14·초중후)을 여기 하드코딩하면
+                   목록 인라인 편집·수정 모달과 갈린다(예전엔 이 묶음이 두 벌). id는 예전 그대로 eib-m-brix-min-num 등. -->
+              <div id="eib-m-brix-range-wrap" style="display:flex;align-items:center;gap:3px"></div>
               <!-- 드롭다운으로 다 표현 못 하는 저장값(목록에서 자유 입력한 '11.8-14.1' 등)을 보여 준다 — 칸을 안 건드리면 그 값이 유지된다(_eibEffBrix). -->
               <div id="eib-m-brix-raw" style="display:none;font-size:11px;color:#B45309;margin-top:3px;line-height:1.4"></div>
             </div>
@@ -2073,6 +2065,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=623"></script>
+<script src="src/app.js?v=624"></script>
 </body>
 </html>

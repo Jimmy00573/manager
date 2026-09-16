@@ -620,6 +620,7 @@ async function initApp() {
 
   setDates();
   _ibRenderCatQty();   // 입고 카테고리별 수량칸 생성(IB_CAT_SORT_ORDER 순서)
+  _mountBrixRangeSels();   // 당도 범위 드롭다운(등록 폼·수정 모달) 생성 — 옵션은 _BRIX_NUMS/_BRIX_POSS 한 곳에서
   _fsAttachAll();   // 농가 select들을 검색형으로 전환(숨긴 select가 값의 주인) — popSels보다 먼저 붙여야 첫 동기화가 걸린다
   popSels();
   renderAll();
@@ -6545,6 +6546,36 @@ function _fsAttachAll() {
 
 // ── 입고 당도/산도 범위(드롭다운) — 저장은 'min~max' 문자열(기존 필드·표시 호환) ──
 const _ACID_LVLS = ['1이하', '1.1', '1.2', '1.3', '1.4', '1.5이상'];
+// ★당도 범위 드롭다운의 옵션은 이 두 상수가 유일한 출처다. 예전엔 index.html에 같은 option 묶음이 두 벌
+//   하드코딩돼 있어(등록 폼·수정 모달) 8~14 범위를 넓히면 한쪽만 바뀔 자리였다. 이제 두 폼 다 부팅 때
+//   _mountBrixRangeSels가 채우고, 목록 인라인 편집(startIbBrixEdit)도 같은 함수를 쓴다 — 셋의 옵션·순서·저장 형식이 같다.
+const _BRIX_NUMS = ['8', '9', '10', '11', '12', '13', '14'];
+const _BRIX_POSS = ['초', '중', '후'];
+const _BRIX_SEL_CSS = 'padding:4px 2px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;flex:1;min-width:0';
+function _brixSelIds(prefix) { return [`${prefix}-min-num`, `${prefix}-min-pos`, `${prefix}-max-num`, `${prefix}-max-pos`]; }
+// prefix + '-min-num'/'-min-pos'/'-max-num'/'-max-pos' 네 칸을 만든다. opts로 모양만 바꾼다(옵션은 항상 같음):
+//   css=인라인 style 교체, cls=클래스 추가, pair=최소·최대를 각각 묶어 좁은 칸에서 두 줄로(목록 인라인 편집).
+function brixRangeSelsHtml(prefix, opts = {}) {
+  const css = opts.css != null ? opts.css : _BRIX_SEL_CSS;
+  const cls = opts.cls ? ` class="${opts.cls}"` : '';
+  const optHtml = list => '<option value="">-</option>' + list.map(v => `<option>${v}</option>`).join('');
+  const sel = (sfx, list) => `<select id="${prefix}-${sfx}"${cls} style="${css}">${optHtml(list)}</select>`;
+  const tilde = '<span style="color:#9CA3AF;font-size:12px">~</span>';
+  const lo = sel('min-num', _BRIX_NUMS) + sel('min-pos', _BRIX_POSS);
+  const hi = sel('max-num', _BRIX_NUMS) + sel('max-pos', _BRIX_POSS);
+  // ★pair는 '~'를 최소 묶음 안에 넣는다 — 두 줄로 접힐 때 '~'만 줄 앞에 떨어지지 않게('10중 ~' / '11초').
+  return opts.pair
+    ? `<span class="bx-pair">${lo}${tilde}</span><span class="bx-pair">${hi}</span>`
+    : `${lo}${tilde}${hi}`;
+}
+// 등록 폼·수정 모달의 당도 범위 칸 채우기(부팅 1회). index.html엔 빈 wrap만 둔다.
+//   ★이미 채워져 있으면 그대로 — 두 번 불려도 고른 값이 날아가지 않게.
+function _mountBrixRangeSels() {
+  [['ib-brix-range-wrap', 'ib-brix'], ['eib-m-brix-range-wrap', 'eib-m-brix']].forEach(([wrapId, prefix]) => {
+    const w = document.getElementById(wrapId);
+    if (w && !w.firstElementChild) w.innerHTML = brixRangeSelsHtml(prefix);
+  });
+}
 function _rangeComposeBrix(loNumId, loPosId, hiNumId, hiPosId) {   // 당도: [숫자][초중후]~[숫자][초중후]
   const g = id => (document.getElementById(id)?.value || '').trim();
   const lo = g(loNumId) ? g(loNumId) + g(loPosId) : '';
@@ -6578,10 +6609,15 @@ function _acidRangeToSel(str, loId, hiId) {
 //   '11~14.1' → 드롭다운엔 11만 들어가 모달을 그냥 저장해도 '11'로 줄었다(실데이터 '11초~12초중' → '11초'도 같은 함정).
 //   목록 당도 입력(startIbBrixEdit)이 자유 입력이라 이런 값이 늘어나므로, '열 때 값과 같으면 원문'으로 바꿨다.
 //   드롭다운을 실제로 바꾼 경우에만 드롭다운 값이 저장된다.
+// ★목록 인라인 편집(startIbBrixEdit)도 드롭다운이 되면서 같은 규칙이 필요해져 공용 함수로 뺐다.
+//   origStr = 편집 전 저장값, initSel = 그 값으로 드롭다운을 채운 직후의 조합값.
+function _brixEffFrom(prefix, origStr, initSel) {
+  const c = _rangeComposeBrix(..._brixSelIds(prefix));
+  return (origStr && c === initSel) ? origStr : c;
+}
 let _eibBrixInitSel = null;   // editInboundRow가 원본으로 드롭다운을 채운 직후의 조합값
 function _eibEffBrix(orig) {
-  const c = _rangeComposeBrix('eib-m-brix-min-num', 'eib-m-brix-min-pos', 'eib-m-brix-max-num', 'eib-m-brix-max-pos');
-  return (orig && orig.brix_range && c === _eibBrixInitSel) ? orig.brix_range : c;
+  return _brixEffFrom('eib-m-brix', orig && orig.brix_range, _eibBrixInitSel);
 }
 function _eibEffAcid(orig) {
   const c = _rangeComposeAcid('eib-m-acid-min', 'eib-m-acid-max');
@@ -14419,38 +14455,56 @@ function qualityInline(r, showNums, opts = {}) {
 // ★당도는 입고 시점엔 없다(농가는 안 잰다) — 공장 검수에서 재서 나중에 채운다. 수정 모달은 무겁고 다른 값을 건드릴
 //   위험이 있어, 목록의 당도 줄을 눌러 범위·평균당도 두 칸만 바로 넣는 길을 둔다.
 // ★재고 실사 숫자 칩(startChipEdit)과 같은 패턴: Enter 저장 / Esc 취소 / 바깥으로 나가면 저장.
-//   칸이 둘이라 '범위 → 평균' 칸 이동은 바깥으로 치지 않는다(포커스가 편집 영역 안으로 옮겨가면 저장 안 함).
-// ★PATCH는 brix_range·brix_avg 두 컬럼만. 범위는 자유 입력(검수 측정값 '11.8-14.1' 등) —
-//   수정 모달 드롭다운이 다 표현 못 하는 값이어도 _eibEffBrix가 원문을 지킨다.
+//   칸이 여럿이라(범위 드롭다운 4 + 평균 1) 칸 사이 이동은 바깥으로 치지 않는다(포커스가 편집 영역 안으로 옮겨가면 저장 안 함).
+// ★PATCH는 brix_range·brix_avg 두 컬럼만.
+// ★범위는 등록 폼·수정 모달과 똑같은 드롭다운([숫자][초중후]~[숫자][초중후], brixRangeSelsHtml 한 곳에서 생성).
+//   예전엔 여기만 자유 입력이라 같은 값을 넣는 UI가 둘로 갈렸고, 저장 형식도 어긋날 수 있었다('11.8-14.1').
+//   드롭다운으로 다 표현 못 하는 기존 값은 수정 모달과 같은 규칙으로 지킨다 — 칸을 안 고르면 원문 유지(_brixEffFrom) + 원문 안내.
+// ★평균당도는 자유 입력 그대로 — '12중후반대13초'처럼 위치가 두 글자('중후반')이고 '대'로 잇는 서술형이라
+//   초/중/후 세 옵션 조합으로 만들 수 없다(억지로 옵션을 늘리면 등록 폼과 옵션이 다시 갈린다).
 // ★실패하면 조용히 넘기지 않는다: 알림 + 화면 값 원래대로(로컬 값은 성공한 뒤에만 바꾼다).
+const _IBX_BRIX_PFX = 'ibx-brix';   // 목록 인라인 편집용 드롭다운 id 접두사(한 번에 한 행만 편집)
 function startIbBrixEdit(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (_ibAuditMode) return;   // 실사 중엔 행 누르기가 체크 — 렌더에서도 끄지만 콘솔 호출까지 막는다
   const el = document.querySelector(`#ib-tb [data-ib-brix="${CSS.escape(String(id))}"]`);
-  if (!el || el.querySelector('input')) return;
+  if (!el || el.querySelector('.ib-brix-editor')) return;   // 이미 편집 중
   const r = inboundRecords.find(x => String(x.id) === String(id));
   if (!r) return;
   const oldHtml = el.innerHTML, oldStyle = el.getAttribute('style'), oldClick = el.getAttribute('onclick');
   el.removeAttribute('onclick');   // 편집 중 칸 안을 눌러도 다시 시작하지 않게
   el.style.whiteSpace = 'normal'; el.style.overflow = 'visible'; el.style.cursor = 'default';
   el.innerHTML = `<div class="ib-brix-editor" onclick="event.stopPropagation()">
-      <input data-k="range" type="text" autocomplete="off" placeholder="당도 범위 예) 11.8-14.1">
-      <input data-k="avg" type="text" autocomplete="off" placeholder="평균당도 예) 12중후반">
+      <div class="bx-rng">${brixRangeSelsHtml(_IBX_BRIX_PFX, { pair: true, cls: 'bx-sel', css: '' })}</div>
+      <div class="bx-raw" style="display:none"></div>
+      <input data-k="avg" type="text" autocomplete="off" placeholder="평균당도 예) 12중후반대13초">
     </div>`;
   const ed = el.firstElementChild;
-  const [inR, inA] = ed.querySelectorAll('input');
-  inR.value = r.brix_range || ''; inA.value = r.brix_avg || '';   // .value로 주입(이스케이프 문제 방지)
-  inR.focus(); inR.select();
+  const ids = _brixSelIds(_IBX_BRIX_PFX);
+  _brixRangeToSel(r.brix_range, ...ids);
+  const initSel = _rangeComposeBrix(...ids);
+  { // 드롭다운이 원문을 다 못 담으면(예전에 자유 입력한 '11.8-14.1', 라벨 붙은 값 등) 원문을 안내 — 수정 모달과 같은 문구
+    const rawEl = ed.querySelector('.bx-raw'), raw = r.brix_range || '';
+    if (raw && initSel !== raw) { rawEl.style.display = ''; rawEl.textContent = `저장된 값: ${raw} — 칸을 고르지 않으면 유지`; }
+  }
+  const inA = ed.querySelector('input[data-k="avg"]');
+  inA.value = r.brix_avg || '';   // .value로 주입(이스케이프 문제 방지)
+  const firstSel = document.getElementById(ids[0]);
+  if (firstSel) firstSel.focus();
   let done = false;
   const restore = () => { el.innerHTML = oldHtml; el.setAttribute('style', oldStyle); if (oldClick) el.setAttribute('onclick', oldClick); };
   const finish = async (save) => {
     if (done) return;
     done = true;
+    // ★편집 칸이 이미 화면에서 사라졌으면 아무것도 하지 않는다 — 다른 일로 목록이 다시 그려진(renderInboundList)
+    //   뒤에 뒤늦게 도착한 focusout이다. 드롭다운을 id로 찾기 때문에, 그냥 두면 그 사이 새로 열린 다른 행의
+    //   칸 값(또는 빈 값)을 이 행에 저장해 버린다 — 텍스트칸 시절엔 DOM 참조를 들고 있어 없던 문제.
+    if (!ed.isConnected) return;
     if (!save) return restore();
-    const nr = inR.value.trim() || null, na = inA.value.trim() || null;
+    const nr = _brixEffFrom(_IBX_BRIX_PFX, r.brix_range, initSel), na = inA.value.trim() || null;
     const pr = r.brix_range || null, pa = r.brix_avg || null;
     if (nr === pr && na === pa) return restore();   // 안 바뀌었으면 저장·이력 없음
-    inR.disabled = true; inA.disabled = true;
+    ed.querySelectorAll('select, input').forEach(x => { x.disabled = true; });
     try {
       await dbUpdateInbound(r.id, { brix_range: nr, brix_avg: na });
     } catch (e) {
@@ -14475,7 +14529,7 @@ function startIbBrixEdit(id) {
     else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
   ed.addEventListener('focusout', e => {
-    if (e.relatedTarget && ed.contains(e.relatedTarget)) return;   // 범위 ↔ 평균 칸 이동
+    if (e.relatedTarget && ed.contains(e.relatedTarget)) return;   // 드롭다운 ↔ 평균 칸 이동
     setTimeout(() => { if (!ed.contains(document.activeElement)) finish(true); }, 0);
   });
 }
