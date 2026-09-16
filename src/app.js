@@ -4063,6 +4063,70 @@ const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-
 function _isHarvestEv(e) { return e.status === '수확전' || e.status === '수확중' || e.status === '수확완료'; }
 const _hvStBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
 const _hvStFg    = { 수확전: '#C05800', 수확중: '#1565C0', 수확완료: '#2E7D32' };   // _hvStBg 짝 글자색(달력 셀 pill용) — 앱 기존 팔레트 재사용
+// ── 수확 계획(오전·오후 차량·빈콘) + 확인 체크 ─────────────────────────────
+// ★아침에 농가와 통화해 받는 '그날 계획' 메모다(예: "김광호 오전1대 오후1대, 오전 빈콘 요청").
+//   ★배차(dispatches)와는 잇지 않는다 — 실제 배차는 별도 흐름이고, '계획 대비 배차' 비교가 필요해지면 그때 잇는다.
+//   컬럼: harvests.am_cars·pm_cars·am_cont·pm_cont(integer, null 허용) · plan_checked_at(timestamptz).
+//   기존 일정은 넷 다 null이라 아래 함수들이 전부 ''·0을 돌려준다 — 화면이 예전과 같아진다.
+const _hvPlanN = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : null; };   // 0·음수·빈칸 = 미입력(null)
+function _hvPlanHas(h) { return !!(h && (h.am_cars || h.pm_cars || h.am_cont || h.pm_cont)); }
+// '오전 1대·빈콘 20 / 오후 1대' — 값 없는 항목은 빠지고, 넷 다 없으면 ''(부르는 쪽이 줄 자체를 안 만든다)
+function _hvPlanText(h) {
+  const half = (cars, cont) => [cars ? `${fmtN(cars)}대` : '', cont ? `빈콘 ${fmtN(cont)}` : ''].filter(Boolean).join('·');
+  const am = half(h.am_cars, h.am_cont), pm = half(h.pm_cars, h.pm_cont);
+  return [am && `오전 ${am}`, pm && `오후 ${pm}`].filter(Boolean).join(' / ');
+}
+function _hvPlanSum(list) {   // 날짜별 합계 — 그 카드에 실제로 보이는 행들만 더한다(머리 숫자와 아래 행이 어긋나지 않게)
+  const s = { am_cars: 0, pm_cars: 0, am_cont: 0, pm_cont: 0 };
+  (list || []).forEach(h => { s.am_cars += h.am_cars || 0; s.pm_cars += h.pm_cars || 0; s.am_cont += h.am_cont || 0; s.pm_cont += h.pm_cont || 0; });
+  return s;
+}
+function _hvPlanCheckedTxt(h) {
+  const d = new Date(h.plan_checked_at);
+  return Number.isNaN(d.getTime()) ? '확인함' : `확인 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+// 카드 요약 한 줄. 계획이 없으면 '' — 빈 줄로 카드가 벌어지지 않게.
+// 확인된 건은 초록 ✓ — ★행 전체를 opacity로 흐리게 하지 않는다('콘테이너 없음' 같은 경고까지 같이 묻힌다).
+function _hvPlanLine(h, style = '') {
+  const t = _hvPlanText(h);
+  if (!t) return '';
+  const done = !!h.plan_checked_at;
+  const tip = done ? _hvPlanCheckedTxt(h) : '오전·오후 차량·빈콘 계획';
+  return `<div style="font-size:11px;color:${done ? '#2E7D32' : '#374151'};${style}" title="${esc(tip)}">${done ? '✓' : '🚚'} ${esc(t)}</div>`;
+}
+// 확인 체크 버튼 — 관리자만(수확 레코드를 쓰는 다른 동작과 같은 기준). 계획이 없으면 체크할 것도 없어 안 그린다.
+function _hvPlanCheckBtn(h) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
+  if (!_hvPlanHas(h)) return '';
+  const done = !!h.plan_checked_at;
+  const css = done ? 'background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7' : 'background:#fff;color:#6B7280;border:1px solid #D1D5DB';
+  return `<button type="button" onclick="event.stopPropagation();toggleHarvestPlanCheck(${h.id})" title="${esc(done ? _hvPlanCheckedTxt(h) + ' — 눌러서 해제' : '계획을 확인·처리했으면 체크')}" style="font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;${css}">${done ? '✓ 확인' : '☐ 확인'}</button>`;
+}
+// 폼 ↔ 컬럼. id는 <prefix>-amcars/-amcont/-pmcars/-pmcont 한 규칙(등록 폼 cal-add, 수정 모달 mh).
+const _HV_PLAN_FIELDS = [['am_cars', 'amcars'], ['am_cont', 'amcont'], ['pm_cars', 'pmcars'], ['pm_cont', 'pmcont']];
+function _hvPlanFromForm(pfx) {
+  const o = {};
+  _HV_PLAN_FIELDS.forEach(([col, sfx]) => { o[col] = _hvPlanN(document.getElementById(`${pfx}-${sfx}`)?.value); });
+  return o;
+}
+function _hvPlanToForm(pfx, h) {
+  _HV_PLAN_FIELDS.forEach(([col, sfx]) => { const el = document.getElementById(`${pfx}-${sfx}`); if (el) el.value = (h && h[col]) || ''; });
+}
+function _hvPlanClearForm(pfx) { _hvPlanToForm(pfx, null); }
+
+// 확인 토글 — plan_checked_at에 시각 기록/해제. ★수확 상태(status)·완료 처리와는 무관하다(계획 메모 처리 여부일 뿐).
+async function toggleHarvestPlanCheck(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const h = harvests.find(x => x.id === id);
+  if (!h) return;
+  const next = h.plan_checked_at ? null : new Date().toISOString();
+  try {
+    await dbUpdateHarvest(id, { plan_checked_at: next });
+    harvests = harvests.map(x => x.id === id ? { ...x, plan_checked_at: next } : x);
+    renderCal();
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
 function harvestActBtns(h) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
   const st = h.status || '수확전';
@@ -4093,7 +4157,8 @@ function harvestRow(h, showDate) {
         : (st === '수확완료'
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
             : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}
-      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${harvestActBtns(h)}</div>
+      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h)}${harvestActBtns(h)}</div>
+      ${_hvPlanLine(h, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}
     </div>`;
 }
 // ── [화면: 수확·수송 > 수확 캘린더] 월 그리드 + 금일 strip + 등록 폼.
@@ -4383,6 +4448,10 @@ function renderUpcomingHarvest() {
     const sum = day.list.length
       ? `${day.farmCnt}곳${day.hold ? ' · 콘테이너 ' + fmtN(day.hold) : ''}`
       : '수확 예정 없음';
+    // ★그날 계획 합계 — 여러 농가를 도는 날 총 몇 대인지가 실제 판단 기준.
+    //   더하는 대상은 아래 행에 실제로 보이는 것들(day.list)이라, 머리 숫자와 행이 어긋나지 않는다.
+    //   ☆며칠 걸리는 수확은 그 기간의 날마다 목록에 들어오므로 날마다 한 번씩 세어진다(그날 필요한 대수라는 뜻).
+    const planSum = day.list.length ? _hvPlanText(_hvPlanSum(day.list)) : '';
 
     const rows = day.list.length ? day.list.map(x => {
       const st = x.status || '수확전';
@@ -4423,6 +4492,9 @@ function renderUpcomingHarvest() {
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
+        ${_hvPlanHas(x) ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
+          ${_hvPlanLine(x)}${_hvPlanCheckBtn(x)}
+        </div>` : ''}
       </div>`;
     }).join('') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
@@ -4431,6 +4503,7 @@ function renderUpcomingHarvest() {
       <div style="padding:6px 8px;background:${isToday ? '#FFF7ED' : '#F9FAFB'};border-bottom:1px solid ${isToday ? '#FDE68A' : '#E5E7EB'}">
         <div style="font-size:12px;font-weight:700;color:${isToday ? '#C05800' : '#374151'};white-space:nowrap">${esc(head)}</div>
         <div style="font-size:10px;color:${isToday ? '#B45309' : '#9CA3AF'};margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sum)}</div>
+        ${planSum ? `<div style="font-size:10px;font-weight:600;color:${isToday ? '#C05800' : '#4B5563'};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc('그날 계획 합계 — ' + planSum)}">🚚 ${esc(planSum)}</div>` : ''}
       </div>
       ${rows}
     </div>`;
@@ -4735,6 +4808,9 @@ function _hvProgCard(g) {
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           ${chip}<span style="font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
         </span>
+        ${_hvPlanHas(g.last) ? `<span style="flex:1 1 100%;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+          ${_hvPlanLine(g.last)}${_hvPlanCheckBtn(g.last)}
+        </span>` : ''}
       </div>
       ${open ? `<div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:#fff">
         ${g.rounds.map(h => harvestRow(h, true)).join('')}
@@ -5083,6 +5159,7 @@ function openHarvestEdit(id) {
   document.getElementById('mh-item').value = h.item || '';
   document.getElementById('mh-note').value = h.note || '';
   document.getElementById('mh-round').value = h.round || 1;
+  _hvPlanToForm('mh', h);
   document.getElementById('modal-harvest').style.display = 'flex';
 }
 async function saveHarvestEdit() {
@@ -5090,7 +5167,7 @@ async function saveHarvestEdit() {
   const date = document.getElementById('mh-date').value;
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
-  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
+  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1, ..._hvPlanFromForm('mh') };
   const prev = harvests.find(h => h.id === _editHarvestId);   // 변경 전 값 — 배차 동기화 판단에만 쓴다
   try {
     await dbUpdateHarvest(_editHarvestId, data);
@@ -5249,9 +5326,11 @@ async function addHarvest() {
   const item = document.getElementById('cal-add-item')?.value || null;
   const note = document.getElementById('cal-add-note')?.value || null;
   const round = parseInt(document.getElementById('cal-add-round')?.value, 10) || 1;
+  // 오전·오후 계획 — 전부 선택 입력. 비우면 null이라 기존 일정과 같은 모양이 된다.
+  const plan = _hvPlanFromForm('cal-add');
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
   try {
-    const row = await dbInsertHarvest({ date, end_date, farm, item, note, round, status: '수확전' });
+    const row = await dbInsertHarvest({ date, end_date, farm, item, note, round, status: '수확전', ...plan });
     harvests.push(row);
     document.getElementById('cal-add-date').value = '';
     document.getElementById('cal-add-end').value = '';
@@ -5260,6 +5339,7 @@ async function addHarvest() {
     fsSync('cal-add-farm');
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
+    _hvPlanClearForm('cal-add');
     renderCal();
     // ★여기부터는 '제안'일 뿐 — 저장은 위에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
     //   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).

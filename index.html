@@ -173,6 +173,18 @@
       <div class="fg"><label>차수</label><input id="mh-round" type="number" min="1" value="1"></div>
       <div class="fg"><label>농가명 *</label><select id="mh-farm"><option value="">선택</option></select></div>
       <div class="fg"><label>품목</label><select id="mh-item"></select></div>
+      <div class="fg"><label>오전 계획 <span style="font-size:10px;color:#aaa">(차량·빈콘, 선택)</span></label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input id="mh-amcars" type="number" min="0" inputmode="numeric" placeholder="차량" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">대</span>
+          <input id="mh-amcont" type="number" min="0" inputmode="numeric" placeholder="빈콘" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">개</span>
+        </div>
+      </div>
+      <div class="fg"><label>오후 계획 <span style="font-size:10px;color:#aaa">(차량·빈콘, 선택)</span></label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input id="mh-pmcars" type="number" min="0" inputmode="numeric" placeholder="차량" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">대</span>
+          <input id="mh-pmcont" type="number" min="0" inputmode="numeric" placeholder="빈콘" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">개</span>
+        </div>
+      </div>
       <div class="fg"><label>메모</label><input id="mh-note"></div>
     </div>
     <div class="modal-actions"><button class="btn cancel" onclick="CM('harvest')">취소</button><button class="btn pri" onclick="saveHarvestEdit()">저장</button></div>
@@ -537,6 +549,18 @@
     <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="cal-add-end" type="date"></div>
     <div class="fg"><label>차수 <span style="font-size:10px;color:#aaa">(밭떼기 여러 날)</span></label><input id="cal-add-round" type="number" min="1" value="1"></div>
     <div class="fg"><label>품목</label><select id="cal-add-item"></select></div>
+    <div class="fg"><label>오전 계획 <span style="font-size:10px;color:#aaa">(차량·빈콘, 선택)</span></label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input id="cal-add-amcars" type="number" min="0" inputmode="numeric" placeholder="차량" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">대</span>
+        <input id="cal-add-amcont" type="number" min="0" inputmode="numeric" placeholder="빈콘" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">개</span>
+      </div>
+    </div>
+    <div class="fg"><label>오후 계획 <span style="font-size:10px;color:#aaa">(차량·빈콘, 선택)</span></label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input id="cal-add-pmcars" type="number" min="0" inputmode="numeric" placeholder="차량" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">대</span>
+        <input id="cal-add-pmcont" type="number" min="0" inputmode="numeric" placeholder="빈콘" style="flex:1 1 0;min-width:0;text-align:center"><span style="font-size:11px;color:#9CA3AF;flex-shrink:0">개</span>
+      </div>
+    </div>
     <div class="fg"><label>메모</label><input id="cal-add-note" placeholder="메모"></div>
   </div>
   <div class="form-actions"><button class="btn pri" onclick="addHarvest()">일정 등록</button></div>
@@ -2065,6 +2089,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=26"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=625"></script>
+<script src="src/app.js?v=626"></script>
 </body>
 </html>
