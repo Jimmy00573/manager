@@ -4063,68 +4063,186 @@ const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-
 function _isHarvestEv(e) { return e.status === '수확전' || e.status === '수확중' || e.status === '수확완료'; }
 const _hvStBg    = { 수확전: '#FFF3E0', 수확중: '#EFF8FF', 수확완료: '#F1F8E9' };
 const _hvStFg    = { 수확전: '#C05800', 수확중: '#1565C0', 수확완료: '#2E7D32' };   // _hvStBg 짝 글자색(달력 셀 pill용) — 앱 기존 팔레트 재사용
-// ── 수확 계획(오전·오후 차량·빈콘) + 확인 체크 ─────────────────────────────
-// ★아침에 농가와 통화해 받는 '그날 계획' 메모다(예: "김광호 오전1대 오후1대, 오전 빈콘 요청").
+// ── 수확 계획(오전·오후 차량·빈콘) — 날짜별 + 확인 체크 ─────────────────────────
+// ★아침에 농가와 통화해 받는 '그날 계획' 메모다(예: "김광호 오늘 오전 1차 오후 2차, 오전 빈콘 20").
 //   ★배차(dispatches)와는 잇지 않는다 — 실제 배차는 별도 흐름이고, '계획 대비 배차' 비교가 필요해지면 그때 잇는다.
-//   컬럼: harvests.am_cars·pm_cars·am_cont·pm_cont(integer, null 허용) · plan_checked_at(timestamptz).
-//   기존 일정은 넷 다 null이라 아래 함수들이 전부 ''·0을 돌려준다 — 화면이 예전과 같아진다.
-const _hvPlanN = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : null; };   // 0·음수·빈칸 = 미입력(null)
-function _hvPlanHas(h) { return !!(h && (h.am_cars || h.pm_cars || h.am_cont || h.pm_cont)); }
-// '오전 1대·빈콘 20 / 오후 1대' — 값 없는 항목은 빠지고, 넷 다 없으면 ''(부르는 쪽이 줄 자체를 안 만든다)
-function _hvPlanText(h) {
-  const half = (cars, cont) => [cars ? `${fmtN(cars)}대` : '', cont ? `빈콘 ${fmtN(cont)}` : ''].filter(Boolean).join('·');
-  const am = half(h.am_cars, h.am_cont), pm = half(h.pm_cars, h.pm_cont);
+// ★저장은 harvests.plan_by_date(jsonb) 한 컬럼 — { "2026-09-17": { am:1, amc:20, pm:2, pmc:10, chk:"ISO시각" } }.
+//   am/pm = 차량 차수, amc/pmc = 빈콘 개수, chk = 확인 시각. ★값 없는 항목은 키 자체를 넣지 않는다(0·null 금지).
+//   ★2026-09-17 날짜별로 바꿨다: 예전 am_cars·pm_cars·am_cont·pm_cont·plan_checked_at(e2a0ec4)은 수확 건당 한 세트라
+//     4일 걸치는 수확이 네 날 카드 전부에 같은 숫자로 반복됐다. 옛 컬럼은 더 읽지도 쓰지도 않는다(DB 컬럼은 남아 있음).
+// ★모든 읽기·쓰기는 '그 카드의 날짜(dStr)'를 받는다 — 사용자가 날짜를 고르는 일은 없다.
+const _hvPlanN = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : null; };   // 0·음수·빈칸·숫자아님 = 미입력(null)
+const _HV_PLAN_KEYS = ['am', 'amc', 'pm', 'pmc'];
+// 그 날짜의 계획 객체(없으면 null). plan_by_date가 null·배열·이상한 값이어도 터지지 않게.
+function _hvPlanDay(h, dStr) {
+  const m = h && h.plan_by_date;
+  const d = (m && typeof m === 'object' && dStr) ? m[dStr] : null;
+  return (d && typeof d === 'object') ? d : null;
+}
+function _hvPlanHas(p) { return !!(p && (p.am || p.pm || p.amc || p.pmc)); }
+// '오전 1차·빈콘 20 / 오후 2차' — 값 없는 항목은 빠지고, 넷 다 없으면 ''
+function _hvPlanText(p) {
+  if (!p) return '';
+  const half = (cars, cont) => [cars ? `${fmtN(cars)}차` : '', cont ? `빈콘 ${fmtN(cont)}` : ''].filter(Boolean).join('·');
+  const am = half(p.am, p.amc), pm = half(p.pm, p.pmc);
   return [am && `오전 ${am}`, pm && `오후 ${pm}`].filter(Boolean).join(' / ');
 }
-function _hvPlanSum(list) {   // 날짜별 합계 — 그 카드에 실제로 보이는 행들만 더한다(머리 숫자와 아래 행이 어긋나지 않게)
-  const s = { am_cars: 0, pm_cars: 0, am_cont: 0, pm_cont: 0 };
-  (list || []).forEach(h => { s.am_cars += h.am_cars || 0; s.pm_cars += h.pm_cars || 0; s.am_cont += h.am_cont || 0; s.pm_cont += h.pm_cont || 0; });
+// 날짜별 합계 — 그 카드에 실제로 보이는 행들(list)의 ★그 날짜 키만★ 더한다(머리 숫자와 아래 행이 어긋나지 않게).
+function _hvPlanSum(list, dStr) {
+  const s = { am: 0, amc: 0, pm: 0, pmc: 0 };
+  (list || []).forEach(h => { const p = _hvPlanDay(h, dStr); if (p) _HV_PLAN_KEYS.forEach(k => { s[k] += _hvPlanN(p[k]) || 0; }); });
   return s;
 }
-function _hvPlanCheckedTxt(h) {
-  const d = new Date(h.plan_checked_at);
+function _hvPlanCheckedTxt(p) {
+  const d = new Date(p && p.chk);
   return Number.isNaN(d.getTime()) ? '확인함' : `확인 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
-// 카드 요약 한 줄. 계획이 없으면 '' — 빈 줄로 카드가 벌어지지 않게.
+// 카드 요약 한 줄(그 날짜). 관리자는 이 줄을 눌러 그 자리에서 입력한다(startHvPlanEdit).
+//   계획이 없으면: 관리자 + 오늘 이후 날짜만 연한 '＋ 계획 입력' 자리표시자. 그 밖(직원·지난 날짜)은 '' — 빈 줄로 카드가 벌어지지 않게.
+//   ★지난 날짜에 자리표시자를 안 두는 이유: 달력 상세에서 지난 날을 열면 완료된 수확마다 '계획 입력'이 붙어 잡음이 된다.
+//     이미 값이 있으면 지난 날짜여도 보이고 눌러서 고칠 수 있다.
 // 확인된 건은 초록 ✓ — ★행 전체를 opacity로 흐리게 하지 않는다('콘테이너 없음' 같은 경고까지 같이 묻힌다).
-function _hvPlanLine(h, style = '') {
-  const t = _hvPlanText(h);
-  if (!t) return '';
-  const done = !!h.plan_checked_at;
-  const tip = done ? _hvPlanCheckedTxt(h) : '오전·오후 차량·빈콘 계획';
-  return `<div style="font-size:11px;color:${done ? '#2E7D32' : '#374151'};${style}" title="${esc(tip)}">${done ? '✓' : '🚚'} ${esc(t)}</div>`;
+function _hvPlanLine(h, dStr, style = '') {
+  if (!h || !dStr) return '';
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const p = _hvPlanDay(h, dStr);
+  const t = _hvPlanText(p);
+  if (!t && (!isAdm || dStr < td())) return '';
+  const click = isAdm ? ` onclick="event.stopPropagation();startHvPlanEdit(this,${Number(h.id)},'${esc(dStr)}')"` : '';
+  if (!t) {
+    return `<div${click} title="눌러서 이날 오전·오후 차량·빈콘 계획 입력" style="font-size:11px;color:#A5B4C3;cursor:pointer;padding:2px 0;${style}">＋ 계획 입력</div>`;
+  }
+  const done = !!p.chk;
+  const tip = (done ? _hvPlanCheckedTxt(p) : '오전·오후 차량·빈콘 계획') + (isAdm ? ' — 눌러서 수정' : '');
+  return `<div${click} style="font-size:11px;color:${done ? '#2E7D32' : '#374151'};${isAdm ? 'cursor:pointer;' : ''}padding:2px 0;${style}" title="${esc(tip)}">${done ? '✓' : '🚚'} ${esc(t)}</div>`;
 }
-// 확인 체크 버튼 — 관리자만(수확 레코드를 쓰는 다른 동작과 같은 기준). 계획이 없으면 체크할 것도 없어 안 그린다.
-function _hvPlanCheckBtn(h) {
+// 확인 체크 버튼(그 날짜) — 관리자만(수확 레코드를 쓰는 다른 동작과 같은 기준). 그날 계획이 없으면 체크할 것도 없어 안 그린다.
+function _hvPlanCheckBtn(h, dStr) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
-  if (!_hvPlanHas(h)) return '';
-  const done = !!h.plan_checked_at;
+  const p = _hvPlanDay(h, dStr);
+  if (!_hvPlanHas(p)) return '';
+  const done = !!p.chk;
   const css = done ? 'background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7' : 'background:#fff;color:#6B7280;border:1px solid #D1D5DB';
-  return `<button type="button" onclick="event.stopPropagation();toggleHarvestPlanCheck(${h.id})" title="${esc(done ? _hvPlanCheckedTxt(h) + ' — 눌러서 해제' : '계획을 확인·처리했으면 체크')}" style="font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;${css}">${done ? '✓ 확인' : '☐ 확인'}</button>`;
+  return `<button type="button" onclick="event.stopPropagation();toggleHarvestPlanCheck(${Number(h.id)},'${esc(dStr)}')" title="${esc(done ? _hvPlanCheckedTxt(p) + ' — 눌러서 해제' : '계획을 확인·처리했으면 체크')}" style="font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;${css}">${done ? '✓ 확인' : '☐ 확인'}</button>`;
 }
-// 폼 ↔ 컬럼. id는 <prefix>-amcars/-amcont/-pmcars/-pmcont 한 규칙(등록 폼 cal-add, 수정 모달 mh).
-const _HV_PLAN_FIELDS = [['am_cars', 'amcars'], ['am_cont', 'amcont'], ['pm_cars', 'pmcars'], ['pm_cont', 'pmcont']];
-function _hvPlanFromForm(pfx) {
-  const o = {};
-  _HV_PLAN_FIELDS.forEach(([col, sfx]) => { o[col] = _hvPlanN(document.getElementById(`${pfx}-${sfx}`)?.value); });
-  return o;
-}
-function _hvPlanToForm(pfx, h) {
-  _HV_PLAN_FIELDS.forEach(([col, sfx]) => { const el = document.getElementById(`${pfx}-${sfx}`); if (el) el.value = (h && h[col]) || ''; });
-}
-function _hvPlanClearForm(pfx) { _hvPlanToForm(pfx, null); }
 
-// 확인 토글 — plan_checked_at에 시각 기록/해제. ★수확 상태(status)·완료 처리와는 무관하다(계획 메모 처리 여부일 뿐).
-async function toggleHarvestPlanCheck(id) {
+// ★그 날짜 키 하나만 바꾸는 저장. mutate(서버의 현재 그날 객체 | null) → 새 객체 | null(null이면 그 날짜 키 삭제).
+//   PostgREST PATCH는 jsonb를 통째로 쓰므로, 로컬 harvests로 합쳐 쓰면 다른 기기가 방금 넣은 다른 날짜 키를 지울 수 있다.
+//   그래서: ① 서버에서 방금 값을 읽고 ② 그 날짜 키만 바꾼 뒤 ③ "plan_by_date가 ①에서 읽은 값과 같을 때만" PATCH한다.
+//   그 사이 누가 바꿨으면 0행이 돌아오고, 처음부터 다시 읽어 합친다(최대 4번). → 다른 날짜 키는 절대 덮이지 않는다.
+//   ★jsonb eq 필터는 키 순서와 무관한 의미 비교다(2026-09-17 실DB GET으로 확인).
+async function _hvPlanPatchDay(id, dStr, mutate) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const rows = await sbGet('harvests', `select=plan_by_date&id=eq.${Number(id)}`);
+    if (!rows.length) throw new Error('수확 일정을 찾을 수 없습니다(삭제되었을 수 있음)');
+    const cur = rows[0].plan_by_date;
+    const base = (cur && typeof cur === 'object' && !Array.isArray(cur)) ? cur : {};
+    const nextDay = mutate(base[dStr] && typeof base[dStr] === 'object' ? { ...base[dStr] } : null);
+    const next = { ...base };
+    if (nextDay) next[dStr] = nextDay; else delete next[dStr];
+    const guard = cur == null ? 'plan_by_date=is.null' : `plan_by_date=eq.${encodeURIComponent(JSON.stringify(cur))}`;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/harvests?id=eq.${Number(id)}&${guard}`, {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ plan_by_date: next })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const out = await res.json();
+    if (Array.isArray(out) && out.length) {
+      _sbNotifyWrite();
+      const saved = out[0].plan_by_date;
+      harvests = harvests.map(x => x.id === out[0].id ? { ...x, plan_by_date: saved } : x);
+      return saved;
+    }
+    // 0행 — 읽은 뒤 다른 곳에서 바뀌었다(또는 RLS). 다시 읽어서 합친다.
+  }
+  throw new Error('다른 곳에서 동시에 수정 중이라 저장하지 못했습니다. 잠시 뒤 다시 시도하세요.');
+}
+
+// 확인 토글(그 날짜) — chk에 시각 기록/해제. ★수확 상태(status)·완료 처리와는 무관하다(계획 메모 처리 여부일 뿐).
+async function toggleHarvestPlanCheck(id, dStr) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
-  const h = harvests.find(x => x.id === id);
-  if (!h) return;
-  const next = h.plan_checked_at ? null : new Date().toISOString();
+  if (!dStr || !harvests.some(x => x.id === id)) return;
+  const want = !(_hvPlanDay(harvests.find(x => x.id === id), dStr) || {}).chk;   // 화면에 보이던 상태의 반대
   try {
-    await dbUpdateHarvest(id, { plan_checked_at: next });
-    harvests = harvests.map(x => x.id === id ? { ...x, plan_checked_at: next } : x);
+    await _hvPlanPatchDay(id, dStr, day => {
+      if (!_hvPlanHas(day)) return day;   // 그 사이 계획이 지워졌으면 체크할 것도 없다 — 그대로
+      const o = { ...day };
+      if (want) o.chk = new Date().toISOString(); else delete o.chk;
+      return o;
+    });
     renderCal();
   } catch (e) { alert('오류: ' + e.message); }
+}
+
+// ── 카드의 계획 줄을 눌러 그 자리에서 입력(당도 인라인 편집 startIbBrixEdit과 같은 방식) ──
+//   el = 누른 줄(같은 일정이 금일 strip·다가오는 수확·달력 상세에 동시에 보일 수 있어 id 검색 대신 요소를 직접 받는다).
+//   날짜는 그 카드가 넘겨준 dStr로 정해진다. Enter 저장 / Esc 취소 / 바깥 누르면 저장.
+//   ★폰 숫자 키패드엔 Enter가 없을 수 있어 [저장][취소] 버튼도 둔다. 버튼은 pointerdown을 막아 입력칸 포커스를
+//     빼앗지 않게 한다(안 막으면 ✕를 누르는 순간 focusout이 먼저 '바깥 클릭 저장'을 해 버린다).
+function startHvPlanEdit(el, id, dStr) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!el || !el.isConnected || !dStr || el.querySelector('.hv-plan-editor')) return;   // 이미 편집 중
+  const h = harvests.find(x => x.id === id);
+  if (!h) return;
+  const p0 = _hvPlanDay(h, dStr) || {};
+  const oldHtml = el.innerHTML, oldStyle = el.getAttribute('style'), oldClick = el.getAttribute('onclick'), oldTitle = el.getAttribute('title');
+  el.removeAttribute('onclick'); el.removeAttribute('title');   // 편집 중 칸 안을 눌러도 다시 시작하지 않게
+  el.style.cursor = 'default';
+  const inp = (k, ph) => `<input data-k="${k}" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" placeholder="${ph}">`;
+  el.innerHTML = `<div class="hv-plan-editor" onclick="event.stopPropagation()">
+      <div class="hvp-row"><span class="hvp-lbl">오전</span>${inp('am', '차량')}<span class="hvp-u">차</span>${inp('amc', '빈콘')}<span class="hvp-u">개</span></div>
+      <div class="hvp-row"><span class="hvp-lbl">오후</span>${inp('pm', '차량')}<span class="hvp-u">차</span>${inp('pmc', '빈콘')}<span class="hvp-u">개</span></div>
+      <div class="hvp-act"><span class="hvp-date">${esc(calFmtShort(dStr))}</span><button type="button" data-a="cancel">취소</button><button type="button" data-a="save" class="hvp-save">저장</button></div>
+    </div>`;
+  const ed = el.firstElementChild;
+  const ins = {};
+  ed.querySelectorAll('input[data-k]').forEach(x => { ins[x.dataset.k] = x; x.value = _hvPlanN(p0[x.dataset.k]) || ''; });   // .value로 주입
+  ins.am.focus(); ins.am.select();
+  let done = false;
+  const restore = () => {
+    el.innerHTML = oldHtml; el.setAttribute('style', oldStyle || '');
+    if (oldClick) el.setAttribute('onclick', oldClick);
+    if (oldTitle) el.setAttribute('title', oldTitle);
+  };
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    // ★편집 칸이 이미 화면에서 사라졌으면 아무것도 하지 않는다 — 다른 일(다른 기기 변경 동기화·상태 버튼 등)로
+    //   renderCal이 다시 그린 뒤 뒤늦게 도착한 focusout이다(당도 인라인 편집에서 겪은 회귀와 같은 자리).
+    if (!ed.isConnected) return;
+    if (!save) return restore();
+    const nv = {};
+    _HV_PLAN_KEYS.forEach(k => { nv[k] = _hvPlanN(ins[k].value); });
+    if (_HV_PLAN_KEYS.every(k => nv[k] === (_hvPlanN(p0[k]) || null))) return restore();   // 안 바뀌었으면 저장 없음
+    ed.querySelectorAll('input, button').forEach(x => { x.disabled = true; });
+    try {
+      await _hvPlanPatchDay(id, dStr, day => {
+        // 서버의 그날 객체 위에 숫자 네 칸만 덮는다 — chk(확인 시각) 등 다른 키는 그대로.
+        const o = { ...(day || {}) };
+        _HV_PLAN_KEYS.forEach(k => { if (nv[k]) o[k] = nv[k]; else delete o[k]; });
+        return _hvPlanHas(o) ? o : null;   // 숫자가 하나도 안 남으면 그 날짜 키 자체를 지운다(확인 표시도 의미가 없어짐)
+      });
+    } catch (e) {
+      if (ed.isConnected) restore();
+      alert('계획 저장에 실패했습니다. 값은 저장 전 그대로입니다.\n\n' + e.message);
+      return;
+    }
+    renderCal();
+  };
+  ed.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  ed.querySelectorAll('button[data-a]').forEach(b => {
+    b.addEventListener('pointerdown', e => e.preventDefault());   // 입력칸 포커스 유지(위 주석)
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', e => { e.preventDefault(); finish(b.dataset.a === 'save'); });
+  });
+  ed.addEventListener('focusout', e => {
+    if (e.relatedTarget && ed.contains(e.relatedTarget)) return;   // 칸 사이 이동
+    setTimeout(() => { if (!ed.contains(document.activeElement)) finish(true); }, 0);
+  });
 }
 
 function harvestActBtns(h) {
@@ -4144,7 +4262,9 @@ function harvestActBtns(h) {
     <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
     <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>`;
 }
-function harvestRow(h, showDate) {
+// planDate = 이 행이 놓인 카드의 날짜(금일 strip=오늘, 달력 상세=고른 날). 주면 그날 계획 줄·확인 버튼이 붙는다.
+//   ★안 주면 계획을 안 그린다 — 농가별 진행 현황의 차수 목록은 '어느 날' 카드가 아니라 어느 날짜 계획을 보여야 할지 정할 수 없다.
+function harvestRow(h, showDate, planDate) {
   const st = h.status || '수확전';
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${_hvStBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
       ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
@@ -4157,8 +4277,8 @@ function harvestRow(h, showDate) {
         : (st === '수확완료'
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
             : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}
-      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h)}${harvestActBtns(h)}</div>
-      ${_hvPlanLine(h, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}
+      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
+      ${_hvPlanLine(h, planDate, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}
     </div>`;
 }
 // ── [화면: 수확·수송 > 수확 캘린더] 월 그리드 + 금일 strip + 등록 폼.
@@ -4210,7 +4330,7 @@ function renderCal() {
         const hEntry = _isHarvestEv(e)
           ? harvests.find(h => h.id === e.id)
           : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
-        if (hEntry) return harvestRow(hEntry, false);
+        if (hEntry) return harvestRow(hEntry, false, todayStr);
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
         const item = e.item || '';
@@ -4450,8 +4570,8 @@ function renderUpcomingHarvest() {
       : '수확 예정 없음';
     // ★그날 계획 합계 — 여러 농가를 도는 날 총 몇 대인지가 실제 판단 기준.
     //   더하는 대상은 아래 행에 실제로 보이는 것들(day.list)이라, 머리 숫자와 행이 어긋나지 않는다.
-    //   ☆며칠 걸리는 수확은 그 기간의 날마다 목록에 들어오므로 날마다 한 번씩 세어진다(그날 필요한 대수라는 뜻).
-    const planSum = day.list.length ? _hvPlanText(_hvPlanSum(day.list)) : '';
+    //   ★더하는 값은 plan_by_date의 그 날짜(day.dStr) 키만 — 며칠 걸리는 수확도 날마다 그날 값만 들어간다.
+    const planSum = day.list.length ? _hvPlanText(_hvPlanSum(day.list, day.dStr)) : '';
 
     const rows = day.list.length ? day.list.map(x => {
       const st = x.status || '수확전';
@@ -4492,9 +4612,10 @@ function renderUpcomingHarvest() {
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
-        ${_hvPlanHas(x) ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
-          ${_hvPlanLine(x)}${_hvPlanCheckBtn(x)}
-        </div>` : ''}
+        ${(() => {   // 그날(day.dStr) 계획 줄 — 없으면 관리자에게만 '＋ 계획 입력' 자리표시자, 그것도 없으면 줄 자체를 안 만든다
+          const ln = _hvPlanLine(x, day.dStr, 'flex:1 1 auto;min-width:0');
+          return ln ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${ln}${_hvPlanCheckBtn(x, day.dStr)}</div>` : '';
+        })()}
       </div>`;
     }).join('') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
@@ -4808,9 +4929,6 @@ function _hvProgCard(g) {
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           ${chip}<span style="font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
         </span>
-        ${_hvPlanHas(g.last) ? `<span style="flex:1 1 100%;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-          ${_hvPlanLine(g.last)}${_hvPlanCheckBtn(g.last)}
-        </span>` : ''}
       </div>
       ${open ? `<div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:#fff">
         ${g.rounds.map(h => harvestRow(h, true)).join('')}
@@ -4903,7 +5021,7 @@ function _refreshCalDetail() {
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
     // 수확 진행상태(수확전/중/완료) 일정 → harvestRow 재사용(▶시작·✅완료·✏️수정·🗑삭제, 미래 포함)
     if (_isHarvestEv(e)) {
-      return `<div style="margin-bottom:5px">${harvestRow(e, false)}</div>`;
+      return `<div style="margin-bottom:5px">${harvestRow(e, false, dStr)}</div>`;
     }
     const bg = e.status === '배출완료' ? '#F1F8E9' : e.status === '배차없음' ? '#FFEBEE' : '#FFF3E0';
     const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
@@ -5159,7 +5277,6 @@ function openHarvestEdit(id) {
   document.getElementById('mh-item').value = h.item || '';
   document.getElementById('mh-note').value = h.note || '';
   document.getElementById('mh-round').value = h.round || 1;
-  _hvPlanToForm('mh', h);
   document.getElementById('modal-harvest').style.display = 'flex';
 }
 async function saveHarvestEdit() {
@@ -5167,7 +5284,7 @@ async function saveHarvestEdit() {
   const date = document.getElementById('mh-date').value;
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
-  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1, ..._hvPlanFromForm('mh') };
+  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
   const prev = harvests.find(h => h.id === _editHarvestId);   // 변경 전 값 — 배차 동기화 판단에만 쓴다
   try {
     await dbUpdateHarvest(_editHarvestId, data);
@@ -5326,11 +5443,10 @@ async function addHarvest() {
   const item = document.getElementById('cal-add-item')?.value || null;
   const note = document.getElementById('cal-add-note')?.value || null;
   const round = parseInt(document.getElementById('cal-add-round')?.value, 10) || 1;
-  // 오전·오후 계획 — 전부 선택 입력. 비우면 null이라 기존 일정과 같은 모양이 된다.
-  const plan = _hvPlanFromForm('cal-add');
+  // ★오전·오후 차량·빈콘 계획은 여기서 받지 않는다 — 날짜별 값이라 카드의 계획 줄에서 그날 것을 넣는다(startHvPlanEdit).
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
   try {
-    const row = await dbInsertHarvest({ date, end_date, farm, item, note, round, status: '수확전', ...plan });
+    const row = await dbInsertHarvest({ date, end_date, farm, item, note, round, status: '수확전' });
     harvests.push(row);
     document.getElementById('cal-add-date').value = '';
     document.getElementById('cal-add-end').value = '';
@@ -5339,7 +5455,6 @@ async function addHarvest() {
     fsSync('cal-add-farm');
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
-    _hvPlanClearForm('cal-add');
     renderCal();
     // ★여기부터는 '제안'일 뿐 — 저장은 위에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
     //   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).

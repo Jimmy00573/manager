@@ -651,3 +651,18 @@ textarea {
 .ib-brix-editor .bx-sel:disabled { opacity: .6; }
 .ib-brix-editor .bx-raw { font-size: 10px; color: #B45309; line-height: 1.35; white-space: normal; }
 @media (max-width: 1024px) { .ib-brix-editor input, .ib-brix-editor .bx-sel { font-size: 16px; } }
+
+/* ── 수확 카드 계획 줄 그 자리 입력(startHvPlanEdit) ─────────────────────────
+   다가오는 수확 카드는 폰에서 152px 남짓이라 [오전][차량]차[빈콘]개 한 줄에 칸 둘이 겨우 들어간다 — 칸은 flex로 나눠 갖는다.
+   ★폰(1024px 이하)은 16px — iOS는 16px보다 작은 입력칸에 포커스하면 화면을 확대해 버린다(당도 편집과 같은 이유). */
+.hv-plan-editor { display: flex; flex-direction: column; gap: 3px; width: 100%; min-width: 0; }
+.hv-plan-editor .hvp-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.hv-plan-editor .hvp-lbl { font-size: 11px; font-weight: 600; color: #374151; flex-shrink: 0; margin-right: 2px; }
+.hv-plan-editor .hvp-u { font-size: 10px; color: #9CA3AF; flex-shrink: 0; }
+.hv-plan-editor input { flex: 1 1 0; min-width: 0; width: 100%; box-sizing: border-box; padding: 3px 2px; border: 1px solid #1565C0; border-radius: 4px; font-size: 12px; font-family: inherit; text-align: center; outline: none; background: #fff; }
+.hv-plan-editor input:disabled, .hv-plan-editor button:disabled { opacity: .6; }
+.hv-plan-editor .hvp-act { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.hv-plan-editor .hvp-date { font-size: 10px; color: #9CA3AF; margin-right: auto; }
+.hv-plan-editor button { font-size: 11px; padding: 3px 9px; border-radius: 5px; border: 1px solid #D1D5DB; background: #fff; color: #374151; cursor: pointer; font-family: inherit; }
+.hv-plan-editor button.hvp-save { background: #1565C0; border-color: #1565C0; color: #fff; }
+@media (max-width: 1024px) { .hv-plan-editor input { font-size: 16px; } .hv-plan-editor button { padding: 5px 11px; } }
