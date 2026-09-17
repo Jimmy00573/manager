@@ -18039,6 +18039,143 @@ function _renderScDoneTable() {
     </table>`;
 }
 
+// ── 선과 대기 '오늘 작업 순서' ─────────────────────────────────────────────
+// ★선과기 세팅 때문에 한 품목을 몰아서 하므로, 아침에 '오늘 할 것과 순서'를 정하는 게 실제 작업 계획이다.
+//   행의 번호 칸을 누르면 오늘 최대 번호 +1이 붙고, 다시 누르면 해제된다.
+// ★저장: inbound_records.srt_plan_date(date) + srt_plan_no(integer). 순서는 표시·정렬용 메타데이터일 뿐 —
+//   선과 저장·잔여 계산·합산 선과는 이 두 컬럼을 읽지 않는다.
+// ★날짜가 오늘인 번호만 유효(_scPlanNo). 다음 날이면 저절로 안 보인다 — 초기화 작업이 따로 없다.
+// ★번호는 다시 매기지 않는다(Jimmy 결정). 1·2·3에서 2를 해제하면 1·3이 남고, 선과가 끝나 목록에서 빠진 행의
+//   번호도 DB에 그대로 남는다 → '원래 2번이었는데 3번이 먼저 끝났다'가 드러난다(_scPlanStat의 doneMax).
+//   의도가 바뀐 건지(해제) 빠뜨린 건지(주황) 구분하려는 것.
+function _scPlanNo(r) {
+  if (!r || r.srt_plan_date !== td()) return null;
+  const n = Number(r.srt_plan_no);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+// 오늘 번호가 붙은 입고 전체의 현황(필터와 무관). pm = _ibProcessedMap().
+//   done = 잔여 0(선과 끝남), left = 아직 선과 대기 목록에 있는 것. 둘 다 아닌 것('선과 안 함'으로 돌린 것 등)은 세지 않는다.
+//   doneMax = 끝난 번호 중 가장 큰 값 — 이보다 작은 번호가 아직 남아 있으면 순서를 지나친 것.
+function _scPlanStat(pm) {
+  const s = { done: 0, left: 0, skipped: 0, doneMax: 0, leftNos: [] };
+  (inboundRecords || []).forEach(r => {
+    const no = _scPlanNo(r);
+    if (!no) return;
+    const rem = r.quantity - (pm[r.id] || 0);
+    if (rem <= 0) { s.done++; if (no > s.doneMax) s.doneMax = no; }
+    else if (_isUnsortedTarget(r)) { s.left++; s.leftNos.push(no); }
+  });
+  s.skipped = s.leftNos.filter(n => n < s.doneMax).length;
+  return s;
+}
+// 번호 칸. 관리자는 누를 수 있는 버튼(빈 칸은 연한 ＋), 그 밖은 번호만 보인다.
+//   skipped = 자기보다 큰 번호가 이미 끝났는데 자기는 남음 → 주황 + '지남'(폰은 툴팁이 없어 글자로도).
+function _scPlanCell(r, no, skipped, isAdm) {
+  const circle = (bg, fg, bd, txt) => `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 4px;box-sizing:border-box;border-radius:13px;background:${bg};color:${fg};border:${bd};font-size:13px;font-weight:800;line-height:1">${txt}</span>`;
+  const badge = no
+    ? circle(skipped ? '#EA580C' : '#1565C0', '#fff', '0', no)
+    : circle('#fff', '#94A3B8', '1.5px dashed #CBD5E1', '＋');
+  const skipTxt = skipped ? '<div style="font-size:9px;font-weight:700;color:#C2410C;margin-top:1px;white-space:nowrap">지남</div>' : '';
+  if (!isAdm) return no ? `<span title="${esc(`오늘 작업 순서 ${no}번` + (skipped ? ' — 뒤 번호가 먼저 끝남' : ''))}">${badge}${skipTxt}</span>` : '';
+  const tip = no
+    ? `오늘 작업 순서 ${no}번${skipped ? ' — 뒤 번호가 먼저 끝났습니다(순서 지남)' : ''} · 눌러서 해제`
+    : '눌러서 오늘 작업 순서 지정(다음 번호)';
+  return `<button type="button" data-sc-plan="${esc(String(r.id))}" onclick="event.stopPropagation();toggleScPlan('${esc(String(r.id))}')" title="${esc(tip)}" style="background:none;border:none;padding:3px;cursor:pointer;font-family:inherit;touch-action:manipulation">${badge}${skipTxt}</button>`;
+}
+// 목록 위 요약 줄 — '오늘 계획 N건 (완료 · 남음 · 순서 지남)' + [순서 전체 해제].
+//   ★렌더마다 그린다. 칸이 없으면(스켈레톤이 예전에 만들어진 화면) 표 바로 위에 만들어 끼운다.
+function _scPlanRenderBar(wrap, st, isAdm) {
+  let bar = document.getElementById('sc-plan-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'sc-plan-bar';
+    wrap.parentNode.insertBefore(bar, wrap);
+  }
+  const total = st.done + st.left;
+  if (!total && !isAdm) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:7px 10px;border-radius:8px;'
+    + (total ? 'background:#EFF6FF;border:1px solid #BFDBFE' : 'background:#F9FAFB;border:1px dashed #E5E7EB');
+  if (!total) {
+    bar.innerHTML = `<span style="font-size:12px;color:#6B7280">📌 오늘 작업 순서 없음 — 목록 왼쪽 <b style="color:#94A3B8">＋</b> 칸을 누르면 순서대로 번호가 붙습니다</span>`;
+    return;
+  }
+  bar.innerHTML = `
+    <span style="font-size:13px;font-weight:700;color:#1565C0">📌 오늘 계획 ${total}건</span>
+    <span style="font-size:12px;color:#374151">완료 ${st.done} · 남음 ${st.left}</span>
+    ${st.skipped ? `<span style="font-size:12px;font-weight:700;color:#C2410C">⚠ 순서 지남 ${st.skipped}건</span>` : ''}
+    ${isAdm ? `<button type="button" onclick="clearScPlanAll()" style="margin-left:auto;font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#374151;cursor:pointer;font-family:inherit;white-space:nowrap">순서 전체 해제</button>` : ''}`;
+}
+
+let _scPlanBusy = false;   // 연타 방지 — 저장 응답 전에 또 누르면 같은 번호가 두 번 붙을 수 있다
+// 한 행 토글 — ★그 행 하나만 PATCH. 다른 행 번호는 건드리지 않는다(다시 매기지 않음).
+//   다음 번호 = 오늘 번호 최댓값 + 1. 최댓값은 서버에도 물어본다 — 관리자 계정을 여럿이 같이 쓰므로
+//   다른 기기에서 방금 붙인 번호를 이 화면이 모를 수 있다. 끝난 행(목록에서 빠진 행)의 번호도 최댓값에 들어간다.
+// ★실패하면 알림 + 화면은 저장 전 그대로(로컬 값은 성공한 뒤에만 바꾼다).
+async function toggleScPlan(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_scPlanBusy) return;
+  const r = (inboundRecords || []).find(x => String(x.id) === String(id));
+  if (!r) return;
+  _scPlanBusy = true;
+  const btn = document.querySelector(`#sc-table-wrap [data-sc-plan="${CSS.escape(String(id))}"]`);
+  if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+  try {
+    let data;
+    if (_scPlanNo(r)) {
+      data = { srt_plan_date: null, srt_plan_no: null };
+    } else {
+      const today = td();
+      const localMax = (inboundRecords || []).reduce((m, x) => Math.max(m, _scPlanNo(x) || 0), 0);
+      const top = await sbGet('inbound_records', `select=srt_plan_no&srt_plan_date=eq.${today}&srt_plan_no=not.is.null&order=srt_plan_no.desc&limit=1`);
+      const serverMax = Number(top && top[0] && top[0].srt_plan_no) || 0;
+      data = { srt_plan_date: today, srt_plan_no: Math.max(localMax, serverMax) + 1 };
+    }
+    await dbUpdateInbound(r.id, data);
+    r.srt_plan_date = data.srt_plan_date; r.srt_plan_no = data.srt_plan_no;
+  } catch (e) {
+    alert('작업 순서 저장에 실패했습니다. 화면은 저장 전 그대로입니다.\n\n' + e.message);
+  } finally {
+    _scPlanBusy = false;
+    _renderScTable();   // 성공이면 새 번호로, 실패면 원래 모양으로
+  }
+}
+// 오늘 순서 전부 해제 — 오늘 날짜로 번호가 붙은 행만(끝난 행 포함 — 다음 번호가 1부터 다시 시작하게).
+//   ★조건 PATCH 한 번(srt_plan_date=오늘). 다른 날짜·번호 없는 행은 건드리지 않는다.
+async function clearScPlanAll() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_scPlanBusy) return;
+  const today = td();
+  const mine = (inboundRecords || []).filter(r => _scPlanNo(r));
+  if (!mine.length) return;
+  const ok = await showConfirmDanger({
+    title: `오늘 작업 순서 ${mine.length}건 해제`,
+    subtitle: '번호만 지워집니다',
+    resultNote: '입고·선과 기록은 그대로입니다. 다시 누르면 1번부터 새로 매겨집니다.',
+    confirmText: '전체 해제', cancelText: '취소',
+  });
+  if (!ok) return;
+  _scPlanBusy = true;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/inbound_records?srt_plan_date=eq.${today}`, {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ srt_plan_date: null, srt_plan_no: null })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const out = await res.json();
+    if (!Array.isArray(out) || !out.length) throw new Error('영향받은 행 없음 (RLS 차단 또는 이미 해제됨)');
+    _sbNotifyWrite();
+    const ids = new Set(out.map(x => String(x.id)));
+    (inboundRecords || []).forEach(r => { if (ids.has(String(r.id)) || r.srt_plan_date === today) { r.srt_plan_date = null; r.srt_plan_no = null; } });
+    showToast(`오늘 작업 순서 ${out.length}건 해제`);
+  } catch (e) {
+    alert('순서 해제에 실패했습니다.\n\n' + e.message);
+  } finally {
+    _scPlanBusy = false;
+    _renderScTable();
+  }
+}
+
 // ── [화면: 재고관리 > 선과 처리 센터 > 미선과(pending) 탭] 목록 테이블
 //    ※열 폭 colgroup은 이 함수 안 인라인(sc-table-wrap). 입고내역 목록은 renderInboundList — 혼동 주의.
 //    ※같은 센터의 다른 탭: 진행중 _renderScDoingTable, 완료 _renderScDoneTable.
@@ -18182,6 +18319,13 @@ function _renderScTable() {
   // 특정 품목을 고르면 이미 좁혀졌으므로 헤더 없이 평면 목록(기존과 동일).
   // _scGrpHead: 행 index → 그 행 앞에 끼울 그룹 머리 <tr>. 6번 행 렌더에서 붙인다.
   const _scGrpHead = {};
+  // ★오늘 작업 순서가 붙은 행은 떼어 맨 위에 번호순으로 모은다(필터는 이미 적용된 뒤라 필터도 그대로 먹는다).
+  //   나머지 행만 아래 품목 묶음으로 간다 — 묶음 로직 자체는 무변, 머리 index만 순서 행 수만큼 밀린다.
+  //   같은 번호가 둘이면(두 기기에서 동시에 누름) 안정 정렬이라 5번 정렬 순서를 따른다.
+  const _scPlanSt = _scPlanStat(pm);
+  const _scPlanRows = rows.filter(r => _scPlanNo(r)).sort((a, b) => _scPlanNo(a) - _scPlanNo(b));
+  if (_scPlanRows.length) rows = rows.filter(r => !_scPlanNo(r));
+  const _scPlanOff = _scPlanRows.length;
   if (!_scProduct && rows.length) {
     const byProd = new Map();
     rows.forEach(r => {
@@ -18195,7 +18339,7 @@ function _renderScTable() {
     rows = [];
     grps.forEach(g => {
       // 품목 배지는 itemColor 기존 구조 그대로(수확 진행현황·캘린더와 같은 모양). nowrap — 표 폭 안에서 한 줄.
-      _scGrpHead[rows.length] = `<tr><td colspan="10" style="padding:7px 8px;background:#F9FAFB;border-top:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;white-space:nowrap">
+      _scGrpHead[_scPlanOff + rows.length] = `<tr><td colspan="11" style="padding:7px 8px;background:#F9FAFB;border-top:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;white-space:nowrap">
         <span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(g.p)}">${esc(g.p || '품목 미지정')}</span>
         <span style="font-size:12px;color:#6B7280;margin-left:6px">${g.list.length}건</span>
         <span style="font-size:12px;font-weight:700;color:#1565C0;margin-left:6px">잔여 ${fmtCT(g.rem)} CT</span>
@@ -18203,6 +18347,18 @@ function _renderScTable() {
       rows.push(...g.list);
     });
   }
+  if (_scPlanOff) {
+    _scGrpHead[0] = `<tr><td colspan="11" style="padding:7px 8px;background:#EFF6FF;border-top:1px solid #BFDBFE;border-bottom:1px solid #BFDBFE;white-space:nowrap">
+        <span style="font-size:12px;font-weight:700;color:#1565C0">📌 오늘 작업 순서</span>
+        <span style="font-size:12px;color:#6B7280;margin-left:6px">${_scPlanOff}건</span>
+      </td></tr>`;
+    // 품목을 골라 평면 목록일 때는 품목 머리가 없어 순서 행과 나머지의 경계가 안 보인다 — 경계 머리 한 줄만 둔다.
+    if (_scProduct && rows.length) {
+      _scGrpHead[_scPlanOff] = `<tr><td colspan="11" style="padding:5px 8px;background:#F9FAFB;border-top:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;white-space:nowrap;font-size:12px;color:#6B7280">그 밖의 대기 ${rows.length}건</td></tr>`;
+    }
+    rows = [..._scPlanRows, ...rows];
+  }
+  _scPlanRenderBar(wrap, _scPlanSt, _scAdm);
 
   // ==================================================================
   // 6. 건수 표시 + 표 출력
@@ -18233,24 +18389,29 @@ function _renderScTable() {
       <colgroup>
         <!-- 농가=농가명+⭐+차수배지+비율칩, 품목=칩 전체 표시 위해 확대(모바일은 sc-table-wrap 가로 스크롤로 흡수) -->
         <!-- 입고일을 맨 왼쪽 — 입고내역 목록(renderInboundList)과 같은 위치. 열 폭 합계(867px)는 그대로 -->
+        <!-- 2026-09-17 맨 앞에 '순서' 칸 40px 추가(오늘 작업 순서 번호) → 합계 907px -->
+        <col style="width:40px">
         <col style="width:70px"><col style="width:190px"><col style="width:100px"><col style="width:62px">
         <col style="width:70px"><col style="width:50px"><col style="width:100px">
         <col style="width:70px"><col style="width:85px"><col style="width:70px">
       </colgroup>
       <thead><tr>
-        ${thS('date','입고일')}${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
+        ${thN('순서')}${thS('date','입고일')}${thS('farm','농가')}${thN('품목')}${thN('카테고리')}${thS('remaining','잔여CT')}
         ${thS('elapsed','경과')}${thN('진행')}
         ${thN('위치')}${thN('품질')}${thN('액션', 'stk-r')}
       </tr></thead>
       <tbody>
         ${rows.length === 0
-          ? `<tr><td colspan="10" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 항목이 없습니다</td></tr>`
+          ? `<tr><td colspan="11" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 항목이 없습니다</td></tr>`
           : rows.map((r, i) => {
               const u = urgency(r.date);
               const srtCnt = srtCntMap[r.id] || 0;
               const isDoing = srtCnt >= 1;
               const isPri = r.is_priority || u.level === 3;
-              const rowBg = isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : (isDoing ? '#FFFBF5' : '#fff'));
+              // 오늘 작업 순서 — 자기보다 큰 번호가 이미 끝났는데 남아 있으면 '순서 지남'(행 전체 주황, 다른 색보다 우선)
+              const planNo = _scPlanNo(r);
+              const planSkipped = !!planNo && planNo < _scPlanSt.doneMax;
+              const rowBg = planSkipped ? '#FFEDD5' : (isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : (isDoing ? '#FFFBF5' : '#fff')));
               const qiHtml = qualityInline(r);
               const catBadge = (() => {
                 const c = r.inbound_category || '상품';
@@ -18273,6 +18434,7 @@ function _renderScTable() {
                 ? ` <span style="background:#FEF3C7;color:#B45309;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;white-space:nowrap">${srtCnt}차</span>`
                 : '';
               return (_scGrpHead[i] || '') + `<tr style="background:${rowBg}${_stkBgVar('background:' + rowBg)}border-bottom:1px solid #F3F4F6">
+                <td style="padding:2px 0;text-align:center">${_scPlanCell(r, planNo, planSkipped, _scAdm)}</td>
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
                   ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}
