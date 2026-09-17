@@ -18121,7 +18121,8 @@ async function toggleScPlan(id) {
   if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
   try {
     let data;
-    if (_scPlanNo(r)) {
+    const prevNo = _scPlanNo(r);   // 이력용 — 로컬에 반영하기 전 번호(해제면 이 번호, 지정이면 null)
+    if (prevNo) {
       data = { srt_plan_date: null, srt_plan_no: null };
     } else {
       const today = td();
@@ -18132,6 +18133,20 @@ async function toggleScPlan(id) {
     }
     await dbUpdateInbound(r.id, data);
     r.srt_plan_date = data.srt_plan_date; r.srt_plan_no = data.srt_plan_no;
+    // ★이력은 PATCH가 성공한 뒤에만 남긴다 — 실패했는데 남기면 남의 화면에 헛배너가 뜬다.
+    //   ★진짜 목적은 '변경 감지 신호'다: 폴링(_syncPoll)은 테이블별 max(created_at)만 보는데 순서 지정은
+    //     inbound_records UPDATE라 created_at이 안 바뀌고 updated_at 컬럼도 없다 → audit_logs 행이
+    //     생기는 것만이 다른 기기가 이 변경을 아는 유일한 경로다. 본인 배너는 sbInsert의 _sbNotifyWrite가 막는다.
+    //   ★target_table을 'srt_plan'으로 두는 이유 — 이력 화면 제외가 db.js 쿼리 한 줄(neq)로 끝난다.
+    //   ★target_id는 NOT NULL(text) — null을 넣으면 저장이 실패한다(app.js 콘테이너 초기재고 이력과 같음).
+    //   ★기록 실패가 순서 지정을 실패시키면 안 된다 — catch로 흘려보낸다(파치 일괄지정과 같은 패턴).
+    const who = [r.farm_name, r.product].filter(Boolean).join(' ');
+    await dbInsertAuditLog({
+      target_table: 'srt_plan', target_id: String(r.id),
+      before_val: { srt_plan_no: prevNo }, after_val: { srt_plan_no: data.srt_plan_no },
+      reason: `선과 순서 ${prevNo ? `${prevNo}번 해제` : `${data.srt_plan_no}번 지정`}${who ? ` — ${who}` : ''}`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(e => console.warn('선과 순서 이력 기록 실패:', e.message));
   } catch (e) {
     alert('작업 순서 저장에 실패했습니다. 화면은 저장 전 그대로입니다.\n\n' + e.message);
   } finally {
@@ -18168,6 +18183,15 @@ async function clearScPlanAll() {
     const ids = new Set(out.map(x => String(x.id)));
     (inboundRecords || []).forEach(r => { if (ids.has(String(r.id)) || r.srt_plan_date === today) { r.srt_plan_date = null; r.srt_plan_no = null; } });
     showToast(`오늘 작업 순서 ${out.length}건 해제`);
+    // ★다른 기기가 이 변경을 알게 하는 신호 — 위 toggleScPlan의 주석 참고(이력 화면에는 안 보인다).
+    //   해제된 행이 0건이면 남기지 않는다(바뀐 게 없는데 남의 화면에 배너를 띄울 이유가 없다) —
+    //   위에서 0건이면 throw하므로 여기는 항상 1건 이상이다. target_id는 NOT NULL이라 첫 행 id를 쓴다.
+    await dbInsertAuditLog({
+      target_table: 'srt_plan', target_id: String(out[0].id),
+      before_val: { count: out.length }, after_val: { count: 0 },
+      reason: `선과 순서 전체 해제 ${out.length}건`,
+      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    }).catch(e => console.warn('선과 순서 이력 기록 실패:', e.message));
   } catch (e) {
     alert('순서 해제에 실패했습니다.\n\n' + e.message);
   } finally {

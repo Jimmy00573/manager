@@ -314,8 +314,13 @@ async function dbDeleteProcessing(id) { return sbDelete('processing_records', id
 
 // ── 수정 이력
 async function dbInsertAuditLog(data) { return sbInsert('audit_logs', data); }
+// ★target_table='srt_plan'(선과 작업 순서)은 이력 화면에서 뺀다 — 이력이 아니라 '변경 감지 신호'다.
+//   순서 지정은 inbound_records UPDATE라 created_at이 안 바뀌고 updated_at 컬럼도 없어서,
+//   audit_logs에 행을 남기는 것만이 다른 기기의 폴링(_syncPoll)이 그 변경을 아는 유일한 경로다(app.js toggleScPlan).
+// ★거르는 곳은 반드시 여기(서버측). 받아온 뒤 클라이언트에서 거르면 offset 페이징(AUDIT_PAGE_SIZE)과 어긋나
+//   페이지마다 건수가 들쭉날쭉해지고 '더 보기' 판정(rows.length === AUDIT_PAGE_SIZE)도 틀어진다.
 async function dbGetAuditLogs(limit = 100, offset = 0) {
-  try { return await sbGet('audit_logs', `order=created_at.desc&limit=${limit}&offset=${offset}`); }
+  try { return await sbGet('audit_logs', `target_table=neq.srt_plan&order=created_at.desc&limit=${limit}&offset=${offset}`); }
   catch(e) { return []; }
 }
 async function dbGetAuditLogsForRecord(targetTable, targetId) {
