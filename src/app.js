@@ -17720,6 +17720,7 @@ function renderProcessingTab() {
         <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
         ${_tabBar()}
         <div id="sc-stats" style="margin-bottom:14px"></div>
+        <div id="sc-day-wrap" style="margin-bottom:14px"></div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
           <input id="sc-done-search-farm" type="text" placeholder="농가 검색..."
             style="border:1px solid #D1D5DB;border-radius:6px;padding:5px 10px;font-size:13px;width:140px;font-family:inherit">
@@ -17748,6 +17749,7 @@ function renderProcessingTab() {
     _renderScTable();
   } else {
     _renderScDoneProductOptions();
+    _renderScDayBlock();
     _renderScDoneTable();
   }
 }
@@ -17970,6 +17972,115 @@ function _renderScDoneProductOptions() {
   } else {
     sel.value = _scDoneProduct;
   }
+}
+
+// ── [화면: 재고관리 > 선과 처리 센터 > ✅ 완료 탭] 맨 위 '오늘 선과' 블록 ───────────────
+// ★기존 완료 목록(_renderScDoneTable)은 입고 단위(잔여 0)·날짜만 있어 '오늘 뭘 언제 했는지'가 안 보인다.
+//   여긴 processing_records(선과)를 시각순으로 그대로 보여 준다 — 기존 목록·통계·필터는 건드리지 않고 위에 얹기만 한다.
+// ★시각: created_at은 UTC timestamptz다. new Date()로 파싱하면 브라우저 로컬(KST)이 되므로 getHours/getMinutes로 꺼낸다.
+//   ★toISOString()·slice(0,10) 계열로 시각·날짜를 만들면 9시간 어긋난다(이 앱의 반복 함정).
+// ★합산 선과는 매지마다 다른 결과#로 저장돼 note로는 못 묶는다(실DB 확인) → 같은 농가·품목이면서
+//   앞 기록과 60초 이내면 한 줄로 합친다(합산 선과는 한 번에 연달아 저장되므로 시각순으로 붙어 있다).
+function _renderScDayBlock() {
+  const wrap = document.getElementById('sc-day-wrap');
+  if (!wrap) return;
+  const today = td();
+  const ibMap = {};
+  (inboundRecords || []).forEach(r => { ibMap[r.id] = r; });
+
+  // 오늘 선과 기록 → created_at 오름차순(실제 작업 순서. 계획 번호순이 아니다)
+  // ★입고를 못 찾아도 버리지 않는다 — 기록이 있는데 화면에서 사라지는 게 더 나쁘다(농가·품목만 '-').
+  const recs = (processingRecords || [])
+    .filter(p => p.process_type === '선과' && p.date === today)
+    .map(p => {
+      const ib = ibMap[p.inbound_id];
+      return {
+        t: new Date(p.created_at), qty: p.quantity || 0, staff: p.staff || '',
+        farm: (ib && ib.farm_name) || '-', product: (ib && ib.product) || '',
+        no: ib ? _scPlanNo(ib) : null
+      };
+    })
+    .sort((a, b) => (+a.t || 0) - (+b.t || 0));
+
+  const rows = [];
+  recs.forEach(r => {
+    const g = rows[rows.length - 1];
+    if (g && g.farm === r.farm && g.product === r.product && r.t - g.tLast <= 60000) {
+      g.qty += r.qty; g.tLast = r.t; g.cnt++;
+      if (r.no && !g.nos.includes(r.no)) g.nos.push(r.no);
+      if (r.staff && !g.staffs.includes(r.staff)) g.staffs.push(r.staff);
+      return;
+    }
+    rows.push({ farm: r.farm, product: r.product, qty: r.qty, t: r.t, tLast: r.t, cnt: 1,
+      nos: r.no ? [r.no] : [], staffs: r.staff ? [r.staff] : [] });
+  });
+  rows.forEach(g => g.nos.sort((a, b) => a - b));
+
+  // ★'순서 지남' 판정은 여기 한 곳뿐 — 자기 번호보다 큰 번호를 이미 '더 이른 시각에' 처리했으면 순서를 지나친 것.
+  //   선과 대기 목록 _scPlanStat의 doneMax와 같은 개념이지만, 저긴 '오늘 끝난 것 전체의 최댓값'이고
+  //   여긴 '이 줄보다 앞선 줄들의 최댓값'이라 시각순으로 훑으며 누적한다 — 그래서 그 함수를 그대로 쓸 수 없다.
+  let maxBefore = 0;
+  rows.forEach(g => {
+    g.skipped = g.nos.some(n => n < maxBefore);
+    g.nos.forEach(n => { if (n > maxBefore) maxBefore = n; });
+  });
+
+  const hhmm = d => isNaN(+d) ? '-' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const totalCt = rows.reduce((s, g) => s + g.qty, 0);
+  // 품목전환 = 시각순으로 품목이 바뀐 횟수. 선과기 세팅 때문에 한 품목을 몰아서 하므로, 이 숫자가 순서 계획이 잘 짜였는지를 보여 준다.
+  let swaps = 0;
+  rows.forEach((g, i) => { if (i && g.product !== rows[i - 1].product) swaps++; });
+  // ★요일은 로컬 날짜로 직접 만든다(new Date('YYYY-MM-DD')는 UTC 자정이라 시간대에 따라 하루 어긋난다).
+  const [, _dMo, _dD] = today.split('-');
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(Number(today.slice(0, 4)), Number(_dMo) - 1, Number(_dD)).getDay()];
+
+  // 남은 계획 — 오늘 번호가 붙었는데 아직 잔여가 있는 입고를 번호순으로. 0건이면 줄 자체를 그리지 않는다.
+  const pm = _ibProcessedMap();
+  const left = (inboundRecords || [])
+    .filter(r => _scPlanNo(r) && _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
+    .sort((a, b) => _scPlanNo(a) - _scPlanNo(b));
+
+  const th = 'padding:7px 8px;font-weight:600;color:#374151;font-size:12px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;white-space:nowrap';
+  const body = rows.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <colgroup><col style="width:52px"><col style="width:150px"><col style="width:96px"><col style="width:66px"><col style="width:96px"><col></colgroup>
+      <thead><tr>
+        <th style="${th};text-align:left">시각</th><th style="${th};text-align:left">농가</th><th style="${th};text-align:left">품목</th>
+        <th style="${th};text-align:right">CT</th><th style="${th};text-align:center">순서</th><th style="${th};text-align:left">비고</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(g => {
+          const nos = g.nos.map(n => `<span style="display:inline-block;min-width:20px;padding:1px 6px;border-radius:10px;background:${g.skipped ? '#EA580C' : '#1565C0'};color:#fff;font-size:11px;font-weight:600;text-align:center">${n}</span>`).join(' ');
+          const memo = [g.cnt > 1 ? '합산' : '', g.skipped ? '순서 지남' : '', g.staffs.join('·')].filter(Boolean);
+          return `<tr style="border-bottom:1px solid #F3F4F6${g.skipped ? ';background:#FFF7ED' : ''}">
+            <td style="padding:6px 8px;color:#6B7280;font-size:12px;white-space:nowrap">${hhmm(g.t)}</td>
+            <td style="padding:6px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#374151" title="${esc(g.farm)}">${esc(g.farm)}</td>
+            <td style="padding:6px 8px">${g.product ? productChip(g.product) : '<span style="color:#9CA3AF;font-size:12px">-</span>'}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:600;color:#1565C0">${fmtN(g.qty)}</td>
+            <td style="padding:6px 8px;text-align:center;white-space:nowrap">${nos}</td>
+            <td style="padding:6px 8px;font-size:12px;color:${g.skipped ? '#C2410C' : '#6B7280'};white-space:nowrap">${esc(memo.join(' · '))}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`
+    : `<div style="padding:22px;text-align:center;color:#9CA3AF;font-size:13px">오늘 선과한 내역이 없습니다</div>`;
+
+  const leftHtml = left.length ? `
+    <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:7px 10px;border-top:1px solid #E5E7EB;font-size:12px;color:#6B7280">
+      <span style="font-weight:600;color:#374151;white-space:nowrap">남은 계획</span>
+      <span>${left.map(r => `<b style="color:#1565C0;font-weight:600">${_scPlanNo(r)}</b> ${esc(r.farm_name || '-')} ${esc(r.product || '')} ${fmtN(r.quantity - (pm[r.id] || 0))}CT`).join(' · ')}</span>
+    </div>` : '';
+
+  wrap.innerHTML = `
+    <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:8px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE">
+        <span style="font-size:13px;font-weight:600;color:#1565C0">✂️ 오늘 선과</span>
+        <span style="font-size:12px;color:#6B7280">${Number(_dMo)}/${Number(_dD)} (${dow})</span>
+        <span style="font-size:12px;color:#374151;margin-left:auto;white-space:nowrap">${rows.length}건 · ${fmtN(totalCt)}CT · 품목전환 ${swaps}회</span>
+      </div>
+      <div style="overflow-x:auto">${body}</div>
+      ${leftHtml}
+    </div>`;
 }
 
 function _renderScDoneTable() {
