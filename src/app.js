@@ -3730,8 +3730,10 @@ function renderDash() {
   const totalHold = th + nhfHoldTotal + ptHoldTotal;
   document.getElementById('kpi').innerHTML = `<div class="kpi"><div class="kpi-label">배출 대기</div><div class="kpi-val kv-pu">${dw}</div></div><div class="kpi"><div class="kpi-label">배출 완료</div><div class="kpi-val kv-gr">${dd}</div></div><div class="kpi"><div class="kpi-label">우리콘 총보유</div><div class="kpi-val kv-bl">${totalHold}개</div></div><div class="kpi"><div class="kpi-label">농협行 우리콘</div><div class="kpi-val kv-bl">${nhfHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">거래처行 우리콘</div><div class="kpi-val kv-bl">${ptHoldTotal}개</div></div><div class="kpi"><div class="kpi-label">농가 콘테이너</div><div class="kpi-val kv-pu">${to}개</div></div><div class="kpi"><div class="kpi-label">농협 콘테이너</div><div class="kpi-val kv-teal">${nc}개</div></div><div class="kpi"><div class="kpi-label">농협 파렛트</div><div class="kpi-val kv-teal">${np}개</div></div><div class="kpi"><div class="kpi-label">거래처 용기</div><div class="kpi-val kv-bl">${partnerLeft}개</div></div>`;
   renderSC();
-  // 🟡 회수 필요: 우리 콘테이너 농가보유(hold>0)만. 농가것 반납은 🟢로 이동(회수/반납 분리).
-  const fhi = farms.map(f => { const st = getFCS(f.name); if (st.hold <= 0) return null; return { name: f.name, ctypes: getFCtypes(f.name), total: st.hold }; }).filter(Boolean);
+  // 🟡 회수 필요: 우리 콘테이너 농가보유. 농가것 반납은 🟢로 이동(회수/반납 분리).
+  // ★hold !== 0 — 음수(과회수)도 보여야 한다. 음수는 회수할 게 남은 게 아니라 배출·회수 기록이 틀렸다는 신호인데,
+  //   양수만 걸러내면 이 화면만 보는 사람에게선 오류가 통째로 사라진다(위 농협行·거래처行과 같은 규칙).
+  const fhi = farms.map(f => { const st = getFCS(f.name); if (st.hold === 0) return null; return { name: f.name, ctypes: getFCtypes(f.name), total: st.hold }; }).filter(Boolean);
   // 🟢 반납 필요: 농가것(own) + 농협/거래처(nhf) 통합. kind로 소유 구분(배지·반납버튼 분기).
   // 농가것도 종류별로 분리(농협 ri와 동일 형식) — 한 농가가 사각·농가 등 2종류면 2줄.
   const ownReturns = _ownComboKeys().map(k => {
@@ -3770,9 +3772,11 @@ function renderDash() {
     const st = getFCS(i.name);
     // 농가行 🧺 회수 — 농협行·거래처行과 동일 스타일/위치. targetType 생략 = 기본 '농가'. 관리자만.
     // (농가별 테이블의 회수 버튼은 그대로 — 여긴 요약, 저긴 전체 목록)
-    const recBtn = isAdm ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${i.name.replace(/'/g,"&#39;")}', ${i.total})">🧺 회수</button>` : '';
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${i.total}개</span>${recBtn}</div></div>
-    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 빈콘회수 ${st.ret}개 = <strong style="color:#C05800">${st.hold}개</strong> 보유</div>
+    // ★회수 버튼은 실제로 나가 있을 때(양수)만. 음수는 회수할 게 아니라 기록이 틀린 것이라 확인 배지로 알린다(농협行과 동일 규칙).
+    const recBtn = (isAdm && i.total > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${i.name.replace(/'/g,"&#39;")}', ${i.total})">🧺 회수</button>` : '';
+    const negTag = i.total < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${i.total}개</span>${negTag}${recBtn}</div></div>
+    <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 빈콘회수 ${st.ret}개 = <strong style="color:${st.hold < 0 ? '#C62828' : '#C05800'}">${st.hold}개</strong> 보유</div>
     <div class="alert-item-ctypes">${i.ctypes || '<span style="font-size:11px;color:#aaa">데이터 없음</span>'}</div></div>`;
   }).join('') + nhfHoldHtml + ptHoldHtml : '<div class="alert-none">처리 필요 없음 🎉</div>';
   document.getElementById('arb').innerHTML = allReturns.length ? allReturns.map(i => {
