@@ -4519,6 +4519,34 @@ function _dispForHarvest(farm, dStr) {
   return { byType, total, cnt: rows.length };
 }
 
+// 그 날짜에 실제로 나간/나갈 기사 — 콘테이너 배출(dispatches)과 원물 운송(inbound_records.driver_id)을 합친다.
+// 목적은 "그 날 공장에서 누가 빠졌나"(Jimmy가 공장 인원을 가늠하는 기준)다.
+// ★날짜 기준은 `dispatches.date`(실제 운행일)다. 바로 위 _dispForHarvest가 쓰는 `harvest`(수확 예정일)가 아니다 —
+//   저긴 콘테이너 수량을 수확일에 붙이는 게 목적이라 기준이 다르다. 둘을 섞지 말 것.
+// farm을 넘기면 그 대상만, 안 넘기면 그 날 전체 — 수확 목록에 없는 농협·거래처 운행도 들어온다(그래야 인원이 맞다).
+function _tripDriversOn(dStr, farm) {
+  const by = new Map();   // 이름 → { name, type, kinds, done }
+  const add = (name, kind, done) => {
+    if (!name) return;   // 이름을 못 찾은 기사(삭제 등)는 건너뛴다
+    let e = by.get(name);
+    if (!e) { e = { name, type: gd(name).type || '', kinds: [], done: true }; by.set(name, e); }
+    if (!e.kinds.includes(kind)) e.kinds.push(kind);
+    if (!done) e.done = false;   // ★한 건이라도 예정이면 그 기사는 '예정'
+  };
+  (dispatches || []).forEach(d => {
+    if (d.date !== dStr || !d.driver || (farm && d.farm !== farm)) return;
+    add(d.driver, '배출', _isOutDisp(d));   // ★_isOutDisp 재사용 — 배출완료만 '다녀옴', 예약(배차완료)은 예정
+  });
+  (inboundRecords || []).forEach(r => {
+    if (r.date !== dStr || r.is_void || !r.driver_id || (farm && r.farm_name !== farm)) return;
+    add(_drvNameById(r.driver_id), '원물', true);   // 입고는 이미 들어왔으므로 항상 다녀옴
+  });
+  // 내부 먼저, 그 안에서는 drivers 배열 순서(로드가 display_order asc라 기사 관리 화면과 같다). 외부·미등록은 뒤.
+  const ord = n => { const i = (drivers || []).findIndex(d => d.name === n); return i < 0 ? 9999 : i; };
+  return [...by.values()].sort((a, b) =>
+    (a.type === '내부' ? 0 : 1) - (b.type === '내부' ? 0 : 1) || ord(a.name) - ord(b.name));
+}
+
 // ★2026-08-21 재구성(Jimmy 데모 확정): 날짜별 '세로 나열' → 4일치 '가로 카드'.
 //   "모레 뭐 있지"를 스크롤 없이 한눈에 보는 게 목적이라, 좁은 화면에서도 세로로 쌓지 않고 가로 스크롤한다
 //   (세로로 쌓으면 4일치를 한 화면에 못 봐서 이 개편의 이유가 사라진다).
@@ -4576,6 +4604,16 @@ function renderUpcomingHarvest() {
     //   더하는 대상은 아래 행에 실제로 보이는 것들(day.list)이라, 머리 숫자와 행이 어긋나지 않는다.
     //   ★더하는 값은 plan_by_date의 그 날짜(day.dStr) 키만 — 며칠 걸리는 수확도 날마다 그날 값만 들어간다.
     const planSum = day.list.length ? _hvPlanText(_hvPlanSum(day.list, day.dStr)) : '';
+    // ★외근 인원 — 그날 공장에서 누가 빠지는지. 아래 행들과 달리 '수확 목록에 없는' 농협·거래처 운행도 센다.
+    //   그래서 머리 인원 ≥ 아래 행에 보이는 기사 수일 수 있다(정상).
+    //   ★인원 수는 type '내부'만 — 외부 기사는 공장 인원이 아니라서 빼고, 이름만 뒤에 덧붙인다.
+    const trips = _tripDriversOn(day.dStr);
+    const tripIn = trips.filter(t => t.type === '내부').map(t => t.name);
+    const tripOut = trips.filter(t => t.type !== '내부').map(t => t.name);
+    const tripTxt = [
+      tripIn.length ? `외근 ${day.dStr > today ? '예정 ' : ''}${tripIn.length}명  ${tripIn.join(' · ')}` : '',
+      tripOut.length ? `외부 ${tripOut.join(' · ')}` : ''
+    ].filter(Boolean).join(' · ');
 
     const rows = day.list.length ? day.list.map(x => {
       const st = x.status || '수확전';
@@ -4616,6 +4654,18 @@ function renderUpcomingHarvest() {
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
+        ${(() => {   // 그 농가를 그날 다녀간/갈 기사 — 머리 줄과 같은 헬퍼를 농가 인자만 달리해 부른다
+          const ts = _tripDriversOn(day.dStr, x.farm);
+          if (!ts.length) return '';
+          return `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:11px;color:#6B7280;min-width:0">
+            <span>🚚</span>${ts.map(t => {
+              const ext = t.type === '외부';
+              // 색: 외부는 배지 관례(b-pur)의 글자색, 미등록(type 없음)은 회색, 내부는 본문색
+              const col = ext ? '#6A1B9A' : (t.type ? '#374151' : '#9CA3AF');
+              return `<span style="color:${col}">${esc(`${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}`)}</span>`;
+            }).join('<span style="color:#D1D5DB">·</span>')}
+          </div>`;
+        })()}
         ${(() => {   // 그날(day.dStr) 계획 줄 — 없으면 관리자에게만 '＋ 계획 입력' 자리표시자, 그것도 없으면 줄 자체를 안 만든다
           const ln = _hvPlanLine(x, day.dStr, 'flex:1 1 auto;min-width:0');
           return ln ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${ln}${_hvPlanCheckBtn(x, day.dStr)}</div>` : '';
@@ -4629,6 +4679,7 @@ function renderUpcomingHarvest() {
         <div style="font-size:12px;font-weight:700;color:${isToday ? '#C05800' : '#374151'};white-space:nowrap">${esc(head)}</div>
         <div style="font-size:10px;color:${isToday ? '#B45309' : '#9CA3AF'};margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sum)}</div>
         ${planSum ? `<div style="font-size:10px;font-weight:600;color:${isToday ? '#C05800' : '#4B5563'};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc('그날 계획 합계 — ' + planSum)}">🚚 ${esc(planSum)}</div>` : ''}
+        ${tripTxt ? `<div style="font-size:10px;font-weight:600;color:${isToday ? '#C05800' : '#4B5563'};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(tripTxt)}">🧑 ${esc(tripTxt)}</div>` : ''}
       </div>
       ${rows}
     </div>`;
