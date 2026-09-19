@@ -15310,6 +15310,9 @@ let _scCategory = '';
 let _scTab = 'pending'; // 'pending' | 'doing' | 'done'
 let _scDoneSearch = '';
 let _scDoneProduct = '';
+// '오늘 선과' 블록이 보고 있는 날짜(◀▶로만 바뀐다). 완료 탭 진입·선과 저장 때 td()로 되돌린다.
+let _scDayDate = td();
+let _scDayShareTxt = '';   // 그 블록의 공유 텍스트 — 렌더할 때 같이 만들어 둔다(copyMsg의 _msgTxt와 같은 방식)
 let _scDoingSearch = '';
 let _scDoingProduct = '';
 let _scDoingPriOnly = false;
@@ -17662,6 +17665,7 @@ function scSetSort(col) {
 function scSetTab(tab) {
   if (tab === 'doing') tab = 'pending';
   _scTab = tab;
+  if (tab === 'done') _scDayDate = td();   // 아침에 완료 탭을 열면 늘 오늘부터
   renderProcessingTab();
 }
 
@@ -17984,20 +17988,23 @@ function _renderScDoneProductOptions() {
 function _renderScDayBlock() {
   const wrap = document.getElementById('sc-day-wrap');
   if (!wrap) return;
-  const today = td();
+  // ★보는 날짜는 _scDayDate(◀▶로만 바뀐다). td()는 '오늘인가' 판정에만 쓴다 —
+  //   완료 탭 진입·선과 저장 때 _scDayDate를 td()로 되돌리므로 평소엔 둘이 같다.
+  const dateStr = _scDayDate;
+  const isToday = dateStr === td();
   const ibMap = {};
   (inboundRecords || []).forEach(r => { ibMap[r.id] = r; });
 
-  // 오늘 선과 기록 → created_at 오름차순(실제 작업 순서. 계획 번호순이 아니다)
+  // 그 날의 선과 기록 → created_at 오름차순(실제 작업 순서. 계획 번호순이 아니다)
   // ★입고를 못 찾아도 버리지 않는다 — 기록이 있는데 화면에서 사라지는 게 더 나쁘다(농가·품목만 '-').
   const recs = (processingRecords || [])
-    .filter(p => p.process_type === '선과' && p.date === today)
+    .filter(p => p.process_type === '선과' && p.date === dateStr)
     .map(p => {
       const ib = ibMap[p.inbound_id];
       return {
         t: new Date(p.created_at), qty: p.quantity || 0, staff: p.staff || '',
         farm: (ib && ib.farm_name) || '-', product: (ib && ib.product) || '',
-        no: ib ? _scPlanNo(ib) : null
+        no: ib ? _scPlanNo(ib, dateStr) : null   // ★그 날짜의 번호 — 지남 판정·정렬도 따라서 그 날 기준이 된다
       };
     })
     .sort((a, b) => (+a.t || 0) - (+b.t || 0));
@@ -18031,12 +18038,13 @@ function _renderScDayBlock() {
   let swaps = 0;
   rows.forEach((g, i) => { if (i && g.product !== rows[i - 1].product) swaps++; });
   // ★요일은 로컬 날짜로 직접 만든다(new Date('YYYY-MM-DD')는 UTC 자정이라 시간대에 따라 하루 어긋난다).
-  const [, _dMo, _dD] = today.split('-');
-  const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(Number(today.slice(0, 4)), Number(_dMo) - 1, Number(_dD)).getDay()];
+  const [_dY, _dMo, _dD] = dateStr.split('-').map(Number);
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(_dY, _dMo - 1, _dD).getDay()];
 
   // 남은 계획 — 오늘 번호가 붙었는데 아직 잔여가 있는 입고를 번호순으로. 0건이면 줄 자체를 그리지 않는다.
+  // ★오늘일 때만 그린다 — 잔여는 '지금' 값이라 과거 날짜에 얹으면 그 날 상황인 것처럼 오해를 부른다.
   const pm = _ibProcessedMap();
-  const left = (inboundRecords || [])
+  const left = !isToday ? [] : (inboundRecords || [])
     .filter(r => _scPlanNo(r) && _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
     .sort((a, b) => _scPlanNo(a) - _scPlanNo(b));
 
@@ -18063,7 +18071,7 @@ function _renderScDayBlock() {
         }).join('')}
       </tbody>
     </table>`
-    : `<div style="padding:22px;text-align:center;color:#9CA3AF;font-size:13px">오늘 선과한 내역이 없습니다</div>`;
+    : `<div style="padding:22px;text-align:center;color:#9CA3AF;font-size:13px">${isToday ? '오늘 선과한 내역이 없습니다' : '이 날 선과 내역이 없습니다'}</div>`;
 
   const leftHtml = left.length ? `
     <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:7px 10px;border-top:1px solid #E5E7EB;font-size:12px;color:#6B7280">
@@ -18071,16 +18079,59 @@ function _renderScDayBlock() {
       <span>${left.map(r => `<b style="color:#1565C0;font-weight:600">${_scPlanNo(r)}</b> ${esc(r.farm_name || '-')} ${esc(r.product || '')} ${fmtN(r.quantity - (pm[r.id] || 0))}CT`).join(' · ')}</span>
     </div>` : '';
 
+  // ── 공유 텍스트 — ★표를 만든 rows·left를 그대로 쓴다(같은 계산을 두 번 하지 않는다).
+  //   채팅방에 붙여넣는 용도라 담당자는 넣지 않고, 번호는 계획 번호가 아니라 '표에 보이는 시각순' 1부터다.
+  //   품목이 비면 그 자리를 아예 비운다(filter(Boolean)) — '-' 같은 기호를 넣지 않는다.
+  _scDayShareTxt = !rows.length ? '' : [
+    `[선과 실적] ${_dMo}월 ${_dD}일 (${dow})`,
+    `${rows.length}건 · ${fmtN(totalCt)}CT · 품목전환 ${swaps}회`,
+    '',
+    ...rows.map((g, i) => {
+      const tag = [g.cnt > 1 ? '합산' : '', g.skipped ? '순서 지남' : ''].filter(Boolean);
+      return [`${i + 1}.`, hhmm(g.t), g.farm, g.product, `${fmtN(g.qty)}CT`].filter(Boolean).join(' ')
+        + (tag.length ? ` (${tag.join(' · ')})` : '');
+    }),
+    ...(left.length ? ['', '남은 계획: ' + left.map(r =>
+      [_scPlanNo(r), r.farm_name || '-', r.product || '', `${fmtN(r.quantity - (pm[r.id] || 0))}CT`].filter(Boolean).join(' ')
+    ).join(' · ')] : [])
+  ].join('\n');
+
+  // 날짜 이동 ◀▶ — 조회 전용이라 권한 제한이 없다. 오늘이면 ▶를 잠근다(미래는 볼 게 없다).
+  const navBtn = 'width:32px;height:28px;padding:0;border:1px solid #D1D5DB;border-radius:6px;background:#fff;color:#6B7280;font-size:13px;line-height:1;cursor:pointer;font-family:inherit';
   wrap.innerHTML = `
     <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
-      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:8px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE">
-        <span style="font-size:13px;font-weight:600;color:#1565C0">✂️ 오늘 선과</span>
-        <span style="font-size:12px;color:#6B7280">${Number(_dMo)}/${Number(_dD)} (${dow})</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE">
+        <span style="font-size:13px;font-weight:600;color:#1565C0">✂️ ${isToday ? '오늘 선과' : '선과 실적'}</span>
+        <button onclick="scDayShift(-1)" title="하루 전" style="${navBtn}">◀</button>
+        <span style="font-size:12px;color:#6B7280;white-space:nowrap">${_dMo}/${_dD} (${dow})</span>
+        <button onclick="scDayShift(1)" title="하루 뒤"${isToday ? ' disabled' : ''} style="${navBtn}${isToday ? ';opacity:.4;cursor:default' : ''}">▶</button>
         <span style="font-size:12px;color:#374151;margin-left:auto;white-space:nowrap">${rows.length}건 · ${fmtN(totalCt)}CT · 품목전환 ${swaps}회</span>
+        ${rows.length ? `<button onclick="scDayShare()" style="font-size:11px;padding:2px 8px;border:1px solid #1565C0;border-radius:4px;color:#1565C0;background:#fff;cursor:pointer;white-space:nowrap">📋 공유</button>` : ''}
       </div>
       <div style="overflow-x:auto">${body}</div>
       ${leftHtml}
     </div>`;
+}
+
+// ◀▶ — ★KST 안전: 로컬 Date(y, m-1, d±1)로 만들고 ymd()로 문자열화한다(toISOString은 9시간 어긋난다).
+//   블록만 다시 그린다 — 통계·완료 목록은 날짜와 무관하므로 renderSC()를 부르지 않는다.
+function scDayShift(delta) {
+  const [y, m, d] = _scDayDate.split('-').map(Number);
+  const next = ymd(new Date(y, m - 1, d + delta));
+  if (next > td()) return;   // 미래는 안 간다(▶ disabled의 2중 안전장치)
+  _scDayDate = next;
+  _renderScDayBlock();
+}
+
+// 공유 — 모달 없이 바로 복사한다(copyMsg와 같은 패턴). 텍스트는 렌더 때 이미 만들어 뒀다.
+function scDayShare() {
+  if (!_scDayShareTxt) return;
+  const fallback = () => prompt('아래 내용을 복사하세요:', _scDayShareTxt);
+  try {
+    navigator.clipboard.writeText(_scDayShareTxt)
+      .then(() => showToast('📋 선과 실적 복사 — 채팅방에 붙여넣기 하세요'))
+      .catch(fallback);
+  } catch (e) { fallback(); }   // clipboard 자체가 없는 환경(구형·비보안 컨텍스트)에서도 안 멈추게
 }
 
 function _renderScDoneTable() {
@@ -18163,8 +18214,10 @@ function _renderScDoneTable() {
 // ★번호는 다시 매기지 않는다(Jimmy 결정). 1·2·3에서 2를 해제하면 1·3이 남고, 선과가 끝나 목록에서 빠진 행의
 //   번호도 DB에 그대로 남는다 → '원래 2번이었는데 3번이 먼저 끝났다'가 드러난다(_scPlanStat의 doneMax).
 //   의도가 바뀐 건지(해제) 빠뜨린 건지(주황) 구분하려는 것.
-function _scPlanNo(r) {
-  if (!r || r.srt_plan_date !== td()) return null;
+// ★dateStr 기본값은 td() — 인자 없이 부르면 예전과 똑같이 '오늘 번호'다(기존 호출부 11곳 무변).
+//   '오늘 선과' 블록에서 날짜를 옮길 때만 그 날짜를 넘긴다(_syncFetchLatest(tables = SYNC_TABLES)와 같은 방식).
+function _scPlanNo(r, dateStr = td()) {
+  if (!r || r.srt_plan_date !== dateStr) return null;
   const n = Number(r.srt_plan_no);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
@@ -20234,7 +20287,7 @@ async function saveSortingResult() {
     if (document.getElementById('sc-tab-bar')) {
       _renderScStats();
       if (_scTab === 'pending')     { _renderScProductOptions();       _renderScTable(); }
-      else                          { _renderScDoneProductOptions();   _renderScDoneTable(); }
+      else                          { _renderScDoneProductOptions();   _scDayDate = td(); _renderScDayBlock(); _renderScDoneTable(); }
     }
   } catch (e) {
     // ★부분 생성 방지 — 합산 저장 중간에 실패했으면 이번에 만든 것을 전부 되돌린다.
