@@ -1311,8 +1311,53 @@ function afF(p) {
   const f = gf(gv(p + '-farm'));
   sv(p + '-tel', f.tel || ''); sv(p + '-ftel', f.tel || ''); sv(p + '-addr', f.addr || '');
   if (p === 'dp' && f.variety) sv('dp-item', f.variety);
+  if (p === 'dp') _fillFieldSel('dp', gv('dp-farm'));   // 밭이 여러 곳인 농가면 '밭' 칸이 나온다(그 외엔 숨김)
 }
 function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv(p + '-car', d.car || ''); }
+
+// ── 한 농가 · 여러 밭 ────────────────────────────────────────
+// ★농가 = 사람 1명. 밭 주소는 배차·수확 '한 건'에 붙는 꼬리표다
+//   (farms.fields · dispatches.field · harvests.field).
+// ★콘테이너 보유·정산은 여전히 농가(사람) 단위 그대로다 — 밭으로 쪼개면
+//   1번 밭에서 2번 밭으로 옮겨 쓸 때 보유가 +222/−41처럼 갈린다(문기덕 사고).
+//   getFCS·getFCtypes·picks는 field를 보지 않는다. 보유를 field로 나누지 말 것.
+function _farmFields(farm) {
+  return (gf(farm).fields || []).map(s => String(s).trim()).filter(Boolean);
+}
+// ★배차·수확 '한 건'의 주소는 여기 하나로만 구한다 — 화면마다 gf(farm).addr을
+//   따로 쓰면 고른 밭이 문자엔 나가고 목록엔 안 나오는 식으로 갈린다.
+//   field가 없는 옛 기록·농협·거래처는 농가 주소로 폴백된다 → 기존 화면과 글자가 같다.
+function _recAddr(rec) {
+  return (((rec && rec.field) || gf(rec && rec.farm).addr) || '').trim();
+}
+// 농가 '한 줄'에 보이는 주소 — 밭이 2곳 이상이면 목록을 다 보여 준다(대표 주소 하나만 보이면
+//   다른 밭이 있는 줄 모른다). ★기록 한 건은 _recAddr — 이건 농가(사람) 단위라 따로 둔다.
+function _farmAddrText(farm) {
+  const fs = _farmFields(farm);
+  return fs.length >= 2 ? fs.join(' · ') : (gf(farm).addr || '').trim();
+}
+// 폼의 '밭' select 채우기. ★밭이 2곳 이상일 때만 보인다 — 1곳 이하면 고를 게 없어
+//   칸만 늘고, 밭 1개 농가는 화면·저장이 수정 전과 같아야 하기 때문이다.
+//   ★단 이미 밭이 적힌 기록을 열었으면(cur) 숨기지 않는다 — 숨긴 채 저장하면
+//     그 값이 말없이 지워진다(밭 목록에서 한 줄을 지운 뒤 옛 기록을 수정하는 경우).
+//   목록에 없는 값은 기존 _selEnsureVal이 옵션을 붙여 지켜 준다.
+function _fillFieldSel(prefix, farm, cur) {
+  const sel = document.getElementById(prefix + '-field');
+  const wrap = document.getElementById(prefix + '-field-wrap');
+  if (!sel || !wrap) return;
+  const list = _farmFields(farm);
+  const keep = (cur || '').trim();
+  if (list.length < 2 && !keep) { sel.innerHTML = ''; sel.value = ''; wrap.style.display = 'none'; return; }
+  sel.innerHTML = '<option value="">선택</option>' + list.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  _selEnsureVal(sel, keep);
+  wrap.style.display = '';
+}
+// 등록 폼(배차·수확)에서만 불리는 필수 검사 — 칸이 보이는데 비어 있으면 막는다.
+//   기사가 어느 밭으로 가는지 모르면 안 된다. 수정 폼은 옛 기록 호환을 위해 비워도 저장된다.
+function _fieldRequiredMiss(prefix) {
+  const wrap = document.getElementById(prefix + '-field-wrap');
+  return !!wrap && wrap.style.display !== 'none' && !gv(prefix + '-field');
+}
 
 // 배차 대상 종류(농가/농협/거래처)별 대상명 <option> HTML — 농가면 farms, 농협이면 _nhfOptHtml(category='농협'),
 // 거래처면 _extNameOptHtml(PARTNER_CATS의 extName 유형 = 거래처·공판장·마트).
@@ -1610,13 +1655,13 @@ function buildMsg(d) {
   const ft = f.tel ? `📞 농가주 연락처: ${f.tel}\n` : '';
   const ht = d.harvest ? `🗓 수확예정일: ${d.harvest}\n` : '';
   const it = d.item ? `🍊 품목: ${d.item}\n` : '';
-  return `[감귤 콘테이너 배출 안내]\n\n안녕하세요, ${esc(d.driver)} 기사님.\n배출 업무 안내드립니다.\n\n📅 배출일: ${d.date}\n🏡 농가명: ${esc(d.farm)}\n📍 주소: ${esc(f.addr || '농가에 직접 확인')}\n${ft}📦 콘테이너: ${esc(d.ctype)} ${d.qty}개\n${ht}${it}${d.note && d.note !== '[자동]' ? '📝 특이사항: ' + esc(d.note) + '\n' : ''}\n배출 완료 후 앱에서 완료 등록 부탁드립니다.\n감사합니다.`;
+  return `[감귤 콘테이너 배출 안내]\n\n안녕하세요, ${esc(d.driver)} 기사님.\n배출 업무 안내드립니다.\n\n📅 배출일: ${d.date}\n🏡 농가명: ${esc(d.farm)}\n📍 주소: ${esc(_recAddr(d) || '농가에 직접 확인')}\n${ft}📦 콘테이너: ${esc(d.ctype)} ${d.qty}개\n${ht}${it}${d.note && d.note !== '[자동]' ? '📝 특이사항: ' + esc(d.note) + '\n' : ''}\n배출 완료 후 앱에서 완료 등록 부탁드립니다.\n감사합니다.`;
 }
 function buildBkMsg(d) {
   const f = gf(d.farm);
   const ft = f.tel ? `📞 농가주 연락처: ${f.tel}\n` : '';
   const qtyStr = d.qty > 0 ? `${d.qty}개` : '현장 확인';
-  return `[빈 콘테이너 회수 안내]\n\n안녕하세요, ${esc(d.driver)} 기사님.\n빈 콘테이너 회수 업무 안내드립니다.\n\n📅 회수일: ${d.date}\n🏡 농가명: ${esc(d.farm)}\n📍 주소: ${esc(f.addr || '농가에 직접 확인')}\n${ft}📦 회수 수량: ${qtyStr}\n${d.note ? '📝 비고: ' + esc(d.note) + '\n' : ''}\n감사합니다.`;
+  return `[빈 콘테이너 회수 안내]\n\n안녕하세요, ${esc(d.driver)} 기사님.\n빈 콘테이너 회수 업무 안내드립니다.\n\n📅 회수일: ${d.date}\n🏡 농가명: ${esc(d.farm)}\n📍 주소: ${esc(_recAddr(d) || '농가에 직접 확인')}\n${ft}📦 회수 수량: ${qtyStr}\n${d.note ? '📝 비고: ' + esc(d.note) + '\n' : ''}\n감사합니다.`;
 }
 function previewBkMsg() {
   const farm = gv('bk-farm'), drv = gv('bk-drv'), date = gv('bk-date');
@@ -1673,6 +1718,7 @@ function openFarmEdit(id) {
   // select: 기존값이 목록에 없어도 옵션 추가해 selected(유실 방지)
   _selEnsureVal(document.getElementById('mf-variety'), f.variety || '');
   _selEnsureVal(document.getElementById('mf-staff'), f.staff || '');
+  sv('mf-fields', _farmFields(f.name).join('\n'));   // 밭 목록 — 한 줄에 하나
   document.getElementById('modal-farm').style.display = 'flex';
 }
 async function saveFarmEdit() {
@@ -1682,8 +1728,12 @@ async function saveFarmEdit() {
   // ★다른 농가와 같은 이름이면 cascade 확인창을 띄우기 '전에' 막는다 — 통과하면 두 농가 기록이 한 이름으로 합쳐진다.
   if (_farmNameTaken(name, _editFarmId)) { alert(FARM_NAME_DUP_MSG); return; }
   const oldName = farms.find(f => f.id === _editFarmId)?.name;
+  // 밭 목록 — 줄 단위 trim·빈 줄 제거·중복 제거. 비어 두면 빈 배열(밭 1곳 농가 = 기존과 동일).
+  const fields = [...new Set(String(gv('mf-fields') || '').split('\n').map(x => x.trim()).filter(Boolean))];
+  // 대표 주소가 비어 있으면 첫 밭을 넣는다 — addr을 보는 화면·문자가 아직 있다(field 없는 옛 기록 폴백).
+  const mfAddr = document.getElementById('mf-addr').value.trim() || fields[0] || '';
   const data = {
-    name, tel: document.getElementById('mf-tel').value, addr: document.getElementById('mf-addr').value,
+    name, tel: document.getElementById('mf-tel').value, addr: mfAddr, fields,
     variety: document.getElementById('mf-variety').value, contract: parseInt(document.getElementById('mf-contract').value) || 0,
     staff: document.getElementById('mf-staff').value, memo: document.getElementById('mf-memo').value
   };
@@ -1939,7 +1989,7 @@ function renderFarm() {
       <div class="fc-name"><span class="badge b-neu">F-${String(i + 1).padStart(3, '0')}</span>${esc(f.name)}${f.variety ? `<span class="badge b-teal">${esc(f.variety)}</span>` : ''}</div>
       <div class="fc-details">
         ${f.tel ? `<span>📞 ${esc(f.tel)}</span>` : ''}
-        ${f.addr ? `<span>📍 ${esc(f.addr)}</span>` : ''}
+        ${_farmAddrText(f.name) ? `<span>📍 ${esc(_farmAddrText(f.name))}</span>` : ''}
         ${f.contract ? `<span>📦 계약 ${f.contract}개</span>` : ''}
         ${f.staff ? `<span>👤 ${esc(f.staff)}</span>` : ''}
         ${f.memo ? `<span>💬 ${esc(f.memo)}</span>` : ''}
@@ -2010,6 +2060,7 @@ function openDispEdit(id) {
   }
   ef.value = d.farm || '';
   fsSync('ed-farm');   // 검색형 입력칸 표시도 이 값으로(모달은 열 때마다 값이 바뀐다)
+  _fillFieldSel('ed', d.farm, d.field);   // 밭이 여러 곳인 농가면 '밭' 칸 + 저장된 밭 선택
   const edrv = document.getElementById('ed-drv');
   edrv.innerHTML = '<option value="">선택</option>';
   drivers.forEach(dr => edrv.innerHTML += `<option value="${esc(dr.name)}">${esc(dr.name)}</option>`);
@@ -2056,6 +2107,9 @@ async function saveDispEdit() {
     // ★대상 종류도 함께 저장한다 — 이제 모달에서 바꿀 수 있으므로 안 넣으면 이름만 바뀌고 종류는 옛 값으로 남는다.
     //   (sbUpdate는 PATCH라 지금까지 target_type이 '유실'되진 않았고, 그냥 손대지 않은 채였다.)
     target_type: gv('ed-target-type') || '농가',
+    // ★밭 — 칸이 안 보이는 농가면 ''이라 null로 간다(옛 기록·농협·거래처 포함).
+    //   수정은 비워도 저장된다 — 밭 기록이 없던 옛 배차를 고칠 수 있어야 하기 때문.
+    field: gv('ed-field') || null,
     dtel: d.tel || '', car: d.car || '', qty,
     ctype: edCtype,
     harvest: document.getElementById('ed-harvest').value || null,
@@ -2336,6 +2390,9 @@ async function addDisp() {
   // ★수량 0으로 저장되면 picks '배출' 행이 안 생겨, 콘테이너 보유 집계엔 안 잡히면서 배차 목록에만 남는
   //   '유령 배차'가 된다. _dpCtypeList가 0을 이미 걸러내므로 비었으면 여기서 막는다(수정은 saveDispEdit에서 동일).
   if (!ctList.length) { alert('콘테이너 종류별 수량을 입력하세요'); return; }
+  // ★밭이 여러 곳인 농가는 어느 밭인지를 반드시 고른다 — 기사가 갈 곳을 모르면 안 된다.
+  if (_fieldRequiredMiss('dp')) { alert('밭을 선택하세요'); return; }
+  const dpField = gv('dp-field') || null;
   const totalQty = ctList.reduce((a, x) => a + x.qty, 0);
   const d = gd(drv);
   try {
@@ -2345,7 +2402,7 @@ async function addDisp() {
     //   보내던 우회를 대신한다. 예약도 종류마다 dispatches 행을 만든다(pick만 안 만든다).
     let firstRow = null;
     for (const c of ctList) {
-      const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty: c.qty, ctype: c.ct, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: reserve ? '배차완료' : '배출완료', target_type: targetType });
+      const row = await dbInsertDispatch({ date, farm, driver: drv, dtel: d.tel || '', car: d.car || '', qty: c.qty, ctype: c.ct, field: dpField, harvest: gv('dp-harvest') || null, item: gv('dp-item') || null, note: gv('dp-note') || null, trip: gv('dp-trip') || null, timeslot: gv('dp-timeslot') || null, status: reserve ? '배차완료' : '배출완료', target_type: targetType });
       dispatches.unshift(row);
       if (!firstRow) firstRow = row;
       // ★배출 자동 pick은 배차 행마다 정확히 1건 — dispatch_id로 짝지어야 delDisp가 제 것만 지운다.
@@ -2525,12 +2582,11 @@ function renderDDash() {
 
   function dispRow(d) {
     const drv = gd(d.driver);
-    const farm = gf(d.farm);
     return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border-radius:8px;border:0.5px solid #ebebeb;flex-wrap:wrap">
       ${tripBadge(d.trip)}
       <div style="display:flex;flex-direction:column;gap:1px">
         <span style="font-size:12px;font-weight:600">${esc(d.farm)}</span>
-        ${farm.addr ? `<span style="font-size:10px;color:#aaa">${esc(farm.addr)}</span>` : ''}
+        ${_recAddr(d) ? `<span style="font-size:10px;color:#aaa">${esc(_recAddr(d))}</span>` : ''}
       </div>
       <span style="font-size:11px;color:#888">·</span>
       <span style="font-size:12px">${esc(d.driver)}</span>
@@ -2595,7 +2651,6 @@ function renderHarvestNoDisp() {
   if (!missing.length) { el.style.display = 'none'; return; }
   el.style.display = '';
   const rows = missing.map(h => {
-    const farm = gf(h.farm);
     const st = h.status || '수확전';
     const stBadge = st === '수확중' ? '<span class="badge b-warn">수확중</span>'
       : st === '수확완료' ? '<span class="badge b-ok">수확완료</span>'
@@ -2605,7 +2660,7 @@ function renderHarvestNoDisp() {
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:0.5px solid #FFE082;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:1px;flex:1;min-width:0">
         <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
-        ${farm.addr ? `<span style="font-size:10px;color:#aaa">${esc(farm.addr)}</span>` : ''}
+        ${_recAddr(h) ? `<span style="font-size:10px;color:#aaa">${esc(_recAddr(h))}</span>` : ''}
       </div>
       ${h.item ? `<span style="font-size:11px;color:#888">${esc(h.item)}</span>` : ''}
       ${stBadge}
@@ -2637,7 +2692,7 @@ function renderDisp() {
   const page = f.slice((_d2p - 1) * PER, _d2p * PER);
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('disp-tb').innerHTML = page.length ? page.map(d => `<tr>
-    <td>${d.date}</td><td class="nm">${esc(d.farm)}${gf(d.farm).addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:2px">${esc(gf(d.farm).addr)}</div>` : ''}</td><td>${esc(d.driver)}</td>
+    <td>${d.date}</td><td class="nm">${esc(d.farm)}${_recAddr(d) ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:2px">${esc(_recAddr(d))}</div>` : ''}</td><td>${esc(d.driver)}</td>
     <td>${d.timeslot ? tsBadge(d.timeslot) : '-'}</td>
     <td>${d.trip ? `<span class="badge b-neu">${esc(d.trip)}</span>` : '-'}</td>
     <td><span class="badge ${gd(d.driver).type === '외부' ? 'b-pur' : 'b-ok'}">${esc(gd(d.driver).type || '-')}</span></td>
@@ -3155,7 +3210,7 @@ function renderMyAssign() {
     const done = d.status === '배출완료';
     return `<div class="assign-card">
       <div class="assign-top"><div class="assign-title">📅 ${d.date} · ${esc(d.farm)}</div><span class="badge ${done ? 'b-ok' : 'b-info'}">${done ? '✅ 배출완료' : '대기중'}</span></div>
-      <div class="assign-body">${ctB(d.ctype)} <strong>${d.qty}개</strong><br>🚛 차량: ${esc(d.car || '-')}<br>📍 주소: ${esc(gf(d.farm).addr || '농가에 직접 확인')}<br>📞 농가주: ${esc(gf(d.farm).tel || '-')}${d.harvest ? '<br>🗓 수확예정: ' + d.harvest : ''}${d.item ? '<br>🍊 품목: ' + esc(d.item) : ''}${d.note && d.note !== '[자동]' ? '<br>📝 ' + esc(d.note) : ''}</div>
+      <div class="assign-body">${ctB(d.ctype)} <strong>${d.qty}개</strong><br>🚛 차량: ${esc(d.car || '-')}<br>📍 주소: ${esc(_recAddr(d) || '농가에 직접 확인')}<br>📞 농가주: ${esc(gf(d.farm).tel || '-')}${d.harvest ? '<br>🗓 수확예정: ' + d.harvest : ''}${d.item ? '<br>🍊 품목: ' + esc(d.item) : ''}${d.note && d.note !== '[자동]' ? '<br>📝 ' + esc(d.note) : ''}</div>
       ${!done ? `<div style="display:flex;justify-content:flex-end"><button class="btn grn" onclick="drvDone(${d.id})">✅ 배출 완료 처리</button></div>` : ''}
     </div>`;
   }).join('');
@@ -3368,7 +3423,7 @@ function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '
 function renderFarmTbl() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; });
-  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${f.addr ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(f.addr)}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
+  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${_farmAddrText(f.name) ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(_farmAddrText(f.name))}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
 }
@@ -3940,7 +3995,6 @@ function renderDBoard() {
     const hasPending = myPending.length > 0;
 
     const rows = hasPending ? myPending.map(d => {
-      const farm = gf(d.farm);
       // 지연 판정 — myPending이 이미 status==='배차완료'(미완료)만 담고 있음(위 pending 필터).
       // ★그 필터를 바꾸면 이 표시도 같이 봐야 함.
       const isToday = d.date === today;
@@ -3953,7 +4007,7 @@ function renderDBoard() {
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:#222">${esc(d.farm)}${d.trip ? ` ${tripBadge(d.trip)}` : ''}</div>
-          ${farm.addr ? `<div style="font-size:10px;color:#aaa;margin-top:1px">${esc(farm.addr)}</div>` : ''}
+          ${_recAddr(d) ? `<div style="font-size:10px;color:#aaa;margin-top:1px">${esc(_recAddr(d))}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:70px">
           <div style="font-size:12px;font-weight:500">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100">수량 미정</span>'}</div>
@@ -4659,7 +4713,7 @@ function renderUpcomingHarvest() {
           <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
-        ${_hvAddrLine(x.farm)}
+        ${_hvAddrLine(x.farm, x.field)}
         <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
@@ -4703,7 +4757,7 @@ function renderUpcomingHarvest() {
       <div style="font-size:12px;font-weight:700;color:#B91C1C;margin-bottom:5px">⚠ 콘테이너 없는 수확 ${nd.length}건 — 눌러서 배차 등록</div>
       <div style="font-size:11px;color:#B91C1C;opacity:.85;margin-bottom:5px">신규 배차도 없고 농가에 남은 콘테이너도 없어, 안 보내면 수확을 못 합니다.</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px">
-        ${nd.slice(0, MAX_CHIP).map(x => `<button type="button" onclick="_hvGoDispatch('${_fsQ(x.farm)}','${esc(x.date)}')" style="font-size:11px;padding:3px 9px;border-radius:12px;border:1px solid #FCA5A5;background:#fff;color:#B91C1C;cursor:pointer;font-family:inherit;white-space:nowrap">${esc(String(x.date).slice(5).replace('-', '/'))} ${esc(x.farm)} →</button>`).join('')}
+        ${nd.slice(0, MAX_CHIP).map(x => `<button type="button" onclick="_hvGoDispatch('${_fsQ(x.farm)}','${esc(x.date)}','${_fsQ(x.field || '')}')" style="font-size:11px;padding:3px 9px;border-radius:12px;border:1px solid #FCA5A5;background:#fff;color:#B91C1C;cursor:pointer;font-family:inherit;white-space:nowrap">${esc(String(x.date).slice(5).replace('-', '/'))} ${esc(x.farm)} →</button>`).join('')}
         ${nd.length > MAX_CHIP ? `<span style="font-size:11px;color:#B91C1C;align-self:center">외 ${nd.length - MAX_CHIP}건</span>` : ''}
       </div>
     </div>` : '';
@@ -4721,7 +4775,7 @@ function renderUpcomingHarvest() {
 // 배너 칩 → 배차 등록 폼으로 이동하며 농가·수확 예정일을 미리 채운다.
 // ★새 등록 기능을 만들지 않는다 — 기존 배차 폼(p-disp)을 그대로 열고 값만 넣는다.
 //   dp-farm은 검색형이라 값을 넣은 뒤 fsSync로 표시를 맞추고, change를 쏴서 기존 afF('dp') 자동채움을 태운다.
-function _hvGoDispatch(farm, harvestDate) {
+function _hvGoDispatch(farm, harvestDate, field) {
   // ★수확일이 미래면 '예약 배차'로 이어 준다 — 배송일 기본값은 수확 전날(전날 갖다 두고 이튿날 딴다).
   //   단 전날이 이미 오늘 이하면(=내일 수확) 지금 나가야 하므로 오늘 배차 + 예약 해제 = 기존 동작.
   //   수확일이 오늘·과거면 손대지 않는다(dp-date는 setDates가 넣어 둔 오늘 그대로).
@@ -4737,6 +4791,8 @@ function _hvGoDispatch(farm, harvestDate) {
     if (tt) { tt.value = '농가'; refreshDpFarmOpts(); }
     const f = document.getElementById('dp-farm');
     if (f) { f.value = farm; fsSync('dp-farm'); f.dispatchEvent(new Event('change')); }
+    // ★change가 afF('dp') → _fillFieldSel('dp', farm)을 먼저 태우므로, 값은 그 뒤에 골라야 남는다(순서 중요).
+    if (field) _fillFieldSel('dp', farm, field);
     // ★dp-date는 setDates()가 이미 오늘로 채워 두므로 '비었을 때만'으로는 예약 날짜가 안 들어간다 — 계산값이 있으면 덮어쓴다.
     const dt = document.getElementById('dp-date');
     if (dt) { if (dpDate) dt.value = dpDate; else if (!dt.value) dt.value = t; }
@@ -4881,13 +4937,13 @@ function _hvDdayTone(dd) {
 
 // 농가명 옆 주소 — 이름만으론 어디로 가는 농가인지 헷갈려서 붙인다.
 // farms에 주소가 없으면 아무것도 붙이지 않는다(빈 괄호·'-' 같은 걸 지어내지 않는다).
-function _hvAddrTag(farm, max) {
-  const a = (gf(farm).addr || '').trim();
+function _hvAddrTag(farm, max, field) {
+  const a = ((field || gf(farm).addr) || '').trim();
   if (!a) return '';
   return `<span title="${esc(a)}" style="font-size:11px;color:#9CA3AF;font-weight:400;max-width:${max || 240}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</span>`;
 }
-function _hvAddrLine(farm) {
-  const a = (gf(farm).addr || '').trim();
+function _hvAddrLine(farm, field) {
+  const a = ((field || gf(farm).addr) || '').trim();
   if (!a) return '';
   return `<div title="${esc(a)}" style="font-size:10px;color:#9CA3AF;margin:0 0 3px;padding-left:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</div>`;
 }
@@ -5339,6 +5395,7 @@ function openHarvestEdit(id) {
   farms.forEach(f => mhf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
   mhf.value = h.farm || '';
   fsSync('mh-farm');   // 검색형 입력칸 표시도 이 값으로
+  _fillFieldSel('mh', h.farm, h.field);
   document.getElementById('mh-item').value = h.item || '';
   document.getElementById('mh-note').value = h.note || '';
   document.getElementById('mh-round').value = h.round || 1;
@@ -5349,7 +5406,7 @@ async function saveHarvestEdit() {
   const date = document.getElementById('mh-date').value;
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
-  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
+  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, field: gv('mh-field') || null, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
   const prev = harvests.find(h => h.id === _editHarvestId);   // 변경 전 값 — 배차 동기화 판단에만 쓴다
   try {
     await dbUpdateHarvest(_editHarvestId, data);
@@ -5510,21 +5567,25 @@ async function addHarvest() {
   const round = parseInt(document.getElementById('cal-add-round')?.value, 10) || 1;
   // ★오전·오후 차량·빈콘 계획은 여기서 받지 않는다 — 날짜별 값이라 카드의 계획 줄에서 그날 것을 넣는다(startHvPlanEdit).
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
+  // ★밭이 여러 곳인 농가는 어느 밭 수확인지를 반드시 고른다(배차 등록과 같은 규칙).
+  if (_fieldRequiredMiss('cal-add')) { alert('밭을 선택하세요'); return; }
+  const field = gv('cal-add-field') || null;
   try {
-    const row = await dbInsertHarvest({ date, end_date, farm, item, note, round, status: '수확전' });
+    const row = await dbInsertHarvest({ date, end_date, farm, field, item, note, round, status: '수확전' });
     harvests.push(row);
     document.getElementById('cal-add-date').value = '';
     document.getElementById('cal-add-end').value = '';
     document.getElementById('cal-add-round').value = '1';
     document.getElementById('cal-add-farm').value = '';
     fsSync('cal-add-farm');
+    _fillFieldSel('cal-add', '');   // 농가를 비웠으니 밭 칸도 같이 접는다(다음 등록에 전 값이 남지 않게)
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
     renderCal();
     // ★여기부터는 '제안'일 뿐 — 저장은 위에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
     //   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).
     if (date > td() && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (배송일 기본 ${_dayBefore(date)})`)) {
-      _hvGoDispatch(farm, date);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크까지 채운다
+      _hvGoDispatch(farm, date, field);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크·밭까지 채운다
     }
   } catch (e) { alert('오류: ' + e.message); }
 }
@@ -5596,7 +5657,7 @@ function exportExcel(type) {
   if (type === 'farm' || type === 'all') {
     const csv = toCSV(
       ['농가명','연락처','주소','품종','계약수량','담당직원','비고'],
-      farms.map(f => [f.name, f.tel||'', f.addr||'', f.variety||'', f.contract||0, f.staff||'', f.memo||''])
+      farms.map(f => [f.name, f.tel||'', _farmAddrText(f.name), f.variety||'', f.contract||0, f.staff||'', f.memo||''])
     );
     download(`농가목록_${today}.csv`, csv);
   }

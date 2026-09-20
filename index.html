@@ -96,6 +96,8 @@
       <div class="fg"><label>농가명 *</label><input id="mf-name"></div>
       <div class="fg"><label>연락처</label><input id="mf-tel"></div>
       <div class="fg full"><label>주소</label><input id="mf-addr"></div>
+      <!-- 밭이 여러 곳인 농가만 쓴다. 한 줄에 하나 → farms.fields 배열. 비어 두면 배차·수확 폼에 밭 칸이 안 나온다. -->
+      <div class="fg full"><label>밭 주소 <span style="font-size:10px;color:#aaa">(2곳 이상일 때만 · 한 줄에 하나)</span></label><textarea id="mf-fields" rows="3" placeholder="태흥리 820-9&#10;태흥리 850-6"></textarea></div>
       <div class="fg"><label>품종</label><select id="mf-variety"></select></div>
       <div class="fg"><label>계약 콘테이너(개)</label><input id="mf-contract" type="number"></div>
       <div class="fg"><label>담당직원</label><select id="mf-staff"></select></div>
@@ -171,7 +173,8 @@
       <div class="fg"><label>수확 시작일 *</label><input id="mh-date" type="date"></div>
       <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="mh-end" type="date"></div>
       <div class="fg"><label>차수</label><input id="mh-round" type="number" min="1" value="1"></div>
-      <div class="fg"><label>농가명 *</label><select id="mh-farm"><option value="">선택</option></select></div>
+      <div class="fg"><label>농가명 *</label><select id="mh-farm" onchange="_fillFieldSel('mh', this.value)"><option value="">선택</option></select></div>
+      <div class="fg" id="mh-field-wrap" style="display:none"><label>밭 *</label><select id="mh-field"></select></div>
       <div class="fg"><label>품목</label><select id="mh-item"></select></div>
       <div class="fg"><label>메모</label><input id="mh-note"></div>
     </div>
@@ -235,7 +238,8 @@
     <div class="modal-grid">
       <div class="fg"><label>날짜 *</label><input id="ed-date" type="date"></div>
       <div class="fg"><label>대상 종류</label><select id="ed-target-type" onchange="refreshEdFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
-      <div class="fg"><label>대상명 *</label><select id="ed-farm"><option value="">선택</option></select></div>
+      <div class="fg"><label>대상명 *</label><select id="ed-farm" onchange="_fillFieldSel('ed', this.value)"><option value="">선택</option></select></div>
+      <div class="fg" id="ed-field-wrap" style="display:none"><label>밭 *</label><select id="ed-field"></select></div>
       <div class="fg"><label>기사 *</label><select id="ed-drv"><option value="">선택</option></select></div>
       <div class="fg"><label>차수</label><select id="ed-trip"><option value="">해당없음</option><option value="1차">1차</option><option value="2차">2차</option><option value="3차">3차</option></select></div>
       <div class="fg"><label>시간대</label><select id="ed-timeslot"><option value="">미지정</option><option value="오전">🌅 오전</option><option value="오후">🌇 오후</option></select></div>
@@ -360,6 +364,7 @@
         <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
         <div class="fg"><label>대상 종류</label><select id="dp-target-type" onchange="refreshDpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
         <div class="fg"><label>대상명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
+        <div class="fg" id="dp-field-wrap" style="display:none"><label>밭 *</label><select id="dp-field"></select></div>
         <!-- ★내부 운영 단순화(2026-08-18): 아래 자동 채움 필드는 화면에서만 숨김. DOM은 그대로 둔다 —
              afF/afD가 값을 채우고 addDisp가 그 값을 저장하며 문자 발송이 참조하므로, 지우면 오류가 난다.
              외부 기사 도입 시 style="display:none"만 떼면 원복. -->
@@ -532,7 +537,8 @@
   <div id="cal-add-form" class="form-card" style="margin-bottom:12px">
   <div class="form-title">📅 수확 일정 등록</div>
   <div class="form-grid">
-    <div class="fg"><label>농가명 *</label><select id="cal-add-farm"><option value="">농가 선택</option></select></div>
+    <div class="fg"><label>농가명 *</label><select id="cal-add-farm" onchange="_fillFieldSel('cal-add', this.value)"><option value="">농가 선택</option></select></div>
+    <div class="fg" id="cal-add-field-wrap" style="display:none"><label>밭 *</label><select id="cal-add-field"></select></div>
     <div class="fg"><label>수확 시작일 *</label><input id="cal-add-date" type="date"></div>
     <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="cal-add-end" type="date"></div>
     <div class="fg"><label>차수 <span style="font-size:10px;color:#aaa">(밭떼기 여러 날)</span></label><input id="cal-add-round" type="number" min="1" value="1"></div>
@@ -2065,6 +2071,6 @@
 <script src="src/supabase-client.js?v=29"></script>
 <script src="src/db.js?v=27"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=634"></script>
+<script src="src/app.js?v=635"></script>
 </body>
 </html>
