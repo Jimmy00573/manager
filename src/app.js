@@ -5584,7 +5584,10 @@ async function addHarvest() {
     renderCal();
     // ★여기부터는 '제안'일 뿐 — 저장은 위에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
     //   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).
-    if (date > td() && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (배송일 기본 ${_dayBefore(date)})`)) {
+    // ★그 농가·그 수확일로 잡힌 배차가 이미 있으면 묻지 않는다 — 배차 등록 쪽(addDisp)이
+    //   수확 일정이 있는지 확인하는 것과 대칭이다. 둘이 서로 확인해야 배차→수확→배차 제안이 오가지 않는다.
+    //   ★showConfirmEdit은 맨 뒤 — 앞에 두면 배차가 있어도 확인창이 떠버린다.
+    if (date > td() && _dispForHarvest(farm, date).cnt === 0 && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (배송일 기본 ${_dayBefore(date)})`)) {
       _hvGoDispatch(farm, date, field);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크·밭까지 채운다
     }
   } catch (e) { alert('오류: ' + e.message); }
