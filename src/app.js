@@ -2453,8 +2453,23 @@ async function addDisp() {
 async function _completeDispatch(d, rptNote = '완료처리') {
   if (!d) return;
   if (!picks.some(p => p.dispatch_id === d.id && p.type === '배출')) {
-    const row = await dbInsertPick({ date: d.date, farm: d.farm, type: '배출', qty: d.qty, driver: d.driver, car: d.car || '', note: '[자동]', dispatch_id: d.id, auto: true, target_type: d.target_type || '농가' });
-    if (row) picks.unshift(row);
+    // ★중복을 실제로 막는 건 DB의 유니크 인덱스 picks_dispatch_out_uniq
+    //   — (dispatch_id) where type='배출' and dispatch_id is not null — 이 최종 방어선이다.
+    //   바로 위 로컬 picks 확인은 쓸데없는 요청을 줄이는 1차 확인일 뿐이다: 로컬 배열은
+    //   '이 기기가 아는 것'뿐이라, 다른 기기가 먼저 완료했으면 모르고 여기까지 내려온다.
+    //   2026-09-17 이영식 배차 110 — 11:03·12:02 두 기기에서 완료를 눌러 배출 pick이 2건 생겼고
+    //   농가 보유가 300 부풀었다(SQL로 복구). 이제 두 번째 insert는 Postgres 23505로 거부된다.
+    // ★거부는 오류가 아니라 '이미 다른 곳에서 처리됨'이다 — 서버의 기존 기록을 로컬로 끌어와
+    //   화면을 맞추고, throw하지 않고 아래 작업보고 단계로 계속 간다(throw하면 보고가 통째로 빠진다).
+    try {
+      const row = await dbInsertPick({ date: d.date, farm: d.farm, type: '배출', qty: d.qty, driver: d.driver, car: d.car || '', note: '[자동]', dispatch_id: d.id, auto: true, target_type: d.target_type || '농가' });
+      if (row) picks.unshift(row);
+    } catch (e) {
+      if (!_isUniqueViolation(e)) throw e;   // 네트워크 등 그 밖의 오류는 지금처럼 호출부가 알린다
+      const rows = await sbGet('picks', 'dispatch_id=eq.' + d.id + '&type=eq.배출');
+      (Array.isArray(rows) ? rows : []).forEach(r => { if (r && !picks.some(p => p.id === r.id)) picks.unshift(r); });
+      showToast('이미 다른 곳에서 완료 처리된 배차입니다');
+    }
   }
   // 중복 방지 조건(기사·농가·날짜)은 addDisp·기존 updDisp와 똑같이 둔다.
   if (!reports.find(r => r.driver === d.driver && r.farm === d.farm && r.date === d.date)) {
