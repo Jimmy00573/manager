@@ -2474,6 +2474,23 @@ async function _uncompleteDispatch(id) {
 
 async function updDisp(id, s) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  // ★'↩ 되돌리기'에만 확인창 — 되돌리기는 '아직 안 나간 것으로 되돌림'이지 '취소'가 아니다.
+  //   2026-09-19 부옥선 건처럼 중복 등록된 배차를 되돌리면, 배출 기록(picks)만 지워지고
+  //   배차는 '배출 대기'로 남아 이튿날 목록에 다시 뜬다. 잘못 등록한 건이면 [삭제]가 맞다 —
+  //   무엇이 바뀌는지와 그 차이를 여기서 알려 준다.
+  //   ★'배출완료'(✅ 완료)는 현장에서 연달아 누르는 버튼이라 확인창을 붙이지 않는다(기존 그대로).
+  //   ★취소하면 DB·화면·picks 전부 그대로다 — 저장 try에 들어가기 전에 돌아간다.
+  if (s === '배차완료') {
+    const d = dispatches.find(x => x.id === id);
+    if (!d) return;
+    const q = fmtN(Number(d.qty) || 0);
+    const late = (d.date && d.date < td())
+      ? `\n\n⚠ 배차일이 지나서 '지난 배송 예정' 경고에 잡힙니다.` : '';
+    const msg = `${d.farm} · ${String(d.date || '').slice(5).replace('-', '/')} · ${d.driver}\n${d.ctype || '-'} ${q}개\n\n`
+      + `배출 기록(콘테이너 ${q}개)이 지워지고\n'배출 대기'로 돌아갑니다.\n\n`
+      + `※ 잘못 등록한 배차라면 되돌리기 말고 [삭제]를 쓰세요.${late}`;
+    if (!(await showConfirmEdit('배출 되돌리기', msg))) return;
+  }
   try {
     await dbUpdateDispatch(id, { status: s });
     dispatches = dispatches.map(d => d.id === id ? { ...d, status: s } : d);
@@ -3035,7 +3052,7 @@ function showConfirmEdit(title, msg = '') {
             <div style="width:36px;height:36px;border-radius:50%;background:#DBEAFE;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">✏️</div>
             <div>
               <div style="font-weight:700;font-size:15px;color:#1E3A5F">${esc(title)}</div>
-              ${msg ? `<div style="font-size:12px;color:#3B82F6;margin-top:2px">${esc(msg)}</div>` : ''}
+              ${msg ? `<div style="font-size:12px;color:#3B82F6;margin-top:2px;white-space:pre-line;line-height:1.55">${esc(msg)}</div>` : ''}
             </div>
           </div>
         </div>
