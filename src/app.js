@@ -6661,7 +6661,7 @@ async function _invFetch(track, token) {
     //   재고 탭 재진입이 '마지막 조회 성공'으로 보고 재사용해(loadAndRenderInv의 _baseOk) 틀린 상태가 굳는다.
     //   선과 잔여를 계산하는 세 조회(입고·선과 처리·선과 결과)만은 실패하면 성공으로 치지 않는다.
     let critFail = false;
-    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds, allOutbounds, expiryRows, lowRows] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, allOutbounds, expiryRows, lowRows] = await Promise.all([
       // ★이 둘은 db.js에서 오류를 안 삼키고 던지므로 라벨을 여기서 붙인다.
       //   (내부에서 catch하는 함수들은 db.js 쪽에 _sbLoadFail이 들어가 있다 — 두 번 붙이지 말 것)
       track(dbGetInbounds()).catch(() => { _loadFail('입고 기록'); critFail = true; return []; }),
@@ -6674,8 +6674,8 @@ async function _invFetch(track, token) {
       track(sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status')).catch(() => { _loadFail('선과 결과'); critFail = true; return []; }),
       track(dbGetJuiceBatches()).catch(() => []),
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
-      //   주스분(현재 366건)은 아직 한도 아래지만 같은 테이블이라 같이 옮겨 둔다.
-      track(sbGetAll('outbound_records', 'source_type=eq.juice&is_void=eq.false&order=date.desc')).catch(() => { _loadFail('주스 출고'); return []; }),
+      //   ★주스분만 따로 받던 조회는 2026-09-22에 지웠다 — 받아만 놓고 읽는 곳이 0이었고(grep),
+      //     같은 행이 이 전량 조회에 이미 들어 있다. 주스 화면도 invOutbounds에서 골라 쓴다.
       track(sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc')).catch(() => { _loadFail('출고 기록'); return []; }),
       // 주스 설정 2건 — 예전엔 위가 다 끝난 뒤 하나씩 기다렸다. 서로·위와 무관해 같이 보낸다(실패 시 직전 값 유지는 아래 그대로).
       track(sbGet('settings', 'key=eq.juice_expiry_days')).catch(() => SETTING_FAIL),
