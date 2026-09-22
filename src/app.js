@@ -6657,17 +6657,21 @@ async function _invFetch(track, token) {
     // 품목 분류: 부팅이 받는 중이면 기다렸다가, 제대로 받았으면 다시 받지 않는다(null = 이번엔 대입 안 함).
     const catSysP = (_catSysBootP || Promise.resolve(null)).then(() => _catSysOk ? null : loadCategorySystem());
     const SETTING_FAIL = null;   // 설정 조회 실패 표시 — sbGet은 성공하면 항상 배열이라 null과 안 겹친다
+    // ★2026-09-22 사고: 실패를 삼켜 빈 배열을 넣고도 아래에서 _invLoadOk를 켜 버렸다. 그러면
+    //   재고 탭 재진입이 '마지막 조회 성공'으로 보고 재사용해(loadAndRenderInv의 _baseOk) 틀린 상태가 굳는다.
+    //   선과 잔여를 계산하는 세 조회(입고·선과 처리·선과 결과)만은 실패하면 성공으로 치지 않는다.
+    let critFail = false;
     const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, juiceOutbounds, allOutbounds, expiryRows, lowRows] = await Promise.all([
       // ★이 둘은 db.js에서 오류를 안 삼키고 던지므로 라벨을 여기서 붙인다.
       //   (내부에서 catch하는 함수들은 db.js 쪽에 _sbLoadFail이 들어가 있다 — 두 번 붙이지 말 것)
-      track(dbGetInbounds()).catch(() => { _loadFail('입고 기록'); return []; }),
-      track(dbGetProcessings()).catch(() => { _loadFail('선과 처리 기록'); return []; }),
+      track(dbGetInbounds()).catch(() => { _loadFail('입고 기록'); critFail = true; return []; }),
+      track(dbGetProcessings()).catch(() => { _loadFail('선과 처리 기록'); critFail = true; return []; }),
       track(dbGetUnsorted(null)).catch(() => []),   // 0행 레거시 표 — 실패해도 영향 없어 라벨 없음
       track(dbGetSorted(null)), track(dbGetWaste(null)),
       track(loadSizeConfig()), catSysP,
       track(dbGetInventoryRecords()).catch(() => []),
       track(dbGetJuiceMasters()).catch(() => []),
-      track(sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status')).catch(() => { _loadFail('선과 결과'); return []; }),
+      track(sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status')).catch(() => { _loadFail('선과 결과'); critFail = true; return []; }),
       track(dbGetJuiceBatches()).catch(() => []),
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
       //   주스분(현재 366건)은 아직 한도 아래지만 같은 테이블이라 같이 옮겨 둔다.
@@ -6720,7 +6724,7 @@ async function _invFetch(track, token) {
         if (token === _invLoadToken) _invSrMap = Object.fromEntries(srRows.map(sr => [sr.id, sr]));
       } catch(e) { if (token === _invLoadToken) _invSrMap = {}; }
     } else { _invSrMap = {}; }
-    if (token === _invLoadToken) _invLoadOk = true;
+    if (token === _invLoadToken && !critFail) _invLoadOk = true;
   } catch(e) { console.error('재고 로드 오류:', e); _loadFail('재고 화면'); }   // ★여기까지 오면 재고 화면 전체가 빈 상태 — 콘솔만으론 아무도 모른다
 }
 
