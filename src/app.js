@@ -170,7 +170,8 @@ let juiceLowThreshold = JUICE_LOW_DEFAULT;
 let _obHistFilter = {};
 // 거래내역 쪽 나누기 — 한 묶음이 2,888줄(전체 기간 5,050줄)이라 한 번에 그리면 폰에서 느리다(2026-09-22 실측).
 //   숫자(합계·묶음 소계)는 filtered/grpRows 전체로 계산하므로 그리는 줄만 줄인다. CSV는 별도 함수라 무관.
-const OBHIST_PER = 200;          // 거래 행 기준
+//   기본 기간이 '오늘 하루'라 보통 1~7쪽이다(하루 출고 80~350건).
+const OBHIST_PER = 50;           // 거래 행 기준
 let _obHistPage = 1;
 let _obHistSig = '';             // 필터·묶음 기준 지문 — 바뀌면 1쪽으로 되돌린다(호출부 12곳을 안 고치려고 여기서 본다)
 let _matrixBatchRegistry = {};
@@ -12538,10 +12539,10 @@ function renderOutboundHistory() {
   // ==================================================================
   // 1. 필터 상태 초기화 (_obHistFilter, 전역이라 화면을 나갔다 와도 유지)
   // ==================================================================
-  // 첫 진입에만 이번 달 1일~오늘로 잡는다. 이후에는 사용자가 고른 값을 그대로 쓴다.
+  // 첫 진입에만 오늘 하루로 잡는다(2026-09-22 Jimmy 결정 — 이번 달로 두면 3,300줄이 넘었다).
+  //   이후에는 사용자가 고른 값을 그대로 쓴다. ★td()는 로컬(KST) 날짜다 — toISOString은 UTC라 하루 밀린다.
   if (!_obHistFilter.initialized) {
-    const now = new Date();
-    _obHistFilter.from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    _obHistFilter.from = td();
     _obHistFilter.to = td();
     _obHistFilter.prod = '';
     _obHistFilter.partner = '';
