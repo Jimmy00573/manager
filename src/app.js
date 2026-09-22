@@ -389,6 +389,8 @@ async function saveProductWeights() {
 //   ★추가 조건: created_at 컬럼이 있어야 한다. 없는 테이블을 넣으면 조회가 실패해 undefined가 되고,
 //     '판단 보류'로 조용히 넘어가 감지가 안 되는데도 눈에 띄지 않는다.
 //     아래 13개는 전부 created_at(default now(), NULL 0건)이 있는 것을 DB에서 확인했다.
+//   ★여기에 표를 더하면 DB 함수 sync_latest()에도 같이 더할 것(_syncFetchLatest가 그 함수를 쓴다).
+//     빠뜨려도 그 표만 개별 조회로 폴백되므로 감지 자체는 된다 — 요청이 1건 늘 뿐이다.
 const SYNC_TABLES = [
   'audit_logs', 'outbound_records', 'sorting_results', 'inbound_records',
   'dispatches',                                           // 수송 — 배차
@@ -397,7 +399,9 @@ const SYNC_TABLES = [
   'juice_batches',                                        // 주스·청 배치
   'processing_records'                                    // 선과·파치 처리 기록
 ];
-const SYNC_POLL_MS = 60000;
+// 확인 간격. 예전엔 표마다 따로 물어 13요청이라 60초로 뒀다 — 지금은 sync_latest()로 1요청이라
+// 20초로 줄였다. 남이 고친 내용이 최대 1분 늦게 보이던 것이 20초로 줄어든다.
+const SYNC_POLL_MS = 20000;
 let _lastLoadedAt = null;        // 데이터 로드 완료 시각(표시용)
 let _syncBaseline = {};          // 테이블별 '마지막으로 확인한' created_at — 이보다 새 것이 있으면 변경
 let _syncBannerOn = false;
@@ -418,9 +422,35 @@ function _loadFail(label) {
 
 // 테이블별 최신 created_at 1건. 실패는 undefined로 두고 조용히 넘어감(앱이 멈추면 안 됨).
 // tables(선택): 볼 테이블 — 안 넘기면 SYNC_TABLES(폴링·기준선, 예전과 같음). 재고 탭 재진입 확인이 3개만 넘겨 쓴다.
+// ★DB 함수 sync_latest()가 표별 max(created_at)을 한 덩이로 준다 — 13번 묻던 것이 POST 1번이 됐다.
+//   그래서 20초마다 돌려도 부담이 없다. 값 형식은 개별 조회의 created_at과 같은 문자열(행이 없으면 null).
+//   함수가 없거나 응답이 이상하면 아래 개별 조회로 폴백한다 — 어떤 경우에도 감지는 계속된다.
+let _syncRpcOff = false;   // 404(함수 없음) — 이 세션 동안 RPC를 건너뛴다(20초마다 헛요청하지 않게)
 async function _syncFetchLatest(tables = SYNC_TABLES) {
   const out = {};
-  await Promise.all(tables.map(async t => {
+  let miss = tables;               // 개별 조회로 메울 표. RPC가 다 채우면 빈 배열이 된다.
+  if (!_syncRpcOff) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/sync_latest`, {
+        method: 'POST',
+        headers: { ...SB_HEADERS, 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+      if (res.status === 404) _syncRpcOff = true;        // 함수가 없다 — 다시 묻지 않는다
+      else if (res.ok) {
+        const j = await res.json();
+        if (j && typeof j === 'object' && !Array.isArray(j)) {
+          miss = [];
+          for (const t of tables) {
+            if (t in j) out[t] = j[t] ?? null;           // 키가 있으면 그 값(null = 행 없음)
+            else miss.push(t);                           // 함수에 빠진 표 — 그 표만 개별 조회로 메운다
+          }
+        }
+      }
+      // !ok(404 외)·JSON 아님·객체 아님 → miss는 tables 그대로 = 이번 회차만 개별 조회. 다음 회차엔 다시 RPC를 시도한다.
+    } catch (e) { /* 네트워크 오류 등 — 위와 같이 이번 회차만 개별 조회 */ }
+  }
+  await Promise.all(miss.map(async t => {
     try {
       const rows = await sbGet(t, 'select=created_at&order=created_at.desc&limit=1');
       out[t] = (Array.isArray(rows) && rows[0]?.created_at) || null;
