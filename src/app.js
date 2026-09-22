@@ -311,10 +311,14 @@ const _MODAL_ESC_CLOSE = {
 };
 // 자체 ESC/정리를 가진 별도 오버레이(모달-bg 아님) — 열려 있으면 그쪽 ESC가 우선, 공통 핸들러는 양보(중첩 대응)
 const _SELF_ESC_OVERLAYS = ['modal-confirm-danger', 'modal-confirm-edit', 'modal-spe', 'modal-sorted-ib-detail'];
+// '지금 뭔가 열려 있나' 판정 — ESC 닫기와 묵은 탭 새로고침(_staleReloadCheck)이 같은 기준을 봐야 한다.
+const _selfEscOverlayOpen = () => _SELF_ESC_OVERLAYS.some(id => document.getElementById(id));
+const _openModalBgs = () => Array.from(document.querySelectorAll('.modal-bg')).filter(m =>
+  m.style.display !== 'none' && getComputedStyle(m).display !== 'none');
+
 function _escCloseTopModal() {
-  if (_SELF_ESC_OVERLAYS.some(id => document.getElementById(id))) return;
-  const open = Array.from(document.querySelectorAll('.modal-bg')).filter(m =>
-    m.style.display !== 'none' && getComputedStyle(m).display !== 'none');
+  if (_selfEscOverlayOpen()) return;
+  const open = _openModalBgs();
   if (!open.length) return;
   let top = open[0], topZ = -1;
   open.forEach(m => {
@@ -577,6 +581,36 @@ function _syncStart() {
   clearInterval(_syncAgeTimer);
   _syncAgeTimer = setInterval(() => { if (!_syncBannerOn) _syncRenderBar(); }, 60000);
 }
+
+// ★오래 열어 둔 탭은 다시 볼 때 새로 뜬다.
+//   2026-09-22 사고: 9/11경부터 열려 있던 탭이 9/9~9/12 시점의 재고·선과를 그대로 보여 줘서
+//   이미 선과가 끝난 입고가 미선과로 떴다. 재고 탭에 머무는 동안은 데이터를 다시 받지 않고,
+//   변경 감지는 배너만 띄우므로 배너를 닫아 두면 낡은 화면이 그대로 남는다.
+//   1시간은 Jimmy 결정. ★입력 중일 수 있으면 절대 새로고침하지 않는다 — 적은 내용이 날아가는 게 더 나쁘다.
+//   걸러진 경우엔 아무것도 하지 않는다. 상단 바의 빨간 '몇 시간 전 갱신'이 이미 안내다.
+const STALE_RELOAD_MIN = 60;
+const STALE_INPUT_QUIET_MIN = 30;   // 최근 입력이 이 안에 있으면 손대지 않는다
+let _lastUserInputAt = 0;
+let _staleReloading = false;        // 이벤트가 연달아 와도 reload는 한 번만
+// capture로 받는다 — 중간에서 stopPropagation하는 폼이 있어도 기록은 남아야 한다.
+document.addEventListener('input',  () => { _lastUserInputAt = Date.now(); }, true);
+document.addEventListener('change', () => { _lastUserInputAt = Date.now(); }, true);
+
+function _staleReloadCheck() {
+  if (_staleReloading) return;
+  if (!_lastLoadedAt) return;                                            // 부팅 완료 전
+  if (document.visibilityState !== 'visible') return;
+  if (Date.now() - _lastLoadedAt.getTime() < STALE_RELOAD_MIN * 60000) return;
+  if (_selfEscOverlayOpen() || _openModalBgs().length) return;           // 창이 열려 있다
+  if (_lastUserInputAt && Date.now() - _lastUserInputAt < STALE_INPUT_QUIET_MIN * 60000) return;
+  const ae = document.activeElement;                                     // 입력칸에 커서가 있다
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;
+  _staleReloading = true;
+  location.reload();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') _staleReloadCheck(); });
+window.addEventListener('focus', _staleReloadCheck);
+window.addEventListener('pageshow', _staleReloadCheck);   // 뒤로가기 복원(persisted)도 같은 판정을 거친다
 
 // ── 앱 초기화
 async function initApp() {
