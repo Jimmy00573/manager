@@ -168,6 +168,11 @@ let juiceExpiryDays = 90;
 const JUICE_LOW_DEFAULT = 500;
 let juiceLowThreshold = JUICE_LOW_DEFAULT;
 let _obHistFilter = {};
+// 거래내역 쪽 나누기 — 한 묶음이 2,888줄(전체 기간 5,050줄)이라 한 번에 그리면 폰에서 느리다(2026-09-22 실측).
+//   숫자(합계·묶음 소계)는 filtered/grpRows 전체로 계산하므로 그리는 줄만 줄인다. CSV는 별도 함수라 무관.
+const OBHIST_PER = 200;          // 거래 행 기준
+let _obHistPage = 1;
+let _obHistSig = '';             // 필터·묶음 기준 지문 — 바뀌면 1쪽으로 되돌린다(호출부 12곳을 안 고치려고 여기서 본다)
 let _matrixBatchRegistry = {};
 let invSizeConfig = {};
 let inventoryRecords = [];
@@ -1348,11 +1353,12 @@ function selCt(v) {
   if (el) { el.focus(); el.select(); }
 }
 
-function mkPg(cid, total, cur, fn) {
-  const pages = Math.ceil(total / PER) || 1;
+// per: 한 쪽에 몇 줄인지. 안 넘기면 기존처럼 PER(7) — 기존 호출부(disp-pg·disp2-pg·rep-pg) 동작은 그대로다.
+function mkPg(cid, total, cur, fn, per = PER) {
+  const pages = Math.ceil(total / per) || 1;
   const el = document.getElementById(cid);
   if (pages <= 1) { el.innerHTML = ''; return; }
-  let h = `<span>${total}건 · ${Math.min((cur - 1) * PER + 1, total)}~${Math.min(cur * PER, total)}</span><div class="pg-btns">`;
+  let h = `<span>${total}건 · ${Math.min((cur - 1) * per + 1, total)}~${Math.min(cur * per, total)}</span><div class="pg-btns">`;
   h += `<button class="pg-btn" onclick="${fn}(${cur - 1})" ${cur === 1 ? 'disabled' : ''}>◀</button>`;
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || Math.abs(i - cur) <= 1) h += `<button class="pg-btn ${i === cur ? 'cur' : ''}" onclick="${fn}(${i})">${i}</button>`;
@@ -1361,6 +1367,7 @@ function mkPg(cid, total, cur, fn) {
   h += `<button class="pg-btn" onclick="${fn}(${cur + 1})" ${cur === pages ? 'disabled' : ''}>▶</button></div>`;
   el.innerHTML = h;
 }
+function goObHistPage(p) { _obHistPage = p; renderOutboundHistory(); }
 function goDP(p) { _dp = p; renderDDash(); }
 function goD2P(p) { _d2p = p; renderDisp(); }
 function goRP(p) { _rp = p; renderRep(); }
@@ -12714,11 +12721,26 @@ function renderOutboundHistory() {
   const groups = {};
   filtered.forEach(t => { const k = t[groupField]||'미분류'; if(!groups[k]) groups[k]=[]; groups[k].push(t); });
 
+  // ★쪽 나누기 — 묶음 순서 그대로 거래 행을 세어 이번 쪽에 드는 행만 그린다(합계·소계는 전체 기준 그대로).
+  //   필터·묶음 기준이 바뀌면 1쪽으로 되돌린다. 지문으로 보는 이유는 필터를 바꾸는 onchange 12곳을 안 건드리려는 것.
+  //   편집·취소 뒤 다시 그릴 때는 지문이 같으므로 보던 쪽이 유지된다(행이 줄어 범위를 넘으면 마지막 쪽).
+  const _obSig = JSON.stringify([_obHistFilter.from, _obHistFilter.to, _obHistFilter.prod,
+                  _obHistFilter.partner, _obHistFilter.src, _obHistFilter.group, _obHistFilter.kind]);
+  if (_obSig !== _obHistSig) { _obHistSig = _obSig; _obHistPage = 1; }
+  const _obPages = Math.ceil(filtered.length / OBHIST_PER) || 1;
+  _obHistPage = Math.min(Math.max(_obHistPage, 1), _obPages);
+  const _pFrom = (_obHistPage - 1) * OBHIST_PER, _pTo = _pFrom + OBHIST_PER;
+  let _seen = 0;
+
   let bodyHtml = '';
   if (!filtered.length) {
     bodyHtml = '<tr><td colspan="7" style="padding:32px;text-align:center;color:#9CA3AF;font-size:14px">거래 내역이 없습니다.</td></tr>';
   } else {
     Object.entries(groups).sort(([a],[b]) => a.localeCompare(b,'ko')).forEach(([key, grpRows]) => {
+      const gStart = _seen; _seen += grpRows.length;
+      if (_seen <= _pFrom || gStart >= _pTo) return;                 // 이번 쪽과 안 겹치는 묶음
+      const rFrom = Math.max(0, _pFrom - gStart);                    // 0보다 크면 앞 쪽에서 이어지는 묶음
+      const rTo   = Math.min(grpRows.length, _pTo - gStart);
       const gCT  = grpRows.filter(t=>t.unit==='CT').reduce((s,t)=>s+t.qty, 0);
       const gBt  = grpRows.filter(t=>t.unit==='병').reduce((s,t)=>s+t.qty, 0);
       const gIn  = grpRows.filter(t=>t.kind==='in').reduce((s,t)=>s+t.amount, 0);
@@ -12729,9 +12751,9 @@ function renderOutboundHistory() {
         gOut>0 ? `매출 <span style="color:#DC2626;font-weight:600">+${fmtN(Math.round(gOut))}원</span>` : ''
       ].filter(Boolean).join(' · ');
       bodyHtml += `<tr style="background:#F3F4F6"><td colspan="7" style="padding:6px 10px;font-weight:600;font-size:13px">
-        ${esc(key)} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub}${amtParts?' · '+amtParts:''})</span>
+        ${esc(key)}${rFrom > 0 ? ` <span style="color:#6B7280;font-weight:normal;font-size:12px">(이어서)</span>` : ''} <span style="color:#6B7280;font-weight:normal;font-size:12px">(${grpRows.length}건 · ${sub}${amtParts?' · '+amtParts:''})</span>
       </td></tr>`;
-      bodyHtml += grpRows.map(txRowHtml).join('');
+      bodyHtml += grpRows.slice(rFrom, rTo).map(txRowHtml).join('');
     });
   }
 
@@ -12815,7 +12837,10 @@ function renderOutboundHistory() {
         </tr></thead>
         <tbody>${bodyHtml}</tbody>
       </table></div>
+      <div class="pagination" id="obhist-pg"></div>
     </div>`;
+  // 전체가 한 쪽에 들어가면 mkPg가 알아서 버튼을 비운다(기존 동작).
+  mkPg('obhist-pg', filtered.length, _obHistPage, 'goObHistPage', OBHIST_PER);
 }
 
 // ── 수동 거래 등록 (정산 참고용, 재고 무관) ─────────────────────────
