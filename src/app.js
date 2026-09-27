@@ -143,6 +143,8 @@ const td = () => ymd(new Date());
 // 'YYYY-MM-DD'의 전날. ★로컬 파싱('T00:00:00')으로 만든다 — toISOString은 UTC로 밀려 하루 어긋난다
 //   (moveSummaryDate가 쓰는 방식과 같다). 수확 전날 = 콘테이너를 미리 갖다 두는 날.
 function _dayBefore(ds) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() - 1); return ymd(d); }
+// 'YYYY-MM-DD'의 다음 날 — _dayBefore와 짝(같은 로컬 파싱). 월말·연말도 Date가 넘겨 준다(9/30 → 10/1).
+function _dayAfter(ds) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + 1); return ymd(d); }
 function buildSeqByDate(srRows) {
   const sorted = [...srRows].sort((a,b) =>
     (a.sorting_date||'').localeCompare(b.sorting_date||'')
@@ -314,6 +316,7 @@ const _MODAL_ESC_CLOSE = {
   'modal-juicelow': 'closeJuiceLowModal',
   'modal-pw-change': 'closePwChangeModal',
   'modal-srt-ratio': 'closeSortingRatioModal',
+  'modal-harvest': 'closeHarvestModal',
 };
 // 자체 ESC/정리를 가진 별도 오버레이(모달-bg 아님) — 열려 있으면 그쪽 ESC가 우선, 공통 핸들러는 양보(중첩 대응)
 const _SELF_ESC_OVERLAYS = ['modal-confirm-danger', 'modal-confirm-edit', 'modal-spe', 'modal-sorted-ib-detail'];
@@ -5508,21 +5511,34 @@ function renderStats() {
 }
   
 let _editHarvestId = null;
+// 수확일정 창(modal-harvest)의 모드 — null이면 기존 '수정', 값이 있으면 '새 차수 등록'(값 = 이전 차수 id).
+//   ★창을 닫는 모든 길(✕·취소·ESC·저장 성공)과 수정 창 열기에서 null로 되돌린다 —
+//     안 그러면 다음에 ✏️를 눌렀을 때 update 대신 insert로 새 행이 생긴다.
+let _hvNewRoundFrom = null;
+let _hvNewRoundBusy = false;   // 저장 두 번 눌림 → 같은 차수 두 줄 방지
+// 창 칸 채우기 — 수정(openHarvestEdit)과 새 차수(startNextRound)가 같이 쓴다. v = { date, end_date, farm, field, item, note, round }
+function _mhFill(v) {
+  document.getElementById('mh-date').value = v.date || '';
+  document.getElementById('mh-end').value = v.end_date || '';
+  const mhf = document.getElementById('mh-farm');
+  mhf.innerHTML = '<option value="">선택</option>';
+  farms.forEach(f => mhf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+  mhf.value = v.farm || '';
+  fsSync('mh-farm');   // 검색형 입력칸 표시도 이 값으로
+  _fillFieldSel('mh', v.farm, v.field);
+  document.getElementById('mh-item').value = v.item || '';
+  document.getElementById('mh-note').value = v.note || '';
+  document.getElementById('mh-round').value = v.round || 1;
+}
+function _mhSetTitle(t) { const el = document.querySelector('#modal-harvest .modal-title'); if (el) el.textContent = t; }
+function closeHarvestModal() { _hvNewRoundFrom = null; CM('harvest'); }
 function openHarvestEdit(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const h = harvests.find(x => x.id === id); if (!h) return;
   _editHarvestId = id;
-  document.getElementById('mh-date').value = h.date || '';
-  document.getElementById('mh-end').value = h.end_date || '';
-  const mhf = document.getElementById('mh-farm');
-  mhf.innerHTML = '<option value="">선택</option>';
-  farms.forEach(f => mhf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
-  mhf.value = h.farm || '';
-  fsSync('mh-farm');   // 검색형 입력칸 표시도 이 값으로
-  _fillFieldSel('mh', h.farm, h.field);
-  document.getElementById('mh-item').value = h.item || '';
-  document.getElementById('mh-note').value = h.note || '';
-  document.getElementById('mh-round').value = h.round || 1;
+  _hvNewRoundFrom = null;
+  _mhSetTitle('✏️ 수확일정 수정');
+  _mhFill(h);
   document.getElementById('modal-harvest').style.display = 'flex';
 }
 async function saveHarvestEdit() {
@@ -5531,6 +5547,7 @@ async function saveHarvestEdit() {
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
   const data = { date, end_date: document.getElementById('mh-end').value || null, farm, field: gv('mh-field') || null, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
+  if (_hvNewRoundFrom != null) return _hvSaveNewRound(data);   // 새 차수 모드 — 아래 수정 흐름은 타지 않는다
   const prev = harvests.find(h => h.id === _editHarvestId);   // 변경 전 값 — 배차 동기화 판단에만 쓴다
   try {
     await dbUpdateHarvest(_editHarvestId, data);
@@ -5639,19 +5656,51 @@ async function setHarvestStatus(id, status) {
     }
   }
 }
-// 수확 차수 이어가기 — 재등록 없이 같은 농가·품목 round+1 새 harvest(수확중, 오늘). 이력 보존.
-async function startNextRound(id) {
+// 수확 차수 이어가기 — 수확일정 창을 '새 차수' 모드로 연다(바로 저장하지 않는다). 이력 보존.
+//   ★예전엔 누르는 즉시 오늘·수확중으로 만들었다 — 실제 다음 차수는 대개 내일~3일 뒤라 매번 수정 창에서
+//     날짜를 고쳤고, 미래 차수가 오늘 '수확중'으로 잡혀 다가오는 수확·외근 인원까지 틀어졌다.
+//   기본값: 시작일 내일(로컬) · 농가·밭·품목은 이전 차수 그대로 · 종료일·메모 빈칸. 저장은 saveHarvestEdit → _hvSaveNewRound.
+function startNextRound(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
   const h = harvests.find(x => x.id === id);
   if (!h) return;
   // 같은 농가의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
   const nextRound = harvests.filter(x => x.farm === h.farm).reduce((m, x) => Math.max(m, x.round || 1), 0) + 1;
+  _editHarvestId = null;
+  _hvNewRoundFrom = id;
+  _mhSetTitle(`＋ ${nextRound}차 수확 등록`);
+  _mhFill({ date: _dayAfter(td()), end_date: '', farm: h.farm, field: h.field, item: h.item, note: '', round: nextRound });
+  document.getElementById('modal-harvest').style.display = 'flex';
+}
+// 새 차수 저장(insert). 시작일이 오늘 이하면 이미 진행 중 → '수확중', 미래면 '수확전'.
+//   밭 필수 규칙은 등록 폼(addHarvest)과 같다. 저장 뒤 미래 차수면 배송 예약 제안(_hvOfferDispatch).
+async function _hvSaveNewRound(data) {
+  if (_fieldRequiredMiss('mh')) { alert('밭을 선택하세요'); return; }
+  if (_hvNewRoundBusy) return;
+  _hvNewRoundBusy = true;
   try {
-    const row = await dbInsertHarvest({ date: td(), farm: h.farm, item: h.item || null, round: nextRound, status: '수확중', is_final: false });
+    const status = data.date <= td() ? '수확중' : '수확전';
+    const row = await dbInsertHarvest({ ...data, status, is_final: false });
     harvests.push(row);
+    closeHarvestModal();
     renderCal();
-    showToast(`${h.farm} ${nextRound}차 수확 시작`);
-  } catch (e) { alert('오류: ' + e.message); }
+    showToast(`${data.farm} ${data.round}차 수확 등록`);
+    await _hvOfferDispatch(data.farm, data.date, data.field);
+  } catch (e) { alert('오류: ' + e.message); }   // 실패하면 창과 모드를 그대로 둔다(다시 저장 가능)
+  finally { _hvNewRoundBusy = false; }
+}
+// 수확 저장 뒤 '콘테이너 배송 예약' 제안 — addHarvest(등록 폼)와 _hvSaveNewRound(새 차수)가 같이 쓴다.
+// ★여기부터는 '제안'일 뿐 — 저장은 호출부에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
+//   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).
+// ★그 농가·그 수확일로 잡힌 배차가 이미 있으면 묻지 않는다 — 배차 등록 쪽(addDisp)이
+//   수확 일정이 있는지 확인하는 것과 대칭이다. 둘이 서로 확인해야 배차→수확→배차 제안이 오가지 않는다.
+//   ★showConfirmEdit은 맨 뒤 — 앞에 두면 배차가 있어도 확인창이 떠버린다.
+// 보유는 getFCS(현황판 '처리필요'와 같은 헬퍼) 그대로 — 음수면 음수로 보인다(확인 필요 신호).
+async function _hvOfferDispatch(farm, date, field) {
+  const md = s => { const [, m, d] = s.split('-'); return `${+m}/${+d}`; };
+  if (date > td() && _dispForHarvest(farm, date).cnt === 0 && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (현재 보유 ${fmtN(getFCS(farm).hold)}개 · 배송일 기본 ${md(_dayBefore(date))})`)) {
+    _hvGoDispatch(farm, date, field);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크·밭까지 채운다
+  }
 }
 
 // 수확 전체 종료 — is_final=true(더 이상 차수 추가 불가). 확인 모달로 실수 방지.
@@ -5706,14 +5755,7 @@ async function addHarvest() {
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
     renderCal();
-    // ★여기부터는 '제안'일 뿐 — 저장은 위에서 이미 끝났다. 취소해도 일정은 그대로 남는다.
-    //   미래 일정일 때만 묻는다(오늘·과거는 이미 진행 중이라 미리 갖다 둘 게 없다).
-    // ★그 농가·그 수확일로 잡힌 배차가 이미 있으면 묻지 않는다 — 배차 등록 쪽(addDisp)이
-    //   수확 일정이 있는지 확인하는 것과 대칭이다. 둘이 서로 확인해야 배차→수확→배차 제안이 오가지 않는다.
-    //   ★showConfirmEdit은 맨 뒤 — 앞에 두면 배차가 있어도 확인창이 떠버린다.
-    if (date > td() && _dispForHarvest(farm, date).cnt === 0 && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (배송일 기본 ${_dayBefore(date)})`)) {
-      _hvGoDispatch(farm, date, field);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크·밭까지 채운다
-    }
+    await _hvOfferDispatch(farm, date, field);   // 미래 일정 + 배차 없음이면 배송 예약 제안(조건·순서는 함수 주석)
   } catch (e) { alert('오류: ' + e.message); }
 }
 
