@@ -4251,18 +4251,26 @@ const _hvStFg    = { 수확전: '#C05800', 수확중: '#1565C0', 수확완료: '
 // ★모든 읽기·쓰기는 '그 카드의 날짜(dStr)'를 받는다 — 사용자가 날짜를 고르는 일은 없다.
 const _hvPlanN = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : null; };   // 0·음수·빈칸·숫자아님 = 미입력(null)
 const _HV_PLAN_KEYS = ['am', 'amc', 'pm', 'pmc'];
+// 오전·오후 원물 수거 담당(기사 이름 문자열) — 같은 날짜 객체의 amd/pmd. ★숫자 키와 따로 둔다:
+//   _hvPlanSum(날짜 머리 합계)은 _HV_PLAN_KEYS만 더하므로 이름이 합계에 섞이지 않는다.
+//   ★표시 전용 계획이다 — 배차·원물 입고의 기사 칸, 외근 인원(_tripDriversOn)과 잇지 않는다.
+const _HV_PLAN_DRV_KEYS = ['amd', 'pmd'];
 // 그 날짜의 계획 객체(없으면 null). plan_by_date가 null·배열·이상한 값이어도 터지지 않게.
 function _hvPlanDay(h, dStr) {
   const m = h && h.plan_by_date;
   const d = (m && typeof m === 'object' && dStr) ? m[dStr] : null;
   return (d && typeof d === 'object') ? d : null;
 }
-function _hvPlanHas(p) { return !!(p && (p.am || p.pm || p.amc || p.pmc)); }
-// '오전 1차·빈콘 20 / 오후 2차' — 값 없는 항목은 빠지고, 넷 다 없으면 ''
+function _hvPlanHas(p) { return !!(p && (p.am || p.pm || p.amc || p.pmc || p.amd || p.pmd)); }
+// '오전 1차·빈콘 20 양성윤 / 오후 2차' — 반쪽마다 [차량] [빈콘] [담당] 순, 값 없는 항목은 빠지고, 다 없으면 ''
+//   ★담당이 없는 날(기존 데이터)·합계 객체는 예전과 글자 하나 안 다르다(담당 조각이 ''라 join에서 빠진다).
 function _hvPlanText(p) {
   if (!p) return '';
-  const half = (cars, cont) => [cars ? `${fmtN(cars)}차` : '', cont ? `빈콘 ${fmtN(cont)}` : ''].filter(Boolean).join('·');
-  const am = half(p.am, p.amc), pm = half(p.pm, p.pmc);
+  const half = (cars, cont, drv) => [
+    [cars ? `${fmtN(cars)}차` : '', cont ? `빈콘 ${fmtN(cont)}` : ''].filter(Boolean).join('·'),
+    drv ? String(drv).trim() : ''
+  ].filter(Boolean).join(' ');
+  const am = half(p.am, p.amc, p.amd), pm = half(p.pm, p.pmc, p.pmd);
   return [am && `오전 ${am}`, pm && `오후 ${pm}`].filter(Boolean).join(' / ');
 }
 // 날짜별 합계 — 그 카드에 실제로 보이는 행들(list)의 ★그 날짜 키만★ 더한다(머리 숫자와 아래 행이 어긋나지 않게).
@@ -4368,14 +4376,25 @@ function startHvPlanEdit(el, id, dStr) {
   el.removeAttribute('onclick'); el.removeAttribute('title');   // 편집 중 칸 안을 눌러도 다시 시작하지 않게
   el.style.cursor = 'default';
   const inp = (k, ph) => `<input data-k="${k}" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" placeholder="${ph}">`;
+  // 담당 select — 활성 기사(기사 관리 순서 = drivers 배열 순서). ★저장된 이름이 목록에 없으면(비활성·삭제)
+  //   '이름 (목록에 없음)' 옵션을 붙여 선택해 둔다 — 안 그러면 다른 칸만 고쳐 저장해도 담당이 말없이 지워진다.
+  const drvNames = drivers.filter(d => d.pin_active !== false).map(d => d.name);
+  const sel = k => {
+    const cur = String(p0[k] || '').trim();
+    const extra = cur && !drvNames.includes(cur) ? `<option value="${esc(cur)}">${esc(cur)} (목록에 없음)</option>` : '';
+    return `<select data-d="${k}"><option value="">담당</option>${drvNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}${extra}</select>`;
+  };
   el.innerHTML = `<div class="hv-plan-editor" onclick="event.stopPropagation()">
-      <div class="hvp-row"><span class="hvp-lbl">오전</span>${inp('am', '차량')}<span class="hvp-u">차</span>${inp('amc', '빈콘')}<span class="hvp-u">개</span></div>
-      <div class="hvp-row"><span class="hvp-lbl">오후</span>${inp('pm', '차량')}<span class="hvp-u">차</span>${inp('pmc', '빈콘')}<span class="hvp-u">개</span></div>
+      <div class="hvp-row"><span class="hvp-lbl">오전</span>${inp('am', '차량')}<span class="hvp-u">차</span>${inp('amc', '빈콘')}<span class="hvp-u">개</span>${sel('amd')}</div>
+      <div class="hvp-row"><span class="hvp-lbl">오후</span>${inp('pm', '차량')}<span class="hvp-u">차</span>${inp('pmc', '빈콘')}<span class="hvp-u">개</span>${sel('pmd')}</div>
       <div class="hvp-act"><span class="hvp-date">${esc(calFmtShort(dStr))}</span><button type="button" data-a="cancel">취소</button><button type="button" data-a="save" class="hvp-save">저장</button></div>
     </div>`;
   const ed = el.firstElementChild;
   const ins = {};
   ed.querySelectorAll('input[data-k]').forEach(x => { ins[x.dataset.k] = x; x.value = _hvPlanN(p0[x.dataset.k]) || ''; });   // .value로 주입
+  const sels = {};
+  ed.querySelectorAll('select[data-d]').forEach(x => { sels[x.dataset.d] = x; x.value = String(p0[x.dataset.d] || '').trim(); });
+  const drvOf = v => String(v || '').trim() || null;   // 담당 비교·저장 값(빈칸 = 없음)
   ins.am.focus(); ins.am.select();
   let done = false;
   const restore = () => {
@@ -4392,14 +4411,16 @@ function startHvPlanEdit(el, id, dStr) {
     if (!save) return restore();
     const nv = {};
     _HV_PLAN_KEYS.forEach(k => { nv[k] = _hvPlanN(ins[k].value); });
-    if (_HV_PLAN_KEYS.every(k => nv[k] === (_hvPlanN(p0[k]) || null))) return restore();   // 안 바뀌었으면 저장 없음
-    ed.querySelectorAll('input, button').forEach(x => { x.disabled = true; });
+    _HV_PLAN_DRV_KEYS.forEach(k => { nv[k] = drvOf(sels[k].value); });
+    if (_HV_PLAN_KEYS.every(k => nv[k] === (_hvPlanN(p0[k]) || null))
+      && _HV_PLAN_DRV_KEYS.every(k => nv[k] === drvOf(p0[k]))) return restore();   // 안 바뀌었으면 저장 없음(담당 포함)
+    ed.querySelectorAll('input, select, button').forEach(x => { x.disabled = true; });
     try {
       await _hvPlanPatchDay(id, dStr, day => {
-        // 서버의 그날 객체 위에 숫자 네 칸만 덮는다 — chk(확인 시각) 등 다른 키는 그대로.
+        // 서버의 그날 객체 위에 숫자 네 칸 + 담당 두 칸만 덮는다 — chk(확인 시각) 등 다른 키는 그대로.
         const o = { ...(day || {}) };
-        _HV_PLAN_KEYS.forEach(k => { if (nv[k]) o[k] = nv[k]; else delete o[k]; });
-        return _hvPlanHas(o) ? o : null;   // 숫자가 하나도 안 남으면 그 날짜 키 자체를 지운다(확인 표시도 의미가 없어짐)
+        [..._HV_PLAN_KEYS, ..._HV_PLAN_DRV_KEYS].forEach(k => { if (nv[k]) o[k] = nv[k]; else delete o[k]; });
+        return _hvPlanHas(o) ? o : null;   // 숫자·담당이 하나도 안 남으면 그 날짜 키 자체를 지운다(확인 표시도 의미가 없어짐)
       });
     } catch (e) {
       if (ed.isConnected) restore();

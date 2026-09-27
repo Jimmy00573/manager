@@ -666,3 +666,11 @@ textarea {
 .hv-plan-editor button { font-size: 11px; padding: 3px 9px; border-radius: 5px; border: 1px solid #D1D5DB; background: #fff; color: #374151; cursor: pointer; font-family: inherit; }
 .hv-plan-editor button.hvp-save { background: #1565C0; border-color: #1565C0; color: #fff; }
 @media (max-width: 1024px) { .hv-plan-editor input { font-size: 16px; } .hv-plan-editor button { padding: 5px 11px; } }
+/* 오전·오후 담당 select(줄 끝) — input과 같은 톤. ★줄 폭이 260px보다 좁으면(다가오는 수확 카드 152px 등) 줄 아래로 내린다 —
+   한 줄에 넣으면 숫자 칸이 몇 px로 찌그러진다. 넓은 카드(금일 수확일정·달력 상세)는 같은 줄.
+   방법: basis = max(64px, (260px − 줄 폭) × 999) → 좁으면 basis가 줄보다 커져 다음 줄로 넘어가고, 거기서 줄 폭까지 줄어든다.
+   ★container query(container-type)는 쓰지 말 것 — 편집기의 내용 폭이 0으로 잡혀 카드에서 편집기가 67px로 쪼그라들었다. */
+.hv-plan-editor .hvp-row { flex-wrap: wrap; }
+.hv-plan-editor select { flex: 1.6 1 max(64px, calc((260px - 100%) * 999)); min-width: 0; box-sizing: border-box; padding: 3px 2px; border: 1px solid #1565C0; border-radius: 4px; font-size: 12px; font-family: inherit; outline: none; background: #fff; color: #374151; }
+.hv-plan-editor select:disabled { opacity: .6; }
+@media (max-width: 1024px) { .hv-plan-editor select { font-size: 16px; } }
