@@ -1598,6 +1598,15 @@ function n(id) { return parseInt(document.getElementById(id)?.value) || 0; }
 function clr(...ids) { ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); }
 function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function fmtN(n) { if (n == null) return '-'; return Number(n).toLocaleString('ko-KR'); }
+// 전화번호 → 누르면 바로 거는 링크. href는 숫자만, 화면은 하이픈 형식(01X 3-4-4 · 02 2-3(4)-4 · 그 외 3-3(4)-4).
+//   숫자가 8자리 미만이거나 비었으면 '' — 호출부가 조각을 빼게. 형식에 안 맞는 번호는 숫자만 그대로 보인다.
+function _telLink(tel) {
+  const d = String(tel || '').replace(/\D/g, '');
+  if (d.length < 8) return '';
+  const m = d.startsWith('02') ? /^(02)(\d{3,4})(\d{4})$/.exec(d) : /^(0\d{2})(\d{3,4})(\d{4})$/.exec(d);
+  const txt = m ? `${m[1]}-${m[2]}-${m[3]}` : d;
+  return `<a href="tel:${esc(d)}" style="color:#1565C0;text-decoration:none">${esc(txt)}</a>`;
+}
 function fmtCT(n) {
   if (n == null) return '-';
   const num = Number(n);
@@ -4434,10 +4443,23 @@ function harvestActBtns(h) {
     <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
     <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>`;
 }
+// 금일 수확일정의 연락 줄 '📍 주소 · 📞 전화' — 그날 농가에 가는 사람이 바로 전화·이동하게.
+//   addr은 호출부가 _recAddr(기록)로 넘긴다(고른 밭 우선). 없는 조각은 빼고, 둘 다 없으면 ''.
+//   ★수확 줄(harvestRow)과 배차에서만 온 줄(renderCal) 두 곳이 같이 부른다 — 복붙하지 말 것.
+function _hvContactLine(farm, addr) {
+  const a = (addr || '').trim();
+  const t = _telLink(gf(farm).tel);
+  const parts = [a ? `📍 ${esc(a)}` : '', t ? `📞 ${t}` : ''].filter(Boolean);
+  if (!parts.length) return '';
+  return `<div style="flex:1 1 100%;font-size:11px;color:#6B7280;padding:2px 0;overflow-wrap:anywhere">${parts.join(' · ')}</div>`;
+}
 // planDate = 이 행이 놓인 카드의 날짜(금일 strip=오늘, 달력 상세=고른 날). 주면 그날 계획 줄·확인 버튼이 붙는다.
 //   ★안 주면 계획을 안 그린다 — 농가별 진행 현황의 차수 목록은 '어느 날' 카드가 아니라 어느 날짜 계획을 보여야 할지 정할 수 없다.
-function harvestRow(h, showDate, planDate) {
+// opts.contact = 연락 줄(_hvContactLine)을 붙인다 — 금일 수확일정만. 수확완료·전체 종료 줄은 갈 일이 없어 뺀다.
+//   ★안 넘기면 출력 HTML이 수정 전과 글자 하나 안 틀린다(연락 줄을 변수로 붙이는 이유).
+function harvestRow(h, showDate, planDate, opts = {}) {
   const st = h.status || '수확전';
+  const contact = (opts.contact && !h.is_final && st !== '수확완료') ? _hvContactLine(h.farm, _recAddr(h)) : '';
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${_hvStBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
       ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
@@ -4450,7 +4472,7 @@ function harvestRow(h, showDate, planDate) {
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
             : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}
       <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
-      ${_hvPlanLine(h, planDate, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}
+      ${_hvPlanLine(h, planDate, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}${contact}
     </div>`;
 }
 // ── [화면: 수확·수송 > 수확 캘린더] 월 그리드 + 금일 strip + 등록 폼.
@@ -4502,7 +4524,7 @@ function renderCal() {
         const hEntry = _isHarvestEv(e)
           ? harvests.find(h => h.id === e.id)
           : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
-        if (hEntry) return harvestRow(hEntry, false, todayStr);
+        if (hEntry) return harvestRow(hEntry, false, todayStr, { contact: true });
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
         const item = e.item || '';
@@ -4517,7 +4539,7 @@ function renderCal() {
           <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
           <span class="badge b-warn" style="font-size:10px">수확전</span>
-          <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>
+          <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${_hvContactLine(e.farm, _recAddr(e))}
         </div>`;
       }).join('');
       todayEl.innerHTML =
@@ -4744,8 +4766,6 @@ function renderUpcomingHarvest() {
     const dStr = ymd(d);
     const list = _upcomingHarvestsOn(dStr).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
     const farmSet = new Set(list.map(x => x.farm));
-    let hold = 0;
-    farmSet.forEach(f => { hold += getFCS(f).hold || 0; });   // ★getFCS 재사용 — 현황판 '처리필요'와 같은 헬퍼
     // ★경고 기준(2026-08-21 수정): '그 날짜 배차가 없음'이 아니라 '콘테이너가 아예 없음'.
     //   이전 차수에서 남은 콘테이너로 수확하는 게 정상 운영이다 —
     //   예) 김광호 2차(8/22)는 그날 배차가 없지만 1차 때 나간 200개 중 147개가 농가에 남아 있어 문제없다.
@@ -4756,7 +4776,7 @@ function renderUpcomingHarvest() {
       if ((getFCS(x.farm).hold || 0) > 0) return;              // ★남은 콘테이너로 진행 — 정상
       if (!needDisp.has(x.id)) needDisp.set(x.id, x);
     });
-    days.push({ dStr, d, list, farmCnt: farmSet.size, hold });
+    days.push({ dStr, d, list, farmCnt: farmSet.size });
   }
   const totalCnt = days.reduce((a, x) => a + x.list.length, 0);
   if (!totalCnt) { el.style.display = 'none'; el.innerHTML = ''; return; }
@@ -4766,7 +4786,7 @@ function renderUpcomingHarvest() {
     const dateTxt = `${day.d.getMonth() + 1}/${day.d.getDate()} (${DOW[day.d.getDay()]})`;
     const head = (LBL[di] ? LBL[di] + ' ' : '') + dateTxt;
     const sum = day.list.length
-      ? `${day.farmCnt}곳${day.hold ? ' · 콘테이너 ' + fmtN(day.hold) : ''}`
+      ? `${day.farmCnt}곳`
       : '수확 예정 없음';
     // ★그날 계획 합계 — 여러 농가를 도는 날 총 몇 대인지가 실제 판단 기준.
     //   더하는 대상은 아래 행에 실제로 보이는 것들(day.list)이라, 머리 숫자와 행이 어긋나지 않는다.
