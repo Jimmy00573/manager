@@ -4688,8 +4688,13 @@ function renderCal() {
     if (canEdit) {
       const sf = document.getElementById('cal-add-farm');
       if (sf) {
+        // ★옵션을 다시 채우면 고르던 값이 빈칸이 된다 — 동기화(20초) 재렌더가 입력 중에 오면 농가만 사라졌다.
+        //   값만 되돌린다. ★change를 쏘지 말 것(fsPick·dispatchEvent 금지) — _calAddFarmChanged가 돌아
+        //   사용자가 손으로 고친 차수·고른 밭을 덮어쓴다. 목록에서 빠진 농가는 복원하지 않는다(빈칸 = 기존 동작).
+        const keep = sf.value;
         sf.innerHTML = '<option value="">농가 선택</option>';
         farms.forEach(f => sf.innerHTML += `<option value="${esc(f.name)}">${esc(f.name)}</option>`);
+        if (keep && farms.some(f => f.name === keep)) sf.value = keep;
         fsSync('cal-add-farm');
       }
     }
