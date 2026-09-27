@@ -1603,11 +1603,15 @@ function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&
 function fmtN(n) { if (n == null) return '-'; return Number(n).toLocaleString('ko-KR'); }
 // 전화번호 → 누르면 바로 거는 링크. href는 숫자만, 화면은 하이픈 형식(01X 3-4-4 · 02 2-3(4)-4 · 그 외 3-3(4)-4).
 //   숫자가 8자리 미만이거나 비었으면 '' — 호출부가 조각을 빼게. 형식에 안 맞는 번호는 숫자만 그대로 보인다.
+// ★링크는 터치 기기(pointer: coarse = 폰·태블릿)만. PC(마우스)는 tel:을 누르면 '앱 선택' 창만 떠서
+//   같은 형식의 글자로만 보인다(드래그 복사는 그대로 됨).
 function _telLink(tel) {
   const d = String(tel || '').replace(/\D/g, '');
   if (d.length < 8) return '';
   const m = d.startsWith('02') ? /^(02)(\d{3,4})(\d{4})$/.exec(d) : /^(0\d{2})(\d{3,4})(\d{4})$/.exec(d);
   const txt = m ? `${m[1]}-${m[2]}-${m[3]}` : d;
+  const touch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (!touch) return `<span style="color:#374151">${esc(txt)}</span>`;
   return `<a href="tel:${esc(d)}" style="color:#1565C0;text-decoration:none">${esc(txt)}</a>`;
 }
 function fmtCT(n) {
