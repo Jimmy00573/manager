@@ -2702,11 +2702,17 @@ function renderDDash() {
 
   function dispRow(d) {
     const drv = gd(d.driver);
+    // 수확 예정일(dispatches.harvest) — 배송하는 사람이 참고하게 주소 줄에 ' · 🌱 수확 9/29 (다음날)'로 잇는다.
+    //   배송일(d.date)과 같으면 (당일), 하루 뒤면 (다음날). 로컬 날짜 문자열끼리 비교(toISOString 안 씀).
+    //   ★harvest가 없는 줄은 주소 span이 수정 전과 글자 하나 안 다르다.
+    const hvSfx = d.harvest === d.date ? ' (당일)' : (d.date && _dayAfter(d.date) === d.harvest ? ' (다음날)' : '');
+    const hvTag = d.harvest ? `<span style="color:#2E7D32">🌱 수확 ${esc(calFmtShort(d.harvest))}${hvSfx}</span>` : '';
+    const addrLine = [_recAddr(d) ? esc(_recAddr(d)) : '', hvTag].filter(Boolean).join(' · ');
     return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border-radius:8px;border:0.5px solid #ebebeb;flex-wrap:wrap">
       ${tripBadge(d.trip)}
       <div style="display:flex;flex-direction:column;gap:1px">
         <span style="font-size:12px;font-weight:600">${esc(d.farm)}</span>
-        ${_recAddr(d) ? `<span style="font-size:10px;color:#aaa">${esc(_recAddr(d))}</span>` : ''}
+        ${addrLine ? `<span style="font-size:10px;color:#aaa">${addrLine}</span>` : ''}
       </div>
       <span style="font-size:11px;color:#888">·</span>
       <span style="font-size:12px">${esc(d.driver)}</span>
