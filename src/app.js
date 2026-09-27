@@ -5006,6 +5006,9 @@ function _hvProgSortAll(arr) {
     || (a.farm || '').localeCompare(b.farm || '', 'ko'));   // 끝까지 같으면 농가명(순서가 흔들리지 않게)
 }
 const _hvProgOpen = {};   // farm -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 기본값(전부 접힘).
+// 🏁 종료 '그룹' 펼침 — 기본 접힘(제목 줄만). 종료 농가는 평소 볼 일이 없는데 목록 절반을 차지해서.
+//   _hvProgOpen(농가 단위)과 따로다. 메모리에만 있어 새로고침하면 다시 접힘(같은 규칙).
+let _hvDoneGroupOpen = false;
 
 // 농가별로 차수를 모아 상태를 매긴다. 렌더와 토글이 같은 판정을 쓰도록 순수 함수로 분리.
 function _hvProgGroups() {
@@ -5085,6 +5088,10 @@ function _hvProgToggle(farm) {
   _hvProgOpen[farm] = !_hvProgIsOpen(g);
   renderHarvestProgress();   // 이 섹션만 다시 그린다 — 캘린더 전체를 다시 그릴 이유가 없다
 }
+function _hvDoneGroupToggle() {
+  _hvDoneGroupOpen = !_hvDoneGroupOpen;
+  renderHarvestProgress();   // _hvProgToggle과 같은 방식
+}
 
 // ── 전 농가 일괄 펼침/접기 ─────────────────────────────────────
 // ★버튼 라벨 기준은 '과반'이다 — 절반 넘게 펼쳐져 있으면 '모두 접기'로 바뀐다.
@@ -5092,13 +5099,19 @@ function _hvProgToggle(farm) {
 //   상태가 흔해서 every로 하면 거의 항상 '모두 펼치기'로만 보인다(기준은 '과반' 그대로 둔다).
 // ★일괄 조작은 기본값(전부 접힘)을 농가마다 덮어쓴다 — '모두'가 그 뜻이다.
 //   _hvProgOpen은 메모리에만 있으므로 새로고침하면 기본값으로 돌아간다(의도된 동작).
-function _hvProgAllOpen() {
+// ★종료 그룹이 접혀 있으면 그 농가는 일괄 대상에서 뺀다 — 안 보이는 카드를 펴 놓으면
+//   라벨(과반)이 보이는 것과 어긋나고, 나중에 그룹을 열었을 때 전부 펼쳐져 있다. 판정은 여기 한 곳.
+function _hvProgBulkTargets() {
   const gs = _hvProgGroups();
+  return _hvDoneGroupOpen ? gs : gs.filter(g => g.kind !== 'done');
+}
+function _hvProgAllOpen() {
+  const gs = _hvProgBulkTargets();
   if (!gs.length) return false;
   return gs.filter(_hvProgIsOpen).length > gs.length / 2;
 }
 function _hvProgToggleAll() {
-  const gs = _hvProgGroups();
+  const gs = _hvProgBulkTargets();
   if (!gs.length) return;
   const open = !_hvProgAllOpen();
   gs.forEach(g => { _hvProgOpen[g.farm] = open; });
@@ -5208,9 +5221,16 @@ function renderHarvestProgress() {
     <div style="padding:8px 10px;display:flex;flex-direction:column;gap:10px">
       ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
         const k = _HV_PROG_KIND[kd];
+        // ★종료 그룹만 제목 줄을 눌러 접고 편다(기본 접힘). 아래 변수들은 다른 그룹에선 전부 ''/true —
+        //   진행중·대기·확인 필요의 출력 HTML이 수정 전과 글자 하나 안 틀리게 하려는 것.
+        const isDone = kd === 'done';
+        const hdClick = isDone ? ` onclick="_hvDoneGroupToggle()"` : '';
+        const hdCss = isDone ? 'cursor:pointer;' : '';
+        const hdArrow = isDone ? `<span style="font-size:11px;color:${k.fg}">${_hvDoneGroupOpen ? '▾' : '▸'}</span> ` : '';
+        const showList = !isDone || _hvDoneGroupOpen;
         return `<div>
-          <div style="font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 수확 기록이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>
-          <div style="display:flex;flex-direction:column;gap:6px">${groups.filter(g => g.kind === kd).map(_hvProgCard).join('')}</div>
+          <div${hdClick} style="${hdCss}font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${hdArrow}${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 수확 기록이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>${showList ? `
+          <div style="display:flex;flex-direction:column;gap:6px">${groups.filter(g => g.kind === kd).map(_hvProgCard).join('')}</div>` : ''}
         </div>`;
       }).join('')}
     </div>`;
