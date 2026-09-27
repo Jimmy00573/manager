@@ -5707,6 +5707,19 @@ async function setHarvestStatus(id, status) {
     }
   }
 }
+// 그 농가의 다음 차수 = 같은 농가 round 최댓값 + 1(기록 없으면 1). ＋다음 차수(startNextRound)와 등록 폼이 같이 쓴다.
+//   ★harvestActBtns의 최신 차수 판정(maxRound)과 같은 기준(같은 farm 완전일치·round 최댓값)이다 — 다르게 만들지 말 것.
+function _hvNextRound(farm) {
+  return harvests.filter(x => x.farm === farm).reduce((m, x) => Math.max(m, x.round || 1), 0) + 1;
+}
+// 수확일정 등록 폼 농가 선택(onchange · fsPick) — 밭 칸 + 차수 칸을 그 농가 기준으로 채운다.
+//   ★차수는 늘 1로 시작해서, 이미 1·2차가 있는 농가를 그대로 저장하면 '1차'가 또 생겼다
+//     (문기덕 9/26 id 62가 1차로 저장 → 최신 차수 판정이 어긋나 ＋다음 차수 버튼이 사라짐). 손으로 바꾸는 건 그대로 허용.
+function _calAddFarmChanged(v) {
+  _fillFieldSel('cal-add', v);
+  const r = document.getElementById('cal-add-round');
+  if (r) r.value = v ? _hvNextRound(v) : 1;
+}
 // 수확 차수 이어가기 — 수확일정 창을 '새 차수' 모드로 연다(바로 저장하지 않는다). 이력 보존.
 //   ★예전엔 누르는 즉시 오늘·수확중으로 만들었다 — 실제 다음 차수는 대개 내일~3일 뒤라 매번 수정 창에서
 //     날짜를 고쳤고, 미래 차수가 오늘 '수확중'으로 잡혀 다가오는 수확·외근 인원까지 틀어졌다.
@@ -5716,7 +5729,7 @@ function startNextRound(id) {
   const h = harvests.find(x => x.id === id);
   if (!h) return;
   // 같은 농가의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
-  const nextRound = harvests.filter(x => x.farm === h.farm).reduce((m, x) => Math.max(m, x.round || 1), 0) + 1;
+  const nextRound = _hvNextRound(h.farm);
   _editHarvestId = null;
   _hvNewRoundFrom = id;
   _mhSetTitle(`＋ ${nextRound}차 수확 등록`);

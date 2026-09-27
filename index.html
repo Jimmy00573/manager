@@ -537,7 +537,7 @@
   <div id="cal-add-form" class="form-card" style="margin-bottom:12px">
   <div class="form-title">📅 수확 일정 등록</div>
   <div class="form-grid">
-    <div class="fg"><label>농가명 *</label><select id="cal-add-farm" onchange="_fillFieldSel('cal-add', this.value)"><option value="">농가 선택</option></select></div>
+    <div class="fg"><label>농가명 *</label><select id="cal-add-farm" onchange="_calAddFarmChanged(this.value)"><option value="">농가 선택</option></select></div>
     <div class="fg" id="cal-add-field-wrap" style="display:none"><label>밭 *</label><select id="cal-add-field"></select></div>
     <div class="fg"><label>수확 시작일 *</label><input id="cal-add-date" type="date"></div>
     <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="cal-add-end" type="date"></div>
@@ -2071,6 +2071,6 @@
 <script src="src/supabase-client.js?v=30"></script>
 <script src="src/db.js?v=27"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=650"></script>
+<script src="src/app.js?v=651"></script>
 </body>
 </html>
