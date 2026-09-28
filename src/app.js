@@ -13769,7 +13769,7 @@ function drvHtml(drv) {
 // 읽는 전역: inboundRecords, processingRecords, inventoryRecords, invSorted,
 //            invWaste, invJuiceBatches, invJuiceMasters, invOutbounds,
 //            pachiUsages, brixGrades, productWeights, PRODUCT_TYPE_MAP,
-//            SIZE_GROUPS_감귤류/만감류, _summaryDate/_summaryKind/_summaryOpen
+//            getSizeGroupsFor(품목 마스터 묶음), _summaryDate/_summaryKind/_summaryOpen
 // ★inboundRecords·sortingResults 등은 재고 탭에 들어와야 채워진다 —
 //  다른 탭에서 이 함수를 호출하면 빈 배열을 "데이터 없음"으로 오판할 수 있다.
 //
@@ -13857,27 +13857,16 @@ function renderInvSummary() {
   });
 
   // ==================================================================
-  // 3. 만감류 사이즈 → 대/중/소과 그룹 매핑
+  // 3. 사이즈 → 묶음(대과/중과/소과 …) = 품목 마스터
   // ==================================================================
-  // 읽는 데이터: SIZE_GROUPS_만감류 상수 (한라봉만 HALLA_SIZES로 별도)
-  // ★한라봉은 같은 "12수"라도 다른 만감류와 그룹이 다르다 — 품목명에 '한라봉' 포함 여부로 분기.
-  // 아래 4번 선과 집계에서만 쓴다(감귤류는 SIZE_GROUPS_감귤류를 직접 찾는다).
-  // ── 만감류 품목별 사이즈 그룹 매핑 (한라봉 별도 기준)
-  const HALLA_SIZES = {
-    '대과': new Set(['7수','8수','9수','10수']),
-    '중과': new Set(['11수','12수','13수']),
-    '소과': new Set(['14수','15수','16수','17수','18수']),
-  };
-  const DEFAULT_MANGAM_SIZES = {
-    '대과': new Set(SIZE_GROUPS_만감류[0].sizes),
-    '중과': new Set(SIZE_GROUPS_만감류[1].sizes),
-    '소과': new Set(SIZE_GROUPS_만감류[2].sizes),
-  };
-  const getMangamGroup = (product, sizeCode) => {
-    const map = product && product.includes('한라봉') ? HALLA_SIZES : DEFAULT_MANGAM_SIZES;
-    for (const [grp, s] of Object.entries(map)) { if (s.has(sizeCode)) return grp; }
-    return '기타';
-  };
+  // 읽는 데이터: getSizeGroupsFor(품목) — 선과품 매트릭스(sizeGroupsForDisplay)와 같은 함수.
+  // ★2026-09-28 B안 4단계: 예전엔 여기 고정 표(한라봉 7~18수 · 그 외 5~27수)로 묶어 매트릭스와 숫자가 갈렸다
+  //   (황금향 12~14수 요약 대과 vs 마스터 중과, 19~22수 중과 vs 소과, 6·7수 대과 vs 기타). Jimmy 결정으로 마스터 통일.
+  //   감귤류는 getSizeGroupsFor가 SIZE_GROUPS_감귤류를 그대로 돌려줘 예전과 같다. 묶음에 없는 사이즈는 '기타'.
+  // 품목마다 한 번만 계산해 둔다(행마다 부르면 5~27수 규칙 조회를 매번 반복).
+  const _grpCache = {};
+  const groupsOf = product => _grpCache[product] || (_grpCache[product] = getSizeGroupsFor(product));
+  const sizeGroupOf = (product, sz) => { const g = groupsOf(product).find(x => x.sizes.includes(sz)); return g ? g.group : '기타'; };
 
   // ==================================================================
   // 4. 선과품 재고 집계 (등급별) — 화면 섹션 2·3의 원본 데이터
@@ -13908,13 +13897,7 @@ function renderInvSummary() {
       o.kg += (Number(r.quantity) || 0) * kgPerCt(r.product);
     }
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
-    let grp;
-    if (ptype === '감귤류') {
-      const go = SIZE_GROUPS_감귤류.find(g => g.sizes.includes(r.size_code));
-      grp = go ? go.group : '기타';
-    } else {
-      grp = getMangamGroup(r.product, r.size_code);
-    }
+    const grp = sizeGroupOf(r.product, r.size_code);   // 품목 마스터 묶음(3번) — 매트릭스와 같은 기준
     const kg = (Number(r.quantity) || 0) * kgPerCt(r.product);
     const target = ptype === '감귤류' ? citrusMap : manGamMap;
     if (!target[r.product]) target[r.product] = {};
@@ -14502,11 +14485,86 @@ function renderInvSummary() {
   //  이 순서 규칙은 10번 출고 탭에도 같은 모양으로 한 번 더 나온다 — 바꿀 땐 두 곳 다 볼 것.
   // 섹션 2 & 3: 선과 빌더
   const citrusOrder = SIZE_GROUPS_감귤류.flatMap(g => g.sizes);
+  const sortSizesFor = (szArr, isMangam) => isMangam
+    ? [...szArr].sort((a, b) => parseInt(a) - parseInt(b))
+    : [...szArr].sort((a, b) => citrusOrder.indexOf(a) - citrusOrder.indexOf(b));
+  // 품목 행 ▸ 펼침 상세(등급별 · 묶음별 사이즈 칸) — 2·3번 표와 ② 팔 수 있는 것이 같이 쓴다(B안 4단계에서 빌더 밖으로 옮김, 모양 그대로).
+  //   detail = sortDetail[품목] = {등급:{사이즈:{ct,kg}}}, groups = 그 표의 열(묶음) 순서.
+  //   ★사이즈→묶음은 3번 sizeGroupOf(품목 마스터) — 표 칸과 같은 기준. '기타'가 열에 있으면 줄을 두 번 그리지 않는다.
+  const sortDetailBlocks = (p, detail, groups, isMangam) => {
+    const sortSizes = szArr => sortSizesFor(szArr, isMangam);
+    // 등급 순서: 일반 → 활성 브릭스(sort_order) → 데이터에 남은 기타 등급. 재고 있는 등급만.
+    const activeBrix = brixGrades
+      .filter(g => g.is_active !== false)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(g => g.label);
+    const present = Object.keys(detail);
+    const others = present.filter(g => g !== '일반' && !activeBrix.includes(g)).sort((a, b) => a.localeCompare(b, 'ko'));
+    const gradeOrder = ['일반', ...activeBrix, ...others].filter(g => detail[g] && Object.keys(detail[g]).length);
+
+    // mkCell(값 칸): 기존 디자인 그대로. mkEmptyCell(빈 자리): 흐린 점선.
+    const mkCell = (gsz, sz) =>
+      `<div style="text-align:center;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0">` +
+      `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
+      `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(gsz[sz].kg))}</div>` +
+      `</div>`;
+    const mkEmptyCell = sz =>
+      `<div style="text-align:center;border:1px dashed #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0;opacity:0.45">` +
+      `<div style="background:#F9FAFB;color:#9CA3AF;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
+      `<div style="color:#D1D5DB;font-weight:500;font-size:13px;padding:3px 10px">&nbsp;</div>` +
+      `</div>`;
+    // szArr는 렌더할 사이즈(감귤=그룹 정의 전체 자리, 만감=있는 것만). 값 없으면 빈 자리.
+    const mkLine = (gsz, g, szArr) =>
+      `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0;margin:5px 0">` +
+      `<span style="font-weight:500;color:#374151;min-width:42px;font-size:12px;padding-top:6px">${g}</span>` +
+      `<div style="display:flex;flex-wrap:wrap">${szArr.map(sz => (gsz[sz] ? mkCell(gsz, sz) : mkEmptyCell(sz))).join('')}</div>` +
+      `</div>`;
+
+    const blocks = gradeOrder.map((grade, bi) => {
+      const gsz = detail[grade];   // {사이즈:{ct,kg}}
+      const byGroup = {};
+      Object.keys(gsz).forEach(sz => {
+        const g = sizeGroupOf(p, sz);
+        (byGroup[g] = byGroup[g] || []).push(sz);
+      });
+      // 그룹에 사이즈가 하나라도 있으면 줄 표시. 감귤은 그룹 정의 전체 자리, 만감은 있는 것만.
+      const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => {
+        let szArr;
+        if (isMangam) szArr = sortSizes(byGroup[g]);
+        else { const def = SIZE_GROUPS_감귤류.find(x => x.group === g); szArr = def ? def.sizes : sortSizes(byGroup[g]); }
+        return mkLine(gsz, g, szArr);
+      });
+      if (!groups.includes('기타') && byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine(gsz, '기타', sortSizes(byGroup['기타'])));
+      const badge = grade === '일반'
+        ? `<span style="font-size:11px;font-weight:600;color:#6B7280;background:#F3F4F6;padding:2px 9px;border-radius:10px">일반</span>`
+        : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 9px;border-radius:10px;border:1px solid #BFDBFE">${esc(grade)}</span>`;
+      const accent = grade === '일반' ? '#E5E7EB' : '#BFDBFE';
+      const topSep = bi > 0 ? 'border-top:1px solid #E5E7EB;padding-top:8px;' : '';
+      return `<div style="flex:1 1 240px;min-width:240px;border-left:3px solid ${accent};padding-left:10px;${topSep}">` +
+        `<div style="margin-bottom:2px">${badge}</div>${lines.join('')}</div>`;
+    });
+    // 반응형: 넓으면 가로 나열, 좁으면 자동 세로 쌓기(flex-wrap + min-width)
+    return `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">${blocks.join('')}</div>`;
+  };
+  // 표 열(묶음) = 그 표에 나오는 품목들의 마스터 묶음을 순서대로 합친 것. '기타'는 값이 있을 때만 맨 뒤.
+  //   품목이 없으면 fallback(예전 고정 열) — 빈 표 모양이 예전과 같게.
+  const groupColsOf = (dataMap, fallback) => {
+    const prods = Object.keys(dataMap);
+    if (!prods.length) return fallback;
+    const cols = [];
+    prods.sort((a, b) => a.localeCompare(b, 'ko')).forEach(p => groupsOf(p).forEach(g => { if (g.group !== '기타' && !cols.includes(g.group)) cols.push(g.group); }));
+    if (prods.some(p => dataMap[p]['기타'] > 0)) cols.push('기타');
+    return cols;
+  };
+  // 만감 부제 — 품목마다 마스터 묶음 범위('황금향 대과 8~11수 · 중과 12~18수 …'). 예전 고정 글자(한라봉 7~18수 …)를 대신한다.
+  const mangamGroupSub = dataMap => {
+    const prods = Object.keys(dataMap).sort((a, b) => a.localeCompare(b, 'ko'));
+    const rng = szs => { const ns = szs.map(s => parseInt(s)).filter(n => !isNaN(n)); return ns.length ? `${Math.min(...ns)}~${Math.max(...ns)}수` : ''; };
+    const per = prods.map(p => `${p} ${groupsOf(p).filter(g => g.group !== '기타').map(g => `${g.group} ${rng(g.sizes)}`).join(' / ')}`);
+    return '단위: kg · 품목 마스터 기준' + (per.length ? ' · ' + per.join(' · ') : '');
+  };
   const buildSortSection = (n, title, sub, dataMap, groups, detailMap) => {
     const isMangam = n === 2;
-    const sortSizes = szArr => isMangam
-      ? [...szArr].sort((a, b) => parseInt(a) - parseInt(b))
-      : [...szArr].sort((a, b) => citrusOrder.indexOf(a) - citrusOrder.indexOf(b));
     const entries = Object.entries(dataMap).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
     const rows = entries.length
       ? entries.map(([p, m], idx) => {
@@ -14515,61 +14573,7 @@ function renderInvSummary() {
           const detailId = `sd-${n}-${idx}`;
           const tdAttr = detail ? `onclick="toggleSumDetail('${detailId}')" style="${TL};cursor:pointer"` : `style="${TL}"`;
           const arrow = detail ? '▸ ' : '';
-          const detailHtml = (() => {
-            if (!detail) return '';
-            // 등급 순서: 일반 → 활성 브릭스(sort_order) → 데이터에 남은 기타 등급. 재고 있는 등급만.
-            const activeBrix = brixGrades
-              .filter(g => g.is_active !== false)
-              .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-              .map(g => g.label);
-            const present = Object.keys(detail);
-            const others = present.filter(g => g !== '일반' && !activeBrix.includes(g)).sort((a, b) => a.localeCompare(b, 'ko'));
-            const gradeOrder = ['일반', ...activeBrix, ...others].filter(g => detail[g] && Object.keys(detail[g]).length);
-
-            // mkCell(값 칸): 기존 디자인 그대로. mkEmptyCell(빈 자리): 흐린 점선.
-            const mkCell = (gsz, sz) =>
-              `<div style="text-align:center;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0">` +
-              `<div style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
-              `<div style="color:#1F2937;font-weight:500;font-size:13px;padding:3px 10px">${fmtN(Math.round(gsz[sz].kg))}</div>` +
-              `</div>`;
-            const mkEmptyCell = sz =>
-              `<div style="text-align:center;border:1px dashed #E5E7EB;border-radius:6px;overflow:hidden;margin:0 4px 4px 0;opacity:0.45">` +
-              `<div style="background:#F9FAFB;color:#9CA3AF;font-size:10px;padding:2px 10px">${esc(sz)}${fruitNoBadge(sz)}</div>` +
-              `<div style="color:#D1D5DB;font-weight:500;font-size:13px;padding:3px 10px">&nbsp;</div>` +
-              `</div>`;
-            // szArr는 렌더할 사이즈(감귤=그룹 정의 전체 자리, 만감=있는 것만). 값 없으면 빈 자리.
-            const mkLine = (gsz, g, szArr) =>
-              `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0;margin:5px 0">` +
-              `<span style="font-weight:500;color:#374151;min-width:42px;font-size:12px;padding-top:6px">${g}</span>` +
-              `<div style="display:flex;flex-wrap:wrap">${szArr.map(sz => (gsz[sz] ? mkCell(gsz, sz) : mkEmptyCell(sz))).join('')}</div>` +
-              `</div>`;
-
-            const blocks = gradeOrder.map((grade, bi) => {
-              const gsz = detail[grade];   // {사이즈:{ct,kg}}
-              const byGroup = {};
-              Object.keys(gsz).forEach(sz => {
-                const g = getGroupForSorted(p, sz) || '기타';
-                (byGroup[g] = byGroup[g] || []).push(sz);
-              });
-              // 그룹에 사이즈가 하나라도 있으면 줄 표시. 감귤은 그룹 정의 전체 자리, 만감은 있는 것만.
-              const lines = groups.filter(g => byGroup[g] && byGroup[g].length).map(g => {
-                let szArr;
-                if (isMangam) szArr = sortSizes(byGroup[g]);
-                else { const def = SIZE_GROUPS_감귤류.find(x => x.group === g); szArr = def ? def.sizes : sortSizes(byGroup[g]); }
-                return mkLine(gsz, g, szArr);
-              });
-              if (byGroup['기타'] && byGroup['기타'].length) lines.push(mkLine(gsz, '기타', sortSizes(byGroup['기타'])));
-              const badge = grade === '일반'
-                ? `<span style="font-size:11px;font-weight:600;color:#6B7280;background:#F3F4F6;padding:2px 9px;border-radius:10px">일반</span>`
-                : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 9px;border-radius:10px;border:1px solid #BFDBFE">${esc(grade)}</span>`;
-              const accent = grade === '일반' ? '#E5E7EB' : '#BFDBFE';
-              const topSep = bi > 0 ? 'border-top:1px solid #E5E7EB;padding-top:8px;' : '';
-              return `<div style="flex:1 1 240px;min-width:240px;border-left:3px solid ${accent};padding-left:10px;${topSep}">` +
-                `<div style="margin-bottom:2px">${badge}</div>${lines.join('')}</div>`;
-            });
-            // 반응형: 넓으면 가로 나열, 좁으면 자동 세로 쌓기(flex-wrap + min-width)
-            return `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">${blocks.join('')}</div>`;
-          })();
+          const detailHtml = detail ? sortDetailBlocks(p, detail, groups, isMangam) : '';
           const detailRow = detail
             ? `<tr id="${detailId}" style="display:none"><td colspan="${groups.length + 2}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${detailHtml}</td></tr>`
             : '';
@@ -14582,8 +14586,53 @@ function renderInvSummary() {
         <tbody>${rows}</tbody>
       </table></div></div>`;
   };
-  const manGamHtml = buildSortSection(2, '만감 선과 재고', '단위: kg · 대과 / 중과 / 소과 (한라봉: 7~18수 기준 / 기타: 5~27수 기준)', manGamMap, ['대과', '중과', '소과'], sortDetail);
-  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(3L,왕1,왕2)', citrusMap, ['극소과', '소과', '로얄과', '중과', '대과'], sortDetail);
+  // ★열·부제는 품목 마스터 기준(B안 4단계). 감귤류 부제·열은 마스터가 SIZE_GROUPS_감귤류 그대로라 예전과 같다.
+  const manGamCols = groupColsOf(manGamMap, SIZE_GROUPS_만감류.map(g => g.group));
+  const citrusCols = groupColsOf(citrusMap, SIZE_GROUPS_감귤류.map(g => g.group));
+  const manGamHtml = buildSortSection(2, '만감 선과 재고', mangamGroupSub(manGamMap), manGamMap, manGamCols, sortDetail);
+  const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(3L,왕1,왕2)', citrusMap, citrusCols, sortDetail);
+
+  // ── ② 팔 수 있는 것(B안 4단계) — 화면 전용. 위 2·3번은 인쇄 전용으로 그대로 둔다.
+  //   표 2개(만감류·감귤류, 값 있는 쪽만). 행 = 품목, 열 = 마스터 묶음(2·3번과 같은 열) + 7일↑ + 합계. 칸 = kg 크게 · CT 작게.
+  //   ★칸 값은 sortDetail(4번에서 이미 모은 {등급:{사이즈:{ct,kg}}})을 sizeGroupOf로 묶어 쓴다 — 새로 집계하지 않는다.
+  //   ★7일↑ = 신호 줄과 같은 oldSorted(입고일 ≥ SUMMARY_OLD_SORTED_DAYS). ▸ 펼침 = 2·3번과 같은 sortDetailBlocks.
+  //   품목 칸 = 펼침, 나머지 칸 = 선과품 재고 탭으로.
+  const _sellCell = (kg, ct, color) => (kg || ct)
+    ? `<td style="${TR}${color ? `;color:${color}` : ''}">${fmtN(Math.round(kg))}<div style="font-size:11px;font-weight:400;color:#9CA3AF">${fmtCT(ct)} CT</div></td>`
+    : `<td style="${TR}">${DASH}</td>`;
+  const sellTable = (label, dataMap, cols, isMangam, key) => {
+    const prods = Object.keys(dataMap).sort((a, b) => a.localeCompare(b, 'ko'));
+    if (!prods.length) return '';
+    const rows = prods.map((p, idx) => {
+      const byG = {}; let tKg = 0, tCt = 0;
+      Object.values(sortDetail[p] || {}).forEach(gsz => Object.entries(gsz).forEach(([sz, v]) => {
+        const g = sizeGroupOf(p, sz);
+        byG[g] = byG[g] || { kg: 0, ct: 0 };
+        byG[g].kg += v.kg; byG[g].ct += v.ct; tKg += v.kg; tCt += v.ct;
+      }));
+      const old = oldSorted[p] || { kg: 0, ct: 0 };
+      const detail = sortDetail[p];
+      const detailId = `sd-sell-${key}-${idx}`;
+      const detailRow = detail
+        ? `<tr id="${detailId}" style="display:none"><td colspan="${cols.length + 3}" style="padding:6px 12px;background:#FAFAFA;font-size:12px;color:#555">${sortDetailBlocks(p, detail, cols, isMangam)}</td></tr>`
+        : '';
+      const nameTd = detail
+        ? `<td onclick="event.stopPropagation();toggleSumDetail('${detailId}')" style="${TL};cursor:pointer">▸ ${productChip(p)}</td>`
+        : `<td style="${TL}">${productChip(p)}</td>`;
+      return `<tr onclick="invTab('srt')" style="cursor:pointer" title="선과품 재고에서 보기">${nameTd}${cols.map(g => _sellCell((byG[g] || {}).kg, (byG[g] || {}).ct)).join('')}${_sellCell(old.kg, old.ct, old.ct > 0 ? '#C05800' : '')}<td ${TRhl}>${fmtN(Math.round(tKg))}<div style="font-size:11px;font-weight:400;color:#9CA3AF">${fmtCT(tCt)} CT</div></td></tr>${detailRow}`;
+    }).join('');
+    return `<div style="padding:10px 16px 4px;font-size:12px;font-weight:600;color:#374151">${label}</div>
+      <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:520px">
+        <thead><tr><th ${THL}>품목</th>${cols.map(g => `<th ${THR}>${esc(g)}</th>`).join('')}<th ${THR}>${SUMMARY_OLD_SORTED_DAYS}일↑</th><th ${THR}>합계</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  };
+  const _sellCt = Object.values(sortDetail).reduce((s, gm) => s + Object.values(gm).reduce((a, gsz) => a + Object.values(gsz).reduce((b, v) => b + v.ct, 0), 0), 0);
+  const _sellBody = sellTable('만감류', manGamMap, manGamCols, true, 'm') + sellTable('감귤류', citrusMap, citrusCols, false, 'c');
+  const sellHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('②', '팔 수 있는 것', `선과품 ${fmtN(Math.round(manGamTotalKg + citrusTotalKg))} kg · ${fmtCT(_sellCt)} CT`)}
+    ${_sellBody || `<div style="padding:18px;text-align:center;color:#bbb;font-size:13px">선과 재고 없음</div>`}
+    <div style="height:6px"></div>
+  </div>`;
 
   // ==================================================================
   // 14. HTML 조립: 파치 섹션 (화면 섹션 4)
@@ -14667,7 +14716,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${sortTodayHtml}<div class="sum-print-only">${unsHtml}</div>${manGamHtml}${citrusHtml}
+    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${sortTodayHtml}<div class="sum-print-only">${unsHtml}</div>${sellHtml}<div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
     <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
 }
