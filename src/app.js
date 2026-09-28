@@ -6810,7 +6810,7 @@ async function _invFetch(track, token) {
     //   재고 탭 재진입이 '마지막 조회 성공'으로 보고 재사용해(loadAndRenderInv의 _baseOk) 틀린 상태가 굳는다.
     //   선과 잔여를 계산하는 세 조회(입고·선과 처리·선과 결과)만은 실패하면 성공으로 치지 않는다.
     let critFail = false;
-    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, allOutbounds, expiryRows, lowRows] = await Promise.all([
+    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, allOutbounds, expiryRows, lowRows, voidLinks] = await Promise.all([
       // ★이 둘은 db.js에서 오류를 안 삼키고 던지므로 라벨을 여기서 붙인다.
       //   (내부에서 catch하는 함수들은 db.js 쪽에 _sbLoadFail이 들어가 있다 — 두 번 붙이지 말 것)
       track(dbGetInbounds()).catch(() => { _loadFail('입고 기록'); critFail = true; return []; }),
@@ -6829,6 +6829,9 @@ async function _invFetch(track, token) {
       // 주스 설정 2건 — 예전엔 위가 다 끝난 뒤 하나씩 기다렸다. 서로·위와 무관해 같이 보낸다(실패 시 직전 값 유지는 아래 그대로).
       track(sbGet('settings', 'key=eq.juice_expiry_days')).catch(() => SETTING_FAIL),
       track(sbGet('settings', 'key=eq.juice_low_threshold')).catch(() => SETTING_FAIL),
+      // void 재고 행이 가리키는 입고 id만(파치 재고 판정용, _pachiStockByProduct). 위 재고 로드(void 제외)는 그대로 둔다.
+      //   ★sbGetAll — void 행은 계속 늘어난다(2026-09-28 167행). 실패하면 직전 값 유지(한 번도 못 받았으면 예전 판정으로 폴백).
+      track(sbGetAll('inventory_records', 'is_void=eq.true&inbound_record_id=not.is.null&select=inbound_record_id')).catch(() => null),
     ]);
     if (token !== _invLoadToken) return;   // 그사이 더 새 조회가 시작됐다 — 이 결과는 버린다
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
@@ -6863,6 +6866,8 @@ async function _invFetch(track, token) {
       _rebuildProductTypeMap();   // ★items 로드 직후 — 품목 유형 판정표를 DB 기준으로 갱신
     }
     inventoryRecords = invRecs;
+    // 실패(null)면 직전 값 유지 — 한 번도 못 받았으면 null 그대로라 예전 판정으로 폴백된다.
+    if (Array.isArray(voidLinks)) _pachiVoidLinkedIb = new Set(voidLinks.map(r => String(r.inbound_record_id)));
     // sorting_results 날짜 데이터 enrichment
     const srIds = [...new Set(invRecs.filter(r => r.sorting_result_id).map(r => r.sorting_result_id))];
     if (srIds.length > 0) {
@@ -13937,9 +13942,9 @@ function renderInvSummary() {
   // ==================================================================
   // 5. 파치 재고 집계
   // ==================================================================
-  // 읽는 데이터: pachiUsages(용도 마스터) + inventoryRecords(파치 6종) + invWaste
+  // 읽는 데이터: pachiUsages(용도 마스터) + inventoryRecords(파치 6종) + invWaste + 미전환 입고 파치(_pachiStockByProduct)
   //
-  // ★파치 source_type 6종 — 하나라도 빠지면 그만큼 재고가 덜 잡힌다:
+  // ★파치 source_type 6종(_PACHI_INV_TYPES) — 하나라도 빠지면 그만큼 재고가 덜 잡힌다:
   //    pachi          (일반 파치)        pachi_highacid (고산)
   //    pachi_lowbrix  (저당)             pachi_tiny     (소과)
   //    pachi_green    (녹색)             pachi_manual   (수동 입력)
@@ -13948,23 +13953,9 @@ function renderInvSummary() {
   //  usage가 비어 있으면 '미분류'로 보고 항상 포함한다(누락 방지).
   // pachiMap[품목]=CT 합, pachiDetail[품목][용도]=CT (행 펼침 상세용).
   // ── 섹션 4: 파치 재고
-  const usageInclude = {};
-  pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
-  const isUsageIncluded = name => { const n = name || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
-
-  const pachiMap = {}, pachiDetail = {};
-  inventoryRecords.filter(r => !r.is_void && ['pachi','pachi_manual','pachi_highacid','pachi_lowbrix','pachi_tiny','pachi_green'].includes(r.source_type) && isUsageIncluded(r.usage)).forEach(r => {
-    const p = r.product || '기타';
-    pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
-    const _u = r.usage || '미분류'; pachiDetail[p] = pachiDetail[p] || {};
-    pachiDetail[p][_u] = (pachiDetail[p][_u] || 0) + (Number(r.quantity) || 0);
-  });
-  invWaste.forEach(r => {
-    const p = r.product || '기타';
-    pachiMap[p] = (pachiMap[p] || 0) + (Number(r.quantity) || 0);
-    const _u = r.usage || '미분류'; pachiDetail[p] = pachiDetail[p] || {};
-    pachiDetail[p][_u] = (pachiDetail[p][_u] || 0) + (Number(r.quantity) || 0);
-  });
+  // ★계산은 공용 _pachiStockByProduct — 파치 탭 합계와 같은 함수(두 화면 숫자가 갈리지 않게).
+  //   재고 행이 한 번도 안 만들어진 입고 파치 잔여도 여기 들어온다(예전 요약은 이걸 놓쳤다).
+  const { byProduct: pachiMap, detail: pachiDetail } = _pachiStockByProduct();
 
   // ==================================================================
   // 6. 주스 · 청 재고 집계
@@ -14727,6 +14718,49 @@ function _ibPachiLinkedInv(inboundId, cat) {
   if (!src) return [];
   return inventoryRecords.filter(r => r && !r.is_void
     && r.source_type === src && String(r.inbound_record_id) === String(inboundId));
+}
+
+// ── 파치 재고 계산 — 재고 요약 '4. 파치 재고'와 파치 탭(합계·입고 파치 행)의 단일 출처 ─────────
+// 규칙: 파치 재고 = 파치 재고 행(void 제외, 사용처 제외 규칙 적용) + 옛 inventory_waste + '재고 행이 한 번도
+//   만들어지지 않은' 입고 파치·청과의 잔여. ★연결된 재고 행이 있었으면(void 포함) 이미 재고로 바뀐 것으로 본다.
+// ★2026-09-28 사고: 파치 탭이 '연결 재고 행이 void된 입고'(일괄 출고·파치 삭제)를 '아직 안 바뀐 입고'로 보고
+//   입고 잔여를 다시 세 19 CT가 부풀었다(요약 573 vs 파치 탭 592). void 행은 dbGetInventoryRecords가
+//   아예 안 불러오므로 따로 받아 둔 연결 id(_pachiVoidLinkedIb)로 판정한다.
+// ★사용처 제외(pachi_usages.include_in_stock=false)는 재고 행에만 — 요약이 쓰던 방식 그대로
+//   (옛 inventory_waste와 입고 파치(usage 칸 없음 = 미분류)는 항상 포함).
+let _pachiVoidLinkedIb = null;           // void 재고 행이 가리키는 입고 id Set(_invFetch가 채움). null = 못 받음 → 예전 판정으로 폴백
+const _pachiSeenLinkedIb = new Set();    // 이 세션에서 본 '살아있는' 연결 — 삭제·출고 뒤 부분 재로드(dbGetInventoryRecords)로
+                                         //   그 행이 사라져도 기억한다(재로드 경로마다 조회를 붙이지 않으려는 것)
+const _PACHI_INV_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_lowbrix', 'pachi_tiny', 'pachi_green'];
+// 반환: byProduct[품목]=CT · detail[품목][용도]=CT · inboundRows=[{ rec, remain }](파치 탭 Source 3 행 재료)
+function _pachiStockByProduct() {
+  const usageInclude = {};
+  pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
+  const isUsageIncluded = name => { const n = name || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
+  const byProduct = {}, detail = {};
+  const add = (product, usage, ct) => {
+    const p = product || '기타', u = usage || '미분류';
+    byProduct[p] = (byProduct[p] || 0) + ct;
+    detail[p] = detail[p] || {};
+    detail[p][u] = (detail[p][u] || 0) + ct;
+  };
+  inventoryRecords.forEach(r => {
+    if (!r || r.is_void) return;
+    if (r.inbound_record_id) _pachiSeenLinkedIb.add(String(r.inbound_record_id));
+    if (_PACHI_INV_TYPES.includes(r.source_type) && isUsageIncluded(r.usage)) add(r.product, r.usage, Number(r.quantity) || 0);
+  });
+  invWaste.forEach(r => add(r.product, r.usage, Number(r.quantity) || 0));
+  // 입고 파치·청과 중 재고 행이 한 번도 안 만들어진 것 — 살아있는 짝 행 판정은 예전(renderPachiSection) 그대로,
+  //   거기에 '한 번이라도 연결됐던 것'(void 연결·세션 중 본 연결)을 더 뺀다. 연결 id를 못 받았으면 예전 동작.
+  const everLinked = id => _pachiVoidLinkedIb !== null && (_pachiVoidLinkedIb.has(id) || _pachiSeenLinkedIb.has(id));
+  const inboundRows = inboundRecords
+    .filter(r => !r.is_void && _IB_PACHI_SRC[r.inbound_category]
+      && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === _IB_PACHI_SRC[r.inbound_category] && ir.inbound_record_id === r.id)
+      && !everLinked(String(r.id)))
+    .map(r => ({ rec: r, remain: Math.round((getRemainingCT(r) || 0) * 10) / 10 }))   // 0.1 반올림 — 부동소수 잔차로 다 쓴 행이 남지 않게
+    .filter(x => x.remain > 0);
+  inboundRows.forEach(x => add(x.rec.product, null, x.remain));
+  return { byProduct, detail, inboundRows };
 }
 
 function getProcessedForInbound(id) {
@@ -22181,11 +22215,12 @@ function renderPachiSection() {
   // ★kg도 잔여 기준으로 다시 낸다 — 입고량 기준으로 두면 CT와 kg가 서로 다른 얘기를 하게 된다.
   // ★0.1 단위로 반올림: 부동소수 잔차(5 - 5 = 4.999…)가 남으면 다 쓴 행이 안 사라진다.
   //  ★짝 표는 전역 _IB_PACHI_SRC 하나뿐이다(예전엔 여기에 같은 표를 또 두었다).
-  const inboundPachi = inboundRecords
-    .filter(r => !r.is_void && _IB_PACHI_SRC[r.inbound_category]
-      && !inventoryRecords.some(ir => !ir.is_void && ir.source_type === _IB_PACHI_SRC[r.inbound_category] && ir.inbound_record_id === r.id))
-    .map(r => {
-      const remain = Math.round((getRemainingCT(r) || 0) * 10) / 10;
+  // ★어떤 입고가 '미전환'인지·잔여 식은 공용 _pachiStockByProduct가 정한다(재고 요약과 같은 판정).
+  //   2026-09-28부터 연결 재고 행이 void된 입고(일괄 출고·파치 삭제로 이미 처리됨)도 '전환됨'으로 본다 —
+  //   예전 판정은 살아있는 행만 봐서 그 입고 잔여를 다시 세 유령 재고(19 CT)가 생겼다.
+  const _pachiStock = _pachiStockByProduct();
+  const inboundPachi = _pachiStock.inboundRows
+    .map(({ rec: r, remain }) => {
       return {
         date: r.date, farm: r.farm_name || null, product: r.product || '기타',
         ct: remain,
@@ -22196,8 +22231,7 @@ function renderPachiSection() {
         pachiKind: r.inbound_category === '청과' ? '청과' : '파치', usage: r.usage || '미분류', location: r.location || null,
         sizeGroup: null, condition: null
       };
-    })
-    .filter(x => x.ct > 0);
+    });   // 잔여 0 이하는 헬퍼가 이미 뺐다
 
   // ★실사 대상 확정(2번에서 이어짐) — 입고 파치를 여기서 더한다.
   //  ★체크 저장 위치가 inbound_records.audit_checked_at이라, 컬럼이 없으면 더하지 않는다(예전 동작 그대로).
@@ -22227,14 +22261,16 @@ function renderPachiSection() {
   //
   // 2026-08-20 DB: pachi_usages 12종 중 제외 대상은 1종뿐 —
   //    "올탑예정(9브릭스 이하)" (include_in_stock=false)
-  // ★renderInvSummary 5번 구획도 같은 규칙을 따로 구현해 두었다(isUsageIncluded). 바꿀 땐 두 곳 다.
+  // ★아래 isIncluded는 행 표시(흐림·재고제외 배지)와 품목·하위그룹 소계용이다.
+  //   전체 합계는 _pachiStockByProduct(재고 요약과 같은 함수) — 같은 규칙이 헬퍼 안에도 있다. 바꿀 땐 두 곳 다.
   // 사용처 재고포함 여부 맵
   const usageInclude = {};
   pachiUsages.forEach(u => { usageInclude[u.name] = (u.include_in_stock !== false); });
   const isIncluded = u => { const n = u || '미분류'; if (n === '미분류') return true; return usageInclude[n] !== false; };
 
-  const totalCt = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.ct : s, 0);
-  const totalKg = allRows.reduce((s, r) => isIncluded(r.usage) ? s + r.kg : s, 0);
+  // ★합계 = 재고 요약 '4. 파치 재고'와 같은 값(kg도 요약과 같은 식: 품목별 CT × kgPerCt를 더한 뒤 반올림).
+  const totalCt = Object.values(_pachiStock.byProduct).reduce((s, ct) => s + ct, 0);
+  const totalKg = Math.round(Object.entries(_pachiStock.byProduct).reduce((s, [p, ct]) => s + ct * kgPerCt(p), 0));
 
   // ==================================================================
   // 7. 축 순서 만들기 (사용처 / 위치)
