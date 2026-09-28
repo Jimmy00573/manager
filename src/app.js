@@ -21211,8 +21211,16 @@ async function buildInboundShareText(inboundId) {
   add('농가명', base.farm_name || '');
   add('주소', addr);
   add('품목', base.product || '');
-  add('수량', grp.map(r => `${r.inbound_category || '상품'} ${fmtN(r.quantity)}ct`).join(', '));
-  if (grp.length > 1) L.push(`총 ${fmtN(total)}ct`);   // 카테고리가 하나면 위 '수량' 줄과 같은 값이라 생략
+  // 수량 — 카테고리가 하나면 예전 그대로 '수량: 상품 58ct'(총 줄 생략 — 같은 값).
+  //   ★둘 이상이면 현장이 쓰는 세로 형식: '수량' 머리 줄(콜론 없음) → 카테고리마다 한 줄 → '총 Nct'가 블록 끝.
+  //     가로 나열('상품 58ct, 대과 6ct, …')은 읽기 어렵다는 현장 요청(2026-09-28). 순서는 grp(_ibCatRank 정렬) 그대로.
+  if (grp.length > 1) {
+    L.push('수량');
+    grp.forEach(r => L.push(`${r.inbound_category || '상품'} ${fmtN(r.quantity)}ct`));
+    L.push(`총 ${fmtN(total)}ct`);
+  } else {
+    add('수량', grp.map(r => `${r.inbound_category || '상품'} ${fmtN(r.quantity)}ct`).join(', '));
+  }
   if (kgPerCt > 0) add('중량', `${_ibShareNum(kgPerCt)}kg`);
   add('크기', pick('size_distribution'));
   add('당도', pick('brix_range'));
