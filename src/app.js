@@ -695,6 +695,7 @@ async function initApp() {
   }
 
   setDates();
+  _dpSyncSaveLabel();   // 배차 등록 버튼 글자 초기 1회(새로고침 때 브라우저가 체크를 되살린 경우까지 맞춘다)
   _ibRenderCatQty();   // 입고 카테고리별 수량칸 생성(IB_CAT_SORT_ORDER 순서)
   _mountBrixRangeSels();   // 당도 범위 드롭다운(등록 폼·수정 모달) 생성 — 옵션은 _BRIX_NUMS/_BRIX_POSS 한 곳에서
   _fsAttachAll();   // 농가 select들을 검색형으로 전환(숨긴 select가 값의 주인) — popSels보다 먼저 붙여야 첫 동기화가 걸린다
@@ -2461,6 +2462,14 @@ function onDrvTypeChange() {
 // 아이콘 + 종류명 배지. 아이콘은 _CT_ICON 단일 소스(옛 이름·전 소유 종류 모두 커버), 이름은 저장된 값 그대로 표시.
 function ctB(v) { return `${_ctIcon(v)} ${esc(v || '-')}`; }
 
+// 배차 등록 버튼 글자 = '예약 등록' 체크 상태 — 늘 '배차 등록'이라 바로 완료되는지 안 보였다
+//   (2026-09-28 강태훈 200·리어카 1을 예약인 줄 알고 등록 → 즉시 배출완료). 저장 로직(addDisp)은 그대로다.
+// ★체크를 코드로 바꾸면 change가 안 나므로 그 자리(_hvGoDispatch)에서도 직접 부른다. 초기 1회는 initApp.
+function _dpSyncSaveLabel() {
+  const btn = document.getElementById('dp-save-btn');
+  if (!btn) return;
+  btn.textContent = document.getElementById('dp-reserve')?.checked === true ? '📅 예약으로 등록' : '✅ 배출완료로 등록';
+}
 async function addDisp() {
   const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv');
   const targetType = gv('dp-target-type') || '농가';   // 배차 대상 종류(농가/농협/거래처)
@@ -4962,6 +4971,7 @@ function _hvGoDispatch(farm, harvestDate, field) {
     const hv = document.getElementById('dp-harvest'); if (hv) hv.value = harvestDate;
     // ★체크 상태를 매번 확정한다 — 앞선 조작으로 켜져 있던 예약이 남아 모르는 새 대기로 저장되지 않게.
     const rs = document.getElementById('dp-reserve'); if (rs) rs.checked = reserve;
+    _dpSyncSaveLabel();   // 코드로 바꾼 체크는 change가 안 난다 — 버튼 글자를 직접 맞춘다
     document.getElementById('dp-qty')?.focus();
   }, 60);   // 패널 전환 후 폼이 보이는 시점에 채운다
 }
