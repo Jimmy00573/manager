@@ -14040,7 +14040,7 @@ function renderInvSummary() {
   const juiceTotalNet = Object.values(juiceMap).filter(v => v.unit !== '박스').reduce((s, v) => s + Math.max(0, v.net), 0);
   const boxTotalNet   = Object.values(juiceMap).filter(v => v.unit === '박스').reduce((s, v) => s + Math.max(0, v.net), 0);
   const pachiJuiceItems = Object.values(pachiMap).filter(ct => ct > 0).length + Object.values(juiceMap).filter(v => v.net > 0).length;
-  // 미선과 일수 환산 글자(선과 일평균 0이면 '') — KPI 카드와 ① 오늘 선과할 것 부제가 같이 쓴다.
+  // 미선과 일수 환산 글자(선과 일평균 0이면 '') — KPI 카드와 ① 미선과 재고 부제가 같이 쓴다.
   const unsDaysTxt = sortAvg7 > 0 ? (unsTotalCt / sortAvg7 < 1 ? '1일치 미만' : `약 ${Math.round(unsTotalCt / sortAvg7)}일치`) : '';
 
   // ── 미선과 비중 막대 색상
@@ -14065,7 +14065,7 @@ function renderInvSummary() {
   const kpiHtml = `<div class="sum-kpi-grid">
     ${unsTotalCt > 0 ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
       // 일수 환산 = 잔여 ÷ 최근 7일 선과 일평균. 반올림 정수(일별 편차가 커 소수점은 과한 정밀도). 선과 0이면 생략.
-      //   ★글자는 unsDaysTxt 하나 — ① 오늘 선과할 것 부제가 같은 값을 쓴다.
+      //   ★글자는 unsDaysTxt 하나 — ① 미선과 재고 부제가 같은 값을 쓴다.
       (sortAvg7 > 0 ? kpiSub(`<span title="잔여 ${fmtCT(unsTotalCt)} CT ÷ 최근 7일 선과 일평균 ${fmtCT(sortAvg7)} CT" style="cursor:help">${unsDaysTxt}</span>`) : '') +
       // ★⚠ 칩은 두 벌 — 화면은 꼬리 제외(신호 줄과 같은 수), 인쇄는 예전 수(꼬리 포함, 인쇄의 '1. 미선과 재고' 경과 칩과 같은 기준).
       //   인쇄 보고서를 예전 그대로 두려는 것(B안 3단계). 클래스 짝은 style.css .sum-screen-only/.sum-print-only.
@@ -14101,7 +14101,7 @@ function renderInvSummary() {
     <span title="입고 − 선과 (출고는 적체 계산에 넣지 않음)" style="font-size:12px;font-weight:700;color:${_flowBlCol};white-space:nowrap">적체 ${_flowBlTxt} CT</span>
   </div>`;
 
-  // ── 신호 줄 '오늘 챙길 것'(B안 2단계) — KPI 바로 아래. 값이 0인 칩은 안 그리고, 전부 0이면 '특이사항 없음'.
+  // ── 신호 줄 '확인 필요'(B안 2단계, 5단계에서 이름을 탭 이름 규칙에 맞춤) — KPI 바로 아래. 값이 0인 칩은 안 그리고, 전부 0이면 '특이사항 없음'.
   //   ★계산은 전부 기존 것을 부른다: 적체 = 위 흐름 줄의 flowBacklog(같은 변수) · 우선/꼬리 = 1번 _unsRows(_ibIsUrgent·isTail) ·
   //     7일 넘은 선과품 = 4번 반복에서 모은 oldSorted · 주스 = 주스 탭과 같은 _juiceProductMap + juiceStatusOf.
   //   ★인쇄에서는 숨긴다(class sum-signal, style.css @media print) — 인쇄 보고서는 예전 그대로.
@@ -14146,7 +14146,7 @@ function renderInvSummary() {
   if (_sigJOut.length) sigChips.push(_sigChip('red', `주스·가공 품절 ${_sigJOut.length}`, _sigTip(_sigJOut), "invTab('juice')"));
   if (_sigJLow.length) sigChips.push(_sigChip('orange', `${_sigJOut.length ? '' : '주스·가공 '}부족 ${_sigJLow.length}`, _sigTip(_sigJLow), "invTab('juice')"));
   const signalHtml = `<div class="sum-signal" style="${CARD};padding:10px 16px;display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap">
-    <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0;margin-right:4px">오늘 챙길 것</span>
+    <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0;margin-right:4px">확인 필요</span>
     ${sigChips.length ? sigChips.join('') : _sigChip('gray', '특이사항 없음')}
   </div>`;
 
@@ -14443,7 +14443,7 @@ function renderInvSummary() {
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
 
-  // ── ① 오늘 선과할 것(B안 3단계) — 화면 전용. 위 '1. 미선과 재고'(unsHtml)는 인쇄 전용으로 그대로 둔다(인쇄 보고서 무변).
+  // ── ① 미선과 재고(B안 3단계, 화면 이름은 5단계에서 탭 이름으로) — 화면 전용. 위 '1. 미선과 재고'(unsHtml)는 인쇄 전용으로 그대로 둔다(인쇄 보고서 무변).
   //   행 = 품목(1번 표와 같은 가나다 순·productChip), 열 = 경과일 등급 1/2/3(_ibUrgencyLevel) · 꼬리 · 합계. 데이터는 _unsRows만.
   //   ★꼬리(isTail)는 경과일 열에서 빼고 '꼬리' 열에만 — 거의 끝난 입고라 '오늘 먼저'가 아니다. 합계는 전부.
   //   ★열 머리 숫자는 URGENCY_THRESHOLD_MID/HIGH에서 만든다(설정에서 바꾸면 같이 바뀜).
@@ -14463,7 +14463,7 @@ function renderInvSummary() {
         ${_stTop.length > 3 ? `<span onclick="${_goSortCenter}" style="cursor:pointer;color:#6B7280">외 ${_stTop.length - 3}건</span>` : ''}
       </div>` : '';
   const _M = URGENCY_THRESHOLD_MID, _Hi = URGENCY_THRESHOLD_HIGH;
-  const sortTodayHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('①', '오늘 선과할 것', `미선과 ${fmtCT(unsTotalCt)} CT${unsDaysTxt ? ' · ' + unsDaysTxt : ''}`)}
+  const sortTodayHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('①', '미선과 재고', `미선과 ${fmtCT(unsTotalCt)} CT${unsDaysTxt ? ' · ' + unsDaysTxt : ''}`)}
     <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:420px">
       <thead><tr><th ${THL}>품목</th><th ${THR}>0~${_M - 1}일</th><th ${THR}>${_M}~${_Hi - 1}일</th><th ${THR}>${_Hi}일↑</th><th ${THR}>꼬리</th><th ${THR}>합계 (CT)</th></tr></thead>
       <tbody>${_stKeys.length
@@ -14488,7 +14488,7 @@ function renderInvSummary() {
   const sortSizesFor = (szArr, isMangam) => isMangam
     ? [...szArr].sort((a, b) => parseInt(a) - parseInt(b))
     : [...szArr].sort((a, b) => citrusOrder.indexOf(a) - citrusOrder.indexOf(b));
-  // 품목 행 ▸ 펼침 상세(등급별 · 묶음별 사이즈 칸) — 2·3번 표와 ② 팔 수 있는 것이 같이 쓴다(B안 4단계에서 빌더 밖으로 옮김, 모양 그대로).
+  // 품목 행 ▸ 펼침 상세(등급별 · 묶음별 사이즈 칸) — 2·3번 표와 ② 선과품 재고가 같이 쓴다(B안 4단계에서 빌더 밖으로 옮김, 모양 그대로).
   //   detail = sortDetail[품목] = {등급:{사이즈:{ct,kg}}}, groups = 그 표의 열(묶음) 순서.
   //   ★사이즈→묶음은 3번 sizeGroupOf(품목 마스터) — 표 칸과 같은 기준. '기타'가 열에 있으면 줄을 두 번 그리지 않는다.
   const sortDetailBlocks = (p, detail, groups, isMangam) => {
@@ -14592,7 +14592,7 @@ function renderInvSummary() {
   const manGamHtml = buildSortSection(2, '만감 선과 재고', mangamGroupSub(manGamMap), manGamMap, manGamCols, sortDetail);
   const citrusHtml = buildSortSection(3, '감귤 선과 재고', '단위: kg · 극소과(000,00) / 소과(3S~2S2) / 로얄과(S1~M2) / 중과(L,2L) / 대과(3L,왕1,왕2)', citrusMap, citrusCols, sortDetail);
 
-  // ── ② 팔 수 있는 것(B안 4단계) — 화면 전용. 위 2·3번은 인쇄 전용으로 그대로 둔다.
+  // ── ② 선과품 재고(B안 4단계, 화면 이름은 5단계에서 탭 이름으로) — 화면 전용. 위 2·3번은 인쇄 전용으로 그대로 둔다.
   //   표 2개(만감류·감귤류, 값 있는 쪽만). 행 = 품목, 열 = 마스터 묶음(2·3번과 같은 열) + 7일↑ + 합계. 칸 = kg 크게 · CT 작게.
   //   ★칸 값은 sortDetail(4번에서 이미 모은 {등급:{사이즈:{ct,kg}}})을 sizeGroupOf로 묶어 쓴다 — 새로 집계하지 않는다.
   //   ★7일↑ = 신호 줄과 같은 oldSorted(입고일 ≥ SUMMARY_OLD_SORTED_DAYS). ▸ 펼침 = 2·3번과 같은 sortDetailBlocks.
@@ -14629,7 +14629,7 @@ function renderInvSummary() {
   };
   const _sellCt = Object.values(sortDetail).reduce((s, gm) => s + Object.values(gm).reduce((a, gsz) => a + Object.values(gsz).reduce((b, v) => b + v.ct, 0), 0), 0);
   const _sellBody = sellTable('만감류', manGamMap, manGamCols, true, 'm') + sellTable('감귤류', citrusMap, citrusCols, false, 'c');
-  const sellHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('②', '팔 수 있는 것', `선과품 ${fmtN(Math.round(manGamTotalKg + citrusTotalKg))} kg · ${fmtCT(_sellCt)} CT`)}
+  const sellHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('②', '선과품 재고', `선과품 ${fmtN(Math.round(manGamTotalKg + citrusTotalKg))} kg · ${fmtCT(_sellCt)} CT`)}
     ${_sellBody || `<div style="padding:18px;text-align:center;color:#bbb;font-size:13px">선과 재고 없음</div>`}
     <div style="height:6px"></div>
   </div>`;
@@ -14685,29 +14685,82 @@ function renderInvSummary() {
     const noteStr = v.perBox ? `1BOX/${v.perBox}개` : DASH;
     return `<tr><td style="${TL}">${productChip(p)}</td><td ${isNeg ? `style="${TRneg}"` : TRhl}>${fmtN(v.net)} ${esc(v.unit || '병')}</td><td style="${TL};color:#9CA3AF;font-size:12px">${noteStr}</td></tr>`;
   };
+  // 분류 소계 — 5번 표 '소계' 줄과 ③의 분류별 합계가 같이 쓴다(B안 5단계).
+  const juiceSubtotal = grp => grp.reduce((s, [, v]) => s + v.net, 0);
   const juiceGroupHtml = grp => {
     if (!grp.length) return '';
     const isBox = grp[0][1].unit === '박스';
     const label = isBox ? '🍫 가공품' : isCheong(grp[0][0]) ? '🍯 청' : '🧃 주스';
-    const subtotal = grp.reduce((s, [, v]) => s + v.net, 0);
+    const subtotal = juiceSubtotal(grp);
     const unit = grp[0][1].unit || '병';
     return `<tr><td colspan="3" style="background:#F9FAFB;font-weight:600;color:#374151;padding:6px 8px;font-size:12px">${label}</td></tr>`
       + grp.map(juiceRow).join('')
       + `<tr><td style="${TL};font-weight:600">소계</td><td ${TRhl}>${fmtN(subtotal)} ${esc(unit)}</td><td></td></tr>`;
   };
-  const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
-    <table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
+  // ★표 부분만 따로 둔다 — 5번 카드와 ③의 '전체 목록 보기'가 같은 HTML을 쓴다(복사 금지). 5번 카드 출력은 예전과 글자 그대로.
+  const juiceTableHtml = `<table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
       <colgroup><col style="width:40%"><col style="width:28%"><col style="width:32%"></colgroup>
       <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
         ? juiceGroupHtml(juiceGroup) + juiceGroupHtml(cheongGroup) + juiceGroupHtml(boxGroup)
         : EMPTY(3, '주스/청 재고 없음')}</tbody>
-    </table></div>`;
+    </table>`;
+  const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
+    ${juiceTableHtml}</div>`;
+
+  // ==================================================================
+  // 15-1. ③ 파치 · 주스/청(B안 5단계) — 화면 전용 요약. 위 4·5번 카드는 인쇄 전용으로 그대로 둔다.
+  // ==================================================================
+  // ★새로 집계하지 않는다: 파치 = 5번 pachiMap·pachiDetail(= _pachiStockByProduct 결과) ·
+  //   주스 분류 합계 = 위 juiceGroup/cheongGroup/boxGroup + juiceSubtotal(5번 표 소계와 같은 식) ·
+  //   품절·부족 = 신호 줄의 _sigJOut·_sigJLow(_juiceProductMap + juiceStatusOf).
+  // 좌우 2칸은 기존 .sum-pj-grid(768px 이하 1칸) 재사용. 파치 칸 → 파치 탭, 주스 칸 → 주스·청 탭.
+  // '전체 목록 보기'는 _sumJuiceListOpen(메모리 — 새로고침하면 접힘), 펼치면 위 juiceTableHtml을 그대로 넣는다.
+  const _pjTotCt = pachiEntries.reduce((s, [, ct]) => s + ct, 0);
+  // kg는 KPI 카드의 pachiTotalKg 그대로 — 새로 더하면 합이 x.5에 걸릴 때 더하는 순서 차이로 반올림이 1 kg 갈린다
+  //   (2026-09-28 10,742.5 → 파치 탭·KPI 10,742 vs 가나다순 합 10,743). 파치 탭 합계도 같은 순서로 더한다.
+  const _pjTotKg = pachiTotalKg;
+  const _pjUsage = {};
+  pachiEntries.forEach(([p]) => Object.entries(pachiDetail[p] || {}).forEach(([u, ct]) => { _pjUsage[u] = (_pjUsage[u] || 0) + ct; }));
+  const _pjUsageSorted = Object.entries(_pjUsage).filter(([, ct]) => ct > 0).sort((a, b) => b[1] - a[1]);
+  const _pjUsageRest = _pjUsageSorted.slice(4).reduce((s, [, ct]) => s + ct, 0);
+  const _pjUsageLine = _pjUsageSorted.length
+    ? _pjUsageSorted.slice(0, 4).map(([u, ct]) => `${esc(u)} ${fmtCT(ct)}`).join(' · ') + (_pjUsageRest > 0 ? ` · 외 ${fmtCT(_pjUsageRest)}` : '')
+    : '';
+  const _pjLine = 'font-size:12px;color:#374151;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0';
+  const _pjPane = `<div onclick="invTab('pachi')" style="cursor:pointer;min-width:0">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-size:13px;font-weight:600;color:#111827">파치</span>
+        <span style="font-size:12px;color:#374151">총 <b>${fmtCT(_pjTotCt)}</b> CT · ${fmtN(Math.round(_pjTotKg))} kg</span>
+      </div>
+      ${pachiEntries.length
+        ? pachiEntries.map(([p, ct]) => `<div style="${_pjLine}">${productChip(p)}<span>${fmtCT(ct)} CT</span><span style="color:#9CA3AF">·</span><span>${fmtN(ct * kgPerCt(p))} kg</span></div>`).join('')
+        : `<div style="font-size:12px;color:#9CA3AF">파치 재고 없음</div>`}
+      ${_pjUsageLine ? `<div style="font-size:11px;color:#9CA3AF;margin-top:6px;line-height:1.5">${_pjUsageLine}</div>` : ''}
+    </div>`;
+  const _jcSubs = [[juiceGroup, '주스'], [cheongGroup, '청'], [boxGroup, '가공품']]
+    .filter(([g]) => g.length)
+    .map(([g, lbl]) => `${lbl} <b>${fmtN(juiceSubtotal(g))}</b>${esc(g[0][1].unit || '병')}`);
+  const _jcNames = (list, color, lbl) => list.length
+    ? `<div style="font-size:12px;padding:3px 0;line-height:1.5"><span style="font-weight:600;color:${color}">${lbl}</span> <span style="color:${color}">${list.map(esc).join(' · ')}</span></div>` : '';
+  const _jcPane = `<div onclick="invTab('juice')" style="cursor:pointer;min-width:0">
+      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:4px">주스/청</div>
+      <div style="font-size:12px;color:#374151;padding:3px 0">${_jcSubs.length ? _jcSubs.join(' · ') : '<span style="color:#9CA3AF">주스/청 재고 없음</span>'}</div>
+      ${_jcNames(_sigJOut, '#C62828', '품절')}${_jcNames(_sigJLow, '#C05800', '부족')}
+      ${!_sigJOut.length && !_sigJLow.length ? `<div style="font-size:12px;color:#9CA3AF;padding:3px 0">품절·부족 없음</div>` : ''}
+    </div>`;
+  const pjHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('③', '파치 · 주스/청')}
+    <div class="sum-pj-grid" style="padding:12px 16px;margin-bottom:0">${_pjPane}${_jcPane}</div>
+    <div style="border-top:1px solid #F3F4F6;padding:8px 16px">
+      <button type="button" onclick="toggleSumJuiceList()" style="background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit">주스/청 전체 목록 ${_sumJuiceListOpen ? '접기 ▴' : '보기 ▾'}</button>
+    </div>
+    ${_sumJuiceListOpen ? `<div style="border-top:1px solid #F3F4F6">${juiceTableHtml}</div>` : ''}
+  </div>`;
 
   // ==================================================================
   // 16. 최종 출력 — 위에서 만든 조각을 화면 순서대로 붙인다
   // ==================================================================
-  // 순서: KPI → 흐름 → 입출고 → 1.미선과 → 2.만감선과 → 3.감귤선과 → (4.파치 + 5.주스·청 2열)
+  // 순서: KPI → 확인 필요 → 흐름 → 입출고 → ①(화면)/1(인쇄) → ②(화면)/2·3(인쇄) → ③(화면)/4·5 2열(인쇄)
   el.innerHTML = `<div>
     <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
       <div>
@@ -14717,9 +14770,12 @@ function renderInvSummary() {
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
     ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${sortTodayHtml}<div class="sum-print-only">${unsHtml}</div>${sellHtml}<div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
-    <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
+    ${pjHtml}<div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
+// ③ 파치 · 주스/청의 '주스/청 전체 목록' 펼침 — 메모리에만(새로고침하면 접힘). 다시 그려도 상태 유지.
+let _sumJuiceListOpen = false;
+function toggleSumJuiceList() { _sumJuiceListOpen = !_sumJuiceListOpen; renderInvSummary(); }
 
 function todayTabSwitch(tab) {
   ['list', 'category', 'product', 'driver'].forEach(t => {

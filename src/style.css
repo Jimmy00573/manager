@@ -442,9 +442,9 @@ textarea {
   #inv-sum-div .sum-th { background: #DBEAFE !important; color: #1E40AF !important; border-color: #BFDBFE !important; font-size: 12px !important; font-weight: 700 !important; }
   #inv-sum-div .sum-td-hl { color: #1E40AF !important; background: #EFF6FF !important; font-weight: 600 !important; }
   #inv-sum-div .sum-today-card { background: #F0FDF4 !important; border-color: #A7F3D0 !important; }
-  /* 재고 요약 신호 줄('오늘 챙길 것') — 화면 전용. 인쇄 보고서는 예전 그대로 둔다. */
+  /* 재고 요약 신호 줄('확인 필요') — 화면 전용. 인쇄 보고서는 예전 그대로 둔다. */
   #inv-sum-div .sum-signal { display: none !important; }
-  /* B안 3단계: 화면용 '① 오늘 선과할 것'은 숨기고, 예전 '1. 미선과 재고'를 인쇄에 그대로 보인다. */
+  /* B안: 화면용 ①②③(.sum-screen-only)은 숨기고, 예전 1~5번 블록(.sum-print-only)을 인쇄에 그대로 보인다. */
   #inv-sum-div .sum-screen-only { display: none !important; }
   #inv-sum-div .sum-print-only { display: block !important; }
 }
