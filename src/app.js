@@ -1054,6 +1054,10 @@ function switchMsgTab(t) {
 //     공장 재고의 '배출'에서 빠졌다. 회수는 세면서 배출은 안 세니 한 바퀴 돌 때마다 잔여가 부풀었다.
 //     같은 실수가 또 나지 않게 판정을 이 함수 하나로 모았다 — 새로 세는 곳이 생기면 여기를 쓸 것.
 function _isExtraOutPick(p) { return p.type === '배출' && (p.outbound_id || p.manual_tx_id) && !!p.ctype; }
+// ★보정 배출 — 배차·출고·수동거래 어디에도 연결 안 된, 손으로 넣은 '배출' 행(예: 프로그램 도입 전 배출분을 회수와 상쇄하려고 넣은 pick 321).
+//   대상 보유(getFCS)는 이미 모든 '배출'을 세지만 종류별 칩(getFCtypeMap)은 배차·납품만 세서 칩만 −로 남았다 → 칩에만 더한다.
+//   ★getSt(공장 재고)에는 넣지 않는다 — 실제로 공장에서 나간 물건이 아니므로 공장 숫자가 변하면 안 된다.
+function _isAdjOutPick(p) { return p.type === '배출' && !!p.ctype && !p.dispatch_id && !p.outbound_id && !p.manual_tx_id && !p.auto; }
 // ★예약 배차(status='배차완료')는 아직 창고에 있다 — 나간 것으로 세면 안 된다.
 //   공장 재고(getSt)와 대상별 종류 칩(getFCtypeMap)이 **같은** 판정을 쓰도록 여기 한 곳에 둔다.
 //   (위 _isExtraOutPick을 하나로 모은 것과 같은 이유 — 한쪽만 바뀌면 화면마다 숫자가 갈린다.)
@@ -2883,11 +2887,12 @@ function renderPick() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const tb = document.getElementById('pick-tb');
   const list = picks.filter(p => !p.auto);
-  if (!list.length) { tb.innerHTML = emr(9, '수거·회수 기록이 없습니다'); return; }
+  if (!list.length) { tb.innerHTML = emr(10, '수거·회수 기록이 없습니다'); return; }
   const cls = { 원물수거: 'b-ok', 빈콘회수: 'b-teal' };
   tb.innerHTML = list.map(p => `<tr>
     <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
     <td><span class="badge ${cls[p.type] || 'b-neu'}">${esc(p.type)}</span></td>
+    <td>${p.ctype ? ctB(p.ctype) : '-'}</td>
     <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.car || '-')}</td>
     <td>${esc(p.note || '-')}</td>
     <td class="mtime">${p.updated_at ? '✏️ ' + ftm(p.updated_at) : '-'}</td>
@@ -3432,6 +3437,8 @@ function getFCtypeMap(fn, targetType) {
   const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d) && _isOutDisp(d)).forEach(d => { const k = ctNorm(d.ctype); ob[k] = (ob[k] || 0) + d.qty; });
   // 납품 콘테이너(D-1 출고 / D-1b 수동거래) 배출 — outbound_id·manual_tx_id 연동 pick만 종류별 추가(배차 auto pick은 dispatch_id·ctype 없음 → 제외, 중복 방지)
   picks.filter(p => p.farm === fn && _isExtraOutPick(p) && tgtOk(p)).forEach(p => { const k = ctNorm(p.ctype); ob[k] = (ob[k] || 0) + p.qty; });
+  // 보정 배출(연결 없는 손 입력 '배출' 행) — 대상 보유(getFCS)와 칩이 같은 숫자를 보게. 공장 재고(getSt)엔 안 넣는다(_isAdjOutPick 주석).
+  picks.filter(p => p.farm === fn && _isAdjOutPick(p) && tgtOk(p)).forEach(p => { const k = ctNorm(p.ctype); ob[k] = (ob[k] || 0) + p.qty; });
   // 회수(원물수거+빈콘회수): ctype 있으면 종류별 정확 분리, 없으면 미지정(비율 폴백) — 해당 대상만
   let recNull = 0; const recByType = {};
   picks.filter(p => p.farm === fn && (p.type === '원물수거' || p.type === '빈콘회수') && tgtOk(p)).forEach(p => {
