@@ -14164,7 +14164,10 @@ function renderInvSummary() {
   const _sdow = ['일','월','화','수','목','금','토'][new Date(`${sy}-${smo}-${sd}`).getDay()];
   const summaryInbounds = inboundRecords.filter(r => !r.is_void && r.date === summaryDate);
   const totalQty = summaryInbounds.reduce((s, r) => s + r.quantity, 0);
-  const totalCount = summaryInbounds.length;
+  const totalCount = summaryInbounds.length;   // 행 수 — 카테고리별·품목별·기사별 탭의 '건수'는 예전 그대로 이 값
+  // ★'목록'과 머리·접힘 요약의 N건은 한 차(한 번 저장) 기준 — 입고 폼이 카테고리마다 행을 따로 만들어 행 수가 부풀었다.
+  const truckGroups = _ibTruckGroups(summaryInbounds);
+  const truckCount = truckGroups.length;
 
   const getDrv = r => {
     if (r.driver_id && r.driver?.name)
@@ -14181,23 +14184,27 @@ function renderInvSummary() {
 
   let inTabContent;
   if (summaryInbounds.length > 0) {
-    // 목록 탭: group by (farm + product + category + driverKey)
-    const listMap = {};
-    summaryInbounds.forEach(r => {
-      const drv = getDrv(r);
-      const cat = r.inbound_category || '상품';   // null/빈값 = 상품 (categoryBadge와 동일 처리)
-      const key = `${r.farm_name}|${r.product}|${cat}|${drv.key}`;
-      if (!listMap[key]) listMap[key] = { farm: r.farm_name, product: r.product, category: cat, drv, qty: 0, cnt: 0 };
-      listMap[key].qty += r.quantity; listMap[key].cnt++;
-    });
-    const listRows = Object.values(listMap).sort((a, b) =>
-      a.farm.localeCompare(b.farm, 'ko') || a.product.localeCompare(b.product, 'ko') || a.category.localeCompare(b.category, 'ko'));
-    const listTabHtml = `<table style="width:100%;border-collapse:collapse">
+    // 목록 탭: 한 차(_ibTruckGroups) = 한 줄. 구분 칸 = 카테고리 칩(IB_CAT_SORT_ORDER 순, 기존 categoryBadge).
+    //   ★카테고리가 하나뿐인 차는 예전 줄 모양 그대로(칩 1개 + 수량, 같은 카테고리가 여러 행이면 '(N건)').
+    //   정렬: 농가 → 품목 → 들어온 시각. 같은 농가가 하루 두 번 오면 두 줄(예전엔 한 줄로 합쳐 '(2건)').
+    const listRows = truckGroups.map(g => {
+      const r0 = g.rows[0];
+      const byCat = {};
+      g.rows.forEach(r => { const c = r.inbound_category || '상품'; byCat[c] = (byCat[c] || 0) + (Number(r.quantity) || 0); });
+      const cats = Object.keys(byCat).sort((a, b) => _ibCatRank(a) - _ibCatRank(b) || a.localeCompare(b, 'ko'));
+      return { farm: r0.farm_name, product: r0.product, drv: getDrv(r0), cats, byCat, qty: g.total, cnt: g.rows.length, t: r0.created_at || '' };
+    }).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko') || (a.product || '').localeCompare(b.product || '', 'ko') || a.t.localeCompare(b.t));
+    const _catCell = g => g.cats.length === 1
+      ? categoryBadge(g.cats[0])
+      : `<span style="display:inline-flex;flex-wrap:wrap;gap:3px 6px;align-items:center">${g.cats.map(c => `<span style="white-space:nowrap">${categoryBadge(c)} <span style="font-size:11px;color:#374151">${fmtN(g.byCat[c])}</span></span>`).join('')}</span>`;
+    // ★min-width:0 — 전역 table{min-width:700px}(style.css) 때문에 폰에서 700px로 벌어져 잘렸다. 칸이 줄바꿈되게 푼다.
+    //   그래도 긴 농가명·기사 칸이 남으면 카드 밖으로 안 나가게 가로 스크롤 틀(overflow-x:auto)로 감싼다.
+    const listTabHtml = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:0">
       <thead><tr><th style="${TH_T}">농가</th><th style="${TH_T}">품목</th><th style="${TH_T}">구분</th><th style="${TH_T}">수송기사</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
       <tbody>${listRows.map(g =>
-        `<tr><td style="${TD_L}">${esc(g.farm)}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${categoryBadge(g.category)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
+        `<tr><td style="${TD_L}">${esc(g.farm)}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${_catCell(g)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cats.length === 1 && g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
       ).join('')}</tbody>
-    </table>`;
+    </table></div>`;
 
     // 기사별 탭: group by driverKey
     const drvMap = {};
@@ -14366,7 +14373,7 @@ function renderInvSummary() {
   // ── 접이식 요약 바 텍스트
   const sortingTotalKg = sortingProds.reduce((s, p) =>
     s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0), 0);
-  const _barInPart  = totalCount > 0 ? `입고 ${totalCount}건 ${fmtN(totalQty)}CT` : '입고 없음';
+  const _barInPart  = truckCount > 0 ? `입고 ${truckCount}건 ${fmtN(totalQty)}CT` : '입고 없음';   // 건 = 한 차 기준(9번 truckGroups)
   const _barOutArr  = [];
   if (sortingTotalKg > 0) _barOutArr.push(`선과 ${fmtN(Math.round(sortingTotalKg))}kg`);
   if (pachiOutKg    > 0) _barOutArr.push(`파치 ${fmtN(Math.round(pachiOutKg))}kg`);
@@ -14388,7 +14395,7 @@ function renderInvSummary() {
           <button onclick="setSummaryKind('in')" style="${btnBase};border:1px solid ${_summaryKind==='in'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='in'?'#1565C0':'#fff'};color:${_summaryKind==='in'?'#fff':'#374151'}">📥 입고</button>
           <button onclick="setSummaryKind('out')" style="${btnBase};border:1px solid ${_summaryKind==='out'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='out'?'#1565C0':'#fff'};color:${_summaryKind==='out'?'#fff':'#374151'}">📤 출고</button>
         </div>
-        ${_summaryKind==='in' && totalCount > 0 ? `<span style="font-size:12px;color:#6B7280">${totalCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
+        ${_summaryKind==='in' && truckCount > 0 ? `<span style="font-size:12px;color:#6B7280">${truckCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
         <div style="display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:wrap">
           <button type="button" onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">‹</button>
           <button type="button" onclick="moveSummaryDate(1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">›</button>
@@ -21122,6 +21129,25 @@ function _ibShareCluster(rows, target) {
   while (s > 0 && ts(sorted[s]) - ts(sorted[s - 1]) <= gap) s--;
   while (e < sorted.length - 1 && ts(sorted[e + 1]) - ts(sorted[e]) <= gap) e++;
   return sorted.slice(s, e + 1);
+}
+// 하루치 입고 행 → '한 차(한 번 저장)' 묶음 [{ rows, total, key }] — 입력 순서대로(각 묶음의 첫 행이 나온 순서).
+//   규칙은 위 _ibShareCluster 그대로(같은 날짜+농가+품목 안에서 created_at 간격 IB_SHARE_GAP_SEC 이내로 이어진 것) +
+//   ★기사까지 같아야 한 차(driver_id, 없으면 driver_name_manual) — 같은 농가 물건을 다른 차가 2분 안에 내린 경우를 가른다.
+//   ★알려진 한계: 같은 농가·품목·기사를 2분 안에 두 번 저장하면 한 차로 묶인다(묶는 컬럼이 DB에 없다).
+//   화면 표시 전용 — 재고 요약 입출고 '목록'(B안 후속). DB·저장 무관.
+function _ibTruckGroups(rows) {
+  const drvKey = r => r.driver_id != null ? `id:${r.driver_id}` : `m:${r.driver_name_manual || ''}`;
+  const keyOf = r => [r.date, r.farm_name, r.product, drvKey(r)].join('|');
+  const byKey = {};
+  rows.forEach(r => { (byKey[keyOf(r)] = byKey[keyOf(r)] || []).push(r); });
+  const seen = new Set(), out = [];
+  rows.forEach(r => {
+    if (seen.has(r)) return;
+    const cl = _ibShareCluster(byKey[keyOf(r)], r);
+    cl.forEach(x => seen.add(x));
+    out.push({ rows: cl, total: cl.reduce((s, x) => s + (Number(x.quantity) || 0), 0), key: `${keyOf(r)}|${cl[0].created_at || cl[0].id}` });
+  });
+  return out;
 }
 // 공유 텍스트의 '같은 차' 묶음 — 전체 공유(buildInboundShareText)와 당도 공유(buildInboundBrixShareText)가 같이 쓴다.
 // ★두 공유가 따로 묶으면 같은 입고인데 당도 값이 서로 다르게 나올 수 있다 — 묶음·집는 규칙은 여기 한 곳.
