@@ -13805,13 +13805,15 @@ function renderInvSummary() {
   const DASH   = '<span style="color:#D1D5DB">—</span>';
   const EMPTY  = (n, msg) => `<tr><td colspan="${n}" style="padding:18px;text-align:center;color:#bbb;font-size:13px">${msg}</td></tr>`;
   // 부제목 20자+ → 패턴B(제목 아래), 그 미만 → 패턴A(좌우 양끝)
+  // n: 숫자면 '1. 제목'(예전 그대로), 문자('①')면 점 없이 '① 제목' — B안 화면 블록용.
+  const _secNo = n => typeof n === 'number' ? `${n}. ` : `${n} `;
   const secHdr = (n, title, sub) => sub && sub.length > 20
     ? `<div class="sum-sec-hdr" style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
-        <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827;display:block">${n}. ${title}</span>
+        <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827;display:block">${_secNo(n)}${title}</span>
         <span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF;display:block;margin-top:3px">${sub}</span>
        </div>`
     : `<div class="sum-sec-hdr" style="padding:12px 16px;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid #F3F4F6">
-        <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">${n}. ${title}</span>
+        <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">${_secNo(n)}${title}</span>
         ${sub ? `<span class="sum-sec-hdr-sub" style="font-size:11px;color:#9CA3AF">${sub}</span>` : ''}
        </div>`;
 
@@ -13999,14 +14001,15 @@ function renderInvSummary() {
   // ★기준일 계산은 로컬 자정(_ibDaysSince) — toISOString 쓰지 말 것.
   // ★미선과 탭 priList와 같은 기준이어야 한다. 한쪽만 바꾸면 KPI와 목록 건수가 어긋난다.
   // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준 — 둘 다 _ibIsUrgent, ⭐ 미포함)
+  // priorityByProduct(꼬리 포함)는 옛 '1. 미선과 재고' 블록(지금은 인쇄 전용)의 '⚠ 품목 N건 경과' 칩 전용 — 인쇄가 예전 그대로여야 해서 기준을 안 바꾼다.
   const priorityByProduct = {};
-  let priorityCount = 0;
   _unsRows.forEach(row => {
-    if (_ibIsUrgent(row)) {
-      priorityCount++;
-      priorityByProduct[row.rec.product] = (priorityByProduct[row.rec.product] || 0) + 1;
-    }
+    if (_ibIsUrgent(row)) priorityByProduct[row.rec.product] = (priorityByProduct[row.rec.product] || 0) + 1;
   });
+  // ★화면의 우선 숫자는 '꼬리 제외'(B안 3단계) — KPI 카드 '⚠ N건 우선처리' · 신호 줄 '우선 선과' · ① 표 아래 농가 목록이 이 한 배열을 같이 쓴다.
+  //   (꼬리 = 거의 다 끝난 입고라 '오늘 먼저 할 일'이 아니다. 미선과 탭·선과센터의 우선 숫자는 그대로 꼬리 포함.)
+  const urgNonTail = _unsRows.filter(r => _ibIsUrgent(r) && !r.isTail);
+  const printUrgCnt = Object.values(priorityByProduct).reduce((s, n) => s + n, 0);   // 인쇄용 KPI 칩(예전 priorityCount와 같은 값)
 
   // ==================================================================
   // 7-1. 기간 흐름 집계 — 최근 N일 입고 → 선과 → 출고 (표시 전용)
@@ -14054,6 +14057,8 @@ function renderInvSummary() {
   const juiceTotalNet = Object.values(juiceMap).filter(v => v.unit !== '박스').reduce((s, v) => s + Math.max(0, v.net), 0);
   const boxTotalNet   = Object.values(juiceMap).filter(v => v.unit === '박스').reduce((s, v) => s + Math.max(0, v.net), 0);
   const pachiJuiceItems = Object.values(pachiMap).filter(ct => ct > 0).length + Object.values(juiceMap).filter(v => v.net > 0).length;
+  // 미선과 일수 환산 글자(선과 일평균 0이면 '') — KPI 카드와 ① 오늘 선과할 것 부제가 같이 쓴다.
+  const unsDaysTxt = sortAvg7 > 0 ? (unsTotalCt / sortAvg7 < 1 ? '1일치 미만' : `약 ${Math.round(unsTotalCt / sortAvg7)}일치`) : '';
 
   // ── 미선과 비중 막대 색상
   const BAR_COLORS = {
@@ -14077,9 +14082,12 @@ function renderInvSummary() {
   const kpiHtml = `<div class="sum-kpi-grid">
     ${unsTotalCt > 0 ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
       // 일수 환산 = 잔여 ÷ 최근 7일 선과 일평균. 반올림 정수(일별 편차가 커 소수점은 과한 정밀도). 선과 0이면 생략.
-      (sortAvg7 > 0 ? kpiSub(`<span title="잔여 ${fmtCT(unsTotalCt)} CT ÷ 최근 7일 선과 일평균 ${fmtCT(sortAvg7)} CT" style="cursor:help">${
-        unsTotalCt / sortAvg7 < 1 ? '1일치 미만' : `약 ${Math.round(unsTotalCt / sortAvg7)}일치`}</span>`) : '') +
-      (priorityCount > 0 ? kpiChip(`⚠ ${priorityCount}건 우선처리`) : ''), false, 'uns') : ''}
+      //   ★글자는 unsDaysTxt 하나 — ① 오늘 선과할 것 부제가 같은 값을 쓴다.
+      (sortAvg7 > 0 ? kpiSub(`<span title="잔여 ${fmtCT(unsTotalCt)} CT ÷ 최근 7일 선과 일평균 ${fmtCT(sortAvg7)} CT" style="cursor:help">${unsDaysTxt}</span>`) : '') +
+      // ★⚠ 칩은 두 벌 — 화면은 꼬리 제외(신호 줄과 같은 수), 인쇄는 예전 수(꼬리 포함, 인쇄의 '1. 미선과 재고' 경과 칩과 같은 기준).
+      //   인쇄 보고서를 예전 그대로 두려는 것(B안 3단계). 클래스 짝은 style.css .sum-screen-only/.sum-print-only.
+      (urgNonTail.length > 0 ? `<div class="sum-screen-only">${kpiChip(`⚠ ${urgNonTail.length}건 우선처리`)}</div>` : '') +
+      (printUrgCnt > 0 ? `<div class="sum-print-only">${kpiChip(`⚠ ${printUrgCnt}건 우선처리`)}</div>` : ''), false, 'uns') : ''}
     ${manGamTotalKg > 0 ? kpiCard('만감류 선과', fmtN(Math.round(manGamTotalKg)), 'kg',
       (manGamItems ? kpiSub(`${manGamItems}개 품목`) : '') +
       `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}kg</span></div>`,
@@ -14125,7 +14133,7 @@ function renderInvSummary() {
   const _goSortCenter = "invTab('uns');ibTab('proc')";
   const sigChips = [];
   if (flowBacklog > 0) sigChips.push(_sigChip('orange', `적체 +${fmtCT(flowBacklog)} CT`, esc(`최근 ${flowN}일 입고 − 선과 (아래 흐름 줄과 같은 값)`)));
-  const _sigUrgent = _unsRows.filter(r => _ibIsUrgent(r) && !r.isTail);
+  const _sigUrgent = urgNonTail;   // KPI 카드 '⚠ N건 우선처리'와 같은 배열(7번 구획)
   if (_sigUrgent.length) {
     const sum = _sigUrgent.reduce((s, r) => s + r.remain, 0);
     const text = _sigUrgent.length === 1
@@ -14151,8 +14159,9 @@ function renderInvSummary() {
     .filter(p => juiceStatusOf(_sigJuice[p].reduce((s, b) => s + (b.remaining_bottles || 0), 0)) === st)
     .sort((a, b) => a.localeCompare(b, 'ko'));
   const _sigJOut = _sigJuiceBy(JST_OUT), _sigJLow = _sigJuiceBy(JST_LOW);
-  if (_sigJOut.length) sigChips.push(_sigChip('red', `주스 품절 ${_sigJOut.length}`, _sigTip(_sigJOut), "invTab('juice')"));
-  if (_sigJLow.length) sigChips.push(_sigChip('orange', `${_sigJOut.length ? '' : '주스 '}부족 ${_sigJLow.length}`, _sigTip(_sigJLow), "invTab('juice')"));
+  // 글자 '주스·가공' — 주스 탭 판정을 그대로 써서 가공품(박스, 예: 한라봉 모나카)도 들어간다. 판정은 그대로.
+  if (_sigJOut.length) sigChips.push(_sigChip('red', `주스·가공 품절 ${_sigJOut.length}`, _sigTip(_sigJOut), "invTab('juice')"));
+  if (_sigJLow.length) sigChips.push(_sigChip('orange', `${_sigJOut.length ? '' : '주스·가공 '}부족 ${_sigJLow.length}`, _sigTip(_sigJLow), "invTab('juice')"));
   const signalHtml = `<div class="sum-signal" style="${CARD};padding:10px 16px;display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap">
     <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0;margin-right:4px">오늘 챙길 것</span>
     ${sigChips.length ? sigChips.join('') : _sigChip('gray', '특이사항 없음')}
@@ -14451,6 +14460,39 @@ function renderInvSummary() {
         : EMPTY(4, '미선과 재고 없음')}</tbody>
     </table></div></div>`;
 
+  // ── ① 오늘 선과할 것(B안 3단계) — 화면 전용. 위 '1. 미선과 재고'(unsHtml)는 인쇄 전용으로 그대로 둔다(인쇄 보고서 무변).
+  //   행 = 품목(1번 표와 같은 가나다 순·productChip), 열 = 경과일 등급 1/2/3(_ibUrgencyLevel) · 꼬리 · 합계. 데이터는 _unsRows만.
+  //   ★꼬리(isTail)는 경과일 열에서 빼고 '꼬리' 열에만 — 거의 끝난 입고라 '오늘 먼저'가 아니다. 합계는 전부.
+  //   ★열 머리 숫자는 URGENCY_THRESHOLD_MID/HIGH에서 만든다(설정에서 바꾸면 같이 바뀜).
+  const _stMap = {};   // 품목 → { 1, 2, 3, tail, total } (CT)
+  _unsRows.forEach(r => {
+    const m = _stMap[r.rec.product] = _stMap[r.rec.product] || { 1: 0, 2: 0, 3: 0, tail: 0, total: 0 };
+    if (r.isTail) m.tail += r.remain; else m[_ibUrgencyLevel(r.days)] += r.remain;
+    m.total += r.remain;
+  });
+  const _stKeys = Object.keys(_stMap).filter(p => _stMap[p].total > 0).sort((a, b) => a.localeCompare(b, 'ko'));
+  const _stCell = (v, color) => v > 0 ? `<td style="${TR}${color ? `;color:${color}` : ''}">${fmtCT(v)}</td>` : `<td style="${TR}">${DASH}</td>`;
+  const _stTop = [...urgNonTail].sort((a, b) => b.days - a.days);
+  const _stTopLine = _stTop.length
+    ? `<div style="padding:8px 16px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:#374151">
+        <span style="font-weight:600;color:#C62828">우선 선과</span>
+        ${_stTop.slice(0, 3).map(r => `<span onclick="${_goSortCenter}" style="cursor:pointer;white-space:nowrap">${esc(r.rec.farm_name || '')} ${esc(r.rec.product || '')} ${fmtCT(r.remain)} CT · ${r.days}일째</span>`).join('<span style="color:#D1D5DB">·</span>')}
+        ${_stTop.length > 3 ? `<span onclick="${_goSortCenter}" style="cursor:pointer;color:#6B7280">외 ${_stTop.length - 3}건</span>` : ''}
+      </div>` : '';
+  const _M = URGENCY_THRESHOLD_MID, _Hi = URGENCY_THRESHOLD_HIGH;
+  const sortTodayHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('①', '오늘 선과할 것', `미선과 ${fmtCT(unsTotalCt)} CT${unsDaysTxt ? ' · ' + unsDaysTxt : ''}`)}
+    <div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;min-width:420px">
+      <thead><tr><th ${THL}>품목</th><th ${THR}>0~${_M - 1}일</th><th ${THR}>${_M}~${_Hi - 1}일</th><th ${THR}>${_Hi}일↑</th><th ${THR}>꼬리</th><th ${THR}>합계 (CT)</th></tr></thead>
+      <tbody>${_stKeys.length
+        ? _stKeys.map(p => {
+            const m = _stMap[p];
+            return `<tr><td style="${TL}">${productChip(p)}</td>${_stCell(m[1])}${_stCell(m[2], '#C05800')}${_stCell(m[3], '#C62828')}${_stCell(m.tail, '#6B7280')}<td ${TRhl}>${fmtCT(m.total)}</td></tr>`;
+          }).join('')
+        : EMPTY(6, '미선과 재고 없음')}</tbody>
+    </table></div>
+    ${_stTopLine}
+  </div>`;
+
   // ==================================================================
   // 13. HTML 조립: 선과 섹션 빌더 (화면 섹션 2·3 공용)
   // ==================================================================
@@ -14625,7 +14667,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
+    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${sortTodayHtml}<div class="sum-print-only">${unsHtml}</div>${manGamHtml}${citrusHtml}
     <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
 }

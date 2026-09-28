@@ -406,6 +406,8 @@ textarea {
 #inv-sum-div .sum-pj-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 #inv-sum-div .sum-pj-grid > * { min-width: 0; }
 #inv-sum-div .sum-pj-tbl { min-width: 0; }
+/* 재고 요약 B안 — 화면 전용/인쇄 전용 블록. 인쇄 쪽 짝은 아래 @media print. */
+#inv-sum-div .sum-print-only { display: none; }
 #inv-sum-div .sum-pj-tbl th,
 #inv-sum-div .sum-pj-tbl td { padding: 6px 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 768px) {
@@ -442,6 +444,9 @@ textarea {
   #inv-sum-div .sum-today-card { background: #F0FDF4 !important; border-color: #A7F3D0 !important; }
   /* 재고 요약 신호 줄('오늘 챙길 것') — 화면 전용. 인쇄 보고서는 예전 그대로 둔다. */
   #inv-sum-div .sum-signal { display: none !important; }
+  /* B안 3단계: 화면용 '① 오늘 선과할 것'은 숨기고, 예전 '1. 미선과 재고'를 인쇄에 그대로 보인다. */
+  #inv-sum-div .sum-screen-only { display: none !important; }
+  #inv-sum-div .sum-print-only { display: block !important; }
 }
 
 /* 설정 서브탭 */
