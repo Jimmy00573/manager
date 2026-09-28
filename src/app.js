@@ -1053,11 +1053,14 @@ function switchMsgTab(t) {
 //   ※2026-08-20 이 규칙이 getFCtypeMap에만 있고 getSt엔 없어서, 수동거래로 나간 시트리앙 25개가
 //     공장 재고의 '배출'에서 빠졌다. 회수는 세면서 배출은 안 세니 한 바퀴 돌 때마다 잔여가 부풀었다.
 //     같은 실수가 또 나지 않게 판정을 이 함수 하나로 모았다 — 새로 세는 곳이 생기면 여기를 쓸 것.
-function _isExtraOutPick(p) { return p.type === '배출' && (p.outbound_id || p.manual_tx_id) && !!p.ctype; }
+// ★농가 간 이동(transfer_id) — 공장을 거치지 않고 A→B로 옮긴 것. A 빈콘회수(공장 +)와 짝인 B 배출(공장 −)을
+//   여기서 '배차 없이 나간 배출'로 세야 두 행이 상쇄돼 공장 재고 순변화가 0이 된다. 빼면 회수만 잡혀 공장 재고가 는다.
+function _isExtraOutPick(p) { return p.type === '배출' && (p.outbound_id || p.manual_tx_id || p.transfer_id) && !!p.ctype; }
 // ★보정 배출 — 배차·출고·수동거래 어디에도 연결 안 된, 손으로 넣은 '배출' 행(예: 프로그램 도입 전 배출분을 회수와 상쇄하려고 넣은 pick 321).
 //   대상 보유(getFCS)는 이미 모든 '배출'을 세지만 종류별 칩(getFCtypeMap)은 배차·납품만 세서 칩만 −로 남았다 → 칩에만 더한다.
 //   ★getSt(공장 재고)에는 넣지 않는다 — 실제로 공장에서 나간 물건이 아니므로 공장 숫자가 변하면 안 된다.
-function _isAdjOutPick(p) { return p.type === '배출' && !!p.ctype && !p.dispatch_id && !p.outbound_id && !p.manual_tx_id && !p.auto; }
+//   ★이동 배출(transfer_id)은 제외 — 위 _isExtraOutPick이 이미 칩에 넣으므로 여기서도 잡으면 두 번 센다.
+function _isAdjOutPick(p) { return p.type === '배출' && !!p.ctype && !p.dispatch_id && !p.outbound_id && !p.manual_tx_id && !p.transfer_id && !p.auto; }
 // ★예약 배차(status='배차완료')는 아직 창고에 있다 — 나간 것으로 세면 안 된다.
 //   공장 재고(getSt)와 대상별 종류 칩(getFCtypeMap)이 **같은** 판정을 쓰도록 여기 한 곳에 둔다.
 //   (위 _isExtraOutPick을 하나로 모은 것과 같은 이유 — 한쪽만 바뀌면 화면마다 숫자가 갈린다.)
