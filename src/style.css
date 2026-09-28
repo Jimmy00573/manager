@@ -440,6 +440,8 @@ textarea {
   #inv-sum-div .sum-th { background: #DBEAFE !important; color: #1E40AF !important; border-color: #BFDBFE !important; font-size: 12px !important; font-weight: 700 !important; }
   #inv-sum-div .sum-td-hl { color: #1E40AF !important; background: #EFF6FF !important; font-weight: 600 !important; }
   #inv-sum-div .sum-today-card { background: #F0FDF4 !important; border-color: #A7F3D0 !important; }
+  /* 재고 요약 신호 줄('오늘 챙길 것') — 화면 전용. 인쇄 보고서는 예전 그대로 둔다. */
+  #inv-sum-div .sum-signal { display: none !important; }
 }
 
 /* 설정 서브탭 */

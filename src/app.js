@@ -9263,6 +9263,9 @@ let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초�
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
 let _invFlowDays = 7;    // 재고 요약 흐름 줄 기간(3|7|14일). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 7일)
+// 재고 요약 신호 줄 '7일 넘은 선과품' 기준(입고일부터). ★매트릭스의 '⚠ 기준 N일'(_invAgeDays, 브라우저마다 저장)과 일부러 따로 —
+//   요약은 누가 봐도 같은 숫자여야 한다.
+const SUMMARY_OLD_SORTED_DAYS = 7;
 
 // ══════════════════════════════════════════════════════════════════
 // 전체 데이터 백업 (JSON 내보내기)
@@ -13891,8 +13894,17 @@ function renderInvSummary() {
   // ── 섹션 2 & 3: 선과 재고
   const manGamMap = {}, citrusMap = {}, sortDetail = {};
   let manGamHighKg=0, manGamNormalKg=0, citrusHighKg=0, citrusNormalKg=0;
+  // 신호 줄 '7일 넘은 선과품'용 — 이 반복(= 2·3번 표가 세는 선과품 재고 행)에서 같이 모은다(필터를 복사하지 않으려는 것).
+  //   날짜는 선과품 매트릭스와 같은 _getInvRecordDates(입고일) + _invDaysAgo. ★기준은 매트릭스 설정(_invAgeDays,
+  //   브라우저마다 다름)이 아니라 상수 SUMMARY_OLD_SORTED_DAYS. 옛 invSorted(0행, 입고일 개념 없음)는 안 센다.
+  const oldSorted = {};   // 품목 → { ct, kg }
   inventoryRecords.filter(r => !r.is_void && ['sorting','manual','adjustment','inbound_sorted'].includes(r.source_type)).forEach(r => {
     if (!r.size_code) return;
+    if (_invDaysAgo(_getInvRecordDates(r).inboundDate) >= SUMMARY_OLD_SORTED_DAYS) {
+      const o = oldSorted[r.product] = oldSorted[r.product] || { ct: 0, kg: 0 };
+      o.ct += Number(r.quantity) || 0;
+      o.kg += (Number(r.quantity) || 0) * kgPerCt(r.product);
+    }
     const ptype = PRODUCT_TYPE_MAP[r.product] || '만감류';
     let grp;
     if (ptype === '감귤류') {
@@ -14096,6 +14108,54 @@ function renderInvSummary() {
     <div style="display:flex;gap:4px;flex-shrink:0">${[3, 7, 14].map(_flowBtn).join('')}</div>
     <span style="font-size:13px;color:#374151">최근 ${flowN}일 <span style="font-size:11px;color:#9CA3AF">(${_flowMD(flowFrom)}~${_flowMD(_flowToday)})</span> — 입고 <b>${fmtCT(flowInCt)}</b> → 선과 <b>${fmtCT(flowSortCt)}</b> → <span title="${_flowOutTip}" style="cursor:help;border-bottom:1px dotted #9CA3AF">출고 <b>${fmtCT(flowOutCt)}</b></span> CT</span>
     <span title="입고 − 선과 (출고는 적체 계산에 넣지 않음)" style="font-size:12px;font-weight:700;color:${_flowBlCol};white-space:nowrap">적체 ${_flowBlTxt} CT</span>
+  </div>`;
+
+  // ── 신호 줄 '오늘 챙길 것'(B안 2단계) — KPI 바로 아래. 값이 0인 칩은 안 그리고, 전부 0이면 '특이사항 없음'.
+  //   ★계산은 전부 기존 것을 부른다: 적체 = 위 흐름 줄의 flowBacklog(같은 변수) · 우선/꼬리 = 1번 _unsRows(_ibIsUrgent·isTail) ·
+  //     7일 넘은 선과품 = 4번 반복에서 모은 oldSorted · 주스 = 주스 탭과 같은 _juiceProductMap + juiceStatusOf.
+  //   ★인쇄에서는 숨긴다(class sum-signal, style.css @media print) — 인쇄 보고서는 예전 그대로.
+  const _SIG = {
+    red:    'color:#C62828;background:#FFEBEE',
+    orange: 'color:#C05800;background:#FFF3E0',
+    gray:   'color:#6B7280;background:#F3F4F6',
+  };
+  const _sigTip = lines => lines.map(esc).join('&#10;');   // title 줄바꿈
+  const _sigChip = (tone, text, tip, onclick) =>
+    `<span${onclick ? ` onclick="${onclick}"` : ''}${tip ? ` title="${tip}"` : ''} style="font-size:12px;font-weight:500;${_SIG[tone]};border-radius:12px;padding:3px 10px;white-space:nowrap${onclick ? ';cursor:pointer' : ''}">${text}</span>`;
+  const _goSortCenter = "invTab('uns');ibTab('proc')";
+  const sigChips = [];
+  if (flowBacklog > 0) sigChips.push(_sigChip('orange', `적체 +${fmtCT(flowBacklog)} CT`, esc(`최근 ${flowN}일 입고 − 선과 (아래 흐름 줄과 같은 값)`)));
+  const _sigUrgent = _unsRows.filter(r => _ibIsUrgent(r) && !r.isTail);
+  if (_sigUrgent.length) {
+    const sum = _sigUrgent.reduce((s, r) => s + r.remain, 0);
+    const text = _sigUrgent.length === 1
+      ? `우선 선과 1건 · ${esc(_sigUrgent[0].rec.farm_name || '')} ${fmtCT(_sigUrgent[0].remain)} CT`
+      : `우선 선과 ${_sigUrgent.length}건 · 합계 ${fmtCT(sum)} CT`;
+    sigChips.push(_sigChip('red', text,
+      _sigTip(_sigUrgent.map(r => `${r.rec.farm_name || ''} · ${r.rec.product || ''} · ${fmtCT(r.remain)} CT · ${r.days}일째`)), _goSortCenter));
+  }
+  const _sigTail = _unsRows.filter(r => r.isTail);
+  if (_sigTail.length) {
+    const sum = _sigTail.reduce((s, r) => s + r.remain, 0);
+    sigChips.push(_sigChip('gray', `꼬리 ${_sigTail.length}건 · ${fmtCT(sum)} CT`,
+      _sigTip(_sigTail.map(r => `${r.rec.farm_name || ''} · ${r.rec.product || ''} · 잔여 ${fmtCT(r.remain)} CT (${r.pct}%)`)), _goSortCenter));
+  }
+  const _sigOld = Object.entries(oldSorted).filter(([, v]) => v.ct > 0).sort((a, b) => b[1].ct - a[1].ct);
+  const _sigOldCt = _sigOld.reduce((s, [, v]) => s + v.ct, 0);
+  if (_sigOldCt > 0) {
+    sigChips.push(_sigChip('orange', `${SUMMARY_OLD_SORTED_DAYS}일 넘은 선과품 ${fmtCT(_sigOldCt)} CT`,
+      _sigTip([`입고일부터 ${SUMMARY_OLD_SORTED_DAYS}일 이상`, ..._sigOld.map(([p, v]) => `${p} ${fmtCT(v.ct)} CT · ${fmtN(Math.round(v.kg))} kg`)]), "invTab('srt')"));
+  }
+  const _sigJuice = _juiceProductMap();
+  const _sigJuiceBy = st => Object.keys(_sigJuice)
+    .filter(p => juiceStatusOf(_sigJuice[p].reduce((s, b) => s + (b.remaining_bottles || 0), 0)) === st)
+    .sort((a, b) => a.localeCompare(b, 'ko'));
+  const _sigJOut = _sigJuiceBy(JST_OUT), _sigJLow = _sigJuiceBy(JST_LOW);
+  if (_sigJOut.length) sigChips.push(_sigChip('red', `주스 품절 ${_sigJOut.length}`, _sigTip(_sigJOut), "invTab('juice')"));
+  if (_sigJLow.length) sigChips.push(_sigChip('orange', `${_sigJOut.length ? '' : '주스 '}부족 ${_sigJLow.length}`, _sigTip(_sigJLow), "invTab('juice')"));
+  const signalHtml = `<div class="sum-signal" style="${CARD};padding:10px 16px;display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0;margin-right:4px">오늘 챙길 것</span>
+    ${sigChips.length ? sigChips.join('') : _sigChip('gray', '특이사항 없음')}
   </div>`;
 
   // ==================================================================
@@ -14565,7 +14625,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${flowHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
+    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${unsHtml}${manGamHtml}${citrusHtml}
     <div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div>
   </div>`;
 }
