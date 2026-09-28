@@ -13816,23 +13816,21 @@ function renderInvSummary() {
   // 1. 처리 집계 — 입고건별 처리량 합계
   // ==================================================================
   // 읽는 데이터: processingRecords (processing_records)
-  // processedByInbound[inbound_id] = 그 입고건에 달린 처리 기록 quantity의 합.
+  // _ibProcessedMap()[inbound_id] = 그 입고건에 달린 처리 기록 quantity의 합.
   // ★process_type을 가리지 않고 전부 더한다 — 선과/출고/폐기 등 모든 종류 포함.
-  // 아래 2번(미선과)과 7번(우선처리) 두 곳에서 이 맵을 잔여 계산에 쓴다.
-  // ── 처리 집계
-  const processedByInbound = {};
-  processingRecords.forEach(r => {
-    processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
-  });
+  // 아래 2번(미선과)과 7번(우선처리) 두 곳의 잔여 계산이 이 맵을 쓴다 — ★공용 _ibUnsortedRows가 안에서 _ibProcessedMap을 부른다
+  //   (예전엔 여기 같은 식의 복사본이 있었다. 2026-09-28 B안 1단계에서 헬퍼로 통일).
+  // ── 처리 집계 → 미선과 행(잔여 > 0) 한 번만 만든다
+  const _unsRows = _ibUnsortedRows();
 
   // ==================================================================
   // 2. 미선과 재고 집계
   // ==================================================================
-  // 읽는 데이터: inboundRecords (+ 위 1번의 processedByInbound)
+  // 읽는 데이터: 위 1번의 _unsRows(= _ibUnsortedRows — inboundRecords + _ibProcessedMap)
   // 대상: _isUnsortedTarget — is_void/exclude_from_unsorted 제외, 카테고리 선과품·파치 제외.
   //
   // ★★잔여 계산식(여기서 쓰는 것):
-  //      잔여 = r.quantity − processedByInbound[r.id]
+  //      잔여 = r.quantity − _ibProcessedMap()[r.id]
   //           = 입고량 − processing_records 전체 합(선과 포함)
   //
   // ★같은 뜻의 정식 헬퍼가 따로 있다 — getRemainingCT(r) (app.js 내 아래쪽):
@@ -13847,9 +13845,7 @@ function renderInvSummary() {
   // unsMap[품목] = { raw: 원물 CT, small: 소과 CT } — inbound_category=='소과'면 small, 그 외 raw.
   // ── 섹션 1: 미선과 재고 (원물 / 소과 분리)
   const unsMap = {};
-  inboundRecords.filter(_isUnsortedTarget).forEach(r => {
-    const rem = r.quantity - (processedByInbound[r.id] || 0);
-    if (rem <= 0) return;
+  _unsRows.forEach(({ rec: r, remain: rem }) => {   // 잔여 > 0만 온다(헬퍼가 걸렀다)
     if (!unsMap[r.product]) unsMap[r.product] = { raw: 0, small: 0 };
     if (r.inbound_category === '소과') unsMap[r.product].small += rem;
     else unsMap[r.product].raw += rem;
@@ -13986,20 +13982,17 @@ function renderInvSummary() {
   // ==================================================================
   // 7. 우선처리(경과일) 집계
   // ==================================================================
-  // 읽는 데이터: inboundRecords + 1번의 processedByInbound
-  // 잔여가 남아 있으면서 입고일로부터 URGENCY_THRESHOLD_MID일 이상 지난 건을 센다.
-  // ★기준일 계산은 로컬 자정(new Date(ds+'T00:00:00')) — toISOString 쓰지 말 것.
+  // 읽는 데이터: 1번의 _unsRows
+  // 잔여가 남아 있으면서 입고일로부터 URGENCY_THRESHOLD_MID일 이상 지난 건을 센다(_ibIsUrgent).
+  // ★기준일 계산은 로컬 자정(_ibDaysSince) — toISOString 쓰지 말 것.
   // ★미선과 탭 priList와 같은 기준이어야 한다. 한쪽만 바꾸면 KPI와 목록 건수가 어긋난다.
-  // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준)
-  const nowMs = new Date(); nowMs.setHours(0, 0, 0, 0);
-  const daysSince = ds => { try { return Math.floor((nowMs - new Date(ds + 'T00:00:00')) / 86400000); } catch(e) { return 0; } };
+  // ── 우선처리 집계 (URGENCY_THRESHOLD_MID일+, 미선과 탭 priList와 동일 기준 — 둘 다 _ibIsUrgent, ⭐ 미포함)
   const priorityByProduct = {};
   let priorityCount = 0;
-  inboundRecords.filter(_isUnsortedTarget).forEach(r => {
-    const rem = r.quantity - (processedByInbound[r.id] || 0);
-    if (rem > 0 && daysSince(r.date) >= URGENCY_THRESHOLD_MID) {
+  _unsRows.forEach(row => {
+    if (_ibIsUrgent(row)) {
       priorityCount++;
-      priorityByProduct[r.product] = (priorityByProduct[r.product] || 0) + 1;
+      priorityByProduct[row.rec.product] = (priorityByProduct[row.rec.product] || 0) + 1;
     }
   });
 
@@ -16284,6 +16277,44 @@ function _ibProcessedMap() {
   return m;
 }
 
+// ── 미선과 행·경과일·우선 판정 — 공용 헬퍼(재고 요약 B안 1단계, 2026-09-28) ─────────────────
+// ★예전엔 재고 요약·미선과 탭(renderIbCatSummary)·선과센터(_renderScStats/_renderScTable)가 같은 계산을 각자 복사해 뒀다.
+//   이제 전부 여기를 부른다. 각 화면의 결과는 그대로다(선과센터만 ⭐is_priority를 우선에 넣는 차이 → includeStarred).
+// 경과일 = 입고일부터 오늘까지(로컬 자정끼리 — toISOString 안 씀). inbound_records.date는 NOT NULL·'YYYY-MM-DD'.
+//   ※선과센터는 예전에 UTC 자정끼리 뺐다(new Date('YYYY-MM-DD')) — 같은 형식이라 결과는 같다(2026-09-28 확인).
+//   ★전역 _daysSince(입고 칩용)는 재사용하지 않는다 — 0 아래를 0으로 자르고 빈 값은 999라, 미래 입고일이
+//     예전처럼 '-1일'로 보이지 않고 바뀐다. 여기는 자르지 않는다(예전 네 곳의 식 그대로).
+function _ibDaysSince(ds) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.floor((t - new Date(ds + 'T00:00:00')) / 86400000);
+}
+// 경과일 등급 3(🔴 HIGH일+) / 2(🟡 MID일+) / 1(🟢). 기준값은 URGENCY_THRESHOLD_*(settings urgency_thresholds가 덮음).
+function _ibUrgencyLevel(days) {
+  return days >= URGENCY_THRESHOLD_HIGH ? 3 : days >= URGENCY_THRESHOLD_MID ? 2 : 1;
+}
+// 우선 처리 대상인가 — 경과일 ≥ MID. includeStarred면 ⭐is_priority(입고 때 '우선사용' 체크)도 포함(선과센터 기준).
+//   row = 입고 기록 또는 _ibUnsortedRows()의 행({ rec, days }) 둘 다 받는다.
+function _ibIsUrgent(row, { includeStarred = false } = {}) {
+  const rec = row && row.rec ? row.rec : row;
+  if (!rec) return false;
+  if (includeStarred && rec.is_priority) return true;
+  const days = (row && row.days != null) ? row.days : _ibDaysSince(rec.date);
+  return _ibUrgencyLevel(days) >= 2;
+}
+// 미선과 대상 입고 1건마다 { rec, remain(잔여 CT), days(경과일), pct(진행률 %), isTail } — 잔여 > 0인 것만, inboundRecords 순서 그대로.
+//   대상 = _isUnsortedTarget · 잔여 = 입고량 − _ibProcessedMap(처리 기록 전부). 진행률 = (입고량 − 잔여) ÷ 입고량, 반올림 정수.
+//   isTail(꼬리) = 잔여 ≤ 5 CT 그리고 진행률 ≥ 90% — ★1단계에선 계산만(어느 화면도 아직 안 씀).
+function _ibUnsortedRows() {
+  const pm = _ibProcessedMap();
+  return inboundRecords.filter(_isUnsortedTarget)
+    .map(r => {
+      const remain = r.quantity - (pm[r.id] || 0);
+      const pct = r.quantity > 0 ? Math.round((r.quantity - remain) / r.quantity * 100) : 0;
+      return { rec: r, remain, days: _ibDaysSince(r.date), pct, isTail: remain <= 5 && pct >= 90 };
+    })
+    .filter(x => x.remain > 0);
+}
+
 function ibToggleFarm(name) {
   if (_farmExpanded.has(name)) _farmExpanded.delete(name);
   else _farmExpanded.add(name);
@@ -16747,12 +16778,8 @@ function renderIbCatSummary() {
   const priEl = document.getElementById('ib-priority-alert');
   if (!catEl) return;
 
-  const processedByInbound = {};
-  processingRecords.forEach(r => {
-    processedByInbound[r.inbound_id] = (processedByInbound[r.inbound_id] || 0) + r.quantity;
-  });
-
-  const active = inboundRecords.filter(_isUnsortedTarget);
+  // ★미선과 행(대상·잔여·경과일)은 공용 _ibUnsortedRows — 재고 요약·선과센터와 같은 계산(예전엔 여기 복사본).
+  const _unsRows = _ibUnsortedRows();
 
   // (카테고리, 품목, 출처) 조합별 집계
   const catTotals = {};
@@ -16760,9 +16787,7 @@ function renderIbCatSummary() {
   const catSources  = {};   // cat → { source → qty }  (재선별 전용)
   let grandTotal = 0;
   IB_CATS.forEach(c => { catTotals[c.key] = 0; catProducts[c.key] = {}; catSources[c.key] = {}; });
-  active.forEach(r => {
-    const remaining = r.quantity - (processedByInbound[r.id] || 0);
-    if (remaining <= 0) return;
+  _unsRows.forEach(({ rec: r, remain: remaining }) => {   // 잔여 > 0만 온다
     const cat = r.inbound_category || '상품';
     if (catTotals[cat] !== undefined) {
       catTotals[cat] += remaining;
@@ -16823,18 +16848,19 @@ function renderIbCatSummary() {
     </div>`;
 
   if (!priEl) return;
-  const _today = new Date(); _today.setHours(0,0,0,0);
-  const _daysSince = ds => Math.floor((_today - new Date(ds + 'T00:00:00')) / 86400000);
-  const _urgLevel  = d  => d >= URGENCY_THRESHOLD_HIGH ? 'high' : d >= URGENCY_THRESHOLD_MID ? 'mid' : 'low';
+  // ★경과일·등급은 공용 헬퍼(_ibDaysSince·_ibUrgencyLevel). 이 함수 안 이름은 그대로 둔다(아래 여러 곳이 부른다).
+  //   ※이 지역 _daysSince가 전역 _daysSince(0 미만을 0으로 자름)를 가린다 — 예전과 같다.
+  const _daysSince = _ibDaysSince;
+  const _urgLevel  = d  => ({ 3: 'high', 2: 'mid', 1: 'low' })[_ibUrgencyLevel(d)];
   const _URG = {
     high: { label: `🔴 매우 시급 (${URGENCY_THRESHOLD_HIGH}일+)`, col: '#991B1B' },
     mid:  { label: `🟡 시급 (${URGENCY_THRESHOLD_MID}~${URGENCY_THRESHOLD_HIGH}일)`, col: '#92400E' },
     low:  { label: `🟢 일반 (${URGENCY_THRESHOLD_MID}일 미만)`,   col: '#14532D' },
   };
-  const priList = active
-    .filter(r => _daysSince(r.date) >= URGENCY_THRESHOLD_MID)
-    .map(r => ({ ...r, remaining: r.quantity - (processedByInbound[r.id] || 0) }))
-    .filter(r => r.remaining > 0);
+  // 우선 처리 필요 = 경과일 ≥ MID(⭐ 미포함 — 재고 요약 'N건 우선처리'와 같은 _ibIsUrgent 기준)
+  const priList = _unsRows
+    .filter(row => _ibIsUrgent(row))
+    .map(({ rec, remain }) => ({ ...rec, remaining: remain }));
 
   if (!priList.length) { priEl.innerHTML = ''; return; }
   const _GSCORE = { '상':3, '중':2, '하':1 };
@@ -18214,11 +18240,6 @@ function _renderScStats() {
     return;
   }
 
-  const todayMs = new Date(today).getTime();
-  const urgLvl = date => {
-    const d = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
-    return d >= URGENCY_THRESHOLD_HIGH ? 3 : d >= URGENCY_THRESHOLD_MID ? 2 : 1;
-  };
   const srtCntMapSt = {};
   processingRecords.filter(p => p.process_type === '선과').forEach(p => {
     srtCntMapSt[p.inbound_id] = (srtCntMapSt[p.inbound_id] || 0) + 1;
@@ -18227,11 +18248,10 @@ function _renderScStats() {
     .filter(p => p.process_type === '선과' && p.date === today)
     .reduce((s, p) => s + p.quantity, 0);
 
-  const allW = inboundRecords
-    .filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
-    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
-  const totalRem = allW.reduce((s, r) => s + r.remaining, 0);
-  const urgCnt = allW.filter(r => r.is_priority || urgLvl(r.date) >= 2).length;
+  // ★미선과 행·우선 판정은 공용 헬퍼(_ibUnsortedRows·_ibIsUrgent). 선과센터 기준은 ⭐is_priority 포함.
+  const allW = _ibUnsortedRows();
+  const totalRem = allW.reduce((s, r) => s + r.remain, 0);
+  const urgCnt = allW.filter(r => _ibIsUrgent(r, { includeStarred: true })).length;
   statsEl.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
       ${[
@@ -18822,20 +18842,22 @@ function _renderScTable() {
   // 1. 기준 데이터 (처리량 맵 · 오늘 날짜)
   // ==================================================================
   // _ibProcessedMap() = 입고건별 처리량 합. 아래 3번의 잔여 계산에 쓴다.
-  const pm = _ibProcessedMap();
-  const today = td();
-  const todayMs = new Date(today).getTime();
+  const pm = _ibProcessedMap();   // 아래 _scPlanStat(pm)이 쓴다
 
   // ==================================================================
   // 2. 경과일 등급 (🔴 / 🟡 / 🟢)
   // ==================================================================
-  // URGENCY_THRESHOLD_HIGH·MID 상수 기준. 색과 level(3/2/1)을 함께 돌려준다.
-  // ★level은 아래 4번의 "우선처리만" 필터(level>=2)에서도 쓰인다 — 기준을 바꾸면 그 필터도 같이 움직인다.
+  // 경과일·등급 판정은 공용 _ibDaysSince·_ibUrgencyLevel(URGENCY_THRESHOLD_HIGH·MID). 여기는 색·아이콘만 붙인다.
+  // ★'우선처리만' 필터는 _ibIsUrgent(⭐ 포함) — 같은 기준값을 본다.
+  const _URG_UI = {
+    3: { icon: '🔴', color: '#DC2626' },
+    2: { icon: '🟡', color: '#D97706' },
+    1: { icon: '🟢', color: '#16A34A' },
+  };
   const urgency = date => {
-    const days = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
-    if (days >= URGENCY_THRESHOLD_HIGH) return { icon: '🔴', label: `${days}일`, color: '#DC2626', level: 3 };
-    if (days >= URGENCY_THRESHOLD_MID)  return { icon: '🟡', label: `${days}일`, color: '#D97706', level: 2 };
-    return { icon: '🟢', label: `${days}일`, color: '#16A34A', level: 1 };
+    const days = _ibDaysSince(date);
+    const level = _ibUrgencyLevel(days);
+    return { icon: _URG_UI[level].icon, label: `${days}일`, color: _URG_UI[level].color, level };
   };
 
   const srtCntMap = {};
@@ -18849,9 +18871,8 @@ function _renderScTable() {
   // 대상 = _isUnsortedTarget(r)이면서 잔여(입고량 − 처리량) > 0인 입고건.
   // ★즉 "아직 선과할 게 남은 입고"만 나온다. 잔여가 0이 되면 이 탭에서 사라지고 완료 탭으로 넘어간다.
   // ★_isUnsortedTarget은 입고내역 행 색·재고 요약 미선과 집계와 **같은 함수**를 쓴다 — 새로 만들지 말 것.
-  let rows = inboundRecords
-    .filter(r => _isUnsortedTarget(r) && (r.quantity - (pm[r.id] || 0)) > 0)
-    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
+  // ★대상·잔여·진행률은 공용 _ibUnsortedRows(재고 요약·미선과 탭과 같은 계산). 행 모양(입고 기록 + remaining)은 예전 그대로.
+  let rows = _ibUnsortedRows().map(x => ({ ...x.rec, remaining: x.remain, _pct: x.pct }));
 
   if (_scSearch) {
     const q = _scSearch.toLowerCase();
@@ -18859,7 +18880,7 @@ function _renderScTable() {
   }
   if (_scProduct)  rows = rows.filter(r => r.product === _scProduct);
   if (_scCategory) rows = rows.filter(r => (r.inbound_category || '상품') === _scCategory);
-  if (_scPriOnly)  rows = rows.filter(r => r.is_priority || urgency(r.date).level >= 2);
+  if (_scPriOnly)  rows = rows.filter(r => _ibIsUrgent(r, { includeStarred: true }));
 
   // ==================================================================
   // 4. 필터 (검색·품목·카테고리·우선처리) + 버튼 렌더
@@ -19038,7 +19059,7 @@ function _renderScTable() {
                 return `<span style="background:${bg};color:${col};font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap">${esc(c)}</span>`;
               })();
               const sorted = r.quantity - r.remaining;
-              const pct = r.quantity > 0 ? Math.round(sorted / r.quantity * 100) : 0;
+              const pct = r._pct;   // 진행률 = 공용 _ibUnsortedRows(같은 식: (입고량 − 잔여) ÷ 입고량, 반올림)
               const progressCell = isDoing
                 ? `<div onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" title="클릭하여 선과 결과 상세 보기" style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer">
                      <span style="font-size:11px;font-weight:600;color:#C2410C">${fmtN(sorted)} / ${fmtN(r.quantity)} CT</span>
