@@ -1947,12 +1947,51 @@ function openPickEdit(id) {
   }
   mpf.value = p.farm || '';
   fsSync('mp-farm');   // 검색형 입력칸 표시도 이 값으로(모달은 열 때마다 값이 바뀐다)
+  _mpApplyTransferLock(p);   // ★mp-type 값을 넣기 전에 — 이동 B행('배출')은 구분 옵션에 없어 임시 옵션을 먼저 붙인다
   document.getElementById('mp-type').value = p.type || '원물수거';
   sv('mp-qty', p.qty || ''); sv('mp-drv', p.driver || ''); sv('mp-car', p.car || ''); sv('mp-note', p.note || '');
   document.getElementById('modal-pick').style.display = 'flex';
 }
+// ★이동 기록(transfer_id)은 짝 행과 날짜·대상·구분·수량이 맞아야 한다 — 한쪽만 고치면 짝이 어긋나 공장 재고가 틀어진다.
+//   기사·차량·비고만 고치게 잠그고 '삭제 후 다시 등록'을 안내한다. 모달이 index.html 고정이라 열 때마다 잠금을 다시 정한다
+//   (안 풀면 다음에 연 일반 기록까지 잠긴다).
+const _MP_LOCK_IDS = ['mp-date', 'mp-target-type', 'mp-farm', 'mp-farm-fs', 'mp-type', 'mp-qty'];
+function _mpApplyTransferLock(p) {
+  const lock = !!p.transfer_id;
+  _MP_LOCK_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = lock; });
+  // 구분 옵션엔 '배출'이 없다 — 이동 B행을 열 때만 임시로 붙이고, 다음에 열 때 떼어 낸다(일반 기록 동작은 그대로).
+  const typeSel = document.getElementById('mp-type');
+  if (typeSel) {
+    typeSel.querySelectorAll('option[data-tmp]').forEach(o => o.remove());
+    if (lock && p.type && ![...typeSel.options].some(o => o.value === p.type)) {
+      typeSel.insertAdjacentHTML('beforeend', `<option value="${esc(p.type)}" data-tmp="1">${esc(p.type)}</option>`);
+    }
+  }
+  let note = document.getElementById('mp-transfer-note');
+  if (!note) {
+    const grid = document.querySelector('#modal-pick .modal-grid');
+    if (!grid) return;
+    note = document.createElement('div');
+    note.id = 'mp-transfer-note';
+    note.style.cssText = 'margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#EFF6FF;border:1px solid #BFDBFE;font-size:12px;color:#1D4ED8;line-height:1.5';
+    grid.before(note);
+  }
+  note.style.display = lock ? '' : 'none';
+  note.textContent = lock ? '↔ 이동 기록입니다 — 기사·차량·비고만 고칠 수 있습니다. 날짜·대상·구분·수량을 바꾸려면 삭제 후 다시 등록하세요(짝 행과 함께 삭제됩니다).' : '';
+}
 async function savePickEdit() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const cur = picks.find(p => p.id === _editPickId);
+  if (cur && cur.transfer_id) {
+    // ★이동 기록 — 기사·차량·비고만 보낸다. 잠근 칸은 화면을 조작해도 저장하지 않는다(짝 보호는 함수에서).
+    const data = { driver: gv('mp-drv'), car: gv('mp-car'), note: gv('mp-note'), updated_at: new Date().toISOString() };
+    try {
+      await dbUpdatePick(_editPickId, data);
+      picks = picks.map(p => p.id === _editPickId ? { ...p, ...data } : p);
+      CM('pick'); renderPick(); renderDash();
+    } catch (e) { alert('오류: ' + e.message); }
+    return;
+  }
   const date = gv('mp-date'), farm = gv('mp-farm'), type = gv('mp-type'), qty = parseInt(document.getElementById('mp-qty').value) || 0;
   if (!date || !farm || !type || !qty) { alert('필수 항목을 입력하세요'); return; }
   const data = { date, farm, type, qty, driver: gv('mp-drv'), car: gv('mp-car'), note: gv('mp-note'), target_type: gv('mp-target-type') || '농가', updated_at: new Date().toISOString() };
@@ -2876,8 +2915,23 @@ async function addPick() {
     showToast(`${farm} ${type} ${list.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} 등록`);
   } catch (e) { alert('오류: ' + e.message); }
 }
+// ★이동 기록(transfer_id) 삭제 — 한 행만 지우면 짝이 깨진다(A 회수만 남거나 B 배출만 남아 공장 재고가 틀어진다).
+//   같은 transfer_id의 모든 행을 요청 1번으로 지운다. 수거·회수 목록(delPick)과 빈콘 회수 목록(delBkCol) 공용.
+//   반환: null = 이동 기록 아님(호출부가 원래대로 지운다) / true = 지움 / false = 취소.
+async function _delTransferPicks(id) {
+  const p = picks.find(x => x.id === id);
+  if (!p || !p.transfer_id) return null;
+  const T = p.transfer_id;
+  const pair = picks.filter(x => x.transfer_id === T);
+  if (!(await cDel(`이동 기록 ${pair.length}행을 함께 삭제합니다`, pair.map(x => `${x.date} ${x.farm} ${x.type} ${x.ctype || ''} ${x.qty}개`)))) return false;
+  await sbDeleteStrict('picks', `transfer_id=eq.${encodeURIComponent(T)}`);
+  picks = picks.filter(x => x.transfer_id !== T);
+  renderPick(); renderBkCol(); renderDash();   // 짝 행이 두 목록에 걸쳐 있으므로 둘 다 다시 그린다
+  return true;
+}
 async function delPick(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  try { if ((await _delTransferPicks(id)) !== null) return; } catch (e) { alert('오류: ' + e.message); return; }
   if (!(await cDel('수거 기록 삭제'))) return;
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderPick(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
@@ -3046,6 +3100,7 @@ async function addBkCol() {
 }
 async function delBkCol(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  try { if ((await _delTransferPicks(id)) !== null) return; } catch (e) { alert('오류: ' + e.message); return; }   // 이동 기록이면 짝째(_delTransferPicks)
   if (!(await cDel('빈콘 회수 삭제'))) return;
   try { await dbDeletePick(id); picks = picks.filter(p => p.id !== id); renderBkCol(); renderDash(); }
   catch (e) { alert('오류: ' + e.message); }
