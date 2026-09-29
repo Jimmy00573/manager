@@ -3829,7 +3829,7 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
           </select>
           <div id="qr-move-box" style="display:none;margin-top:6px">
             <div style="display:flex;gap:6px">
-              <select id="qr-to-type" style="${_qrInpS};width:auto;flex-shrink:0" onchange="_qrRefreshToOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select>
+              <select id="qr-to-type" style="${_qrInpS};width:auto;flex-shrink:0;height:33px" onchange="_qrRefreshToOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select>
               <div style="flex:1;min-width:0"><select id="qr-to-farm" style="${_qrInpS}"></select></div>
             </div>
             <div style="font-size:11px;color:#6B7280;margin-top:4px">공장을 거치지 않고 옮깁니다 — 공장 재고는 변하지 않습니다.</div>
@@ -3857,6 +3857,8 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
   document.body.appendChild(m);
   _qrRefreshToOpts();
   attachFarmSearch('qr-to-farm', { placeholder: '대상 검색' });   // 모달을 매번 새로 만들므로 매번 새로 붙는다
+  // 검색 입력칸은 나중에 붙는 요소라 창 공통 모양(_qrInpS)이 없다 — 옆 대상 유형 칸과 같게(높이 33px = 이 창 select 실측값, 브라우저 차이 방지로 명시)
+  const qrFs = document.getElementById('qr-to-farm-fs'); if (qrFs) qrFs.style.cssText = _qrInpS + ';height:33px';
   _qrQtyChanged();
   setTimeout(() => _QR_CQ(0)?.focus(), 30);
 }
