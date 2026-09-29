@@ -3122,12 +3122,13 @@ function renderBkCol() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const list = picks.filter(p => p.type === '빈콘회수');
   const tb = document.getElementById('bk-tb'); if (!tb) return;
+  // ★이동(transfer_id) 행도 목록엔 남긴다(여기서도 짝째 삭제 가능) — 배지로 구분하고 📱 빈콘 회수 문자는 숨긴다(농가에 보낼 회수 안내가 아니다).
   tb.innerHTML = list.length ? list.map(p => `<tr>
-    <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
+    <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}${_pickTransferBadge(_pickTransferLabel(p))}</td>
     <td>${p.qty > 0 ? p.qty+'개' : '-'}</td><td>${esc(p.driver || '-')}</td>
     <td>${esc(p.note || '-')}</td>
     <td class="stk-r" style="display:flex;gap:4px">
-      ${p.driver ? `<button class="btn copy" style="padding:4px 8px" onclick="openBkMsg({date:'${p.date}',farm:'${p.farm.replace(/'/g,"\\'")}',driver:'${(p.driver||'').replace(/'/g,"\\'")}',qty:${p.qty},note:'${(p.note||'').replace(/'/g,"\\'")}',dtel:''})">📱</button>` : ''}
+      ${(p.driver && !p.transfer_id) ? `<button class="btn copy" style="padding:4px 8px" onclick="openBkMsg({date:'${p.date}',farm:'${p.farm.replace(/'/g,"\\'")}',driver:'${(p.driver||'').replace(/'/g,"\\'")}',qty:${p.qty},note:'${(p.note||'').replace(/'/g,"\\'")}',dtel:''})">📱</button>` : ''}
       ${isAdm ? `<button class="btn del" onclick="delBkCol(${p.id})">삭제</button>` : ''}
     </td>
   </tr>`).join('') : emr(6, '빈콘 회수 기록 없음');
@@ -4165,14 +4166,16 @@ function renderDash() {
   const oc = oCombos.length, nc2 = nk.filter(k => { const [n, t] = k.split('||'); return gNhfSt(n, t).left > 0; }).length;   // 둘 다 조합 수 기준
   document.getElementById('ext-dash-badges').innerHTML = `<span class="badge b-pur">농가것 ${oc}건 반납필요</span><span class="badge b-teal">농협 ${nc2}건 반납필요</span>`;
   // 빈콘 회수 현황
-  const bkList = picks.filter(p => p.type === '빈콘회수').slice(0, 10);
-  const bkTotal = picks.filter(p => p.type === '빈콘회수').reduce((s, p) => s + p.qty, 0);
+  // ★이동(transfer_id) A행은 뺀다 — 다른 곳으로 옮긴 것이지 공장으로 돌아온 회수가 아니다(누적·건수·최근 목록 모두).
+  const bkAll = picks.filter(p => p.type === '빈콘회수' && !p.transfer_id);
+  const bkList = bkAll.slice(0, 10);
+  const bkTotal = bkAll.reduce((s, p) => s + p.qty, 0);
   const bkDl = document.getElementById('bk-dash-list');
   if (bkDl) {
     bkDl.innerHTML = bkList.length ? `<div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>농가명</th><th>수량</th><th>기사</th><th>비고</th></tr></thead><tbody>${bkList.map(p => `<tr><td>${p.date}</td><td class="nm">${esc(p.farm)}</td><td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.note || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<div style="padding:12px;font-size:13px;color:#aaa">빈콘 회수 기록 없음</div>';
   }
   const bkBadge = document.getElementById('bk-dash-badges');
-  if (bkBadge) bkBadge.innerHTML = `<span class="badge b-neu">총 ${picks.filter(p => p.type === '빈콘회수').length}건</span><span class="badge b-ok">누적 ${bkTotal}개 회수</span>`;
+  if (bkBadge) bkBadge.innerHTML = `<span class="badge b-neu">총 ${bkAll.length}건</span><span class="badge b-ok">누적 ${bkTotal}개 회수</span>`;
 }
 
 function renderAll() { renderDash(); renderFarm(); renderDrivers(); renderVehicles(); renderDisp(); renderPick(); renderOwn(); renderNhf(); renderBkCol(); }
