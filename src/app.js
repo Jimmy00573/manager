@@ -6418,12 +6418,44 @@ async function saveMoveLocation() {
   if (!_mvVal.ok) { await showConfirmEdit('위치 저장 불가', _mvVal.msg); return; }
   const newLoc = getLocValue('mv') || null;
   if (newLoc === (r.location || null)) { closeMoveModal(); return; }
+  // ── 파치·청과 입고 → 연결 파치 재고 행 위치도 같이 옮긴다(saveInboundModal과 같은 규칙·문구·순서) ──
+  //   ★2026-09-26 사고: 이현호 청과를 여기서 냉장고3→1로 옮겼는데 파치 행은 냉장고3에 남아 위치가 갈렸다.
+  //   파치·청과가 아니면 _pachiRecs = null — 요청·기록 모두 예전과 같다.
+  let _pachiRecs = null;
+  if (_IB_PACHI_SRC[r.inbound_category]) {
+    // ★재고가 안 실린 상태면 '연결 없음'과 구분이 안 된다 — 조용히 입고만 옮기지 말고 막는다(수정 창과 같은 가드).
+    if (!Array.isArray(inventoryRecords) || inventoryRecords.length === 0) {
+      return alert('재고 정보가 아직 로드되지 않아 파치 재고를 함께 고칠 수 없습니다.\n\n새로고침 후 다시 시도해주세요.');
+    }
+    _pachiRecs = _ibPachiLinkedInv(id, r.inbound_category);   // 살아있는 행만(void = 소진은 제외)
+  }
   try {
     const updated = await dbUpdateInbound(id, { location: newLoc });
+    // ★본체 먼저, 연결 나중. 연결 반영이 실패하면 입고 위치를 원래대로 되돌린다(수정 창과 같은 뒷수습).
+    if (_pachiRecs && _pachiRecs.length) {
+      try {
+        for (const rec of _pachiRecs) {
+          await sbUpdate('inventory_records', rec.id, { location: newLoc });
+          Object.assign(rec, { location: newLoc });   // 전역 배열도 같이
+        }
+      } catch (pe) {
+        try {
+          await dbUpdateInbound(id, { location: r.location || null });
+          alert('연결된 파치 재고를 고치지 못해 위치 이동을 취소했습니다.\n\n'
+            + '입고와 파치 재고 모두 이동 전 위치 그대로입니다. 잠시 후 다시 시도해주세요.\n\n' + pe.message);
+        } catch (re) {
+          alert('⚠ 입고 위치는 바뀌었는데 파치 재고 반영도, 되돌리기도 실패했습니다.\n\n'
+            + `${r.farm_name} · ${r.product} · ${r.date}\n`
+            + '파치 재고의 위치가 입고와 다를 수 있습니다.\n'
+            + '\n' + pe.message);
+        }
+        return;   // 감사 로그·화면 갱신까지 가지 않는다 — 되돌렸으니 남길 변경이 없다
+      }
+    }
     await dbInsertAuditLog({
       target_table: 'inbound_records', target_id: id,
       before_val: { location: r.location || null },
-      after_val: { location: newLoc },
+      after_val: _pachiRecs ? { location: newLoc, linked_pachi: _pachiRecs.length } : { location: newLoc },   // 파치·청과만 같이 옮긴 행 수
       reason: '위치 이동',
       staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
     });
