@@ -2940,6 +2940,19 @@ async function delPick(id) {
 function _pkTkBadge(p) {
   return (p.target_type === '농협' || p.target_type === '거래처') ? _tkBadge(p.target_type) + ' ' : '';
 }
+// ── 이동 기록(transfer_id) 표시. ★상대 이름은 짝 행에서 읽는다 — 비고는 저장 당시 이름이라 농가명 변경을 못 따라간다.
+//   A행(빈콘회수)은 '→ B', B행(배출)은 '← A'. 짝은 '같은 transfer_id + 반대 구분'(여러 종류면 A행끼리도 T가 같다).
+//   짝이 없으면 '(짝 없음)' — 한쪽만 남은 이상 상태를 숨기지 않고 보이게 한다.
+//   수거·회수 목록 · 농가 이력 수거 내역 · 수거 CSV · 콘테이너 이력이 이 둘을 쓴다.
+function _pickTransferLabel(p) {
+  if (!p || !p.transfer_id) return '';
+  const mate = picks.find(x => x.transfer_id === p.transfer_id && x.type !== p.type);
+  if (!mate) return '(짝 없음)';
+  return (p.type === '배출' ? '← ' : '→ ') + (mate.farm || '');
+}
+function _pickTransferBadge(label) {
+  return label ? ` <span class="badge b-info" title="공장을 거치지 않은 이동">↔ 이동</span> <small style="color:#1565C0;white-space:nowrap">${esc(label)}</small>` : '';
+}
 function renderPick() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const tb = document.getElementById('pick-tb');
@@ -2948,7 +2961,7 @@ function renderPick() {
   const cls = { 원물수거: 'b-ok', 빈콘회수: 'b-teal' };
   tb.innerHTML = list.map(p => `<tr>
     <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
-    <td><span class="badge ${cls[p.type] || 'b-neu'}">${esc(p.type)}</span></td>
+    <td><span class="badge ${cls[p.type] || 'b-neu'}">${esc(p.type)}</span>${_pickTransferBadge(_pickTransferLabel(p))}</td>
     <td>${p.ctype ? ctB(p.ctype) : '-'}</td>
     <td>${p.qty}개</td><td>${esc(p.driver || '-')}</td><td>${esc(p.car || '-')}</td>
     <td>${esc(p.note || '-')}</td>
@@ -3634,9 +3647,10 @@ function buildContainerHistory() {
   // 배차 → 배출 (picks의 type='배출'은 배차 자동생성 중복이라 제외)
   dispatches.forEach(d => rows.push({ date: d.date, kind: '배출', target: d.farm, targetKind: (d.target_type === '농협' || d.target_type === '거래처') ? d.target_type : '농가', category: d.ctype || '', qty: d.qty || 0, staff: d.driver || '', src: 'dispatch' }));
   // 납품 콘테이너(D-1 출고 / D-1b 수동거래) → 배출 (outbound_id·manual_tx_id 연동 pick만. 배차 자동생성 픽은 dispatch_id라 위 dispatches에서 이미 집계)
-  picks.filter(p => p.type === '배출' && (p.outbound_id || p.manual_tx_id)).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
-  // 회수(원물수거/빈콘회수)
-  picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick' }));
+  // ★이동(transfer_id) B 배출도 여기서 — 배차 행이 없어 안 넣으면 B만 걸러 볼 때 누적 잔여가 보유(getFCS)와 어긋난다. xfer = 이동 표시용.
+  picks.filter(p => p.type === '배출' && (p.outbound_id || p.manual_tx_id || p.transfer_id)).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p) }));
+  // 회수(원물수거/빈콘회수) — 이동 A행 포함(원래부터 들어옴, 표시만 붙인다)
+  picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p) }));
   // 농가것 반입/반납
   ownIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_in' }));
   ownOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_out' }));
@@ -3738,7 +3752,7 @@ function renderContainerHistory() {
     : '';
 
   tb.innerHTML = list.length ? list.map((r, i) =>
-    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span></td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[i])}</td><td>${esc(r.staff || '—')}</td></tr>`
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[i])}</td><td>${esc(r.staff || '—')}</td></tr>`
   ).join('') + carryRow : emr(7, '이력 없음');
 }
 
@@ -5620,7 +5634,7 @@ function renderFarmHistory() {
       <thead><tr style="background:#f8f8f8"><th style="padding:8px;text-align:left">날짜</th><th>구분</th><th>수량</th><th>기사</th><th>비고</th></tr></thead>
       <tbody>${list.map(p => `<tr style="border-bottom:0.5px solid #f0f0f0">
         <td style="padding:8px">${p.date}</td>
-        <td style="padding:8px"><span class="badge ${p.type==='원물수거'?'b-ok':'b-neu'}">${p.type}</span></td>
+        <td style="padding:8px"><span class="badge ${p.type==='원물수거'?'b-ok':'b-neu'}">${p.type}</span>${_pickTransferBadge(_pickTransferLabel(p))}</td>
         <td style="padding:8px">${p.qty}개</td>
         <td style="padding:8px">${esc(p.driver||'-')}</td>
         <td style="padding:8px">${esc(p.note||'-')}</td>
@@ -6045,7 +6059,7 @@ function exportExcel(type) {
     const data = filterByDate(picks.filter(p => !p.auto));
     const csv = toCSV(
       ['날짜','농가명','구분','수량','기사','차량','비고'],
-      data.map(p => [p.date, p.farm, p.type, p.qty, p.driver||'', p.car||'', p.note||''])
+      data.map(p => [p.date, p.farm, p.type + (p.transfer_id ? ` ↔ 이동 ${_pickTransferLabel(p)}` : ''), p.qty, p.driver||'', p.car||'', p.note||''])   // 이동 행만 구분 뒤에 표시(열 구성 무변)
     );
     download(`수거내역_${today}.csv`, csv);
   }
