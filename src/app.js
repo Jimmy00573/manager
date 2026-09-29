@@ -4665,6 +4665,7 @@ function _hvContactLine(farm, addr) {
 }
 // planDate = 이 행이 놓인 카드의 날짜(금일 strip=오늘, 달력 상세=고른 날). 주면 그날 계획 줄·확인 버튼이 붙는다.
 //   ★안 주면 계획을 안 그린다 — 농가별 진행 현황의 차수 목록은 '어느 날' 카드가 아니라 어느 날짜 계획을 보여야 할지 정할 수 없다.
+//   planDate가 있으면 그날 다녀간 기사 줄(_hvTripLine — 4일 카드와 같은 글자)도 계획 줄 아래에 붙는다.
 // opts.contact = 연락 줄(_hvContactLine)을 붙인다 — 금일 수확일정만. 수확완료·전체 종료 줄은 갈 일이 없어 뺀다.
 //   ★안 넘기면 출력 HTML이 수정 전과 글자 하나 안 틀린다(연락 줄을 변수로 붙이는 이유).
 function harvestRow(h, showDate, planDate, opts = {}) {
@@ -4682,7 +4683,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
             : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}
       <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
-      ${_hvPlanLine(h, planDate, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}${contact}
+      ${_hvPlanLine(h, planDate, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}${planDate ? _hvTripLine(planDate, h.farm, 'flex:1 1 100%') : ''}${contact}
     </div>`;
 }
 // ── [화면: 수확·수송 > 수확 캘린더] 월 그리드 + 금일 strip + 등록 폼.
@@ -4944,12 +4945,36 @@ function _tripDriversOn(dStr, farm) {
   });
   (inboundRecords || []).forEach(r => {
     if (r.date !== dStr || r.is_void || !r.driver_id || (farm && r.farm_name !== farm)) return;
-    add(_drvNameById(r.driver_id), '원물', true);   // 입고는 이미 들어왔으므로 항상 다녀옴
+    const nm = _drvNameById(r.driver_id);
+    add(nm, '원물', true);   // 입고는 이미 들어왔으므로 항상 다녀옴
+    // 입고 CT를 오전/오후로 나눠 더한다(ib 필드 추가 — 기존 필드·정렬 무변). 한 차가 카테고리별 여러 행이라 행마다 합산.
+    //   ★로컬 시각 getHours — toISOString(UTC)을 쓰면 오전 9시 입고가 0시로 읽힌다. created_at 없는 옛 행은 na(구분 없음).
+    const e = by.get(nm); if (!e) return;
+    if (!e.ib) e.ib = { am: 0, pm: 0, na: 0 };
+    const q = Number(r.quantity) || 0;
+    const hr = r.created_at ? new Date(r.created_at).getHours() : NaN;
+    if (Number.isNaN(hr)) e.ib.na += q; else if (hr < 12) e.ib.am += q; else e.ib.pm += q;
   });
   // 내부 먼저, 그 안에서는 drivers 배열 순서(로드가 display_order asc라 기사 관리 화면과 같다). 외부·미등록은 뒤.
   const ord = n => { const i = (drivers || []).findIndex(d => d.name === n); return i < 0 ? 9999 : i; };
   return [...by.values()].sort((a, b) =>
     (a.type === '내부' ? 0 : 1) - (b.type === '내부' ? 0 : 1) || ord(a.name) - ord(b.name));
+}
+// 농가 하나의 '그날 다녀간/갈 기사' 줄 — 4일 카드(renderUpcomingHarvest)와 금일 수확일정·달력 상세(harvestRow)가 같이 쓴다.
+//   boxStyle = 바깥 칸 자리 스타일(카드는 들여쓰기, harvestRow는 flex 줄바꿈 'flex:1 1 100%'). 기사 없으면 ''.
+//   원물은 입고 CT를 붙인다: '원물✓ 오전 110ct' / '오전 110·오후 50ct' / 시각 모름 '110ct'.
+function _hvTripLine(dStr, farm, boxStyle = 'padding-left:12px;margin-top:3px') {
+  const ts = _tripDriversOn(dStr, farm);
+  if (!ts.length) return '';
+  return `<div style="${boxStyle};display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:11px;color:#6B7280;min-width:0">
+            <span>🚚</span>${ts.map(t => {
+              const ext = t.type === '외부';
+              // 색: 외부는 배지 관례(b-pur)의 글자색, 미등록(type 없음)은 회색, 내부는 본문색
+              const col = ext ? '#6A1B9A' : (t.type ? '#374151' : '#9CA3AF');
+              const ib = t.ib ? [t.ib.am ? `오전 ${fmtN(t.ib.am)}` : '', t.ib.pm ? `오후 ${fmtN(t.ib.pm)}` : '', t.ib.na ? fmtN(t.ib.na) : ''].filter(Boolean).join('·') : '';
+              return `<span style="color:${col}">${esc(`${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}${ib ? ` ${ib}ct` : ''}`)}</span>`;
+            }).join('<span style="color:#D1D5DB">·</span>')}
+          </div>`;
 }
 
 // ★2026-08-21 재구성(Jimmy 데모 확정): 날짜별 '세로 나열' → 4일치 '가로 카드'.
@@ -5057,18 +5082,7 @@ function renderUpcomingHarvest() {
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
-        ${(() => {   // 그 농가를 그날 다녀간/갈 기사 — 머리 줄과 같은 헬퍼를 농가 인자만 달리해 부른다
-          const ts = _tripDriversOn(day.dStr, x.farm);
-          if (!ts.length) return '';
-          return `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:11px;color:#6B7280;min-width:0">
-            <span>🚚</span>${ts.map(t => {
-              const ext = t.type === '외부';
-              // 색: 외부는 배지 관례(b-pur)의 글자색, 미등록(type 없음)은 회색, 내부는 본문색
-              const col = ext ? '#6A1B9A' : (t.type ? '#374151' : '#9CA3AF');
-              return `<span style="color:${col}">${esc(`${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}`)}</span>`;
-            }).join('<span style="color:#D1D5DB">·</span>')}
-          </div>`;
-        })()}
+        ${_hvTripLine(day.dStr, x.farm)}
         ${(() => {   // 그날(day.dStr) 계획 줄 — 없으면 관리자에게만 '＋ 계획 입력' 자리표시자, 그것도 없으면 줄 자체를 안 만든다
           const ln = _hvPlanLine(x, day.dStr, 'flex:1 1 auto;min-width:0');
           return ln ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${ln}${_hvPlanCheckBtn(x, day.dStr)}</div>` : '';
@@ -6964,6 +6978,10 @@ function _invFetchStart(track = p => p, base = null) {
   (base ? Promise.resolve(base) : track(_syncFetchLatest(_INV_FRESH_TABLES)))
     .then(b => { if (token === _invLoadToken) _invFreshBase = _invFreshAll(b) ? b : null; }, () => {});
   _invLoadP = _invFetch(track, token).finally(() => { if (token === _invLoadToken) _invLoadPending = false; });
+  // ★캘린더의 기사 줄(_tripDriversOn)은 입고를 읽는다. 부팅 직후 캘린더를 먼저 열면 입고가 아직 없어(실측 약 4초 뒤 도착)
+  //   원물 줄이 빠진 채로 남는다 → 입고가 도착하면 캘린더가 열려 있을 때만 한 번 다시 그린다(renderCal이 탭 활성 여부를 본다).
+  //   계획 입력 칸이 열려 있으면 건드리지 않는다(다시 그리면 입력 중인 칸이 사라진다).
+  _invLoadP.then(() => { if (token === _invLoadToken && !document.querySelector('.hv-plan-editor')) renderCal(); }, () => {});
   return _invLoadP;
 }
 
