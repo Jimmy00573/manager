@@ -4943,18 +4943,28 @@ function _tripDriversOn(dStr, farm) {
     if (d.date !== dStr || !d.driver || (farm && d.farm !== farm)) return;
     add(d.driver, '배출', _isOutDisp(d));   // ★_isOutDisp 재사용 — 배출완료만 '다녀옴', 예약(배차완료)은 예정
   });
-  (inboundRecords || []).forEach(r => {
-    if (r.date !== dStr || r.is_void || !r.driver_id || (farm && r.farm_name !== farm)) return;
+  const ibRows = (inboundRecords || []).filter(r => r.date === dStr && !r.is_void && r.driver_id && (!farm || r.farm_name === farm));
+  ibRows.forEach(r => {
     const nm = _drvNameById(r.driver_id);
     add(nm, '원물', true);   // 입고는 이미 들어왔으므로 항상 다녀옴
     // 입고 CT를 오전/오후로 나눠 더한다(ib 필드 추가 — 기존 필드·정렬 무변). 한 차가 카테고리별 여러 행이라 행마다 합산.
     //   ★로컬 시각 getHours — toISOString(UTC)을 쓰면 오전 9시 입고가 0시로 읽힌다. created_at 없는 옛 행은 na(구분 없음).
     const e = by.get(nm); if (!e) return;
-    if (!e.ib) e.ib = { am: 0, pm: 0, na: 0 };
+    if (!e.ib) e.ib = { am: 0, pm: 0, na: 0, times: [] };
     const q = Number(r.quantity) || 0;
     const hr = r.created_at ? new Date(r.created_at).getHours() : NaN;
     if (Number.isNaN(hr)) e.ib.na += q; else if (hr < 12) e.ib.am += q; else e.ib.pm += q;
   });
+  // 차마다 등록 시각(그 차 첫 행의 created_at, 로컬 HH:MM) — 실제 도착이 아니라 등록 시각이다.
+  //   ★차 구분은 입고 공용 _ibTruckGroups(같은 날짜+농가+품목+기사, 2분 이내) — 카테고리별 여러 행이 한 번만 찍힌다.
+  //   created_at 없는 옛 행은 시각을 넣지 않는다. ★로컬 getHours/getMinutes — toISOString(UTC) 금지.
+  _ibTruckGroups(ibRows).forEach(g => {
+    const r0 = g.rows[0]; if (!r0.created_at) return;
+    const e = by.get(_drvNameById(r0.driver_id)); if (!e || !e.ib) return;
+    const d = new Date(r0.created_at);
+    e.ib.times.push(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+  });
+  by.forEach(e => { if (e.ib) e.ib.times.sort(); });
   // 내부 먼저, 그 안에서는 drivers 배열 순서(로드가 display_order asc라 기사 관리 화면과 같다). 외부·미등록은 뒤.
   const ord = n => { const i = (drivers || []).findIndex(d => d.name === n); return i < 0 ? 9999 : i; };
   return [...by.values()].sort((a, b) =>
@@ -4972,7 +4982,8 @@ function _hvTripLine(dStr, farm, boxStyle = 'padding-left:12px;margin-top:3px') 
               // 색: 외부는 배지 관례(b-pur)의 글자색, 미등록(type 없음)은 회색, 내부는 본문색
               const col = ext ? '#6A1B9A' : (t.type ? '#374151' : '#9CA3AF');
               const ib = t.ib ? [t.ib.am ? `오전 ${fmtN(t.ib.am)}` : '', t.ib.pm ? `오후 ${fmtN(t.ib.pm)}` : '', t.ib.na ? fmtN(t.ib.na) : ''].filter(Boolean).join('·') : '';
-              return `<span style="color:${col}">${esc(`${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}${ib ? ` ${ib}ct` : ''}`)}</span>`;
+              const tm = t.ib && t.ib.times.length ? ` (${t.ib.times.join('·')})` : '';   // 차마다 등록 시각 — 시각 없으면 괄호도 없음
+              return `<span style="color:${col}">${esc(`${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}${ib ? ` ${ib}ct` : ''}${tm}`)}</span>`;
             }).join('<span style="color:#D1D5DB">·</span>')}
           </div>`;
 }
