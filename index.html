@@ -493,7 +493,9 @@
     <div class="form-grid"><div class="fg"><label>농가명 *</label><input id="f-name" placeholder="예) 김개똥"></div><div class="fg"><label>연락처</label><input id="f-tel" placeholder="010-0000-0000"></div><div class="fg"><label>주소</label><input id="f-addr" placeholder="예) 서귀포시 ..."></div><div class="fg"><label>품종</label><select id="f-variety"></select></div><div class="fg"><label>계약 콘테이너(개)</label><input id="f-contract" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><select id="f-staff"></select></div><div class="fg"><label>비고</label><input id="f-memo" placeholder="메모"></div></div>
     <div class="form-actions"><button class="btn pri" onclick="addFarm()">등록</button></div>
   </div>
-  <div style="font-size:12px;color:#888;margin:8px 0;display:flex;align-items:center;gap:8px">등록된 농가 <span id="farm-cnt" class="badge b-neu">0</span></div>
+  <div style="font-size:12px;color:#888;margin:8px 0;display:flex;align-items:center;gap:8px">등록된 농가 <span id="farm-cnt" class="badge b-neu">0</span>
+    <input id="farm-q" type="text" placeholder="농가명·전화·주소 검색" oninput="renderFarm()"
+      style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:8px;width:150px;font-family:inherit;margin-left:auto"></div>
   <div id="farm-cards"></div>
 </div>
 
@@ -2071,6 +2073,6 @@
 <script src="src/supabase-client.js?v=30"></script>
 <script src="src/db.js?v=27"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=673"></script>
+<script src="src/app.js?v=674"></script>
 </body>
 </html>

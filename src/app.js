@@ -2116,10 +2116,18 @@ function _selEnsureVal(el, val) {
 function renderFarm() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   popFarmFormSelects();
-  document.getElementById('farm-cnt').textContent = farms.length;
+  // 목록 검색(#farm-q) — 이름·주소·메모는 글자 포함, 전화는 입력·번호 모두 하이픈을 빼고 비교. 비었으면 예전처럼 전부.
+  //   ★F-번호는 전체 목록 기준 원래 번호 — 인덱스를 먼저 붙이고 거른다. 등록·수정·삭제 뒤 다시 불려도 검색어는 칸에 남아 그대로 걸린다.
+  const q = (document.getElementById('farm-q')?.value || '').trim().toLowerCase();
+  const qd = q.replace(/-/g, '');
+  const hit = f => !q || [f.name, _farmAddrText(f.name), f.memo].some(v => String(v || '').toLowerCase().includes(q))
+    || (!!qd && String(f.tel || '').replace(/-/g, '').includes(qd));
+  const list = farms.map((f, i) => ({ f, i })).filter(x => hit(x.f));
+  document.getElementById('farm-cnt').textContent = q ? `${list.length} / ${farms.length}` : farms.length;
   const el = document.getElementById('farm-cards');
   if (!farms.length) { el.innerHTML = '<div class="note">등록된 농가가 없습니다</div>'; return; }
-  el.innerHTML = farms.map((f, i) => `<div class="farm-card">
+  if (!list.length) { el.innerHTML = '<div class="note">검색 결과가 없습니다</div>'; return; }
+  el.innerHTML = list.map(({ f, i }) => `<div class="farm-card">
     <div class="fc-info">
       <div class="fc-name"><span class="badge b-neu">F-${String(i + 1).padStart(3, '0')}</span>${esc(f.name)}${f.variety ? `<span class="badge b-teal">${esc(f.variety)}</span>` : ''}</div>
       <div class="fc-details">
