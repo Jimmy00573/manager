@@ -6206,7 +6206,8 @@ function getDistGroupTooltip(groupId) {
 // ★"위치(수량)/위치(수량)" 옛 분산 표기는 parseLocationStr로 계속 푼다(데이터는 정리됐지만 로직은 유지).
 // ★위치가 빈 파치는 위치 합계에 안 넣는다 — 미지정 카드(buildLocStockCards)가 합계 한 줄로만 보인다.
 function _locUnsIncluded(r) {
-  return !!r && !r.is_void && !['선과품', '파치', '청과'].includes(r.inbound_category || '상품');
+  const cat = r && (r.inbound_category || '상품');
+  return !!r && !r.is_void && cat !== '선과품' && !_IB_PACHI_SRC[cat];   // 파치류 목록은 _IB_PACHI_SRC 한 곳
 }
 function _locPachiRecs() {
   return (inventoryRecords || []).filter(r => r && !r.is_void && (Number(r.quantity) || 0) > 0
@@ -15197,8 +15198,7 @@ function _isUnsortedTarget(r) {
     && !r.is_void
     && !r.exclude_from_unsorted
     && r.inbound_category !== '선과품'
-    && r.inbound_category !== '파치'
-    && r.inbound_category !== '청과';
+    && !_IB_PACHI_SRC[r.inbound_category || '상품'];   // 파치류(파치·청과·왕대과) — 목록은 _IB_PACHI_SRC 한 곳
 }
 
 // ── 입고 파치·청과 ↔ 파치 재고(inventory_records) 연결 ──────────────────
@@ -15206,7 +15206,13 @@ function _isUnsortedTarget(r) {
 //    ① 입고 등록 시 재고 생성(_addInboundCore)  ② 입고 수정 시 재고 동기화(saveInboundModal)
 //    ③ 파치 화면 Source 3의 '전환됨' 판정(renderPachiSection)
 //   ①③이 서로 다른 값을 쓰면 같은 물건이 두 곳에 뜨거나(중복 계상) 아무 데도 안 뜬다(누락).
-const _IB_PACHI_SRC = { '파치': 'pachi', '청과': 'pachi_green' };
+// ★이 표에 있는 카테고리 = '파치류'(미선과 대상 아님) — _locUnsIncluded·_isUnsortedTarget·_srtExcludable이 이 표로 판정한다.
+//   파치류를 새로 만들면 여기 한 줄이면 저장·판정·Source 3이 같이 따라온다(목록을 따로 적지 말 것).
+// 왕대과 = 왕대과 파치(가공용 등으로 따로 나감). 성격은 파치와 같아 source_type도 'pachi'.
+const _IB_PACHI_SRC = { '파치': 'pachi', '청과': 'pachi_green', '왕대과': 'pachi' };
+// 입고 파치류 → 파치 재고 행을 만들 때의 기본 사용처·크기(없는 카테고리는 예전처럼 둘 다 비움).
+//   ★마스터(pachi_usages.name / pachi_sizes.label, 활성)에 없으면 null로 넣는다 — 이름이 바뀌어도 저장은 막지 않는다.
+const _IB_PACHI_DEFAULTS = { '왕대과': { usage: '사용보류', size: '대과' } };
 
 // 이 입고에 연결된 '살아있는' 파치 재고 행. 카테고리가 파치·청과가 아니면 항상 빈 배열.
 // ★is_void 행은 이미 소진된 것이라 제외한다 — 되살리면 유령 재고가 된다.
@@ -18549,7 +18555,8 @@ function renderInboundList() {
     // ※회색(#F3F4F6)을 안 쓰는 이유: '선과완료'와 같은 색이라 "처리해서 끝난 것"으로 읽힘.
     //   파치는 완료가 아니라 애초에 선과 대상이 아닌 것.
     const isNotSrtTarget = !isSorted && !_isUnsortedTarget(r);
-    const _srtExcludable = isSrtExcluded || !['선과품', '파치', '청과'].includes(r.inbound_category || '상품');
+    const _srtCat = r.inbound_category || '상품';
+    const _srtExcludable = isSrtExcluded || (_srtCat !== '선과품' && !_IB_PACHI_SRC[_srtCat]);   // 파치류 목록은 _IB_PACHI_SRC 한 곳
     const srtExBadge = isSrtExcluded
       ? ` <span style="background:#EDE9FE;color:#6D28D9;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;display:inline-block" title="'선과 안 함'으로 지정됨 — 미선과 목록·우선처리 집계에서 제외">🚫 선과 안 함</span>`
       : '';
@@ -22236,6 +22243,12 @@ async function _addInboundCore(keepOpen) {
         //     Source 3의 '전환됨' 판정도 같은 표를 보므로, 표만 고치면 저장·판정이 같이 따라온다.
         if (_IB_PACHI_SRC[c.cat]) {
           const _pachiSrcType = _IB_PACHI_SRC[c.cat];
+          // 카테고리 기본 사용처·크기(_IB_PACHI_DEFAULTS — 지금은 왕대과만). 마스터에 없으면 null + 경고, 저장은 계속.
+          //   ★기본값이 없는 파치·청과는 insert 내용이 예전과 같다(usage null, 크기 키 없음).
+          const _pDef = _IB_PACHI_DEFAULTS[c.cat] || {};
+          let _pUsage = _pDef.usage ?? null, _pSize = _pDef.size ?? null;
+          if (_pUsage && !pachiUsages.some(u => u.name === _pUsage && u.is_active !== false)) { console.warn(`입고 ${c.cat}: 사용처 '${_pUsage}'가 마스터에 없어 비워 둡니다`); _pUsage = null; }
+          if (_pSize && !pachiSizes.some(g => g.label === _pSize && g.is_active !== false)) { console.warn(`입고 ${c.cat}: 파치 크기 '${_pSize}'가 마스터에 없어 비워 둡니다`); _pSize = null; }
           for (const row of _newInbounds) {
             if (!row || !row.id || !(Number(row.quantity) > 0)) continue;
             try {
@@ -22243,7 +22256,8 @@ async function _addInboundCore(keepOpen) {
                 date, farm_name, product, size_code: null,
                 quantity: row.quantity, location: row.location || null,
                 source_type: _pachiSrcType, inbound_record_id: row.id,
-                usage: null, is_void: false, note: null, created_by: 'admin'
+                usage: _pUsage, is_void: false, note: null, created_by: 'admin',
+                ...(_pSize ? { pachi_size_group: _pSize } : {})
               });
               if (pr && pr[0]) inventoryRecords.push(pr[0]);
             } catch (pErr) { console.warn(`입고 ${c.cat} 재고 생성 실패(무시):`, pErr.message); }
@@ -22803,7 +22817,7 @@ function renderPachiSection() {
         ids: [r.id], ibId: r.id,   // ibId = 처리 기록을 붙일 inbound_records.id (ids와 같지만 뜻을 분명히)
         memo: r.note || '',
         isSorting: false, isLegacy: false, isInbound: true,
-        pachiKind: r.inbound_category === '청과' ? '청과' : '파치', usage: r.usage || '미분류', location: r.location || null,
+        pachiKind: r.inbound_category === '청과' ? '청과' : r.inbound_category === '왕대과' ? '왕대과' : '파치', usage: r.usage || '미분류', location: r.location || null,
         sizeGroup: null, condition: null
       };
     });   // 잔여 0 이하는 헬퍼가 이미 뺐다
