@@ -2630,8 +2630,33 @@ async function _uncompleteDispatch(id) {
   picks = picks.filter(p => !(p.dispatch_id === id && p.type === '배출'));
 }
 
+// 같은 차로 등록된 '다른' 배출 대기 배차(d 자신 제외) — 배차 폼에서 여러 종류를 한 번에 등록하면 종류마다 1행이 생긴다.
+//   판정: 같은 date·farm·target_type·driver + status '배차완료' + created_at 2분 이내로 이어진 것.
+//   ★날짜·농가·기사만으로 묶으면 안 된다 — 같은 날 같은 농가·기사라도 다른 차가 있다(9/28 조도진 6시간 간격).
+//   ★2분 연속 묶음은 입고 공용 _ibShareCluster(IB_SHARE_GAP_SEC)를 그대로 쓴다. created_at 없는 옛 행은 자기 자신만 → 빈 배열.
+//   완료 진입점 updDisp·drvDone이 같이 쓴다.
+function _dispSameTrip(d) {
+  if (!d) return [];
+  const tt = x => x.target_type || '농가';
+  const rows = dispatches.filter(x => x.date === d.date && x.farm === d.farm && tt(x) === tt(d) && x.driver === d.driver && x.status === '배차완료');
+  return _ibShareCluster(rows, d).filter(x => x.id !== d.id);
+}
 async function updDisp(id, s) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  // ★✅ 완료 — 같은 차로 등록된 배출 대기 배차가 있으면 '전부 완료 / 이것만'을 묻는다. 없으면 예전처럼 확인창 없이.
+  //   되돌리기('배차완료')는 예전처럼 한 행씩(묶지 않는다).
+  let ids = [id];
+  if (s === '배출완료') {
+    const d = dispatches.find(x => x.id === id);
+    const sibs = _dispSameTrip(d);
+    if (sibs.length) {
+      const ans = await showConfirmEdit('같이 등록된 배차가 있습니다',
+        `${d.farm} · ${d.driver}\n` + [d, ...sibs].map(x => `${x.ctype || '-'} ${fmtN(Number(x.qty) || 0)}${x.id === id ? ' (지금 누른 것)' : ''}`).join('\n'),
+        { confirmText: '전부 완료', altText: '이것만' });
+      if (!ans) return;
+      if (ans === true) ids = [id, ...sibs.map(x => x.id)];
+    }
+  }
   // ★'↩ 되돌리기'에만 확인창 — 되돌리기는 '아직 안 나간 것으로 되돌림'이지 '취소'가 아니다.
   //   2026-09-19 부옥선 건처럼 중복 등록된 배차를 되돌리면, 배출 기록(picks)만 지워지고
   //   배차는 '배출 대기'로 남아 이튿날 목록에 다시 뜬다. 잘못 등록한 건이면 [삭제]가 맞다 —
@@ -2649,16 +2674,25 @@ async function updDisp(id, s) {
       + `※ 잘못 등록한 배차라면 되돌리기 말고 [삭제]를 쓰세요.${late}`;
     if (!(await showConfirmEdit('배출 되돌리기', msg))) return;
   }
+  // ★여러 건이면 차례로 기존 처리 그대로 — 중간 실패 시 이미 끝난 건은 두고(되돌리지 않음) 몇 건이 남았는지 알린다.
+  //   화면은 마지막에 한 번만. 한 건이면 예전과 같다(실패하면 화면 갱신 없이 '오류:' 안내).
+  let doneN = 0, err = null;
   try {
-    await dbUpdateDispatch(id, { status: s });
-    dispatches = dispatches.map(d => d.id === id ? { ...d, status: s } : d);
-    // ★보고 생성은 _completeDispatch로 옮겼다 — 배출 pick과 한 묶음이라 따로 두면 두 진입점이 갈린다.
-    if (s === '배출완료') await _completeDispatch(dispatches.find(x => x.id === id));
-    else if (s === '배차완료') await _uncompleteDispatch(id);
+    for (const did of ids) {
+      await dbUpdateDispatch(did, { status: s });
+      dispatches = dispatches.map(d => d.id === did ? { ...d, status: s } : d);
+      // ★보고 생성은 _completeDispatch로 옮겼다 — 배출 pick과 한 묶음이라 따로 두면 두 진입점이 갈린다.
+      if (s === '배출완료') await _completeDispatch(dispatches.find(x => x.id === did));
+      else if (s === '배차완료') await _uncompleteDispatch(did);
+      doneN++;
+    }
+  } catch (e) { err = e; }
+  if (doneN) {
     renderDisp(); renderDDash(); renderMyAssign(); renderMyPending();
     const c = document.getElementById('rep-cnt'); if (c) c.textContent = (_loggedDrv ? reports.filter(r=>r.driver===_loggedDrv.name).length : reports.length) + '건';
     if (_repOpen) renderRep(); renderDash();
-  } catch (e) { alert('오류: ' + e.message); }
+  }
+  if (err) alert(doneN ? `${doneN}건은 완료됐고 ${ids.length - doneN}건은 처리하지 못했습니다.\n남은 건은 다시 눌러 주세요.\n\n${err.message}` : '오류: ' + err.message);
 }
 
 // 이 배차를 지우면 '대표할 배차가 사라지는' 작업 보고를 고른다.
@@ -3232,7 +3266,9 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
 // ── 공용 중립 확인 모달 (단가 수정 등 위험하지 않은 작업용) ────────
 let _confirmEditResolve = null;
 
-function showConfirmEdit(title, msg = '') {
+// opts(선택): { confirmText, altText } — altText가 있을 때만 세 번째 버튼이 생기고 누르면 'alt'를 돌려준다.
+//   ★opts 없이 부르는 기존 호출은 버튼(취소·확인)·반환값(true/false)이 예전과 같다.
+function showConfirmEdit(title, msg = '', opts = {}) {
   return new Promise(resolve => {
     if (_confirmEditResolve) _confirmEditResolve(false);
     _confirmEditResolve = resolve;
@@ -3253,7 +3289,8 @@ function showConfirmEdit(title, msg = '') {
         </div>
         <div style="padding:14px 20px 18px;display:flex;gap:8px;justify-content:flex-end">
           <button id="ced-cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer">취소</button>
-          <button id="ced-confirm" style="padding:8px 18px;border-radius:8px;border:none;background:#4F46E5;color:#fff;font-size:14px;font-weight:600;cursor:pointer">확인</button>
+          ${opts.altText ? `<button id="ced-alt" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer">${esc(opts.altText)}</button>` : ''}
+          <button id="ced-confirm" style="padding:8px 18px;border-radius:8px;border:none;background:#4F46E5;color:#fff;font-size:14px;font-weight:600;cursor:pointer">${esc(opts.confirmText || '확인')}</button>
         </div>
       </div>`;
 
@@ -3266,6 +3303,7 @@ function showConfirmEdit(title, msg = '') {
     overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
     overlay.querySelector('#ced-cancel').addEventListener('click', () => close(false));
     overlay.querySelector('#ced-confirm').addEventListener('click', () => close(true));
+    overlay.querySelector('#ced-alt')?.addEventListener('click', () => close('alt'));
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
     if (document.activeElement) document.activeElement.blur();
@@ -3442,15 +3480,32 @@ function renderMyPending() {
 
 async function drvDone(id) {
   const d = dispatches.find(x => x.id === id); if (!d) return;
+  // ★같은 차로 등록된 배출 대기 배차 — updDisp와 같은 흐름·같은 문구(_dispSameTrip 공용).
+  let ids = [id];
+  const sibs = _dispSameTrip(d);
+  if (sibs.length) {
+    const ans = await showConfirmEdit('같이 등록된 배차가 있습니다',
+      `${d.farm} · ${d.driver}\n` + [d, ...sibs].map(x => `${x.ctype || '-'} ${fmtN(Number(x.qty) || 0)}${x.id === id ? ' (지금 누른 것)' : ''}`).join('\n'),
+      { confirmText: '전부 완료', altText: '이것만' });
+    if (!ans) return;
+    if (ans === true) ids = [id, ...sibs.map(x => x.id)];
+  }
+  let doneN = 0, err = null;
   try {
-    await dbUpdateDispatch(id, { status: '배출완료' });
-    dispatches = dispatches.map(x => x.id === id ? { ...x, status: '배출완료' } : x);
-    // ★보고 문구('앱에서 완료처리')는 이 경로만의 값이라 인자로 넘긴다 — 기존 기록과 구분이 유지된다.
-    await _completeDispatch(dispatches.find(x => x.id === id), '앱에서 완료처리');
+    for (const did of ids) {
+      await dbUpdateDispatch(did, { status: '배출완료' });
+      dispatches = dispatches.map(x => x.id === did ? { ...x, status: '배출완료' } : x);
+      // ★보고 문구('앱에서 완료처리')는 이 경로만의 값이라 인자로 넘긴다 — 기존 기록과 구분이 유지된다.
+      await _completeDispatch(dispatches.find(x => x.id === did), '앱에서 완료처리');
+      doneN++;
+    }
+  } catch (e) { err = e; }
+  if (doneN) {
     const c = document.getElementById('rep-cnt'); if (c) c.textContent = (_loggedDrv ? reports.filter(r=>r.driver===_loggedDrv.name).length : reports.length) + '건';
     if (!_repOpen) { _repOpen = true; document.getElementById('rep-history').style.display = ''; document.getElementById('rep-h-icon').textContent = '▲ 접기'; }
     renderRep(); renderMyPending(); renderMyAssign(); renderDisp(); renderDDash(); renderDash();
-  } catch (e) { alert('오류: ' + e.message); }
+  }
+  if (err) alert(doneN ? `${doneN}건은 완료됐고 ${ids.length - doneN}건은 처리하지 못했습니다.\n남은 건은 다시 눌러 주세요.\n\n${err.message}` : '오류: ' + err.message);
 }
 
 function clearRepF() {
