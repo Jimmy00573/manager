@@ -4729,11 +4729,12 @@ function _hvContactLine(farm, addr) {
 // planDate = 이 행이 놓인 카드의 날짜(금일 strip=오늘, 달력 상세=고른 날). 주면 그날 계획 줄·확인 버튼이 붙는다.
 //   ★안 주면 계획을 안 그린다 — 농가별 진행 현황의 차수 목록은 '어느 날' 카드가 아니라 어느 날짜 계획을 보여야 할지 정할 수 없다.
 //   planDate가 있으면 그날 다녀간 기사 줄(_hvTripLine — 4일 카드와 같은 글자)도 계획 줄 아래에 붙는다.
-// opts.contact = 연락 줄(_hvContactLine)을 붙인다 — 금일 수확일정만. 수확완료·전체 종료 줄은 갈 일이 없어 뺀다.
+// opts.contact = 연락 줄(_hvContactLine)을 붙인다 — 금일 수확일정만. 전체 종료(🏁)만 뺀다 —
+//   수확완료여도 그날 빈콘 회수·파치 수거로 갈 수 있다(2026-09-30 안재만 1차: 완료 처리 뒤 주소·전화가 사라졌다).
 //   ★안 넘기면 출력 HTML이 수정 전과 글자 하나 안 틀린다(연락 줄을 변수로 붙이는 이유).
 function harvestRow(h, showDate, planDate, opts = {}) {
   const st = h.status || '수확전';
-  const contact = (opts.contact && !h.is_final && st !== '수확완료') ? _hvContactLine(h.farm, _recAddr(h)) : '';
+  const contact = (opts.contact && !h.is_final) ? _hvContactLine(h.farm, _recAddr(h)) : '';
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${_hvStBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
       ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
