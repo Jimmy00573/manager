@@ -21210,6 +21210,7 @@ async function showSortingHistory(id, btnEl) {
 
   const totalInput = rows.reduce((s, r) => s + Number(r.input_ct || 0), 0);
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const shareBtnS = 'font-size:11px;padding:2px 8px;border:1px solid #1565C0;border-radius:4px;color:#1565C0;background:#fff;cursor:pointer;white-space:nowrap';   // 차수 '📋 공유'·'📋 누적 공유' 공용
   const items = rows.map((row, idx) => {
     const seqLabel = `${idx+1}차`;
     const dateLabel = row.sorting_date ? row.sorting_date.slice(5) : '';
@@ -21222,7 +21223,7 @@ async function showSortingHistory(id, btnEl) {
         ${_srtMethodBadge(row.sort_method, { fs: 9 })}
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0">
-        <button onclick="openSortingShareText('${row.id}')" style="font-size:11px;padding:2px 8px;border:1px solid #1565C0;border-radius:4px;color:#1565C0;background:#fff;cursor:pointer;white-space:nowrap">📋 공유</button>
+        <button onclick="openSortingShareText('${row.id}')" style="${shareBtnS}">📋 공유</button>
         ${isAdm ? `<button onclick="confirmCancelSorting('${row.id}','${id}',${idx+1})" style="font-size:11px;padding:2px 8px;border:1px solid #DC2626;border-radius:4px;color:#DC2626;background:#fff;cursor:pointer;white-space:nowrap">취소</button>` : ''}
       </div>
     </div>`;
@@ -21231,8 +21232,11 @@ async function showSortingHistory(id, btnEl) {
   const pop = document.createElement('div');
   pop.id = popId;
   pop.style.cssText = 'position:fixed;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:12px 14px;min-width:220px;max-width:300px;z-index:2000;font-size:13px';
+  // '📋 누적 공유' — 이 팝업이 받은 차수 전부(같은 순서)를 합산. 차수가 하나면 차수 공유와 같은 내용이라 숨긴다.
+  const cumBtn = rows.length > 1
+    ? `<button onclick="openSortingShareText([${rows.map(r => `'${r.id}'`).join(',')}])" style="${shareBtnS}">📋 누적 공유</button>` : '';
   pop.innerHTML = `
-    <div style="font-weight:700;margin-bottom:8px;color:#1565C0">📊 선과 이력 (${rows.length}차, 총 ${fmtN(totalInput)} CT)</div>
+    <div style="font-weight:700;margin-bottom:8px;color:#1565C0;display:flex;align-items:center;justify-content:space-between;gap:6px"><span>📊 선과 이력 (${rows.length}차, 총 ${fmtN(totalInput)} CT)</span>${cumBtn}</div>
     ${items}`;
 
   document.body.appendChild(pop);
@@ -21249,13 +21253,27 @@ async function showSortingHistory(id, btnEl) {
 // ── 선과내역 차수별 사무실 공유 텍스트(조회 전용 — 계산·저장 무변)
 function _srtShareMD(s) { if (!s) return ''; const p = String(s).slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}월 ${+p[2]}일` : s; }
 function _srtShareCt(v) { return (Number(v) || 0).toFixed(1); }
+// srId = 차수 id 하나(차수별 공유) 또는 id 배열(누적 공유 — 선과 이력 팝업 순서: sorting_date·sequence_number 오름차순).
+//   ★배열일 때만 머리 줄(선과일자·선과CT·선과 방식)이 합산 표기로 바뀐다. 하나면 조회·출력 모두 예전과 한 글자도 같다.
+//   사이즈·카테고리는 details를 합쳐 세므로 본문 규칙(0 생략·섹션 순서·브릭스 등급 순서·소수 1자리)은 그대로다.
 async function buildSortingShareText(srId) {
-  const srs = await sbGet('sorting_results', `id=eq.${srId}`);
-  const sr = srs && srs[0];
+  const multi = Array.isArray(srId);
+  let srList;
+  if (multi) {
+    const got = await sbGet('sorting_results', `id=in.(${srId.join(',')})`);
+    srList = srId.map(id => (got || []).find(x => String(x.id) === String(id))).filter(Boolean);   // 넘겨받은 순서 그대로
+    if (srList.length !== srId.length) throw new Error('선과 결과를 찾을 수 없습니다.');
+  } else {
+    const srs = await sbGet('sorting_results', `id=eq.${srId}`);
+    srList = srs && srs[0] ? [srs[0]] : [];
+  }
+  const sr = srList[0];
   if (!sr) throw new Error('선과 결과를 찾을 수 없습니다.');
   const ir = inboundRecords.find(r => String(r.id) === String(sr.inbound_record_id))
     || (await sbGet('inbound_records', `id=eq.${sr.inbound_record_id}`))[0] || {};
-  const details = await sbGet('sorting_details', `sorting_result_id=eq.${srId}&select=*`);
+  const details = await sbGet('sorting_details', multi ? `sorting_result_id=in.(${srId.join(',')})&select=*` : `sorting_result_id=eq.${srId}&select=*`);
+  const lastSr = srList[srList.length - 1], nLbl = `(1~${srList.length}차)`;
+  const inputSum = srList.reduce((s, x) => s + (Number(x.input_ct) || 0), 0);
   const sizes = getSizeGroupsFor(ir.product).flatMap(g => g.sizes);   // 사이즈 순서 = 기존 상수(감귤류/만감류)
   const catSum = c => details.filter(d => d.category === c).reduce((s, d) => s + (Number(d.ct) || 0), 0);
   // 정상품: 등급 × 사이즈 합계
@@ -21269,14 +21287,17 @@ async function buildSortingShareText(srId) {
     .map(sc => `${sc}\t${_srtShareCt(gradeSize[g][sc])}`).join('\n');
   const L = [];
   L.push(`입고일자\t${_srtShareMD(ir.date)}`);
-  L.push(`선과일자\t${_srtShareMD(sr.sorting_date)}`);
+  L.push(`선과일자\t${!multi ? _srtShareMD(sr.sorting_date)
+    : `${sr.sorting_date === lastSr.sorting_date ? _srtShareMD(sr.sorting_date) : `${_srtShareMD(sr.sorting_date)} ~ ${_srtShareMD(lastSr.sorting_date)}`} ${nLbl}`}`);
   L.push(`농가명\t${ir.farm_name || ''}`);
   L.push(`품목명\t${ir.product || ''}`);
   // 선과CT: '전체 NCT 중 MCT 선과' — 입고 총량(inbound_records.quantity) 기준. 못 구하면 기존 표기
   const totalQty = Number(ir.quantity) || 0;
-  L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
-  // 선과 방식 — 만감류에만 값이 있다. 없으면 줄 자체를 넣지 않는다(0 생략과 같은 규칙).
-  if (sr.sort_method) L.push(`선과 방식\t${sr.sort_method}`);
+  if (!multi) L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
+  else L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(inputSum)}CT 선과 ${inputSum >= totalQty ? '(완료)' : nLbl}` : fmtN(inputSum)}`);   // 누적: 다 했으면 '(완료)'
+  // 선과 방식 — 만감류에만 값이 있다. 없으면 줄 자체를 넣지 않는다(0 생략과 같은 규칙). 누적은 차수별 값을 중복 없이 '·'로.
+  const methods = multi ? [...new Set(srList.map(x => x.sort_method).filter(Boolean))].join('·') : sr.sort_method;
+  if (methods) L.push(`선과 방식\t${methods}`);
   // 비정상품: 값 있는 줄만(0 생략)
   // ★앞 3개는 사무실에서 쓰던 기존 형식이라 라벨·순서 그대로. 누락됐던 극소과·청과·손실만 뒤에 추가.
   const abn = [['파치', catSum('파치')], ['9브릭스 이하 저당도', catSum('저당도')], ['고산도', catSum('고산도')],
