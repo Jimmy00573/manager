@@ -15087,7 +15087,7 @@ function todayTabSwitch(tab) {
 }
 
 // 입출고 요약 '카테고리별' 탭: 3단 계층(품목→카테고리→농가·기사). 접기/펼치기 2레벨, 전체 재렌더 없이 이 탭 내부만 갱신.
-const _INOUT_CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '청과', '파치'];
+const _INOUT_CAT_ORDER = ['상품', '선과품', '대과', '소과', '재선별', '청과', '파치', '왕대과'];
 // 전체 펼침 여부: 모든 품목 + 모든 (품목|카테고리)가 펼쳐졌는지
 function _inoutAllExpanded(prodRows) {
   if (!prodRows.length) return false;
@@ -15479,6 +15479,7 @@ function categoryBadge(cat, reclassSource, reclassReason, origDate) {
   if (cat === '소과') return `<span class="badge" style="background:#E0F2F1;color:#00695C">소과</span>`;
   if (cat === '청과') return `<span class="badge" style="background:#E8F5E9;color:#2E7D32">청과</span>`;
   if (cat === '파치') return `<span class="badge" style="background:#F5F5F5;color:#757575">파치</span>`;
+  if (cat === '왕대과') return `<span class="badge" style="background:#EFEBE9;color:#6D4C41">왕대과</span>`;
   if (cat === '재선별') {
     const srcLabel = { '신규입고': '신규입고', '선과결과': '선과결과', '포장라인': '포장라인', '반품': '반품', '기타': '기타' }[reclassSource] || '';
     const parts = [srcLabel, reclassReason, origDate && `원본일 ${origDate}`].filter(Boolean);
@@ -16254,6 +16255,7 @@ const IB_CATS = [
   { key: '소과',  color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
   { key: '청과',  color: '#2E7D32', bg: '#E8F5E9', border: '#A5D6A7' },   // 초록 — 덜 익은 것. 소과(청록)·파치(회색)와 구분
   { key: '파치',  color: '#757575', bg: '#F5F5F5', border: '#BDBDBD' },
+  { key: '왕대과', color: '#6D4C41', bg: '#EFEBE9', border: '#BCAAA4' },   // 갈색 — 왕대과 파치. 대과(주황)·파치(회색)와 구분
   // ★재선별은 신규 등록에서 빠졌지만 기존 데이터가 있어 집계·필터에 그대로 남긴다.
   { key: '재선별', color: '#7C3AED', bg: '#F3E8FF', border: '#C4B5FD' },
 ];
@@ -16292,7 +16294,8 @@ const RECLASS_REASONS = {
 // 목록에 없는 값('선과품'·'재선별' 등)은 indexOf -1 → 맨 뒤로(_ibCatRank). 기존 재선별 데이터도 그대로 정렬된다.
 // ★2026-08-21 '재선별'을 신규 등록 대상에서 뺐다(기존 2건 데이터·코드·필터·배지는 전부 유지 — 지우지 말 것).
 //   대신 '청과'를 넣었다. 청과 = 덜 익어 지금은 못 파는 것 — 불량인 파치보다는 위라 소과 다음·파치 앞에 둔다.
-const IB_CAT_SORT_ORDER = ['상품', '대과', '소과', '청과', '파치'];
+// ★2026-10-01 '왕대과'(왕대과 파치) 추가 — 파치류라 맨 끝(파치 뒤). 판정·저장은 _IB_PACHI_SRC·_IB_PACHI_DEFAULTS.
+const IB_CAT_SORT_ORDER = ['상품', '대과', '소과', '청과', '파치', '왕대과'];
 function _ibCatRank(cat) {
   const i = IB_CAT_SORT_ORDER.indexOf(cat || '상품');
   return i < 0 ? IB_CAT_SORT_ORDER.length : i;
@@ -16305,6 +16308,7 @@ const IB_FILTER_STYLES = {
   '소과':  { bg: '#E0F2F1', color: '#00695C', border: '#80CBC4' },
   '청과':  { bg: '#E8F5E9', color: '#2E7D32', border: '#A5D6A7' },
   '파치':  { bg: '#F5F5F5', color: '#757575', border: '#BDBDBD' },
+  '왕대과': { bg: '#EFEBE9', color: '#6D4C41', border: '#BCAAA4' },
   '재선별': { bg: '#F3E8FF', color: '#7C3AED', border: '#C4B5FD' },
 };
 
@@ -22134,7 +22138,7 @@ async function _addInboundCore(keepOpen) {
   if (!isDistributed) {
     const catSum = catQtys.reduce((s, c) => s + c.qty, 0);
     if (catSum !== qty) {
-      return alert(`카테고리 합계(${fmtN(catSum)})와 콘테이너 합계(${fmtN(qty)})가 맞지 않습니다.\n\n대과·소과·청과·파치 수량을 줄이거나 콘테이너 개수를 확인해 주세요.`);
+      return alert(`카테고리 합계(${fmtN(catSum)})와 콘테이너 합계(${fmtN(qty)})가 맞지 않습니다.\n\n대과·소과·청과·파치·왕대과 수량을 줄이거나 콘테이너 개수를 확인해 주세요.`);
     }
   }
 
