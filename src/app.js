@@ -3855,7 +3855,9 @@ function _qrQtyChanged() {
   hint.innerHTML = _ctQtyHint(_qrCtypeList(), _qrTypes, '<span style="color:#9CA3AF">회수할 종류에 수량을 넣으세요</span>');
 }
 
-function openQuickRecovery(farm, hold, targetType = '농가') {
+// opts(선택) = { date, staff } — 입고 목록 ⋮ '🧺 빈콘 회수'(_ibOpenEmptyRecovery)가 입고 날짜·기사로 미리 채울 때만 넘긴다.
+//   ★안 넘기면(현황판 4곳) 날짜 오늘·담당자 빈칸 — 예전과 같다. 기사 목록에 없는 이름이면 담당자는 비워 둔다.
+function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
   document.getElementById('modal-quick-recovery')?.remove();
   const defQty = Math.max(0, Math.round(hold || 0));
@@ -3899,7 +3901,7 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
           </div></div>
         <div style="font-size:12px;color:#6B7280">현재 ${targetType === '농가' ? '농가보유' : targetType + '보유(우리 콘테이너)'} <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">날짜</label>
-          <input id="qr-date" type="date" value="${td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
+          <input id="qr-date" type="date" value="${opts.date || td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:5px">콘테이너 종류·수량 <span style="color:#DC2626">*</span> <span style="font-size:10px;color:#9CA3AF">여러 종류를 한 번에 회수할 수 있습니다</span></label>
           <div id="qr-ctype-grid" class="ib-catq">${cells}</div>
           <div id="qr-qty-hint" style="font-size:11px;margin-top:5px;line-height:1.4;color:var(--text-tertiary)"></div></div>
@@ -3922,6 +3924,7 @@ function openQuickRecovery(farm, hold, targetType = '농가') {
   attachFarmSearch('qr-to-farm', { placeholder: '대상 검색' });   // 모달을 매번 새로 만들므로 매번 새로 붙는다
   // 검색 입력칸은 나중에 붙는 요소라 창 공통 모양(_qrInpS)이 없다 — 옆 대상 유형 칸과 같게(높이 33px = 이 창 select 실측값, 브라우저 차이 방지로 명시)
   const qrFs = document.getElementById('qr-to-farm-fs'); if (qrFs) qrFs.style.cssText = _qrInpS + ';height:33px';
+  if (opts.staff) { const qs = document.getElementById('qr-staff'); if (qs) { qs.value = opts.staff; if (qs.value !== opts.staff) qs.value = ''; } }
   _qrQtyChanged();
   setTimeout(() => _QR_CQ(0)?.focus(), 30);
 }
@@ -4009,6 +4012,16 @@ async function _qrSaveTransfer(farm, targetType) {
     _qrTransferBusy = false;
     if (btn && btn.isConnected) btn.disabled = false;
   }
+}
+// 입고 목록 ⋮ '🧺 빈콘 회수' — 그 공급처의 현황판 회수 창(openQuickRecovery)을 입고 날짜·기사로 연다.
+//   ★입고와 연결하지 않는다(inbound_id 없음) — 입고를 지워도 회수 기록은 남아야 한다. 저장·이동은 회수 창 그대로.
+//   대상 유형은 기존 _partnerTargetType(거래처 마스터 우선 → 농가 → 거래처), 보유는 현황판 🧺 버튼과 같은 함수.
+function _ibOpenEmptyRecovery(inboundId) {
+  const r = inboundRecords.find(x => String(x.id) === String(inboundId));
+  if (!r || !r.farm_name) return;
+  const name = r.farm_name, tt = _partnerTargetType(name);
+  const hold = tt === '농가' ? getFCS(name).hold : getTargetContainerHold(name, tt).hold;
+  openQuickRecovery(name, hold, tt, { date: r.date, staff: r.driver_id ? (_drvNameById(r.driver_id) || '') : '' });
 }
 // 현황판 농가 콘테이너 반납필요 → 바로 반납(own_out). dbInsertOwnOut 재사용. 담당자=drivers(선택).
 // ctype 생략 시 농가 전체(기존 동작), 지정 시 그 종류만 반납.
@@ -18592,6 +18605,7 @@ function renderInboundList() {
          ${remaining > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
          ${remaining > 0 ? `<button onclick="openUnsortedOutboundModal('${r.id}')">📤 출고</button>` : ''}
          ${_srtExcludable ? `<button onclick="toggleInboundSortExclude('${r.id}')">${isSrtExcluded ? '↩️ 선과 대상으로' : '🚫 선과 안 함'}</button>` : ''}
+         ${(r.inbound_category || '상품') !== '선과품' ? `<button onclick="_ibOpenEmptyRecovery('${r.id}')">🧺 빈콘 회수</button>` : ''}
          <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
          <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
          <div class="menu-divider"></div>
