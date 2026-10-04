@@ -19369,12 +19369,17 @@ function _scForecast(rec, detailsBySr) {
   const dtlsOf = srs => srs.flatMap(sr => detailsBySr[sr.id] || []);
   const ABN = new Set(_fsrQualStyles({}).map(s => s.k));   // 파치·고산도·저당도·극소과·청과(모달 범례와 같은 구분)
   const build = details => {
-    const { sizeRatios, qualRatios } = _srRatios(details, getSizeGroupsFor(rec.product));
+    const groups = getSizeGroupsFor(rec.product);
+    const { sizeRatios, qualRatios } = _srRatios(details, groups);
     const raw = Object.keys(sizeRatios).filter(g => sizeRatios[g] > 0).map(g => `${g}${sizeRatios[g]}%`).join(' ');
     const hi = Object.keys(qualRatios).filter(k => k !== '일반' && !ABN.has(k)).reduce((s, k) => s + (qualRatios[k] || 0), 0);
     if (!raw && !hi) return null;
     const hiStr = hi > 0 ? ` · 고당${hi}%` : '';
-    return { text: _sizeDistInline(raw) + hiStr, full: raw + hiStr };
+    // 막대용(_fcBarHtml) — 작은 → 큰 순서. 감귤류 그룹은 이미 극소과→대과, 만감류는 대과→소과라 뒤집는다.
+    //   idx·n = 그 품목 전체 그룹 안 위치(색 진하기). pct 0인 그룹은 빼도 색 위치는 유지.
+    const asc = ((PRODUCT_TYPE_MAP[rec.product] || '만감류') === '감귤류' ? groups : [...groups].reverse()).map(x => x.group);
+    const sizes = asc.map((g, idx) => ({ g, pct: sizeRatios[g] || 0, idx, n: asc.length })).filter(s => s.pct > 0);
+    return { text: _sizeDistInline(raw) + hiStr, full: raw + hiStr, sizes, hi };
   };
 
   // 근거 1 — 이 입고 자체
@@ -19403,6 +19408,25 @@ function _scForecast(rec, detailsBySr) {
   }
 
   return rec.size_distribution ? null : { none: true };
+}
+// 예상 막대 — _scForecast 정상 반환값(fc.sizes·hi·basis·full)을 120px 가로 비율 막대 + 고당 + 근거 줄로.
+//   왼쪽 작은 사이즈(연함) → 오른쪽 큰 사이즈(진함). 15% 이상 칸만 축약 라벨(_sizeDistInline). 폭은 pct 합으로 정규화.
+function _fcBarHtml(fc) {
+  const R = ['#E5E7EB', '#94A3B8', '#64748B', '#475569', '#1E3A5F'];
+  const sum = fc.sizes.reduce((s, x) => s + x.pct, 0) || 1;
+  const cells = fc.sizes.map(x => {
+    const bg = R[x.n > 1 ? Math.round(x.idx * 4 / (x.n - 1)) : 2];
+    const label = x.pct >= 15 ? esc(_sizeDistInline(`${x.g}${x.pct}%`)) : '';
+    return `<div style="width:${x.pct / sum * 100}%;background:${bg};color:${bg === R[0] ? '#374151' : '#fff'};padding-left:${label ? 3 : 0}px;white-space:nowrap;overflow:hidden;box-sizing:border-box">${label}</div>`;
+  }).join('');
+  const bar = fc.sizes.length
+    ? `<div style="display:flex;width:120px;height:14px;border-radius:3px;overflow:hidden;font-size:10px;line-height:14px;flex-shrink:0">${cells}</div>`
+    : '';
+  const hi = fc.hi > 0 ? `<span style="font-size:10px;color:#1565C0;white-space:nowrap">고당${fc.hi}</span>` : '';
+  return `<div style="margin-top:4px;font-weight:400" title="${esc(`예상 ${fc.full} (${fc.basis})`)}">
+    <div style="display:flex;align-items:center;gap:6px">${bar}${hi}</div>
+    <div style="font-size:10px;color:#9CA3AF;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(fc.basis)}</div>
+  </div>`;
 }
 // 예상 줄용 선과 상세 캐시 — key = 필요한 sr의 'id:updated_at' 목록. 같으면 다시 받지 않는다.
 let _scFcCache = { key: '', bySr: {}, loading: false };
@@ -19710,7 +19734,7 @@ function _renderScTable() {
               const fcLine = !fc ? ''
                 : fc.none
                   ? `<div style="font-size:11px;font-weight:400;color:#9CA3AF;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="예상 없음 — 이 입고·3일 안 같은 농가 선과 이력과 육안 분포가 없습니다">예상 없음</div>`
-                  : `<div style="font-size:11px;font-weight:400;color:#6B7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(`예상 ${fc.full} (${fc.basis})`)}">예상 ${esc(fc.text)} <span style="color:#9CA3AF">(${esc(fc.basis)})</span></div>`;
+                  : _fcBarHtml(fc);
               return (_scGrpHead[i] || '') + `<tr style="background:${rowBg}${_stkBgVar('background:' + rowBg)}border-bottom:1px solid #F3F4F6">
                 <td style="padding:2px 0;text-align:center">${_scPlanCell(r, planNo, planSkipped, _scAdm)}</td>
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
