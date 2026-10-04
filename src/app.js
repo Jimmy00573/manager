@@ -9761,6 +9761,8 @@ function _invMxScrollRestore(pos) {
 }
 
 // ── [화면: 재고관리 > 선과품 재고] 품목별 섹션 + 등급 탭. 매트릭스 본체는 _renderInvMatrix.
+// 재고 현황 매트릭스에서 빼는 파치류 source_type — renderInventoryStatus와 선과 센터 '오늘 필요' 선과 재고(_scSortedStockCt)가 같이 본다.
+const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_lowbrix', 'pachi_tiny', 'pachi_green'];
 function renderInventoryStatus() {
   const statusEl = document.getElementById('inv-stat-cards');
   const matrixEl = document.getElementById('inv-matrix-wrap');
@@ -9774,7 +9776,6 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
-  const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_lowbrix', 'pachi_tiny', 'pachi_green'];
   const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
 
   // 등급 토글 툴바 — 동적: 전체 + 일반(항상) + 재고 있는 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
@@ -19431,6 +19432,189 @@ function _fcBarHtml(fc) {
 // 예상 줄용 선과 상세 캐시 — key = 필요한 sr의 'id:updated_at' 목록. 같으면 다시 받지 않는다.
 let _scFcCache = { key: '', bySr: {}, loading: false };
 
+// ── 미선과 탭 '📦 오늘 필요' 패널 (2단계: 주문 kg 입력 → CT 환산 → 선과 재고 → 부족 CT. 추천·적용은 3단계)
+//   저장 = sort_demands (date, product) 유니크 upsert. demand_kg = { 사이즈군: kg, 고당: kg }.
+//   ★고당 칸 = '그중 고당' — 사이즈 칸은 고당 포함 전체 kg, 고당 칸은 그중 고당이어야 하는 kg.
+//   byProduct = { 품목: 저장된 행 }, draft = { 품목: { 그룹: kg } } — 입력 중 값(패널을 다시 그려도 유지).
+//   ★표(_renderScTable)를 다시 그리지 않는다 — 패널만 다시 그리거나 계산 칸만 제자리 갱신(_scDemandRecalc).
+let _scDemand = { date: '', byProduct: {}, loaded: false, loading: false, open: false, product: '', draft: {} };
+let _scDemandBusy = false;   // 저장 연타 방지
+function _scDemandGroups(product) {
+  return [...getSizeGroupsFor(product).map(g => g.group), '고당'];
+}
+// 선과 재고(CT) — 재고 현황 매트릭스와 같은 대상(!is_void, 파치류 PACHI_TYPES 제외). 사이즈군은 getSizeGroupsFor의 sizes로 묶는다.
+//   고당 = 일반이 아닌 등급(gradeOf) 전부(모든 사이즈).
+function _scSortedStockCt(product) {
+  const groups = getSizeGroupsFor(product);
+  const out = {};
+  groups.forEach(g => { out[g.group] = 0; });
+  out['고당'] = 0;
+  (inventoryRecords || []).forEach(r => {
+    if (r.is_void || r.product !== product || PACHI_TYPES.includes(r.source_type)) return;
+    const q = Number(r.quantity) || 0;
+    const g = groups.find(x => x.sizes.includes(r.size_code));
+    if (g) out[g.group] += q;
+    if (gradeOf(r) !== '일반') out['고당'] += q;
+  });
+  Object.keys(out).forEach(k => { out[k] = Math.round(out[k] * 10) / 10; });
+  return out;
+}
+// 그룹별 { kg, ct, stock, short } — kg는 입력 중 값(draft) → 저장값 → 0. 3단계 추천도 이 계산을 쓴다.
+function _scDemandShortage(product) {
+  const saved = (_scDemand.byProduct[product] || {}).demand_kg || {};
+  const draft = _scDemand.draft[product] || {};
+  const stock = _scSortedStockCt(product);
+  const per = _kgPerCt(product);
+  const out = {};
+  _scDemandGroups(product).forEach(g => {
+    const kg = draft[g] != null ? draft[g] : (Number(saved[g]) || 0);
+    const ct = per > 0 ? Math.round(kg / per) : 0;
+    const st = stock[g] || 0;
+    out[g] = { kg, ct, stock: st, short: Math.max(0, Math.round((ct - st) * 10) / 10) };
+  });
+  return out;
+}
+// 계산 칸(= CT · 선과 재고 · 부족)과 접힘 요약만 제자리 갱신 — 입력칸은 건드리지 않는다(타이핑 중 커서 보호).
+function _scDemandRecalc() {
+  const el = document.getElementById('sc-demand-panel');
+  if (!el || !el.dataset.product) return;
+  const p = el.dataset.product;
+  const sh = _scDemandShortage(p);
+  _scDemandGroups(p).forEach((g, i) => {
+    const s = sh[g];
+    const ct = el.querySelector(`[data-dm="ct"][data-i="${i}"]`); if (ct) ct.textContent = s.kg ? fmtN(s.ct) : '—';
+    const st = el.querySelector(`[data-dm="stock"][data-i="${i}"]`); if (st) st.textContent = fmtN(s.stock);
+    const sf = el.querySelector(`[data-dm="short"][data-i="${i}"]`);
+    if (sf) { sf.textContent = s.short > 0 ? fmtN(s.short) : '—'; sf.style.color = s.short > 0 ? '#DC2626' : '#9CA3AF'; sf.style.fontWeight = s.short > 0 ? '500' : '400'; }
+  });
+  const sum = el.querySelector('[data-dm="sum"]');
+  if (sum) {
+    const gs = _scDemandGroups(p);
+    const shorts = gs.filter(g => sh[g].short > 0);
+    if (!gs.some(g => sh[g].kg > 0)) { sum.style.color = '#9CA3AF'; sum.textContent = '오늘 필요 미입력'; }
+    else if (!shorts.length) { sum.style.color = '#9CA3AF'; sum.textContent = '재고로 충족'; }
+    else { sum.style.color = '#DC2626'; sum.textContent = '부족 ' + shorts.map(g => `${g} ${fmtN(sh[g].short)}`).join(' · ') + ' CT'; }
+  }
+}
+// 패널 그리기 — 표 위, 📌 오늘 계획 막대(sc-plan-bar) 앞. wrap = sc-table-wrap.
+//   ★포커스 보호: 패널 안 입력칸에 커서가 있으면 다시 그리지 않고 계산 칸만 갱신(예상 막대 로드 뒤 재렌더 등).
+function _scRenderDemandPanel(wrap = document.getElementById('sc-table-wrap')) {
+  if (!wrap || !wrap.parentNode) return;
+  let el = document.getElementById('sc-demand-panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sc-demand-panel';
+    const bar = document.getElementById('sc-plan-bar');
+    const ref = bar && bar.parentNode === wrap.parentNode ? bar : wrap;
+    ref.parentNode.insertBefore(el, ref);
+  }
+  const ae = document.activeElement;
+  if (ae && ae.tagName === 'INPUT' && el.contains(ae)) { _scDemandRecalc(); return; }
+
+  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  // 품목 선택지 = 미선과에 있는 품목 ∪ 오늘 저장된 품목. 기본 = 고른 품목 → 미선과 필터 품목 → 잔여 CT 합이 가장 큰 품목.
+  const remByProd = {};
+  _ibUnsortedRows().forEach(x => { const k = x.rec.product || ''; if (k) remByProd[k] = (remByProd[k] || 0) + x.remain; });
+  const opts = [...new Set([...Object.keys(remByProd), ...Object.keys(_scDemand.byProduct)])].sort((a, b) => a.localeCompare(b, 'ko'));
+  const topProd = Object.keys(remByProd).sort((a, b) => remByProd[b] - remByProd[a])[0] || opts[0] || '';
+  const p = _scDemand.product || _scProduct || topProd;
+  if (p && !opts.includes(p)) opts.push(p);
+  el.dataset.product = p;
+  el.style.cssText = 'margin-bottom:8px;background:#fff;border:1px solid #E5E7EB;border-radius:8px;font-weight:400';
+  if (!p) { el.innerHTML = '<div style="padding:7px 10px;font-size:12px;color:#9CA3AF">📦 오늘 필요 — 미선과 품목 없음</div>'; return; }
+
+  const groups = _scDemandGroups(p);
+  const sh = _scDemandShortage(p);
+  const toggle = `_scDemand.open=!_scDemand.open;_scRenderDemandPanel()`;
+  if (!_scDemand.open) {
+    el.innerHTML = `<div onclick="${toggle}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;white-space:nowrap;overflow:hidden">
+      <span style="font-size:13px;font-weight:500;color:#374151">📦 오늘 필요</span>
+      <span style="font-size:12px;color:#6B7280">${esc(p)}</span>
+      <span data-dm="sum" style="font-size:12px;overflow:hidden;text-overflow:ellipsis"></span>
+      <span style="margin-left:auto;font-size:12px;color:#6B7280">펼치기 ▾</span>
+    </div>`;
+    _scDemandRecalc();
+    return;
+  }
+
+  const saved = _scDemand.byProduct[p];
+  const draft = _scDemand.draft[p] || {};
+  const cols = `grid-template-columns:72px repeat(${groups.length}, minmax(64px, 1fr))`;
+  const cell = 'padding:3px 4px;text-align:right;font-size:12px;white-space:nowrap';
+  const lbl = 'padding:3px 4px;font-size:12px;color:#6B7280;white-space:nowrap';
+  const head = groups.map(g => `<div style="${cell};font-weight:500;color:${g === '고당' ? '#1565C0' : '#374151'}">${esc(g)}${g === '고당' ? '<div style="font-size:10px;font-weight:400;color:#9CA3AF">그중</div>' : ''}</div>`).join('');
+  const inputs = groups.map((g, i) => {
+    const v = draft[g] != null ? draft[g] : (saved && saved.demand_kg && saved.demand_kg[g] != null ? saved.demand_kg[g] : '');
+    return `<div style="padding:2px"><input type="number" min="0" step="10" inputmode="numeric" data-g="${esc(g)}" value="${esc(v === '' ? '' : String(v))}" ${isAdm ? '' : 'disabled'}
+      style="width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;text-align:right;font-family:inherit"></div>`;
+  }).join('');
+  const calcRow = kind => groups.map((g, i) => `<div data-dm="${kind}" data-i="${i}" style="${cell};color:${kind === 'ct' ? '#9CA3AF' : '#374151'}"></div>`).join('');
+  const t = saved && saved.updated_at ? new Date(saved.updated_at) : null;
+  const savedAt = t ? `마지막 저장 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '저장 기록 없음';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;border-bottom:1px solid #E5E7EB">
+      <span style="font-size:13px;font-weight:500;color:#374151">📦 오늘 필요</span>
+      <select data-dm="prod" style="border:1px solid #D1D5DB;border-radius:6px;padding:3px 6px;font-size:12px;font-family:inherit">
+        ${opts.map(o => `<option value="${esc(o)}"${o === p ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+      </select>
+      <span style="font-size:12px;color:#9CA3AF">1CT = ${fmtN(_kgPerCt(p))}kg (품목 설정값)</span>
+      <span onclick="${toggle}" style="margin-left:auto;font-size:12px;color:#6B7280;cursor:pointer">접기 ▴</span>
+    </div>
+    <div style="overflow-x:auto;padding:6px 10px">
+      <div style="display:grid;${cols};align-items:center;min-width:${72 + groups.length * 64}px">
+        <div></div>${head}
+        <div style="${lbl}">주문 kg</div>${inputs}
+        <div style="${lbl}">= CT</div>${calcRow('ct')}
+        <div style="${lbl}">선과 재고</div>${calcRow('stock')}
+        <div style="${lbl}">부족 CT</div>${calcRow('short')}
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:0 10px 8px">
+      ${isAdm ? `<button type="button" onclick="_scDemandSave()" style="font-size:12px;padding:4px 14px;border-radius:6px;border:1px solid #1565C0;background:#1565C0;color:#fff;cursor:pointer;font-family:inherit;font-weight:500">저장</button>` : ''}
+      <span style="font-size:11px;color:#9CA3AF">${savedAt}</span>
+    </div>`;
+  // 입력 → draft(빈칸 = 0으로 지움 — 삭제하면 저장값이 되살아나 지울 수 없다) → 계산 칸만 갱신
+  el.oninput = e => {
+    const inp = e.target;
+    if (!inp || inp.tagName !== 'INPUT' || !inp.dataset.g) return;
+    const d = _scDemand.draft[p] = _scDemand.draft[p] || {};
+    const n = parseFloat(inp.value);
+    d[inp.dataset.g] = isFinite(n) && n > 0 ? n : 0;
+    _scDemandRecalc();
+  };
+  el.onchange = e => {
+    if (e.target && e.target.dataset && e.target.dataset.dm === 'prod') { _scDemand.product = e.target.value; _scRenderDemandPanel(); }
+  };
+  _scDemandRecalc();
+}
+// 저장 — (오늘, 품목) upsert. 성공하면 그 품목 draft를 비우고 패널만 다시 그린다. 실패면 draft 유지.
+async function _scDemandSave() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_scDemandBusy) return;
+  const el = document.getElementById('sc-demand-panel');
+  const p = el && el.dataset.product;
+  if (!p) return;
+  const sh = _scDemandShortage(p);
+  const demand_kg = {};
+  _scDemandGroups(p).forEach(g => { if (sh[g].kg > 0) demand_kg[g] = sh[g].kg; });
+  _scDemandBusy = true;
+  try {
+    const row = await dbUpsertSortDemand({
+      date: td(), product: p, demand_kg, kg_per_ct: _kgPerCt(p),
+      updated_at: new Date().toISOString(), updated_by: sessionStorage.getItem('citrus_role') || ''
+    });
+    _scDemand.byProduct[p] = row;
+    delete _scDemand.draft[p];
+    showToast('오늘 필요 저장');
+    if (document.activeElement && el.contains(document.activeElement)) document.activeElement.blur();
+    _scRenderDemandPanel();
+  } catch (e) {
+    alert('저장 실패: ' + e.message);
+  } finally {
+    _scDemandBusy = false;
+  }
+}
+
 // ── [화면: 재고관리 > 선과 처리 센터 > 미선과(pending) 탭] 목록 테이블
 //    ※열 폭 colgroup은 이 함수 안 인라인(sc-table-wrap). 입고내역 목록은 renderInboundList — 혼동 주의.
 //    ※같은 센터의 다른 탭: 진행중 _renderScDoingTable, 완료 _renderScDoneTable.
@@ -19654,6 +19838,19 @@ function _renderScTable() {
     }
     rows = [..._scPlanRows, ...rows];
   }
+  // 📦 오늘 필요 패널 — 오늘 날짜 저장값을 1회 받는다(날짜가 바뀌면 다시). 받은 뒤엔 패널만 다시 그린다(표 재렌더 X).
+  if ((_scDemand.date !== td() || !_scDemand.loaded) && !_scDemand.loading) {
+    const day = td();
+    _scDemand.loading = true;
+    dbGetSortDemands(day).then(list => {
+      const by = {};
+      (list || []).forEach(x => { by[x.product] = x; });
+      if (_scDemand.date !== day) _scDemand.draft = {};   // 날짜가 넘어가면 어제 입력 중 값은 버린다
+      Object.assign(_scDemand, { date: day, byProduct: by, loaded: true, loading: false });
+      _scRenderDemandPanel();
+    });
+  }
+  _scRenderDemandPanel(wrap);
   _scPlanRenderBar(wrap, _scPlanSt, _scAdm);
 
   // ==================================================================

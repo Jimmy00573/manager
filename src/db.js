@@ -349,3 +349,21 @@ async function dbGetSortingDetails(resultIds) {
   const q = `sorting_result_id=in.(${resultIds.join(',')})`;
   try { return await sbGet('sorting_details', q); } catch(e) { _sbLoadFail('선과 상세'); return []; }
 }
+
+// ── 오늘 필요(선과 수요) — sort_demands, (date, product) 유니크. 선과 처리 센터 미선과 탭 '📦 오늘 필요' 패널.
+async function dbGetSortDemands(date) {
+  try { return await sbGet('sort_demands', `date=eq.${date}`); } catch(e) { _sbLoadFail('오늘 필요'); return []; }
+}
+// 같은 날짜·품목이면 덮어쓴다(upsert). 응답이 비면 RLS 차단 등으로 보고 throw(sbInsert와 같은 검사).
+async function dbUpsertSortDemand(row) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/sort_demands?on_conflict=date,product`, {
+    method: 'POST',
+    headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify(row)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const json = await res.json();
+  if (!Array.isArray(json) || json.length === 0) throw new Error('sort_demands 저장된 행 없음 (RLS 차단 또는 거부)');
+  _sbNotifyWrite();
+  return json[0];
+}
