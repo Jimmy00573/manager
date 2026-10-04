@@ -1393,8 +1393,19 @@ function gd(n) { return drivers.find(d => d.name === n) || {}; }
 function _drvNameById(id) { if (id == null || id === '') return undefined; return drivers.find(d => String(d.id) === String(id))?.name || undefined; }
 // 새로 고르는 기사·담당자 칸용 — 차단(pin_active=false) 기사 제외. 조회·통계·옛 기록 수정 칸은 drivers 그대로.
 function _activeDrivers() { return drivers.filter(d => d.pin_active !== false); }
+// 기사 선택칸 옵션 — 차단자 제외, <optgroup> 직원 → 기사 순(그룹 안은 drivers 순서 = display_order).
+// 기사는 '이름 · 기사'로 닫힌 칸에서도 구분. value는 valueBy('name'|'id') — 표시만 바뀌고 저장값은 그대로.
+// 플레이스홀더 option은 호출부가 앞에 붙인다. 빈 그룹은 생략.
+function _drvOptsHtml(valueBy = 'name') {
+  const act = _activeDrivers();
+  const opt = d => `<option value="${esc(valueBy === 'id' ? d.id : d.name)}">${esc(d.name)}${typeLabel(d.type) === '기사' ? ' · 기사' : ''}</option>`;
+  return ['직원', '기사'].map(g => {
+    const list = act.filter(d => typeLabel(d.type) === g);
+    return list.length ? `<optgroup label="${g}">` + list.map(opt).join('') + '</optgroup>' : '';
+  }).join('');
+}
 // 옛 기록 수정 칸에 저장된 기사 이름을 유지할 때 붙이는 라벨 — 차단자면 '이름 (차단)'
-function _drvKeepLabel(name) { const d = drivers.find(x => x.name === name); return d && d.pin_active === false ? `${name} (차단)` : name; }
+function _drvKeepLabel(name) { const d = drivers.find(x => x.name === name); return d && d.pin_active === false ? `${name}${d.type === '외부' ? ' · 기사' : ''} (차단)` : name; }
 function afF(p) {
   const f = gf(gv(p + '-farm'));
   sv(p + '-tel', f.tel || ''); sv(p + '-ftel', f.tel || ''); sv(p + '-addr', f.addr || '');
@@ -1521,17 +1532,15 @@ function popSels() {
   ['dp-drv', 'pk-drv', 'bk-drv'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const v = el.value;
-    el.innerHTML = id === 'pk-drv' ? '<option value="">선택사항</option>' : '<option value="">선택</option>';
-    _activeDrivers().forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)} (${typeLabel(d.type)})</option>`);
+    el.innerHTML = (id === 'pk-drv' ? '<option value="">선택사항</option>' : '<option value="">선택</option>') + _drvOptsHtml('name');
     el.value = v;
   });
   refreshMpFarmOpts();   // 수거 수정 모달도 대상 종류를 따른다(농가로 덮어쓰면 농협/거래처 pick이 빈칸이 된다)
   const mpd = document.getElementById('mp-drv');
-  if (mpd) { const v = mpd.value; mpd.innerHTML = '<option value="">선택사항</option>'; _activeDrivers().forEach(d => mpd.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`); mpd.value = v; }
+  if (mpd) { const v = mpd.value; mpd.innerHTML = '<option value="">선택사항</option>' + _drvOptsHtml('name'); mpd.value = v; }
  ['oi-staff', 'oo-staff'].forEach(id => {
   const el = document.getElementById(id); if (!el) return;
-  const v = el.value; el.innerHTML = '<option value="">선택</option>';
-  _activeDrivers().forEach(d => el.innerHTML += `<option value="${esc(d.name)}">${esc(d.name)}</option>`);
+  const v = el.value; el.innerHTML = '<option value="">선택</option>' + _drvOptsHtml('name');
   el.value = v;
 });
   const rf = document.getElementById('rp-farm');
@@ -1560,10 +1569,7 @@ function popSels() {
   }
   const _fillDrvSel = (id, keepVal) => {
     const el = document.getElementById(id); if (!el) return;
-    el.innerHTML = '<option value="">선택</option>';   // ★필수 항목 — '선택 안 함'은 안 골라도 되는 것처럼 읽힌다
-    drivers.filter(d => d.pin_active !== false).forEach(d => {
-      el.innerHTML += `<option value="${esc(d.id)}">${esc(d.name)} (${typeLabel(d.type)})</option>`;
-    });
+    el.innerHTML = '<option value="">선택</option>' + _drvOptsHtml('id');   // ★필수 항목 — '선택 안 함'은 안 골라도 되는 것처럼 읽힌다
     if (drivers.some(d => String(d.id) === keepVal)) el.value = keepVal;
   };
   _fillDrvSel('inv-driver-select', document.getElementById('inv-driver-select')?.value || '');
@@ -2211,8 +2217,7 @@ function openDispEdit(id) {
   fsSync('ed-farm');   // 검색형 입력칸 표시도 이 값으로(모달은 열 때마다 값이 바뀐다)
   _fillFieldSel('ed', d.farm, d.field);   // 밭이 여러 곳인 농가면 '밭' 칸 + 저장된 밭 선택
   const edrv = document.getElementById('ed-drv');
-  edrv.innerHTML = '<option value="">선택</option>';
-  _activeDrivers().forEach(dr => edrv.innerHTML += `<option value="${esc(dr.name)}">${esc(dr.name)}</option>`);
+  edrv.innerHTML = '<option value="">선택</option>' + _drvOptsHtml('name');
   _selEnsureVal(edrv, d.driver || '', _drvKeepLabel(d.driver || ''));
   document.getElementById('ed-qty').value = d.qty || '';
   // ★종류 옵션도 마스터(OT_ACTIVE)에서 만든다 — index.html에 3종이 박혀 있어 설정에서 추가한 종류로 못 바꿨다.
@@ -3828,7 +3833,7 @@ function renderContainerHistory() {
 
 // 담당자(직원·기사) select 옵션 — 이름 값(picks.driver / own_out·nhf_out.staff 모두 이름 저장). 선택사항.
 function _drvOptHtml() {
-  return '<option value="">선택 안 함</option>' + _activeDrivers().map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+  return '<option value="">선택 안 함</option>' + _drvOptsHtml('name');
 }
 const _qrInpS = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px';
 
@@ -19808,7 +19813,7 @@ function editInboundRow(id) {
 
   // 수송기사 prefill
   const eibDrvSel = document.getElementById('eib-driver-sel');
-  if (eibDrvSel) _selEnsureVal(eibDrvSel, r.driver_id ? String(r.driver_id) : '', (() => { const d = drivers.find(x => String(x.id) === String(r.driver_id)); return d ? `${d.name} (${typeLabel(d.type)})${d.pin_active === false ? ' (차단)' : ''}` : String(r.driver_id || ''); })());
+  if (eibDrvSel) _selEnsureVal(eibDrvSel, r.driver_id ? String(r.driver_id) : '', (() => { const d = drivers.find(x => String(x.id) === String(r.driver_id)); return d ? `${d.name}${d.type === '외부' ? ' · 기사' : ''}${d.pin_active === false ? ' (차단)' : ''}` : String(r.driver_id || ''); })());
 
   // 저장된 품질 수치가 있으면 '고급 입력(수치)' 패널을 펼친 채로 연다 — 값은 위에서 이미 복원됨(표시 상태만 조정).
   // ★매번 판정해 현재 상태와 다를 때만 토글 호출(라벨·display는 toggleAdvQuality 한 곳에서 관리).
