@@ -19356,6 +19356,57 @@ async function clearScPlanAll() {
   }
 }
 
+// ── 미선과 탭 '예상' 줄 — 이 원물을 선과하면 사이즈·고당이 어떻게 나올지(근거와 함께).
+//   근거 1) 이 입고 자체의 선과 결과 → '(이 입고 N차)'
+//   근거 2) 같은 농가·품목, 입고일 차이 ≤ 3일인 다른 입고들의 선과 결과 합산 → '(M/D 입고)' / '(M/D 외 N건)'
+//      (SQL 확인: 3일 이내면 소과 비율 차이 평균 7%p·로얄 5%p, 넘으면 16%p·12%p)
+//   둘 다 없으면 육안 분포(size_distribution)가 있으면 null(줄 없음 — 품질 칸에 이미 보임), 없으면 { none: true }.
+//   비율 계산은 _srRatios(비율 모달과 같은 식), 축약은 _sizeDistInline. detailsBySr = { sr.id: [details] }.
+//   ★날짜 차이는 로컬 자정끼리(_ibDaysSince와 같은 방식, toISOString 안 씀).
+function _scForecast(rec, detailsBySr) {
+  const dayMs = ds => new Date(ds + 'T00:00:00').getTime();
+  const srsOf = ibId => (sortingResults || []).filter(sr => sr.inbound_record_id === ibId);
+  const dtlsOf = srs => srs.flatMap(sr => detailsBySr[sr.id] || []);
+  const ABN = new Set(_fsrQualStyles({}).map(s => s.k));   // 파치·고산도·저당도·극소과·청과(모달 범례와 같은 구분)
+  const build = details => {
+    const { sizeRatios, qualRatios } = _srRatios(details, getSizeGroupsFor(rec.product));
+    const raw = Object.keys(sizeRatios).filter(g => sizeRatios[g] > 0).map(g => `${g}${sizeRatios[g]}%`).join(' ');
+    const hi = Object.keys(qualRatios).filter(k => k !== '일반' && !ABN.has(k)).reduce((s, k) => s + (qualRatios[k] || 0), 0);
+    if (!raw && !hi) return null;
+    const hiStr = hi > 0 ? ` · 고당${hi}%` : '';
+    return { text: _sizeDistInline(raw) + hiStr, full: raw + hiStr };
+  };
+
+  // 근거 1 — 이 입고 자체
+  const ownSrs = srsOf(rec.id);
+  const own = ownSrs.length ? dtlsOf(ownSrs) : [];
+  if (own.length) {
+    const b = build(own);
+    if (b) return { ...b, basis: `이 입고 ${ownSrs.length}차` };
+  }
+
+  // 근거 2 — 같은 농가·품목, ±3일 안 다른 입고(선과 상세가 있는 것만)
+  const t0 = dayMs(rec.date);
+  const near = (inboundRecords || [])
+    .filter(j => !j.is_void && j.id !== rec.id && j.farm_name === rec.farm_name && j.product === rec.product
+      && Math.abs(Math.round((dayMs(j.date) - t0) / 86400000)) <= 3)
+    .map(j => ({ j, dtls: dtlsOf(srsOf(j.id)), diff: Math.abs(Math.round((dayMs(j.date) - t0) / 86400000)) }))
+    .filter(x => x.dtls.length)
+    .sort((a, b) => a.diff - b.diff || a.j.date.localeCompare(b.j.date));
+  if (near.length) {
+    const b = build(near.flatMap(x => x.dtls));
+    if (b) {
+      const [, m, d] = near[0].j.date.split('-');
+      const md = `${Number(m)}/${Number(d)}`;
+      return { ...b, basis: near.length > 1 ? `${md} 외 ${near.length - 1}건` : `${md} 입고` };
+    }
+  }
+
+  return rec.size_distribution ? null : { none: true };
+}
+// 예상 줄용 선과 상세 캐시 — key = 필요한 sr의 'id:updated_at' 목록. 같으면 다시 받지 않는다.
+let _scFcCache = { key: '', bySr: {}, loading: false };
+
 // ── [화면: 재고관리 > 선과 처리 센터 > 미선과(pending) 탭] 목록 테이블
 //    ※열 폭 colgroup은 이 함수 안 인라인(sc-table-wrap). 입고내역 목록은 renderInboundList — 혼동 주의.
 //    ※같은 센터의 다른 탭: 진행중 _renderScDoingTable, 완료 _renderScDoneTable.
@@ -19415,6 +19466,46 @@ function _renderScTable() {
   // ★_isUnsortedTarget은 입고내역 행 색·재고 요약 미선과 집계와 **같은 함수**를 쓴다 — 새로 만들지 말 것.
   // ★대상·잔여·진행률은 공용 _ibUnsortedRows(재고 요약·미선과 탭과 같은 계산). 행 모양(입고 기록 + remaining)은 예전 그대로.
   let rows = _ibUnsortedRows().map(x => ({ ...x.rec, remaining: x.remain, _pct: x.pct }));
+
+  // 3-1. 예상 줄용 선과 상세 — ★필터 전 전체 대상 기준으로 모은다(필터를 바꿔도 key가 그대로라 다시 받지 않음).
+  //   후보 = 각 행과 같은 농가·품목, 입고일 차이 ≤ 3일인 입고(자기 포함)의 선과 결과(_scForecast 근거 1·2의 합집합).
+  //   ★sorting_details는 한 번에 1,000행에서 잘린다(2026-10-04 실측: 후보 70건 = 1,310행) → id 20개씩 나눠 받는다(1건당 최대 44행).
+  //   첫 렌더(로딩 중)는 예상 줄 없이 그리고, 받은 뒤 1회 다시 그린다.
+  //   ※dbGetSortingDetails는 실패해도 throw하지 않는다 — [] + 상단 '불러오지 못했습니다' 띠(_sbLoadFail). 그때 예상은 비어 보인다.
+  const _scFcKey = (() => {
+    const day = ds => new Date(ds + 'T00:00:00').getTime();
+    const want = new Map();
+    rows.forEach(r => {
+      const t0 = day(r.date);
+      (inboundRecords || []).forEach(j => {
+        if (j.is_void || j.farm_name !== r.farm_name || j.product !== r.product) return;
+        if (Math.abs(Math.round((day(j.date) - t0) / 86400000)) > 3) return;
+        (sortingResults || []).forEach(sr => { if (sr.inbound_record_id === j.id) want.set(sr.id, sr); });
+      });
+    });
+    return [...want.values()].sort((a, b) => a.id - b.id).map(sr => sr.id + ':' + (sr.updated_at || '')).join(',');
+  })();
+  let _scFcReady = _scFcCache.key === _scFcKey;
+  if (!_scFcReady && !_scFcCache.loading) {
+    const ids = _scFcKey ? _scFcKey.split(',').map(s => s.split(':')[0]) : [];
+    if (!ids.length) {
+      _scFcCache = { key: '', bySr: {}, loading: false };
+      _scFcReady = true;
+    } else {
+      _scFcCache.loading = true;
+      const chunks = [];
+      for (let k = 0; k < ids.length; k += 20) chunks.push(ids.slice(k, k + 20));
+      Promise.all(chunks.map(c => dbGetSortingDetails(c))).then(parts => {
+        const bySr = {};
+        parts.flat().forEach(d => { (bySr[d.sorting_result_id] = bySr[d.sorting_result_id] || []).push(d); });
+        _scFcCache = { key: _scFcKey, bySr, loading: false };
+        _renderScTable();
+      }).catch(e => {
+        console.warn('미선과 예상 줄 — 선과 상세 로드 실패:', e && e.message);
+        _scFcCache.loading = false;
+      });
+    }
+  }
 
   if (_scSearch) {
     const q = _scSearch.toLowerCase();
@@ -19614,11 +19705,17 @@ function _renderScTable() {
               const doingBadge = isDoing
                 ? ` <span style="background:#FEF3C7;color:#B45309;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;white-space:nowrap">${srtCnt}차</span>`
                 : '';
+              // 예상 줄(농가 칸 이름 줄 아래) — 상세 로드 전에는 안 그린다. null이면 줄 없음.
+              const fc = _scFcReady ? _scForecast(r, _scFcCache.bySr) : null;
+              const fcLine = !fc ? ''
+                : fc.none
+                  ? `<div style="font-size:11px;font-weight:400;color:#9CA3AF;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="예상 없음 — 이 입고·3일 안 같은 농가 선과 이력과 육안 분포가 없습니다">예상 없음</div>`
+                  : `<div style="font-size:11px;font-weight:400;color:#6B7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(`예상 ${fc.full} (${fc.basis})`)}">예상 ${esc(fc.text)} <span style="color:#9CA3AF">(${esc(fc.basis)})</span></div>`;
               return (_scGrpHead[i] || '') + `<tr style="background:${rowBg}${_stkBgVar('background:' + rowBg)}border-bottom:1px solid #F3F4F6">
                 <td style="padding:2px 0;text-align:center">${_scPlanCell(r, planNo, planSkipped, _scAdm)}</td>
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
                 <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
-                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}
+                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}${fcLine}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
                 <td style="padding:6px 4px">${catBadge}</td>
@@ -24738,6 +24835,49 @@ function _fsrQualStyles(qualRatios) {
   const gradeStyles = ordered.map(g => ({ k: g, color: g === '일반' ? '#374151' : '#1565C0' }));
   return [...gradeStyles, ...ABN];
 }
+// 선과 상세(details) → 사이즈·품질 비율. 비율 모달(openSortingRatioModal)과 미선과 탭 예상 줄(_scForecast)이 같이 쓴다.
+//   groups = getSizeGroupsFor(품목) 결과([{group, sizes}]). 사이즈 비율은 정상만으로, 품질 비율은 손실 제외 전체 대비.
+//   ★식은 모달에 있던 그대로 옮긴 것 — 고치면 두 화면 숫자가 같이 바뀐다.
+function _srRatios(details, groups) {
+  const grpNames = groups.map(g => g.group);
+  function sizeToGroup(sc) {
+    const g = groups.find(grp => grp.sizes.includes(sc));
+    return g ? g.group : null;
+  }
+
+  const normalDtls = details.filter(d => d.category === '정상');
+  const normalTotalCt = normalDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  const sizeRaw = {};
+  grpNames.forEach(g => { sizeRaw[g] = 0; });
+  normalDtls.forEach(d => {
+    const g = sizeToGroup(d.size_code);
+    if (g) sizeRaw[g] += Number(d.ct) || 0;
+  });
+  const sizeRatios = {};
+  grpNames.forEach(g => {
+    sizeRatios[g] = normalTotalCt > 0 ? Math.round(sizeRaw[g] / normalTotalCt * 100) : 0;
+  });
+
+  const outDtls = details.filter(d => d.category !== '손실');
+  const totalCt = outDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  const pachiCt   = outDtls.filter(d => d.category === '파치').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  const acidCt    = outDtls.filter(d => d.category === '고산도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  const lowbrixCt = outDtls.filter(d => d.category === '저당도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  const tinyCt    = outDtls.filter(d => d.category === '극소과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  const greenCt   = outDtls.filter(d => d.category === '청과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
+  // 정상품을 등급(quality_grade)별로 세분화 — '고당' 뭉침 해소(일반/11.5br/12br/잔존 각각). gradeOf 재사용.
+  const gradeCt = {};
+  normalDtls.forEach(d => { const g = gradeOf(d); gradeCt[g] = (gradeCt[g] || 0) + (Number(d.ct) || 0); });
+  const qualRatios = {};
+  Object.keys(gradeCt).forEach(g => { qualRatios[g] = totalCt > 0 ? Math.round(gradeCt[g] / totalCt * 100) : 0; });
+  qualRatios['파치']  = totalCt > 0 ? Math.round(pachiCt / totalCt * 100) : 0;
+  qualRatios['고산도'] = totalCt > 0 ? Math.round(acidCt  / totalCt * 100) : 0;
+  qualRatios['저당도'] = totalCt > 0 ? Math.round(lowbrixCt / totalCt * 100) : 0;
+  qualRatios['극소과'] = totalCt > 0 ? Math.round(tinyCt  / totalCt * 100) : 0;
+  qualRatios['청과']  = totalCt > 0 ? Math.round(greenCt / totalCt * 100) : 0;
+
+  return { sizeRatios, qualRatios, totalCt, normalTotalCt };
+}
 async function openSortingRatioModal(farmName, product, highlightIbId = null) {
   _fsrHighlightId = highlightIbId || null;
   const ibs = (inboundRecords || []).filter(r =>
@@ -24772,47 +24912,12 @@ async function openSortingRatioModal(farmName, product, highlightIbId = null) {
   const groups = getSizeGroupsFor(firstProduct);
   _fsrGroups = groups.map(g => g.group);
 
-  function sizeToGroup(sc) {
-    const g = groups.find(grp => grp.sizes.includes(sc));
-    return g ? g.group : null;
-  }
-
   _fsrEntries = ibsWithSrt.map(ib => {
     const srIdSet = new Set(
       (sortingResults || []).filter(sr => sr.inbound_record_id === ib.id).map(sr => sr.id)
     );
     const details = allDetails.filter(d => srIdSet.has(d.sorting_result_id));
-
-    const normalDtls = details.filter(d => d.category === '정상');
-    const normalTotalCt = normalDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const sizeRaw = {};
-    _fsrGroups.forEach(g => { sizeRaw[g] = 0; });
-    normalDtls.forEach(d => {
-      const g = sizeToGroup(d.size_code);
-      if (g) sizeRaw[g] += Number(d.ct) || 0;
-    });
-    const sizeRatios = {};
-    _fsrGroups.forEach(g => {
-      sizeRatios[g] = normalTotalCt > 0 ? Math.round(sizeRaw[g] / normalTotalCt * 100) : 0;
-    });
-
-    const outDtls = details.filter(d => d.category !== '손실');
-    const totalCt = outDtls.reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const pachiCt   = outDtls.filter(d => d.category === '파치').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const acidCt    = outDtls.filter(d => d.category === '고산도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const lowbrixCt = outDtls.filter(d => d.category === '저당도').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const tinyCt    = outDtls.filter(d => d.category === '극소과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    const greenCt   = outDtls.filter(d => d.category === '청과').reduce((s, d) => s + (Number(d.ct) || 0), 0);
-    // 정상품을 등급(quality_grade)별로 세분화 — '고당' 뭉침 해소(일반/11.5br/12br/잔존 각각). gradeOf 재사용.
-    const gradeCt = {};
-    normalDtls.forEach(d => { const g = gradeOf(d); gradeCt[g] = (gradeCt[g] || 0) + (Number(d.ct) || 0); });
-    const qualRatios = {};
-    Object.keys(gradeCt).forEach(g => { qualRatios[g] = totalCt > 0 ? Math.round(gradeCt[g] / totalCt * 100) : 0; });
-    qualRatios['파치']  = totalCt > 0 ? Math.round(pachiCt / totalCt * 100) : 0;
-    qualRatios['고산도'] = totalCt > 0 ? Math.round(acidCt  / totalCt * 100) : 0;
-    qualRatios['저당도'] = totalCt > 0 ? Math.round(lowbrixCt / totalCt * 100) : 0;
-    qualRatios['극소과'] = totalCt > 0 ? Math.round(tinyCt  / totalCt * 100) : 0;
-    qualRatios['청과']  = totalCt > 0 ? Math.round(greenCt / totalCt * 100) : 0;
+    const { sizeRatios, qualRatios, totalCt } = _srRatios(details, groups);
 
     return { ibId: ib.id, date: ib.date, product: ib.product, inputCt: ib.quantity, totalCt, sizeRatios, qualRatios };
   });
