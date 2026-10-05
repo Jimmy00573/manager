@@ -19844,7 +19844,7 @@ function _renderScTable() {
         (sortingResults || []).forEach(sr => { if (sr.inbound_record_id === j.id) want.set(sr.id, sr); });
       });
     });
-    return [...want.values()].sort((a, b) => a.id - b.id).map(sr => sr.id + ':' + (sr.updated_at || '')).join(',');
+    return [...want.values()].sort((a, b) => String(a.id).localeCompare(String(b.id))).map(sr => sr.id + ':' + (sr.updated_at || '')).join(',');
   })();
   let _scFcReady = _scFcCache.key === _scFcKey;
   if (!_scFcReady && !_scFcCache.loading) {
