@@ -19268,6 +19268,15 @@ let _scPlanBusy = false;   // 연타 방지 — 저장 응답 전에 또 누르�
 //   다음 번호 = 오늘 번호 최댓값 + 1. 최댓값은 서버에도 물어본다 — 관리자 계정을 여럿이 같이 쓰므로
 //   다른 기기에서 방금 붙인 번호를 이 화면이 모를 수 있다. 끝난 행(목록에서 빠진 행)의 번호도 최댓값에 들어간다.
 // ★실패하면 알림 + 화면은 저장 전 그대로(로컬 값은 성공한 뒤에만 바꾼다).
+// 오늘 다음 번호 = max(로컬 오늘 최댓값, 서버 오늘 최댓값) + 1. toggleScPlan과 추천 적용(_scApplyRecommend)이 같이 쓴다.
+//   서버에도 묻는 이유는 아래 toggleScPlan 주석 참고(다른 기기에서 방금 붙인 번호).
+async function _scPlanNextNo() {
+  const today = td();
+  const localMax = (inboundRecords || []).reduce((m, x) => Math.max(m, _scPlanNo(x) || 0), 0);
+  const top = await sbGet('inbound_records', `select=srt_plan_no&srt_plan_date=eq.${today}&srt_plan_no=not.is.null&order=srt_plan_no.desc&limit=1`);
+  const serverMax = Number(top && top[0] && top[0].srt_plan_no) || 0;
+  return Math.max(localMax, serverMax) + 1;
+}
 async function toggleScPlan(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (_scPlanBusy) return;
@@ -19282,11 +19291,7 @@ async function toggleScPlan(id) {
     if (prevNo) {
       data = { srt_plan_date: null, srt_plan_no: null };
     } else {
-      const today = td();
-      const localMax = (inboundRecords || []).reduce((m, x) => Math.max(m, _scPlanNo(x) || 0), 0);
-      const top = await sbGet('inbound_records', `select=srt_plan_no&srt_plan_date=eq.${today}&srt_plan_no=not.is.null&order=srt_plan_no.desc&limit=1`);
-      const serverMax = Number(top && top[0] && top[0].srt_plan_no) || 0;
-      data = { srt_plan_date: today, srt_plan_no: Math.max(localMax, serverMax) + 1 };
+      data = { srt_plan_date: td(), srt_plan_no: await _scPlanNextNo() };
     }
     await dbUpdateInbound(r.id, data);
     r.srt_plan_date = data.srt_plan_date; r.srt_plan_no = data.srt_plan_no;
@@ -19371,7 +19376,7 @@ function _scForecast(rec, detailsBySr) {
   const ABN = new Set(_fsrQualStyles({}).map(s => s.k));   // 파치·고산도·저당도·극소과·청과(모달 범례와 같은 구분)
   const build = details => {
     const groups = getSizeGroupsFor(rec.product);
-    const { sizeRatios, qualRatios } = _srRatios(details, groups);
+    const { sizeRatios, qualRatios, totalCt, normalTotalCt } = _srRatios(details, groups);
     const raw = Object.keys(sizeRatios).filter(g => sizeRatios[g] > 0).map(g => `${g}${sizeRatios[g]}%`).join(' ');
     const hi = Object.keys(qualRatios).filter(k => k !== '일반' && !ABN.has(k)).reduce((s, k) => s + (qualRatios[k] || 0), 0);
     if (!raw && !hi) return null;
@@ -19380,7 +19385,9 @@ function _scForecast(rec, detailsBySr) {
     //   idx·n = 그 품목 전체 그룹 안 위치(색 진하기). pct 0인 그룹은 빼도 색 위치는 유지.
     const asc = ((PRODUCT_TYPE_MAP[rec.product] || '만감류') === '감귤류' ? groups : [...groups].reverse()).map(x => x.group);
     const sizes = asc.map((g, idx) => ({ g, pct: sizeRatios[g] || 0, idx, n: asc.length })).filter(s => s.pct > 0);
-    return { text: _sizeDistInline(raw) + hiStr, full: raw + hiStr, sizes, hi };
+    // norm = 정상품 비중(손실 제외 결과 중 정상) — 추천(_scRecommend)이 '잔여 × norm × 사이즈 %'로 예상 산출을 낸다.
+    const norm = totalCt > 0 ? normalTotalCt / totalCt : 0;
+    return { text: _sizeDistInline(raw) + hiStr, full: raw + hiStr, sizes, hi, norm };
   };
 
   // 근거 1 — 이 입고 자체
@@ -19469,10 +19476,58 @@ function _scDemandShortage(product) {
   _scDemandGroups(product).forEach(g => {
     const kg = draft[g] != null ? draft[g] : (Number(saved[g]) || 0);
     const ct = per > 0 ? Math.round(kg / per) : 0;
-    const st = stock[g] || 0;
-    out[g] = { kg, ct, stock: st, short: Math.max(0, Math.round((ct - st) * 10) / 10) };
+    const st = Math.round(stock[g] || 0);   // 화면은 정수 — ct − stock = short가 눈으로 맞게(_scSortedStockCt 자체는 소수 1자리 유지)
+    out[g] = { kg, ct, stock: st, short: Math.max(0, ct - st) };
   });
   return out;
+}
+// 추천 선과 순서 — 부족 CT(_scDemandShortage)를 미선과 원물로 어떻게 채울지.
+//   예상 산출 = 잔여 × 정상품 비중(fc.norm) × 사이즈 % (고당 = 잔여 × 고당 %). 예상은 _scForecast(미선과 표의 막대와 같은 근거).
+//   ① 이미 오늘 번호가 있는 원물을 번호순으로 먼저 빼고(planned) ② 나머지는 '쓸모(Σ min(남은 부족, 예상))'가 큰 것부터 —
+//   우선처리(_ibIsUrgent, ⭐ 포함) 원물이 있으면 그중에서, 동률이면 입고일 오래된 것. 쓸모 1CT 미만은 후보 아님.
+//   예상 근거가 없는 원물(null·none)은 noBasis로 따로 보여 주고 계산에서 뺀다.
+function _scRecommend(product) {
+  if (!_scFcCache.ready) return { loading: true, planned: [], picks: [], left: {}, noBasis: [] };
+  const gs = _scDemandGroups(product);
+  const sh = _scDemandShortage(product);
+  const rem = {};
+  gs.forEach(g => { rem[g] = sh[g].short; });
+  const cands = [], noBasis = [];
+  _ibUnsortedRows().forEach(x => {
+    const rec = x.rec;
+    if (rec.product !== product) return;
+    const fc = _scForecast(rec, _scFcCache.bySr);
+    if (!fc || fc.none || !fc.sizes) { noBasis.push({ farm: rec.farm_name, remain: x.remain }); return; }
+    const exp = {};
+    fc.sizes.forEach(s => { exp[s.g] = x.remain * fc.norm * s.pct / 100; });
+    exp['고당'] = x.remain * fc.hi / 100;
+    cands.push({ rec, remain: x.remain, fc, exp });
+  });
+  const useful = c => gs.reduce((s, g) => s + Math.min(Math.max(rem[g], 0), c.exp[g] || 0), 0);
+  const take = c => {
+    const got = {};
+    gs.forEach(g => {
+      const v = Math.min(Math.max(rem[g], 0), c.exp[g] || 0);
+      if (v > 0) { rem[g] -= v; const n = Math.round(v); if (n > 0) got[g] = n; }
+    });
+    return got;
+  };
+  const planned = cands.filter(c => _scPlanNo(c.rec)).sort((a, b) => _scPlanNo(a.rec) - _scPlanNo(b.rec))
+    .map(c => ({ rec: c.rec, no: _scPlanNo(c.rec), got: take(c) }));
+  let pool = cands.filter(c => !_scPlanNo(c.rec));
+  const picks = [];
+  while (pool.length && gs.some(g => rem[g] > 0)) {
+    const scored = pool.map(c => ({ c, u: useful(c) })).filter(x => x.u >= 1);
+    if (!scored.length) break;
+    const urgent = scored.filter(x => _ibIsUrgent(x.c.rec, { includeStarred: true }));
+    const best = (urgent.length ? urgent : scored)
+      .sort((a, b) => b.u - a.u || a.c.rec.date.localeCompare(b.c.rec.date))[0].c;
+    picks.push({ rec: best.rec, days: _ibDaysSince(best.rec.date), remain: best.remain, fc: best.fc, got: take(best) });
+    pool = pool.filter(c => c !== best);
+  }
+  const left = {};
+  gs.forEach(g => { if (rem[g] > 0) left[g] = Math.ceil(rem[g]); });
+  return { planned, picks, left, noBasis, loading: false };
 }
 // 계산 칸(= CT · 선과 재고 · 부족)과 접힘 요약만 제자리 갱신 — 입력칸은 건드리지 않는다(타이핑 중 커서 보호).
 function _scDemandRecalc() {
@@ -19487,13 +19542,57 @@ function _scDemandRecalc() {
     const sf = el.querySelector(`[data-dm="short"][data-i="${i}"]`);
     if (sf) { sf.textContent = s.short > 0 ? fmtN(s.short) : '—'; sf.style.color = s.short > 0 ? '#DC2626' : '#9CA3AF'; sf.style.fontWeight = s.short > 0 ? '500' : '400'; }
   });
+  const gs = _scDemandGroups(p);
+  const shorts = gs.filter(g => sh[g].short > 0);
+  const rc = shorts.length ? _scRecommend(p) : null;
   const sum = el.querySelector('[data-dm="sum"]');
   if (sum) {
-    const gs = _scDemandGroups(p);
-    const shorts = gs.filter(g => sh[g].short > 0);
     if (!gs.some(g => sh[g].kg > 0)) { sum.style.color = '#9CA3AF'; sum.textContent = '오늘 필요 미입력'; }
     else if (!shorts.length) { sum.style.color = '#9CA3AF'; sum.textContent = '재고로 충족'; }
-    else { sum.style.color = '#DC2626'; sum.textContent = '부족 ' + shorts.map(g => `${g} ${fmtN(sh[g].short)}`).join(' · ') + ' CT'; }
+    else {
+      sum.style.color = '#DC2626';
+      sum.innerHTML = esc('부족 ' + shorts.map(g => `${g} ${fmtN(sh[g].short)}`).join(' · ') + ' CT')
+        + (rc && rc.picks.length ? `<span style="color:#9CA3AF"> · 추천 ${rc.picks.length}건</span>` : '');
+    }
+  }
+  // 추천 선과 순서 영역(펼침일 때만 있음) — 이 안만 다시 그린다(입력칸은 밖이라 커서 무관)
+  const box = el.querySelector('[data-dm="rec"]');
+  if (box) {
+    const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+    const gray = t => `<div style="font-size:12px;color:#9CA3AF">${t}</div>`;
+    // '채움' 표기 — 사이즈군 축약은 _sizeDistInline 규칙 그대로(숫자만 +CT로), 고당은 그대로 '고당'
+    const gotStr = got => {
+      const sz = gs.filter(g => g !== '고당' && got[g] > 0);
+      const a = sz.length ? _sizeDistInline(sz.map(g => `${g}${got[g]}%`).join(' ')).replace(/(\d+(?:\.\d+)?)/g, ' +$1') : '';
+      return [a, got['고당'] > 0 ? `고당 +${got['고당']}` : ''].filter(Boolean).join(' · ') || '—';
+    };
+    if (!rc) box.innerHTML = gray('부족 없음 — 추천 없음');
+    else if (rc.loading) box.innerHTML = gray('예상 불러오는 중…');
+    else {
+      const line = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;padding:3px 0;border-top:1px solid #F3F4F6';
+      const planned = rc.planned.map(x => `<div style="${line};color:#9CA3AF">📌 ${x.no}번 ${esc(x.rec.farm_name)} · 이미 오늘 계획 · 채움: ${esc(gotStr(x.got))}</div>`).join('');
+      const picks = rc.picks.map((x, i) => {
+        const urg = _ibIsUrgent(x.rec, { includeStarred: true });
+        return `<div style="${line};color:#374151">
+          <span style="font-weight:500">${i + 1}</span>
+          <span>${esc(x.rec.farm_name)} <span style="color:${urg ? '#DC2626' : '#9CA3AF'}">${x.days}일</span></span>
+          <span style="color:#6B7280">잔여 ${fmtN(x.remain)}CT</span>
+          ${_fcBarHtml(x.fc)}
+          <span>${esc(gotStr(x.got))}</span>
+        </div>`;
+      }).join('');
+      const leftGs = Object.keys(rc.left);
+      const tail = leftGs.length
+        ? `<div style="font-size:12px;color:#DC2626;padding-top:4px">미선과를 다 돌려도 부족: ${esc(leftGs.map(g => `${g} ${fmtN(rc.left[g])}`).join(' · '))} CT → 수확·구매 요청</div>`
+        : `<div style="font-size:12px;color:#16A34A;padding-top:4px">추천 ${rc.picks.length}건으로 부족분 충족</div>`;
+      const nb = rc.noBasis.length
+        ? `<div style="font-size:11px;color:#9CA3AF;padding-top:2px">예상 근거 없음(제외): ${esc(rc.noBasis.map(x => `${x.farm} ${fmtN(x.remain)}CT`).join(' · '))}</div>`
+        : '';
+      box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:500;color:#374151">추천 선과 순서</span>
+          ${isAdm && rc.picks.length ? `<button type="button" onclick="_scApplyRecommend()" style="margin-left:auto;font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid #1565C0;background:#fff;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">이 순서로 적용</button>` : ''}
+        </div>${planned}${picks}${tail}${nb}`;
+    }
   }
 }
 // 패널 그리기 — 표 위, 📌 오늘 계획 막대(sc-plan-bar) 앞. wrap = sc-table-wrap.
@@ -19569,6 +19668,7 @@ function _scRenderDemandPanel(wrap = document.getElementById('sc-table-wrap')) {
         <div style="${lbl}">부족 CT</div>${calcRow('short')}
       </div>
     </div>
+    <div data-dm="rec" style="padding:6px 10px;border-top:1px solid #E5E7EB"></div>
     <div style="display:flex;align-items:center;gap:8px;padding:0 10px 8px">
       ${isAdm ? `<button type="button" onclick="_scDemandSave()" style="font-size:12px;padding:4px 14px;border-radius:6px;border:1px solid #1565C0;background:#1565C0;color:#fff;cursor:pointer;font-family:inherit;font-weight:500">저장</button>` : ''}
       <span style="font-size:11px;color:#9CA3AF">${savedAt}</span>
@@ -19612,6 +19712,59 @@ async function _scDemandSave() {
     alert('저장 실패: ' + e.message);
   } finally {
     _scDemandBusy = false;
+  }
+}
+// [이 순서로 적용] — 추천 picks에 오늘 작업 순서 번호를 붙인다. ★기존 번호는 건드리지 않고(재번호 없음) 최대+1부터.
+//   _scPlanBusy를 toggleScPlan·clearScPlanAll과 같이 써서 동시 토글을 막는다. 한 건씩 PATCH, 실패하면 거기서 멈춤.
+//   끝나면 srt_plan 이력 1건(다른 기기 변경 신호 — toggleScPlan 주석 참고).
+async function _scApplyRecommend() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_scPlanBusy) return;
+  const el = document.getElementById('sc-demand-panel');
+  const p = el && el.dataset.product;
+  if (!p) return;
+  if (_scDemand.draft[p]) {
+    await _scDemandSave();
+    if (_scDemand.draft[p]) return;   // 저장 실패(알림은 _scDemandSave가 띄움) — 적용하지 않는다
+  }
+  const rc = _scRecommend(p);
+  if (rc.loading || !rc.picks.length) return;
+  _scPlanBusy = true;
+  const applied = [];
+  let from = 0, failMsg = '';
+  try {
+    from = await _scPlanNextNo();
+    const list = rc.picks.map((x, i) => `${from + i}. ${x.rec.farm_name} (${x.rec.date} · 잔여 ${fmtN(x.remain)}CT)`).join('\n');
+    const ok = await showConfirmEdit('추천 순서 적용',
+      `이미 번호 있는 ${rc.planned.length}건은 그대로 두고, 새로 ${rc.picks.length}건에 ${from}번부터 번호를 붙입니다.\n` + list);
+    if (!ok) return;
+    from = Math.max(from, await _scPlanNextNo());   // 확인창이 떠 있는 동안 다른 기기가 번호를 붙였을 수 있다
+    let n = from;
+    for (const x of rc.picks) {
+      const r = (inboundRecords || []).find(y => String(y.id) === String(x.rec.id));
+      if (!r) continue;
+      try {
+        await dbUpdateInbound(r.id, { srt_plan_date: td(), srt_plan_no: n });
+      } catch (e) { failMsg = e.message; break; }
+      r.srt_plan_date = td(); r.srt_plan_no = n;
+      applied.push(r);
+      n++;
+    }
+    if (failMsg) alert(`${applied.length}건 적용, ${rc.picks.length - applied.length}건 실패\n\n${failMsg}`);
+    if (applied.length) {
+      await dbInsertAuditLog({
+        target_table: 'srt_plan', target_id: String(applied[0].id),
+        before_val: {}, after_val: { applied: applied.length, from },
+        reason: `선과 순서 추천 적용 ${applied.length}건 (${from}~${from + applied.length - 1}번)`,
+        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      }).catch(e => console.warn('선과 순서 이력 기록 실패:', e.message));
+      if (!failMsg) showToast(`추천 ${applied.length}건 순서 적용`);
+    }
+  } catch (e) {
+    alert('추천 순서 적용에 실패했습니다.\n\n' + e.message);
+  } finally {
+    _scPlanBusy = false;
+    if (applied.length || failMsg) _renderScTable();
   }
 }
 
@@ -19714,6 +19867,7 @@ function _renderScTable() {
       });
     }
   }
+  _scFcCache.ready = _scFcReady;   // '📦 오늘 필요' 추천(_scRecommend)이 읽는다 — 예상 상세가 지금 목록 기준인지
 
   if (_scSearch) {
     const q = _scSearch.toLowerCase();
