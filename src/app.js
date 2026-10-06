@@ -3541,12 +3541,25 @@ async function addReport() {
   try {
     const rpt = await dbInsertReport({ driver: _loggedDrv.name, date, farm, qty, note: gv('rp-note') });
     reports.unshift(rpt);
-    dispatches = dispatches.map(d => (d.driver === _loggedDrv.name && d.farm === farm && d.date === date) ? { ...d, status: '배출완료' } : d);
-    const doneList = dispatches.filter(d => d.driver === _loggedDrv.name && d.farm === farm && d.date === date);
-    await Promise.all(doneList.map(d => dbUpdateDispatch(d.id, { status: '배출완료' })));
-    // ★배차 행마다 배출 pick을 만든다 — 예약 배차였다면 이때 처음 생긴다.
-    //   보고는 바로 위에서 이미 남겼으므로 _completeDispatch의 중복 방지 조건이 알아서 건너뛴다.
-    for (const d of doneList) await _completeDispatch(d);
+    // ★같은 날·농가·기사라도 차가 여러 번 나갈 수 있다 — 전부 완료하면 아직 안 나간 차까지 배출 pick이 생긴다.
+    //   가장 먼저 등록된 대기 배차 1건 + 같은 차 형제(_dispSameTrip, updDisp·drvDone과 같은 판정)만 완료한다.
+    //   폼 농가 칸은 farms 목록이라 target_type '농가'만. 이미 '배출완료'인 것은 다시 PATCH하지 않는다.
+    const pend = dispatches.filter(d => d.driver === _loggedDrv.name && d.farm === farm && d.date === date && d.status === '배차완료' && (d.target_type || '농가') === '농가');
+    if (pend.length) {
+      // ★id는 uuid일 수 있어 뺄셈 정렬 금지(NaN) — 문자열 비교로.
+      const d0 = [...pend].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')) || String(a.id).localeCompare(String(b.id)))[0];
+      const doneList = [d0, ..._dispSameTrip(d0)];
+      // ★배차 행마다 배출 pick을 만든다 — 예약 배차였다면 이때 처음 생긴다.
+      //   보고는 바로 위에서 이미 남겼으므로 _completeDispatch의 중복 방지 조건이 알아서 건너뛴다.
+      //   updDisp·drvDone처럼 한 건씩 차례로 — 중간 실패는 아래 catch의 '오류:' 안내로.
+      for (const d of doneList) {
+        await dbUpdateDispatch(d.id, { status: '배출완료' });
+        dispatches = dispatches.map(x => x.id === d.id ? { ...x, status: '배출완료' } : x);
+        await _completeDispatch(dispatches.find(x => x.id === d.id));
+      }
+      const left = pend.length - doneList.length;
+      if (left > 0) showToast(`같은 날 이 농가 배차 ${left}건은 다른 차라 그대로 두었습니다`);
+    }
     clr('rp-qty', 'rp-note'); _rp = 1;
     if (!_repOpen) { _repOpen = true; document.getElementById('rep-history').style.display = ''; document.getElementById('rep-h-icon').textContent = '▲ 접기'; }
     renderRep(); renderMyPending(); renderDisp(); renderDDash(); renderDash();
