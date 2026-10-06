@@ -5962,7 +5962,8 @@ async function autoSetHarvestStatus(farm, date, item, status) {
   let h = harvests.find(x => x.farm === farm && x.date === date);
   if (!h) {
     try {
-      const row = await dbInsertHarvest({ date, farm, item: item || null, status });
+      // ★새 기록이 완료면 종료일 = 그 줄 날짜(오늘). 시작일이 오늘이라 어제 선택이 없어 확인창은 띄우지 않는다.
+      const row = await dbInsertHarvest({ date, farm, item: item || null, status, ...(status === '수확완료' ? { end_date: date } : {}) });
       harvests.push(row);
     } catch(e) {
       // status 컬럼 없으면 status 빼고 재시도
@@ -5991,16 +5992,37 @@ async function autoDelHarvest(farm, date) {
   if (h) { delHarvest(h.id); } else { renderCal(); }
 }
 
+// ✅ 완료 때 실제 완료일을 고르는 작은 확인창 — [취소] [어제 M/D] [오늘 M/D]. 'YYYY-MM-DD' 또는 null(취소).
+//   어제 버튼은 시작일이 어제 이전일 때만(오늘 시작한 수확은 어제 끝날 수 없다). 그 밖의 날짜는 ✏️ 수정에서.
+//   ★확인창은 기존 showConfirmEdit(confirmText·altText), 날짜는 td()·_dayBefore — 따로 만들지 않는다.
+async function _hvAskDoneDate(h) {
+  h = h || {};
+  const today = td(), yday = _dayBefore(today);
+  const md = s => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : '-';
+  const canY = !!(h.date && h.date <= yday);
+  const choices = canY ? [today, yday] : [today];
+  const endNote = (h.end_date && !choices.includes(h.end_date)) ? ` · 예정 종료 ${md(h.end_date)} → 고른 날로 바뀝니다` : '';
+  const msg = `${h.farm || ''}${h.item ? ' · ' + h.item : ''} ${h.round || 1}차\n`
+    + `시작 ${md(h.date)}${endNote}\n`
+    + `다른 날짜는 ✏️ 수정에서`;
+  const ans = await showConfirmEdit('수확 완료일', msg, { confirmText: `오늘 ${md(today)}`, altText: canY ? `어제 ${md(yday)}` : undefined });
+  if (ans === true) return today;
+  if (ans === 'alt') return yday;
+  return null;
+}
 async function setHarvestStatus(id, status) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const cur = harvests.find(h => h.id === id);
-  // ★완료 처리할 때 종료일을 오늘로 자동 기록 — '며칠 경과'(농가별 진행 현황)를 재려면 완료 시점이 있어야 한다.
-  //   비어 있을 때만 채운다: end_date는 등록 폼·수정 모달에서 사용자가 직접 넣는 필드라 있는 값을 덮으면 안 된다.
-  // ★되돌리기(수확완료→수확중)에는 지우지 않는다. 같은 이유로 사용자가 손으로 넣었을 수 있는 값이고,
+  // ★완료 처리할 때 확인창(_hvAskDoneDate)에서 고른 날(오늘/어제)로 종료일을 '항상 덮어쓴다' — 완료 = 실제 완료일 확정.
+  //   end_date는 등록·수정 때의 '종료 예정일'과 '실제 완료일'을 겸한다. 예정일이 있어도 완료하면 실제 완료일로 바뀐다
+  //   ('며칠 경과'·확인필요·종료 정렬이 실제 완료일을 써야 맞다). 취소하면 상태·종료일 모두 그대로, DB 요청 없음.
+  // ★되돌리기(수확완료→수확중)에는 확인창도 없고 종료일을 지우지도 않는다. 사용자가 손으로 넣었을 수 있는 값이고,
   //   지우면 입력 손실이다. 되돌린 농가는 '진행중'으로 분류돼 경과일 자체를 안 쓰므로 남아 있어도 판정이 안 흔들린다.
   //   잘못 들어간 종료일은 ✏️ 수정 모달에서 지울 수 있다.
+  let doneDate = null;
+  if (status === '수확완료') { doneDate = await _hvAskDoneDate(cur); if (!doneDate) return; }
   const patch = { status };
-  if (status === '수확완료' && cur && !cur.end_date) patch.end_date = td();
+  if (status === '수확완료') patch.end_date = doneDate;
   // 우선 로컬 상태 먼저 반영 (DB 성공 여부 무관하게 화면 즉시 업데이트)
   harvests = harvests.map(h => h.id === id ? { ...h, ...patch } : h);
   renderCal();
