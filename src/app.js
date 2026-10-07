@@ -5013,6 +5013,8 @@ function renderCal() {
 //     종료일(end_date)이 지났는데 안 늘리면 ②·③ 어디에도 안 걸려 카드에서 사라졌다(문기덕 황금향 9/12~9/12, 9/13에 누락).
 //     수확중인데 안 보이는 건 어떤 경우에도 잘못이라 뺐다. 종료일이 지난 건 카드에 '예정 M/D +N일' 배지로 구분한다.
 //   ★'수확완료'는 ③에 안 걸리므로 끝난 날 이후로는 사라진다(①②로만 남는다).
+//   ★미래 카드(dStr > 오늘)는 종료 예정일 이후 ③에서 제외 — 계획을 따른다(오늘 마무리 예정이 내일 카드에 '+1일'로 미리 뜨던 것, 2026-10-07).
+//     오늘 카드는 그대로(완료 안 했으면 '+N일'로 계속 표시 — 위 9/13 누락 방지 유지). _hvIsOngoing 본체는 공용이라 안 바꾼다.
 //   ※calGetEvents에도 비슷한 식이 있지만 그쪽은 `dStr <= td()` 제한이 있어 내일·모레엔 안 맞는다. 그래서 따로 둔다.
 //
 // ★배차 매칭은 dispatches.harvest(수확 예정일) === 그 수확일 AND 농가 일치.
@@ -5023,7 +5025,7 @@ function _upcomingHarvestsOn(dStr) {
   return harvests.filter(h =>
     h.date === dStr
     || (h.date <= dStr && h.end_date && h.end_date >= dStr)
-    || _hvIsOngoing(h, dStr)
+    || (_hvIsOngoing(h, dStr) && !(dStr > td() && h.end_date && h.end_date < dStr))
   );
 }
 // 그 수확(농가+수확일)에 잡힌 배차 — 종류별로 합친다. 한 농가에 여러 배차가 있을 수 있다.
