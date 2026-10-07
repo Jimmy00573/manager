@@ -4753,6 +4753,7 @@ function harvestActBtns(h) {
   return `
     ${oldHint}${st === '수확전'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
     ${(st === '수확중' && !h.is_final && isLatest && h.end_date !== td()) ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#fff;color:#B45309;border:1px solid #F59E0B;border-radius:6px" onclick="setHarvestFinishToday(${h.id})">🏁 오늘 마무리</button>` : ''}
+    ${(st === '수확중' && !h.is_final && isLatest && h.end_date === td()) ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#fff;color:#6B7280;border:1px solid #D1D5DB;border-radius:6px" onclick="setHarvestFinishToday(${h.id}, true)">↩ 마무리 취소</button>` : ''}
     ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#6D28D9;color:#fff;border:none;border-radius:6px" onclick="startNextRound(${h.id})">＋ 다음 차수</button>` : ''}
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#374151;color:#fff;border:none;border-radius:6px" onclick="finishAllHarvest(${h.id})">■ 전체 종료</button>` : ''}
@@ -6051,17 +6052,18 @@ async function setHarvestStatus(id, status) {
 // [🏁 오늘 마무리] — 아침에 '오늘 마무리'가 정해졌을 때 종료 예정일(end_date)을 오늘로 둔다. 확인창 없음.
 //   있던 예정일도 덮어쓴다(되돌리기는 ✏️ 수정). 상태는 그대로 수확중 — 실제 완료일은 ✅ 완료 확인창(_hvAskDoneDate)이 다시 덮어쓴다.
 //   ★setHarvestStatus와 달리 DB 저장이 성공한 뒤에 로컬을 바꾼다 — 실패하면 화면 그대로.
+// cancel = [↩ 마무리 취소] — end_date를 비운다(null). 눌러 덮어쓴 예전 예정일은 복구하지 않는다(필요하면 ✏️).
 let _hvFinishBusy = false;   // 연타 방지
-async function setHarvestFinishToday(id) {
+async function setHarvestFinishToday(id, cancel = false) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   if (_hvFinishBusy) return;
   _hvFinishBusy = true;
   try {
-    const endDate = td();
+    const endDate = cancel ? null : td();
     await dbUpdateHarvest(id, { end_date: endDate });
     harvests = harvests.map(h => h.id === id ? { ...h, end_date: endDate } : h);
     renderCal();
-    showToast('오늘 마무리 예정으로 표시');
+    showToast(cancel ? '마무리 예정 취소' : '오늘 마무리 예정으로 표시');
   } catch (e) {
     alert('오류: ' + (e.message || e));
   } finally {
