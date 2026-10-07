@@ -3,6 +3,7 @@
 제주 감귤 선과장 통합관리 웹앱. 바닐라 JS 단일 파일(src/app.js, 빌드 없음) + Supabase + Vercel(main 푸시 = 자동 배포).
 역할: 공장장(사용자) = 결정·운영 / 설계·검증 담당 Claude(채팅) = 설계·프롬프트·diff 검증 / Claude Code = 코딩·커밋·푸시.
 이 파일은 공개 저장소에 있다 — 키·비밀번호·개인 이름·연락처를 적지 말 것.
+이 저장소 작업에서는 이 파일이 저장소 밖 CLAUDE.md(사용자 공용)보다 우선한다. 둘이 어긋나면 이 파일을 따르고, 어긋난 점을 보고에 적는다.
 
 ## 1. 작업 원칙
 - 지시 범위만 고친다. 범위 밖 문제를 발견하면 고치지 말고 보고의 "알아 두실 점"에 적는다.
@@ -26,7 +27,7 @@
 ## 4. 공용 헬퍼 (새로 만들지 말고 이걸 쓴다)
 - 날짜: td()(오늘, 로컬) · ymd(dt) · _dayBefore(ds) · _dayAfter(ds) · _ibDaysSince(ds)
 - 표시: esc · fmtN · showToast · _sizeGroupCols · fruitNoBadge · _sizeDistInline(축약 '소30 · 로50')
-- 확인창: showConfirmDanger({...}) / cDel(메시지)(위험 삭제, 작업자·사유) · showConfirmEdit(title, msg, { confirmText, altText }) → true / false / 'alt'
+- 확인창: showConfirmDanger({...}) / cDel(메시지, 항목목록?)(위험 삭제, 작업자·사유) · showConfirmEdit(title, msg, { confirmText, altText }) → true / false / 'alt'
 - 선택칸: buildSupplierOptHtml · buildInboundSupplierOptHtml · buildLocOptHtml · _selEnsureVal(el, val, label)(목록에 없는 저장값 유지)
 - 기사: _activeDrivers()(차단 제외) · _drvOptsHtml(valueBy)(직원/기사 optgroup) · _drvKeepLabel(name)
 - 품목·사이즈: _kgPerCt(품목) · getSizeGroupsFor(품목) · gradeOf(r)(null = '일반') · PACHI_TYPES
