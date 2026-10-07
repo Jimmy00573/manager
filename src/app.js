@@ -4726,6 +4726,14 @@ function startHvPlanEdit(el, id, dStr) {
   });
 }
 
+// '🏁 (오늘) 마무리 예정' 배지 — 수확중 + 전체 종료 전 + 종료 예정일(end_date)이 이 카드의 날짜(dStr)인 줄만.
+//   [🏁 오늘 마무리](setHarvestFinishToday)가 end_date를 오늘로 둔 결과를 보여 준다. 새 상태가 아니라 표시만.
+//   ★그날을 넘기면 dStr ≠ end_date라 배지가 빠지고, 다가오는 수확 카드의 기존 '예정 M/D +N일' 경고(overBadge)가 이어받는다.
+//   수확 줄(harvestRow, 오늘 기준)과 다가오는 수확 카드(그 카드 날짜 기준) 두 곳이 같이 부른다.
+function _hvFinishBadge(h, dStr) {
+  if (!(h && h.status === '수확중' && !h.is_final && h.end_date && h.end_date === dStr)) return '';
+  return `<span class="badge b-warn" style="font-size:10px">🏁 ${dStr === td() ? '오늘 ' : ''}마무리 예정</span>`;
+}
 function harvestActBtns(h) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
   const st = h.status || '수확전';
@@ -4744,6 +4752,7 @@ function harvestActBtns(h) {
     ? `<span style="font-size:11px;color:#9CA3AF;align-self:center">최신 ${maxRound}차에서 조작</span>` : '';
   return `
     ${oldHint}${st === '수확전'  ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="setHarvestStatus(${h.id},'수확중')">▶ 시작</button>` : ''}
+    ${(st === '수확중' && !h.is_final && isLatest && h.end_date !== td()) ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#fff;color:#B45309;border:1px solid #F59E0B;border-radius:6px" onclick="setHarvestFinishToday(${h.id})">🏁 오늘 마무리</button>` : ''}
     ${st !== '수확완료' ? `<button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="setHarvestStatus(${h.id},'수확완료')">✅ 완료</button>` : ''}
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#6D28D9;color:#fff;border:none;border-radius:6px" onclick="startNextRound(${h.id})">＋ 다음 차수</button>` : ''}
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#374151;color:#fff;border:none;border-radius:6px" onclick="finishAllHarvest(${h.id})">■ 전체 종료</button>` : ''}
@@ -4782,7 +4791,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
         ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>`
         : (st === '수확완료'
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
-            : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}
+            : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}${_hvFinishBadge(h, td())}
       <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
       ${_hvPlanLine(h, planDate, 'flex:1 1 100%;padding-top:2px;border-top:0.5px solid rgba(0,0,0,.06);margin-top:1px')}${planDate ? _hvTripLine(planDate, h.farm, 'flex:1 1 100%') : ''}${contact}
     </div>`;
@@ -5190,7 +5199,7 @@ function renderUpcomingHarvest() {
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
         ${_hvAddrLine(x.farm, x.field)}
-        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${_hvFinishBadge(x, day.dStr)}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
@@ -6035,6 +6044,26 @@ async function setHarvestStatus(id, status) {
     } else {
       alert('오류: ' + e.message);
     }
+  }
+}
+// [🏁 오늘 마무리] — 아침에 '오늘 마무리'가 정해졌을 때 종료 예정일(end_date)을 오늘로 둔다. 확인창 없음.
+//   있던 예정일도 덮어쓴다(되돌리기는 ✏️ 수정). 상태는 그대로 수확중 — 실제 완료일은 ✅ 완료 확인창(_hvAskDoneDate)이 다시 덮어쓴다.
+//   ★setHarvestStatus와 달리 DB 저장이 성공한 뒤에 로컬을 바꾼다 — 실패하면 화면 그대로.
+let _hvFinishBusy = false;   // 연타 방지
+async function setHarvestFinishToday(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_hvFinishBusy) return;
+  _hvFinishBusy = true;
+  try {
+    const endDate = td();
+    await dbUpdateHarvest(id, { end_date: endDate });
+    harvests = harvests.map(h => h.id === id ? { ...h, end_date: endDate } : h);
+    renderCal();
+    showToast('오늘 마무리 예정으로 표시');
+  } catch (e) {
+    alert('오류: ' + (e.message || e));
+  } finally {
+    _hvFinishBusy = false;
   }
 }
 // 그 농가의 다음 차수 = 같은 농가 round 최댓값 + 1(기록 없으면 1). ＋다음 차수(startNextRound)와 등록 폼이 같이 쓴다.
