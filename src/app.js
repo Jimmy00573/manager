@@ -5086,18 +5086,23 @@ function _tripDriversOn(dStr, farm) {
 // 농가 하나의 '그날 다녀간/갈 기사' 줄 — 4일 카드(renderUpcomingHarvest)와 금일 수확일정·달력 상세(harvestRow)가 같이 쓴다.
 //   boxStyle = 바깥 칸 자리 스타일(카드는 들여쓰기, harvestRow는 flex 줄바꿈 'flex:1 1 100%'). 기사 없으면 ''.
 //   원물은 입고 CT를 붙인다: '원물✓ 오전 110ct' / '오전 110·오후 50ct' / 시각 모름 '110ct'.
+//   ★기사 한 명당 한 줄·줄마다 🚚, 첫 등록 시각을 맨 앞에(2026-10-07). 2대 이상이면 나머지 시각은 끝 괄호.
+//   순서는 여기서만 다시 정한다 — 첫 시각 있는 기사 먼저(시각 오름차순), 시각 없는 기사(배출만 등)는 뒤에
+//   _tripDriversOn이 준 순서 그대로(sort는 안정 정렬). _tripDriversOn 자체 순서는 외근 인원 머리 줄도 쓰므로 안 바꾼다.
 function _hvTripLine(dStr, farm, boxStyle = 'padding-left:12px;margin-top:3px') {
-  const ts = _tripDriversOn(dStr, farm);
+  const t0 = t => (t.ib && t.ib.times.length) ? t.ib.times[0] : '';
+  const ts = _tripDriversOn(dStr, farm).sort((a, b) => (t0(a) ? 0 : 1) - (t0(b) ? 0 : 1) || t0(a).localeCompare(t0(b)));
   if (!ts.length) return '';
-  return `<div style="${boxStyle};display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:11px;color:#6B7280;min-width:0">
-            <span>🚚</span>${ts.map(t => {
+  return `<div style="${boxStyle};display:flex;flex-direction:column;gap:1px;font-size:11px;color:#6B7280;min-width:0">
+            ${ts.map(t => {
               const ext = t.type === '외부';
               // 색: 외부는 배지 관례(b-pur)의 글자색, 미등록(type 없음)은 회색, 내부는 본문색
               const col = ext ? '#6A1B9A' : (t.type ? '#374151' : '#9CA3AF');
               const ib = t.ib ? [t.ib.am ? `오전 ${fmtN(t.ib.am)}` : '', t.ib.pm ? `오후 ${fmtN(t.ib.pm)}` : '', t.ib.na ? fmtN(t.ib.na) : ''].filter(Boolean).join('·') : '';
-              const tm = t.ib && t.ib.times.length ? ` (${t.ib.times.join('·')})` : '';   // 차마다 등록 시각 — 시각 없으면 괄호도 없음
-              return `<span style="color:${col}">${esc(`${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}${ib ? ` ${ib}ct` : ''}${tm}`)}</span>`;
-            }).join('<span style="color:#D1D5DB">·</span>')}
+              const first = t0(t);   // 차마다 등록 시각 — 첫 시각은 맨 앞, 나머지는 끝 괄호. 시각 없으면 둘 다 없음
+              const rest = (t.ib && t.ib.times.length > 1) ? ` (${t.ib.times.slice(1).join('·')})` : '';
+              return `<div style="color:${col};overflow-wrap:anywhere">${esc(`🚚 ${first ? first + ' ' : ''}${t.name}${ext ? '(외부)' : ''} ${t.kinds.join('·')}${t.done ? '✓' : ' 예정'}${ib ? ` ${ib}ct` : ''}${rest}`)}</div>`;
+            }).join('')}
           </div>`;
 }
 
