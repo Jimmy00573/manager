@@ -728,13 +728,13 @@ async function initApp() {
     document.getElementById('hdr-logged').style.display = 'none';
     document.getElementById('rbtn-logout').style.display = '';
     setRole('staff');
-  } else if (savedRole === 'airport') {
-    // 공항(조회 전용) — 화면 복원은 관리자·직원과 같고, 보이는 범위만 setRole이 좁힌다.
+  } else if (savedRole === 'airport' || savedRole === 'ext_driver') {
+    // 공항(조회 전용)·외부 기사 — 화면 복원은 관리자·직원과 같고, 보이는 범위만 setRole이 좁힌다.
     document.getElementById('pin-screen').style.display = 'none';
     document.getElementById('hdr-btns').style.display = 'flex';
     document.getElementById('hdr-logged').style.display = 'none';
     document.getElementById('rbtn-logout').style.display = '';
-    setRole('airport');
+    setRole(savedRole);
   } else if (savedRole === 'driver' && savedDrvName) {
     const drv = drivers.find(d => d.name === savedDrvName);
     if (drv && drv.pin_active !== false) {
@@ -939,7 +939,8 @@ function doLogout() {
 function gotoAdmin() {
   // ★공항 계정은 이 버튼이 숨겨져 있지만, 남아 있는 onclick으로 관리자 화면이 열리는 것까지 막는다.
   //   (UI 차단 — 세션 역할은 그대로라 저장 경로는 기존 admin 가드들이 이미 막는다.)
-  if (sessionStorage.getItem('citrus_role') === 'airport') return;
+  //   외부 기사(ext_driver)도 같은 이유로 막는다.
+  if (['airport', 'ext_driver'].includes(sessionStorage.getItem('citrus_role'))) return;
   document.getElementById('rbtn-adm').className = 'rbtn active';
   document.getElementById('hdr-btns').style.display = 'flex';
   document.getElementById('hdr-logged').style.display = 'none';
@@ -1173,16 +1174,19 @@ function chkStW() {
 // ★역할별 화면 제한은 전부 'UI 차단'이다 — Supabase RLS가 열려 있어 REST를 직접 부르면 막히지 않는다.
 //   진짜 보안은 Supabase Auth 도입(v2) 때 서버 쪽에서 걸어야 한다. 여기서는 화면에서 못 닿게 하는 것까지.
 // ★사무실 계열 역할(로그인 후 anav를 쓰는 역할) 목록. driver는 별도(dnav).
-const OFFICE_ROLES = ['admin', 'staff', 'airport'];
+// ★ext_driver(외부 기사 통합 계정)도 사무실 계열 — 부팅 때 입고 등 재고 데이터를 받아야 입고 목록·금일 수송 원물 줄이 보인다.
+const OFFICE_ROLES = ['admin', 'staff', 'airport', 'ext_driver'];
 // admin_accounts.role에 들어올 수 있는 값. 계정 관리 화면의 선택지이자 로그인 시 검증 목록.
 // ★staff는 여기 없다 — 직원은 계정 테이블이 아니라 settings의 공통 비밀번호로 들어온다(별도 경로).
-const ADM_ROLES = ['admin', 'airport'];
-const ADM_ROLE_LABEL = { admin: '관리자', airport: '공항(조회 전용)' };
-// 역할별 상단 탭 화이트리스트(없으면 전부 보임 = admin)
-const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'] };
-// 역할별 재고 화면 하위 탭 화이트리스트(없으면 전부 보임 = admin)
-// ★공항(airport) 계정은 주스·청 한 탭만 본다.
-const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'] };
+const ADM_ROLES = ['admin', 'airport', 'ext_driver'];
+const ADM_ROLE_LABEL = { admin: '관리자', airport: '공항(조회 전용)', ext_driver: '외부 기사' };
+// 역할별 상단 탭 화이트리스트(없으면 전부 보임 = admin). ★T()의 진입 가드도 이 표를 본다(한 곳).
+const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 'transport'] };
+// 역할별 재고 화면 하위 탭 화이트리스트(없으면 전부 보임 = admin). 첫 값 = 허용 안 된 탭을 부를 때 대신 갈 탭(invTab).
+// ★공항(airport) 계정은 주스·청 한 탭만 본다. ★외부 기사는 입고 목록이 있는 미선과 탭만(1단계는 보기 전용).
+const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'], ext_driver: ['uns'] };
+// 역할별 수확·수송 하위 탭 화이트리스트(없으면 전부 = admin). 첫 값 = 허용 안 된 하위 탭을 부를 때 대신 갈 탭(transportSub).
+const ROLE_TRANSPORT_TABS = { ext_driver: ['cal'] };
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
 
 // 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
@@ -1212,6 +1216,9 @@ function setRole(r) {
     });
     _applyEditRestrictions(r === 'admin');
     T('inv');   // airport는 T→invTab('sum')이 invTab 안에서 'juice'로 교정된다(교정 지점은 한 곳뿐)
+    // ★외부 기사의 첫 화면은 수확 캘린더 — 재고(입고) 조회는 위 T('inv')로 출발시켜 두고 넘어간다
+    //   (입고가 도착하면 _invFetchStart가 열린 캘린더를 한 번 다시 그린다). transportSub가 'dash'→'cal'로 교정한다.
+    if (r === 'ext_driver') T('transport');
   }
 }
 
@@ -1226,9 +1233,10 @@ function _applyEditRestrictions(canEdit) {
 }
 
 function T(id) {
-  // 재고 화면만 허용되는 역할(직원·공항)은 다른 탭으로 못 넘어간다. 화이트리스트는 ROLE_NAV_TABS와 같은 뜻.
+  // 상단 탭 화이트리스트(ROLE_NAV_TABS)가 있는 역할(직원·공항·외부 기사)은 목록 밖 탭으로 못 넘어간다. 목록 없는 역할(admin·driver)은 그대로.
   const _r = sessionStorage.getItem('citrus_role');
-  if ((_r === 'staff' || _r === 'airport') && id !== 'inv') return;
+  const _allowNav = ROLE_NAV_TABS[_r];
+  if (_allowNav && !_allowNav.includes(id)) return;
   // transport 그룹 진입 → 하위 탭으로 위임
   if (id === 'transport') { transportSub('dash'); return; }
   // 하위 탭 바 숨김 (transport 그룹 밖으로 나갈 때)
@@ -1258,6 +1266,9 @@ function T(id) {
 }
 
 function transportSub(sub) {
+  // 하위 탭 화이트리스트(ROLE_TRANSPORT_TABS)가 있는 역할은 목록 밖 sub를 첫 허용 탭으로 바꾼다(외부 기사: 'dash' 등 → 'cal').
+  const _allowSub = ROLE_TRANSPORT_TABS[sessionStorage.getItem('citrus_role')] || null;
+  if (_allowSub && !_allowSub.includes(sub)) sub = _allowSub[0];
   // anav: transport 버튼 active
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('data-tab') === 'transport'));
@@ -1265,8 +1276,12 @@ function transportSub(sub) {
   const stEl = document.getElementById('transport-subtab');
   if (stEl) {
     stEl.style.display = '';
-    stEl.querySelectorAll('.tsub-btn').forEach(b =>
-      b.classList.toggle('active', b.getAttribute('data-sub') === sub));
+    stEl.querySelectorAll('.tsub-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-sub') === sub);
+      // ★style.display가 아니라 hidden 속성 — 기사별 배차 탭의 display는 _extDrvUISync가 따로 정한다(서로 덮지 않게).
+      //   매번 양쪽(true/false)을 다 써서 다른 역할로 다시 로그인해도 잔상이 남지 않는다(_applyInvTabs와 같은 이유).
+      b.hidden = !!_allowSub && !_allowSub.includes(b.getAttribute('data-sub'));
+    });
   }
   // 전체 패널 먼저 끄고, 해당 sub만 켜기
   ['dash','disp','ext','cal','dboard','chist','farm','drv','vehicle','stats','export','inv','set'].forEach(p => {
@@ -5316,7 +5331,9 @@ function renderUpcomingHarvest() {
   // 조치 필요 배너 — 4일 내인데 배차가 없는 건. 없으면 아예 안 그린다.
   const nd = [...needDisp.values()].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.farm || '').localeCompare(b.farm || '', 'ko'));
   const MAX_CHIP = 6;
-  const banner = nd.length ? `
+  // ★관리자만 — 칩이 사무실 배차 등록 화면으로 데려가는 쓰기 진입로라, 외부 기사 등 다른 역할에겐 배너째 안 그린다
+  //   (칩만 빼면 '눌러서 배차 등록' 문구가 남아 헷갈린다).
+  const banner = (nd.length && sessionStorage.getItem('citrus_role') === 'admin') ? `
     <div style="margin:10px 12px 0;padding:8px 10px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px">
       <div style="font-size:12px;font-weight:700;color:#B91C1C;margin-bottom:5px">⚠ 콘테이너 없는 수확 ${nd.length}건 — 눌러서 배차 등록</div>
       <div style="font-size:11px;color:#B91C1C;opacity:.85;margin-bottom:5px">신규 배차도 없고 농가에 남은 콘테이너도 없어, 안 보내면 수확을 못 합니다.</div>
@@ -5599,7 +5616,7 @@ function _hvProgCard(g) {
       ${open ? `<div style="padding:8px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff">
         ${ct ? `<div style="display:flex;flex-wrap:wrap;gap:3px">${ct}</div>` : ''}
         <span style="font-size:11px;color:#888">수확 기록이 없습니다.</span>
-        <button type="button" onclick="_hvGoHarvestAdd('${_fsQ(g.farm)}')" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>
+        ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button type="button" onclick="_hvGoHarvestAdd('${_fsQ(g.farm)}')" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>` : ''}
       </div>` : ''}
     </div>`;
   }
@@ -7195,8 +7212,9 @@ function setBack() { setTab('menu'); }
 function invTab(t) {
   // ★역할 교정은 여기 한 곳에서만 한다(setRole·T는 그대로 넘긴다).
   const _r = sessionStorage.getItem('citrus_role');
-  if (_r === 'airport') t = 'juice';   // 공항 계정은 주스·청 외 탭이 없다
-  if ((t === 'log' || t === 'out') && _r === 'staff') t = 'sum';
+  // 허용 목록(ROLE_INV_TABS) 밖의 탭은 그 역할의 첫 탭으로 — 공항 → 'juice', 직원의 거래내역·변경 이력 → 'sum', 외부 기사 → 'uns'.
+  const _allowInv = ROLE_INV_TABS[_r];
+  if (_allowInv && !_allowInv.includes(t)) t = _allowInv[0];
   ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
