@@ -4946,10 +4946,18 @@ function renderCal() {
     const pills = evs.length
       ? `<div class="cal-pills-full" style="min-width:0">${pillsFull}</div><div class="cal-pills-dots">${pillsDots}</div>`
       : '';
+    // ── 실제 배출일(dispatches.date) 기준 🚚 요약 줄 — 칩/점 갈래 밖에 둬서 넓은·좁은 화면 둘 다 보인다.
+    //   위 칩/점은 수확일(harvest) 기준이라 같은 배차가 두 번 보일 수 있다(의도). 완료 n·예정 m(파란 점선 박스).
+    const outs = _dispOutOn(dStr);
+    const outDone = outs.filter(_isOutDisp).length;
+    const outPlan = outs.length - outDone;
+    const outLine = outs.length
+      ? `<div style="font-size:10px;color:#1E3A5F;margin-top:2px;padding-top:2px;border-top:0.5px solid #eee;white-space:nowrap;overflow:hidden;display:flex;gap:4px;align-items:center">🚚${outDone ? ` ${outDone}` : ''}${outPlan ? `<span style="border:1px dashed #1565C0;color:#1565C0;border-radius:3px;padding:0 3px">${outPlan} 예정</span>` : ''}</div>`
+      : '';
     const border = isToday ? '1.5px solid #C05800' : isSel ? '1.5px solid #C05800' : '0.5px solid #e0e0e0';
     const bg = isSel ? '#f8f8f8' : '#fff';
     cells += `<div style="min-height:72px;border-radius:8px;border:${border};background:${bg};padding:4px;cursor:pointer;min-width:0" onclick="calSelectDay('${dStr}')">
-      <div style="font-size:11px;font-weight:500;color:${isToday ? '#C05800' : '#888'};margin-bottom:2px">${i}</div>${pills}
+      <div style="font-size:11px;font-weight:500;color:${isToday ? '#C05800' : '#888'};margin-bottom:2px">${i}</div>${pills}${outLine}
     </div>`;
   }
   const rem = 7 - ((startDay + last.getDate()) % 7);
@@ -5082,6 +5090,13 @@ function _tripDriversOn(dStr, farm) {
   const ord = n => { const i = (drivers || []).findIndex(d => d.name === n); return i < 0 ? 9999 : i; };
   return [...by.values()].sort((a, b) =>
     (a.type === '내부' ? 0 : 1) - (b.type === '내부' ? 0 : 1) || ord(a.name) - ord(b.name));
+}
+// 그 날짜에 실제로 배출한/할 배차 전부 — 수확캘린더 월 셀 🚚 줄·날짜 상세 '이 날 배출' 섹션 공용.
+//   ★기준은 `dispatches.date`(실제 배출일). calGetEvents가 쓰는 `harvest`(수확일)가 아니다 — 수확일이 빈 배차도 여기엔 뜬다.
+//   대상 구분 없이(농가·거래처·농협) 전부. 정렬: 배출완료 먼저 → 예정, 그 안은 농가명 가나다.
+function _dispOutOn(dStr) {
+  return (dispatches || []).filter(d => d.date === dStr).sort((a, b) =>
+    (_isOutDisp(a) ? 0 : 1) - (_isOutDisp(b) ? 0 : 1) || String(a.farm || '').localeCompare(String(b.farm || ''), 'ko'));
 }
 // 농가 하나의 '그날 다녀간/갈 기사' 줄 — 4일 카드(renderUpcomingHarvest)와 금일 수확일정·달력 상세(harvestRow)가 같이 쓴다.
 //   boxStyle = 바깥 칸 자리 스타일(카드는 들여쓰기, harvestRow는 flex 줄바꿈 'flex:1 1 100%'). 기사 없으면 ''.
@@ -5632,7 +5647,9 @@ function _refreshCalDetail() {
   if (!panel) return;
   const dStr = calSelectedDate;
   const evs = dStr ? calSortItems(calGetEvents(dStr)) : [];
-  if (!dStr || evs.length === 0) { panel.style.display = 'none'; return; }
+  // 실제 배출일 기준 배차(_dispOutOn) — 수확·배송 일정이 없고 배출만 있는 날도 패널이 열리게 닫힘 조건에 같이 본다.
+  const outs = dStr ? _dispOutOn(dStr) : [];
+  if (!dStr || (evs.length === 0 && outs.length === 0)) { panel.style.display = 'none'; return; }
   const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
   const d = new Date(dStr + 'T00:00:00');
   // ★제목은 수확과 배송을 따로 센다. 예전엔 전체를 "수확 예정 (N건)"으로 묶어, 배차 2건이 섞이면
@@ -5640,7 +5657,7 @@ function _refreshCalDetail() {
   //   한쪽이 0건이면 그쪽은 아예 안 쓴다 — "배송 0건"은 없는 정보를 있는 것처럼 보이게 한다.
   const hvCnt = evs.filter(_isHarvestEv).length;
   const dpCnt = evs.length - hvCnt;
-  const cntTxt = [hvCnt ? `수확 ${hvCnt}건` : '', dpCnt ? `배송 ${dpCnt}건` : ''].filter(Boolean).join(' · ');
+  const cntTxt = [hvCnt ? `수확 ${hvCnt}건` : '', dpCnt ? `배송 ${dpCnt}건` : '', outs.length ? `배출 ${outs.length}건` : ''].filter(Boolean).join(' · ');
   document.getElementById('cal-detail-title').textContent = `${d.getMonth()+1}월 ${d.getDate()}일 — ${cntTxt}`;
   document.getElementById('cal-detail-list').innerHTML = evs.map(e => {
     // 수확 진행상태(수확전/중/완료) 일정 → harvestRow 재사용(▶시작·✅완료·✏️수정·🗑삭제, 미래 포함)
@@ -5659,7 +5676,24 @@ function _refreshCalDetail() {
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${detailBtns}</div>
     </div>`;
-  }).join('');
+  }).join('') + (outs.length
+    // ── 이 날 배출(실제 배출일 기준) — 읽기 전용. 위 🚚 배송 줄(수확일 기준)과 같은 배차가 겹쳐 보일 수 있다(의도, 중복 제거 안 함).
+    ? `<div style="font-size:13px;font-weight:500;color:#1E3A5F;margin:10px 0 4px">🚚 이 날 배출 ${outs.length}건</div>` +
+      outs.map(o => {
+        const tt = o.target_type === '거래처' || o.target_type === '농협'
+          ? `<span style="font-size:11px;color:#9CA3AF"> · ${o.target_type}</span>` : '';
+        const st = _isOutDisp(o)
+          ? `<span style="color:#6B7280">✓</span>`
+          : `<span style="border:1px dashed #1565C0;color:#1565C0;border-radius:3px;padding:0 3px">예정</span>`;
+        return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 4px;border-top:0.5px solid #eee;font-size:13px">
+          <span>${esc(o.farm)}${tt}</span>
+          <span style="color:#6B7280">${ctB(o.ctype)} ${o.qty > 0 ? o.qty + '개' : '미정'}</span>
+          <span style="color:#6B7280">${o.driver ? esc(o.driver) : '기사 미정'}</span>
+          ${st}
+          <span style="margin-left:auto;font-size:12px;color:#9CA3AF">${o.harvest ? `수확 ${calFmtShort(o.harvest)}용` : ''}</span>
+        </div>`;
+      }).join('')
+    : '');
   panel.style.display = 'block';
 }
 // 날짜 칸 클릭 — 선택 토글만 하고, 칸 강조·상세 패널은 renderCal 한 번으로 함께 갱신한다.
