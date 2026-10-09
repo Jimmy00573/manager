@@ -4895,6 +4895,10 @@ function renderCal() {
         push(o.driver || '', line(`${chip('배출', '#E6F1FB', '#0C447C')}<span>${esc(o.farm)}${tt}</span>`
           + `<span style="color:#6B7280">${ctB(o.ctype)} ${o.qty > 0 ? o.qty + '개' : '미정'}</span>${st}${hv}`));
       });
+      // 원물은 첫 등록 시각 오름차순(created_at 없는 차는 맨 뒤) — _ibTruckGroups는 입력 순서라 같은 기사의 여러 대가 뒤섞일 수 있다.
+      //   ★정렬은 여기서만 — _ibTruckGroups는 입고 공유 텍스트도 쓰므로 고치지 않는다.
+      const ibT = g => g.rows[0].created_at ? new Date(g.rows[0].created_at).getTime() : Infinity;
+      tIbs.sort((a, b) => ibT(a) - ibT(b) || 0);
       tIbs.forEach(g => {
         const r0 = g.rows[0];
         const dt = r0.created_at ? new Date(r0.created_at) : null;   // ★로컬 getHours/getMinutes(_tripDriversOn과 같은 방식)
