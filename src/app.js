@@ -4872,6 +4872,48 @@ function renderCal() {
     }
   }
 
+  // ── 🚚 금일 수송: 오늘 배출(dispatches.date)·원물 입고(inboundRecords)를 기사별로 묶는다 — 표시 전용(버튼 없음).
+  //   배출 = _dispOutOn, 원물 = _ibTruckGroups(차 단위), 기사 순서 = _tripDriversOn 그대로(없는 이름은 뒤, 기사 미정은 맨 뒤).
+  const transEl = document.getElementById('cal-today-trans');
+  if (transEl) {
+    const tOuts = _dispOutOn(todayStr);
+    const tIbs = _ibTruckGroups((inboundRecords || []).filter(r => r.date === todayStr && !r.is_void));
+    if (!tOuts.length && !tIbs.length) {
+      transEl.style.display = 'none';
+    } else {
+      const byDrv = new Map();   // 기사명('' = 미정) → 항목 HTML[]
+      const push = (nm, html) => { if (!byDrv.has(nm)) byDrv.set(nm, []); byDrv.get(nm).push(html); };
+      const chip = (t, bg, fg) => `<span style="font-size:11px;border-radius:4px;padding:1px 6px;background:${bg};color:${fg}">${t}</span>`;
+      const line = inner => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0 5px 14px;border-top:0.5px solid #eee;font-size:13px">${inner}</div>`;
+      tOuts.forEach(o => {
+        const tt = o.target_type === '거래처' || o.target_type === '농협' ? `<span style="color:#9CA3AF"> · ${o.target_type}</span>` : '';
+        const st = _isOutDisp(o)
+          ? `<span style="color:#6B7280">✓</span>`
+          : `<span style="border:1px dashed #1565C0;color:#1565C0;border-radius:3px;padding:0 3px">예정</span>`;
+        const g = _dispHarvestGuess(o);
+        const hv = g ? `<span style="margin-left:auto;font-size:12px;color:${g.guessed ? '#9CA3AF' : '#1565C0'}">${esc(_dispHarvestGuessTxt(g))}</span>` : '';
+        push(o.driver || '', line(`${chip('배출', '#E6F1FB', '#0C447C')}<span>${esc(o.farm)}${tt}</span>`
+          + `<span style="color:#6B7280">${ctB(o.ctype)} ${o.qty > 0 ? o.qty + '개' : '미정'}</span>${st}${hv}`));
+      });
+      tIbs.forEach(g => {
+        const r0 = g.rows[0];
+        const dt = r0.created_at ? new Date(r0.created_at) : null;   // ★로컬 getHours/getMinutes(_tripDriversOn과 같은 방식)
+        const hm = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')} ` : '';
+        push(_drvNameById(r0.driver_id) || r0.driver_name_manual || '', line(`${chip('원물', '#F1EFE8', '#444441')}<span>${esc(r0.farm_name)}</span>`
+          + `<span style="color:#6B7280">${esc(r0.product || '')} ${fmtN(g.total)}ct</span><span style="color:#6B7280">${hm}✓</span>`));
+      });
+      const ord = _tripDriversOn(todayStr).map(t => t.name);
+      const names = [...byDrv.keys()].filter(n => n).sort((a, b) =>
+        (ord.indexOf(a) < 0 ? 9999 : ord.indexOf(a)) - (ord.indexOf(b) < 0 ? 9999 : ord.indexOf(b)));
+      if (byDrv.has('')) names.push('');
+      transEl.innerHTML =
+        `<div style="font-size:13px;font-weight:500;color:#1E3A5F;margin-bottom:6px">🚚 금일 수송 `
+        + `<span style="font-size:11px;font-weight:400;color:#9CA3AF">배출 ${tOuts.length} · 원물 ${tIbs.length} · 기사 ${names.filter(n => n).length}명</span></div>`
+        + names.map(n => `<div style="margin-top:6px"><div style="font-size:13px;font-weight:500;padding-bottom:3px">${n ? esc(n) : '기사 미정'}</div>${byDrv.get(n).join('')}</div>`).join('');
+      transEl.style.display = '';
+    }
+  }
+
   // 경고
   const noD = dispatches.filter(d => d.status === '배차없음').length;
   const strip = document.getElementById('cal-alert-strip');
@@ -5097,6 +5139,27 @@ function _tripDriversOn(dStr, farm) {
 function _dispOutOn(dStr) {
   return (dispatches || []).filter(d => d.date === dStr).sort((a, b) =>
     (_isOutDisp(a) ? 0 : 1) - (_isOutDisp(b) ? 0 : 1) || String(a.farm || '').localeCompare(String(b.farm || ''), 'ko'));
+}
+// 배출 하나가 어느 수확용인가 → { date, label, guessed } | null. 금일 수송 띠(renderCal)용.
+//   d.harvest가 있으면 그대로(확정). 없으면(배차 대부분이 비어 있다) 같은 농가 수확에서 추정한다 —
+//   ① 그 배출일에 진행 중(_hvIsOngoing)이거나 status '수확중' → label '수확중'  ② 배출일 ~ +3일 사이 가장 이른 수확.
+//   ★표시 전용 — 추정값을 dispatches.harvest에 저장하지 않는다. 날짜는 _dayAfter(로컬 자정)로만 센다.
+function _dispHarvestGuess(d) {
+  if (d.harvest) return { date: d.harvest, label: '', guessed: false };
+  const hs = (harvests || []).filter(h => h.farm === d.farm);
+  const on = hs.find(h => _hvIsOngoing(h, d.date) || h.status === '수확중');
+  if (on) return { date: on.date, label: '수확중', guessed: true };
+  const lim = _dayAfter(_dayAfter(_dayAfter(d.date)));
+  const nx = hs.filter(h => h.date && h.date >= d.date && h.date <= lim).sort((a, b) => a.date.localeCompare(b.date))[0];
+  return nx ? { date: nx.date, label: '', guessed: true } : null;
+}
+// 위 결과 → '→ 내일 10/10 수확용' / '→ 수확중' (+ ' (추정)'). 오늘 기준 0·1·2일은 오늘·내일·모레를 붙이고, 그 외(지난 날 포함)는 날짜만.
+function _dispHarvestGuessTxt(g) {
+  if (!g) return '';
+  if (g.label) return `→ ${g.label}${g.guessed ? ' (추정)' : ''}`;
+  const diff = Math.round((new Date(g.date + 'T00:00:00') - new Date(td() + 'T00:00:00')) / 86400000);
+  const rel = ['오늘', '내일', '모레'][diff];
+  return `→ ${rel ? rel + ' ' : ''}${calFmtShort(g.date)} 수확용${g.guessed ? ' (추정)' : ''}`;
 }
 // 농가 하나의 '그날 다녀간/갈 기사' 줄 — 4일 카드(renderUpcomingHarvest)와 금일 수확일정·달력 상세(harvestRow)가 같이 쓴다.
 //   boxStyle = 바깥 칸 자리 스타일(카드는 들여쓰기, harvestRow는 flex 줄바꿈 'flex:1 1 100%'). 기사 없으면 ''.
