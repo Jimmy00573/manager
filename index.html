@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
-  <link rel="stylesheet" href="src/style.css?v=41">
+  <link rel="stylesheet" href="src/style.css?v=42">
 </head>
 <body>
 
@@ -962,15 +962,15 @@
   <!-- 미선과 입고 / 선과 처리 -->
   <div id="inv-uns-div" style="display:none">
     <!-- 서브 탭 -->
-    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px">
+    <div class="xd-hide" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px">
       <button class="etab af" id="ib-t-list" onclick="ibTab('list')" style="font-size:13px;padding:8px 18px">📋 입고 내역</button>
       <button class="etab" id="ib-t-proc" onclick="ibTab('proc')" style="font-size:13px;padding:8px 18px">✂️ 선과 처리</button>
     </div>
 
     <!-- 입고 내역 -->
     <div id="ib-list-div">
-      <div id="ib-cat-summary"></div>
-      <div id="ib-priority-alert"></div>
+      <div id="ib-cat-summary" class="xd-hide"></div>
+      <div id="ib-priority-alert" class="xd-hide"></div>
       <div class="form-card" style="padding:0;overflow:hidden">
         <button id="ib-form-toggle" onclick="toggleIbForm()"
           style="width:100%;background:#fff;border:none;border-bottom:1px solid transparent;cursor:pointer;font-family:inherit;padding:14px 18px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;color:#111827;text-align:left;transition:border-color .2s">
@@ -983,7 +983,7 @@
         <!-- 기본 정보 -->
         <div class="ib-section-label">기본 정보</div>
         <div class="form-grid">
-          <div class="fg">
+          <div class="fg xd-hide">
             <label>구분 *</label>
             <div style="display:flex;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden">
               <button type="button" id="ib-kind-raw" onclick="setIbKind('raw')" style="flex:1;background:#374151;color:#fff;border:none;padding:7px 0;font-size:13px;cursor:pointer">원물</button>
@@ -1009,7 +1009,7 @@
               <option value="">선택</option>
             </select>
           </div>
-          <div class="fg" style="grid-column:1/-1">
+          <div class="fg xd-hide" style="grid-column:1/-1">
             <label>위치</label>
             <div class="checkbox-row">
               <input type="checkbox" id="ib-loc-multi" onchange="toggleLocMulti('ib')">
@@ -1073,7 +1073,7 @@
         </div>
 
         <!-- 재선별 정보 (조건부) -->
-        <div id="ib-reclass-section" style="display:none">
+        <div id="ib-reclass-section" class="xd-hide" style="display:none">
           <div class="ib-section-label" style="color:#7C3AED">재선별 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택사항)</small></div>
           <div class="form-grid">
             <div class="fg"><label>출처</label>
@@ -1097,9 +1097,9 @@
         </div>
 
         <!-- 품질 정보 — ★상품 행에만 저장된다(대과·소과·청과·파치는 당도·산도를 재지 않음). -->
-        <div class="ib-section-label">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택 · 상품에만 저장됩니다)</small></div>
-        <div id="ib-quality-scope-hint" style="font-size:11px;color:#C05800;margin:-2px 0 6px;display:none"></div>
-        <div style="margin-bottom:12px">
+        <div class="ib-section-label xd-hide">품질 정보 <small style="font-weight:400;color:var(--text-tertiary)">(선택 · 상품에만 저장됩니다)</small></div>
+        <div id="ib-quality-scope-hint" class="xd-hide" style="font-size:11px;color:#C05800;margin:-2px 0 6px;display:none"></div>
+        <div class="xd-hide" style="margin-bottom:12px">
           <!-- ★당도·산도 등급(상/중/하) 제거됨 — 당도는 비파괴 당도계 수치가 원본이라 등급은 중복 입력이었고,
                산도는 파괴 검사 때만 나와 없을 때가 많은데 억지로 고르게 돼 있었음.
                수치 입력(고급 입력의 당도·산도 범위)만 남긴다. 외관은 수치가 없어 등급 유지. -->
@@ -1149,7 +1149,7 @@
              ★id(ibp-kgct·ibp-weight)는 매입 단가 블록에 있던 것 그대로 — calcIbAmount·clearFormPartial이 이 id로 읽고 비운다. 바꾸지 말 것. -->
         <div class="ib-section-label">실중량 <small style="font-weight:400;color:var(--text-tertiary)">(선택 · 상품에만 저장됩니다)</small></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-          <div>
+          <div class="xd-hide">
             <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">CT당 kg <small style="color:#9CA3AF;font-size:10px">(적으면 총중량 자동)</small></label>
             <input type="number" id="ibp-kgct" min="0" step="0.1" placeholder="예: 20" oninput="calcIbWeightFromCt()" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
           </div>
@@ -1161,8 +1161,8 @@
         <div id="ibp-weight-hint" style="font-size:11px;color:#6B7280;margin:-8px 0 12px"></div>
 
         <!-- 추가 정보 -->
-        <div class="ib-section-label">추가 정보</div>
-        <div class="form-grid">
+        <div class="ib-section-label xd-hide">추가 정보</div>
+        <div class="form-grid xd-hide">
           <!-- ★ib-note는 예전 그대로 = 상품 행의 메모이자, 카테고리 메모를 안 적은 행의 기본값.
                상품만 등록하는 평소 흐름에서는 칸이 하나도 늘지 않는다.
                대과·소과·청과·파치에 수량을 넣으면 그때만 아래에 그 카테고리 메모칸이 생긴다(_ibRenderCatNotes). -->
@@ -1177,7 +1177,7 @@
           </div>
         </div>
 
-        <div style="border-top:0.5px dashed #D1D5DB;margin-top:10px;padding-top:9px">
+        <div class="xd-hide" style="border-top:0.5px dashed #D1D5DB;margin-top:10px;padding-top:9px">
           <div id="ibp-toggle" onclick="toggleIbPrice()" style="font-size:12px;color:#2563EB;cursor:pointer;user-select:none">▸ 매입 단가 (선택)</div>
           <div id="ibp-body" style="display:none;margin-top:8px">
             <!-- ★CT당 kg·실측 중량 입력칸은 위 '실중량' 섹션으로 옮겼다(id는 ibp-kgct·ibp-weight 그대로).
@@ -1205,7 +1205,7 @@
       </div>
 
       <!-- 보기 모드 토글 -->
-      <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px">
+      <div class="xd-hide" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px">
         <button class="etab af" id="ib-vt-list" onclick="ibListTab('list')" style="font-size:12px;padding:7px 16px">📋 목록</button>
         <button class="etab" id="ib-vt-farm" onclick="ibListTab('farm')" style="font-size:12px;padding:7px 16px">👨‍🌾 농가별</button>
         <button class="etab" id="ib-vt-cat" onclick="ibListTab('cat')" style="font-size:12px;padding:7px 16px">📊 카테고리별</button>
@@ -1216,7 +1216,7 @@
       <div id="ib-view-list">
 
         <!-- 필터 3단: ①품목 칩(동적) → ②카테고리 칩(품목 선택 시만) → ③재선별 출처 -->
-        <div style="padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
+        <div class="xd-hide" style="padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
           <!-- 1단: 품목 (버튼은 _renderIbProductChips가 동적 생성 — 데이터에 있는 품목만) -->
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
             <span style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-right:2px;white-space:nowrap">품목</span>
@@ -1248,7 +1248,7 @@
           </div>
         </div>
 
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="xd-hide" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <input id="ib-search" type="text" placeholder="농가명 검색..." oninput="ibSetSearch(this.value)"
             style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:8px;width:130px;font-family:inherit">
           <select id="ib-filter-product" onchange="ibSetProduct(this.value)" style="font-size:12px;padding:4px 9px;border:1px solid var(--border);border-radius:8px;font-family:inherit;max-width:110px">
@@ -1285,7 +1285,7 @@
           <button id="btn-toggle-all-memos" class="btn" onclick="toggleAllMemos()" style="margin-left:auto;font-size:11px;padding:3px 10px;color:var(--text-tertiary);border-color:#ddd">📝 메모 모두 열기</button>
           <button id="btn-ib-audit" onclick="toggleIbAuditMode()" style="font-size:11px;padding:3px 10px;background:#fff;color:var(--text-secondary);border:1px solid #ddd;border-radius:8px;cursor:pointer;font-family:inherit">📋 재고 실사</button>
         </div>
-        <div id="ib-filter-chips" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"></div>
+        <div id="ib-filter-chips" class="xd-hide" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"></div>
         <div id="ib-audit-bar" style="display:none"></div>
         <div class="tbl-wrap">
           <table class="ib-list-tbl">
@@ -1326,7 +1326,7 @@
     </div>
 
     <!-- 선과 처리 센터 -->
-    <div id="ib-proc-div" style="display:none">
+    <div id="ib-proc-div" class="xd-hide" style="display:none">
       <div id="sorting-center-body"></div>
     </div>
   </div>
@@ -2076,6 +2076,6 @@
 <script src="src/supabase-client.js?v=30"></script>
 <script src="src/db.js?v=28"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=695"></script>
+<script src="src/app.js?v=696"></script>
 </body>
 </html>

@@ -1187,6 +1187,9 @@ const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 't
 const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'], ext_driver: ['uns'] };
 // 역할별 수확·수송 하위 탭 화이트리스트(없으면 전부 = admin). 첫 값 = 허용 안 된 하위 탭을 부를 때 대신 갈 탭(transportSub).
 const ROLE_TRANSPORT_TABS = { ext_driver: ['cal'] };
+// 입고 등록(원물)을 쓸 수 있는 역할 — 폼 표시(_applyEditRestrictions)·열기(toggleIbForm)·저장(_addInboundCore)이 이 표 하나를 본다.
+// ★외부 기사는 원물 입고 등록만(2-1단계). 선과품(saveInboundSorted)·수정·삭제는 관리자 전용 그대로.
+const IB_FORM_ROLES = ['admin', 'ext_driver'];
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
 
 // 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
@@ -1214,7 +1217,9 @@ function setRole(r) {
       const tab = btn.getAttribute('data-tab');
       btn.style.display = (allowNav && !allowNav.includes(tab)) ? 'none' : '';
     });
-    _applyEditRestrictions(r === 'admin');
+    // 외부 기사 화면 축소(미선과 탭의 다른 블록·입고 폼의 관리용 칸)는 style.css의 body.role-ext-driver .xd-hide 한 규칙이 맡는다.
+    document.body.classList.toggle('role-ext-driver', r === 'ext_driver');
+    _applyEditRestrictions(r);
     T('inv');   // airport는 T→invTab('sum')이 invTab 안에서 'juice'로 교정된다(교정 지점은 한 곳뿐)
     // ★외부 기사의 첫 화면은 수확 캘린더 — 재고(입고) 조회는 위 T('inv')로 출발시켜 두고 넘어간다
     //   (입고가 도착하면 _invFetchStart가 열린 캘린더를 한 번 다시 그린다). transportSub가 'dash'→'cal'로 교정한다.
@@ -1222,14 +1227,19 @@ function setRole(r) {
   }
 }
 
-function _applyEditRestrictions(canEdit) {
+function _applyEditRestrictions(r) {
+  const canEdit = r === 'admin';
   const els = [
-    document.getElementById('ib-form-toggle'),
     document.getElementById('btn-inv-entry'),
     document.getElementById('inv-pachi-form'),
     document.getElementById('set-item-backup'),   // 💾 전체 백업 — 정적 HTML이라 여기서 가린다(함수에도 가드 있음)
   ];
   els.forEach(el => { if (el) el.style.display = canEdit ? '' : 'none'; });
+  const ibToggle = document.getElementById('ib-form-toggle');
+  if (ibToggle) ibToggle.style.display = IB_FORM_ROLES.includes(r) ? '' : 'none';
+  // 외부 기사의 입고 날짜는 오늘 고정 — 칸은 보이되 못 바꾼다(저장도 td()를 쓴다). 다른 역할은 예전처럼 입력 가능.
+  const ibDate = document.getElementById('ib-date');
+  if (ibDate) { ibDate.readOnly = r === 'ext_driver'; if (r === 'ext_driver') ibDate.value = td(); }
 }
 
 function T(id) {
@@ -7579,7 +7589,9 @@ function fsRender(selectId) {
       <span>${esc(x.name)}</span>${x.group && x.group !== '농가' ? `<span class="fs-tag">${esc(x.group)}</span>` : ''}
     </div>`).join('');
   // 즉석 등록은 allowNew를 준 화면에서만, 그리고 똑같은 이름이 없을 때만(부분일치가 있어도 새 이름일 수 있음)
-  if (q && _fsOpt[selectId] && _fsOpt[selectId].allowNew && !all.some(x => x.name === q)) {
+  // ★fsAddNew는 관리자만 통과한다 — 외부 기사(입고 폼을 씀)에게는 누르면 막히는 줄을 아예 안 보인다.
+  if (q && _fsOpt[selectId] && _fsOpt[selectId].allowNew && !all.some(x => x.name === q)
+      && sessionStorage.getItem('citrus_role') === 'admin') {
     html += `<div class="fs-row fs-new" onclick="fsAddNew('${selectId}','${_fsQ(q)}')">+ "${esc(q)}" 새 농가로 등록</div>`;
   }
   box.innerHTML = html || '<div class="fs-none">결과 없음</div>';
@@ -18567,6 +18579,9 @@ function renderInboundList() {
   // ★즉 아래 2~8번은 **기본(목록) 뷰에서만** 돈다. 필터·정렬을 고쳐도 다른 뷰엔 반영되지 않는다
   //  — 네 곳을 같이 봐야 하는 이유다.
   // 농가별/카테고리별/선과완료 뷰 모드면 해당 함수에 위임
+  // ★외부 기사(ext_driver)는 목록 보기 하나만(보기 모드 탭은 숨김) — 같은 페이지의 이전 로그인이 바꿔 둔 보기 모드도 되돌린다.
+  const _xdToday = sessionStorage.getItem('citrus_role') === 'ext_driver';
+  if (_xdToday && ibViewMode !== 'list') ibListTab('list');
   if (ibViewMode === 'farm') { renderIbFarmView(); return; }
   if (ibViewMode === 'cat')  { renderIbCatView();  return; }
   if (ibViewMode === 'done') { renderIbDoneView(); return; }
@@ -18617,6 +18632,10 @@ function renderInboundList() {
   if (ibFilterDateFrom) visible = visible.filter(r => (r.date || '') >= ibFilterDateFrom);
   if (ibFilterDateTo) visible = visible.filter(r => (r.date || '') <= ibFilterDateTo);
 
+  // ★외부 기사는 오늘(td) 입고만 본다. 필터 UI는 숨겨져 있으므로 위 필터 결과는 버리고 처음부터 다시 좁힌다
+  //   (같은 페이지에서 다른 계정이 걸어 둔 필터 상태가 보이지 않게 적용되는 일이 없게).
+  if (_xdToday) visible = inboundRecords.filter(r => !r.is_void && r.date === td());
+
   // ==================================================================
   // 4. 필터 UI 동기화 (칩·옵션·건수·버튼·정렬 아이콘)
   // ==================================================================
@@ -18659,11 +18678,12 @@ function renderInboundList() {
   if (!visible.length) {
     const hasNewFilter = ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
     tbody.innerHTML = `<tr><td colspan="11" class="empty" style="padding:20px 10px">
-      ${hasNewFilter ? '조건에 맞는 입고 내역이 없습니다.' :
+      ${_xdToday ? '오늘 입고 기록 없음' :
+        hasNewFilter ? '조건에 맞는 입고 내역이 없습니다.' :
         ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
         ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
         !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}
-      ${hasNewFilter ? '<br><button class="btn" onclick="ibClearNewFilters()" style="font-size:12px;margin-top:8px">필터 초기화</button>' : ''}
+      ${hasNewFilter && !_xdToday ? '<br><button class="btn" onclick="ibClearNewFilters()" style="font-size:12px;margin-top:8px">필터 초기화</button>' : ''}
     </td></tr>`;
     document.getElementById('ib-pagination') && (document.getElementById('ib-pagination').innerHTML = '');
     const _abEl0 = document.getElementById('ib-audit-bar');
@@ -22425,7 +22445,10 @@ async function permanentDeleteInbound(id) {
 }
 
 function toggleIbForm() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const _role = sessionStorage.getItem('citrus_role');
+  if (!IB_FORM_ROLES.includes(_role)) return;
+  // 외부 기사: 열 때마다 날짜를 오늘로(자정을 넘겨 켜 둔 화면 대비) · 원물 고정(선과품 선택지는 숨김)
+  if (_role === 'ext_driver') { sv('ib-date', td()); if (_ibKind !== 'raw') setIbKind('raw'); }
   const body  = document.getElementById('ib-form-body');
   const arrow = document.getElementById('ib-form-arrow');
   const btn   = document.getElementById('ib-form-toggle');
@@ -22762,9 +22785,11 @@ async function _addInboundCore(keepOpen) {
   const _ibBtnOrig = _ibBtn ? _ibBtn.textContent : '';
   if (_ibBtn) { _ibBtn.disabled = true; _ibBtn.textContent = '등록 중...'; }
   try {
-  if (_ibKind === 'sorted') return await saveInboundSorted(keepOpen);
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 등록할 수 있습니다.');
-  const date = gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
+  if (_ibKind === 'sorted') return await saveInboundSorted(keepOpen);   // 선과품은 그 안에서 관리자만 통과
+  const _role = sessionStorage.getItem('citrus_role');
+  if (!IB_FORM_ROLES.includes(_role)) return alert('관리자만 등록할 수 있습니다.');
+  // 외부 기사는 날짜 칸 값과 무관하게 오늘(td)로 저장한다.
+  const date = _role === 'ext_driver' ? td() : gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
   // ★수송기사 필수 — 입고 콘테이너의 담당자(staff)를 이 기사 이름으로 저장하므로(55e10a0),
   //  비워 두면 콘테이너 담당자까지 빈칸이 돼 회수·반납 추적이 끊긴다.
@@ -22842,7 +22867,7 @@ async function _addInboundCore(keepOpen) {
   //   ★중량·매입(weightFields)도 마찬가지로 한 행에만 붙인다 — 아래 weightFields 주석 참고.
   const commonData = {
     date, product, farm_name,
-    note, staff: 'admin',
+    note, staff: sessionStorage.getItem('citrus_adm_user') || 'admin',   // 등록 계정(관리자 'admin' · 외부 기사 'gisa')
     is_priority,
     driver_id,
   };
@@ -22949,7 +22974,7 @@ async function _addInboundCore(keepOpen) {
                 date, farm_name, product, size_code: null,
                 quantity: row.quantity, location: row.location || null,
                 source_type: _pachiSrcType, inbound_record_id: row.id,
-                usage: _pUsage, is_void: false, note: null, created_by: 'admin',
+                usage: _pUsage, is_void: false, note: null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
                 ...(_pSize ? { pachi_size_group: _pSize } : {})
               });
               if (pr && pr[0]) inventoryRecords.push(pr[0]);

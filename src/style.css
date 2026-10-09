@@ -681,3 +681,7 @@ textarea {
 .hv-plan-editor select { flex: 1.6 1 max(64px, calc((260px - 100%) * 999)); min-width: 0; box-sizing: border-box; padding: 3px 2px; border: 1px solid #1565C0; border-radius: 4px; font-size: 12px; font-family: inherit; outline: none; background: #fff; color: #374151; }
 .hv-plan-editor select:disabled { opacity: .6; }
 @media (max-width: 1024px) { .hv-plan-editor select { font-size: 16px; } }
+
+/* 외부 기사(ext_driver) 화면 축소 — setRole이 body에 role-ext-driver를 붙인다. 숨길 블록·칸은 index.html에서 xd-hide 클래스로 표시.
+   !important: setIbKind·필터 동기화 등이 같은 요소의 style.display를 바꿔도 외부 기사에게는 계속 숨게. */
+body.role-ext-driver .xd-hide { display: none !important; }
