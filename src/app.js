@@ -4590,24 +4590,38 @@ function _hvPlanCheckedTxt(p) {
   const d = new Date(p && p.chk);
   return Number.isNaN(d.getTime()) ? '확인함' : `확인 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+// 농가 담당(farms.staff)이 외부 기사(차단 아님)면 그 이름, 아니면 '' — 계획 줄의 '(담당)' 회색 꼬리용.
+//   ★표시 전용 — plan_by_date에 저장하지 않는다. 담당을 바꾸면 남은 날짜 표시가 전부 따라 바뀐다.
+function _farmExtDrv(farm) {
+  const name = gf(farm).staff;
+  if (!name) return '';
+  const d = gd(name);
+  return d.type === '외부' && d.pin_active !== false ? name : '';
+}
 // 카드 요약 한 줄(그 날짜). 관리자는 이 줄을 눌러 그 자리에서 입력한다(startHvPlanEdit).
 //   계획이 없으면: 관리자 + 오늘 이후 날짜만 연한 '＋ 계획 입력' 자리표시자. 그 밖(직원·지난 날짜)은 '' — 빈 줄로 카드가 벌어지지 않게.
 //   ★지난 날짜에 자리표시자를 안 두는 이유: 달력 상세에서 지난 날을 열면 완료된 수확마다 '계획 입력'이 붙어 잡음이 된다.
 //     이미 값이 있으면 지난 날짜여도 보이고 눌러서 고칠 수 있다.
 // 확인된 건은 초록 ✓ — ★행 전체를 opacity로 흐리게 하지 않는다('콘테이너 없음' 같은 경고까지 같이 묻힌다).
+// 담당 외부 기사 꼬리: 농가 담당이 외부 기사이고 그날 amd·pmd가 둘 다 비었으면(오늘 이후) 끝에 회색 '👤 이름 (담당)'.
+//   계획이 없으면 관리자는 '＋ 계획 입력 · 꼬리', 그 밖 역할은 꼬리만 있는 줄(클릭 없음).
 function _hvPlanLine(h, dStr, style = '') {
   if (!h || !dStr) return '';
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const p = _hvPlanDay(h, dStr);
   const t = _hvPlanText(p);
+  // 담당 외부 기사 꼬리 — 그날 오전·오후 기사(amd/pmd)를 둘 다 안 골랐고 오늘 이후일 때만. 하나라도 골랐으면 그 값이 우선.
+  const ext = _farmExtDrv(h.farm);
+  const tail = (ext && !(p && p.amd) && !(p && p.pmd) && dStr >= td()) ? `<span style="color:#9CA3AF">👤 ${esc(ext)} (담당)</span>` : '';
+  if (!t && !isAdm && tail) return `<div style="font-size:11px;padding:2px 0;${style}">${tail}</div>`;
   if (!t && (!isAdm || dStr < td())) return '';
   const click = isAdm ? ` onclick="event.stopPropagation();startHvPlanEdit(this,${Number(h.id)},'${esc(dStr)}')"` : '';
   if (!t) {
-    return `<div${click} title="눌러서 이날 오전·오후 차량·빈콘 계획 입력" style="font-size:11px;color:#A5B4C3;cursor:pointer;padding:2px 0;${style}">＋ 계획 입력</div>`;
+    return `<div${click} title="눌러서 이날 오전·오후 차량·빈콘 계획 입력" style="font-size:11px;color:#A5B4C3;cursor:pointer;padding:2px 0;${style}">＋ 계획 입력${tail ? ' · ' + tail : ''}</div>`;
   }
   const done = !!p.chk;
   const tip = (done ? _hvPlanCheckedTxt(p) : '오전·오후 차량·빈콘 계획') + (isAdm ? ' — 눌러서 수정' : '');
-  return `<div${click} style="font-size:11px;color:${done ? '#2E7D32' : '#374151'};${isAdm ? 'cursor:pointer;' : ''}padding:2px 0;${style}" title="${esc(tip)}">${done ? '✓' : '🚚'} ${esc(t)}</div>`;
+  return `<div${click} style="font-size:11px;color:${done ? '#2E7D32' : '#374151'};${isAdm ? 'cursor:pointer;' : ''}padding:2px 0;${style}" title="${esc(tip)}">${done ? '✓' : '🚚'} ${esc(t)}${tail ? ' · ' + tail : ''}</div>`;
 }
 // 확인 체크 버튼(그 날짜) — 관리자만(수확 레코드를 쓰는 다른 동작과 같은 기준). 그날 계획이 없으면 체크할 것도 없어 안 그린다.
 function _hvPlanCheckBtn(h, dStr) {
