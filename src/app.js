@@ -26272,6 +26272,8 @@ async function openSpecTab() {
   if (list && !_specLoaded) list.innerHTML = '<div class="note">불러오는 중…</div>';
   await _specLoad();
   renderSpec();
+  _specGramDraft = _specCanWrite() ? JSON.parse(JSON.stringify(_specGram)) : null;   // 과중 표 편집본은 열 때마다 DB 값으로 다시
+  _specRenderCalc(); _specRenderGram();
 }
 async function _specLoad() {
   const d = new Date(td() + 'T00:00:00'); d.setDate(d.getDate() - 90);
@@ -26358,6 +26360,7 @@ function _specBody(g, v, color = '#374151') {
     L(v.kind === '출고' ? '실제' : '중량', esc(_specWTxt(v))),
     L('사이즈', esc(v.sizes || '')),
     L('배열', _specLayoutTxt(v.layout)),
+    _specExpHtml(v.product, v.layout, v.weight_min, v.weight_max, v.kind !== '출고'),
     L('브릭스', esc(v.brix || '')),
     L('메모', esc(v.note || '')),
     L('작성', esc(v.author || '')),
@@ -26482,8 +26485,13 @@ function _specKindChanged() {
   const fl = document.getElementById('spm-from-lbl'); if (fl) fl.textContent = k === '출고' ? '출고일 *' : '적용 시작일 *';
   const wl = document.getElementById('spm-w-lbl'); if (wl) wl.textContent = k === '출고' ? '실제 중량(kg)' : '박스 중량(kg)';
 }
-// 폼 하단 계산 줄 — 2단계(예상 중량)에서 채운다. 지금은 비워 둔다.
-function _specFormCalc() {}
+// 폼 하단 계산 줄 — 배열로 본 예상 중량 + 박스 중량과 안 맞으면 경고(카드와 같은 _specExpHtml)
+function _specFormCalc() {
+  const el = document.getElementById('spm-calc'); if (!el) return;
+  const product = document.getElementById('spm-product')?.value || '';
+  const n = id => { const s = (document.getElementById(id)?.value || '').trim(); return s === '' ? null : Number(s); };
+  el.innerHTML = _specExpHtml(product, _specReadLayout(), n('spm-wmin'), n('spm-wmax'), document.getElementById('spm-kind')?.value !== '출고');
+}
 
 function openSpecModal(o = {}) {
   if (!_specCanWrite()) return;
@@ -26577,4 +26585,161 @@ async function saveSpec() {
     showToast(`${channel} · ${pack} ${kind} 저장`);
   } catch (e) { alert('저장 오류: ' + e.message); }
   finally { _specBusy = false; }
+}
+
+// ── 작업 기준표 2단계: 중량 계산(사이즈별 과중 기준 settings.size_gram_ranges) ─────────────────
+// 품목 → 사이즈 → [최소g, 최대g]. 배열(상/하 개수)로 예상 박스 중량을 내고, 기준 중량과 비교한다.
+function _specGr(product, size) {
+  const r = (_specGram[product] || {})[size];
+  return (Array.isArray(r) && r.length === 2 && Number.isFinite(+r[0]) && Number.isFinite(+r[1])) ? [+r[0], +r[1]] : null;
+}
+// 예상 중량 {min, max}(kg) = Σ(상+하) × [최소g, 최대g] / 1000. 과중 기준이 없는 사이즈가 하나라도 있으면 null(모르는 값을 0으로 치지 않는다).
+function _specExpKg(product, layout) {
+  const rows = (Array.isArray(layout) ? layout : []).filter(x => x && x.size && ((Number(x.top) || 0) + (Number(x.bottom) || 0)) > 0);
+  if (!rows.length) return null;
+  let a = 0, b = 0;
+  for (const x of rows) {
+    const gr = _specGr(product, String(x.size).trim()); if (!gr) return null;
+    const cnt = (Number(x.top) || 0) + (Number(x.bottom) || 0);
+    a += cnt * gr[0]; b += cnt * gr[1];
+  }
+  return { min: Math.round(a) / 1000, max: Math.round(b) / 1000 };
+}
+// '예상 a~b kg' (+ 기준 중량과 구간이 안 겹치면 빨간 경고). check=false면 경고 없이 예상만(출고 기록).
+function _specExpHtml(product, layout, wmin, wmax, check = true) {
+  const e = _specExpKg(product, layout); if (!e) return '';
+  const lo = (wmin === 0 || wmin) ? Number(wmin) : null, hi = (wmax === 0 || wmax) ? Number(wmax) : null;
+  const bad = check && (lo != null || hi != null) && ((hi != null && e.min > hi) || (lo != null && e.max < lo));
+  return `<span style="white-space:nowrap"><span style="color:#9CA3AF">예상</span> ${e.min}~${e.max}kg${bad ? ' <span style="color:#DC2626">⚠️ 기준 중량과 안 맞음</span>' : ''}</span>`;
+}
+// 품목의 사이즈를 과중 최소값 순서로(감귤류·만감류 공통 — 작은 과일부터)
+function _specGramSizes(product, src) {
+  const m = (src || _specGram)[product] || {};
+  return Object.keys(m).sort((a, b) => (Number((m[a] || [])[0]) || 0) - (Number((m[b] || [])[0]) || 0) || a.localeCompare(b, 'ko'));
+}
+
+// 🧮 개수 계산기 — 저장 없음, 모든 역할. 품목·사이즈·목표 kg → 약 n~m개(n=ceil(kg/최대g), m=floor(kg/최소g))
+const _specCalc = { product: '', size: '', kg: '' };
+function _specCalcResult() {
+  const el = document.getElementById('spec-calc-out'); if (!el) return;
+  const gr = _specGr(_specCalc.product, _specCalc.size), kg = Number(_specCalc.kg);
+  if (!gr || !(kg > 0)) { el.innerHTML = '<span style="color:#9CA3AF">품목·사이즈·목표 kg을 넣으세요</span>'; return; }
+  const n = Math.ceil(kg * 1000 / gr[1]), m = Math.floor(kg * 1000 / gr[0]);
+  el.innerHTML = `약 <strong style="font-weight:500;color:#1E3A5F">${fmtN(n)}~${fmtN(m)}개</strong> <span style="color:#9CA3AF">(과중 ${gr[0]}~${gr[1]}g)</span>`;
+}
+function _specCalcSet(k, v) {
+  _specCalc[k] = v;
+  if (k === 'product') { _specCalc.size = ''; _specRenderCalc(); return; }
+  _specCalcResult();
+}
+function _specRenderCalc() {
+  const el = document.getElementById('spec-calc'); if (!el) return;
+  const prods = Object.keys(_specGram).sort((a, b) => a.localeCompare(b, 'ko'));
+  if (_specCalc.product && !prods.includes(_specCalc.product)) _specCalc.product = '';
+  if (!_specCalc.product && prods.length) _specCalc.product = prods[0];
+  const sizes = _specGramSizes(_specCalc.product);
+  const s = 'font-size:12px;padding:3px 6px';
+  el.innerHTML = `<div style="margin-top:16px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-radius:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:#374151">
+    <span style="font-weight:500;color:#1E3A5F">🧮 개수 계산기</span>
+    <select style="${s}" onchange="_specCalcSet('product',this.value)">${prods.map(p => `<option value="${esc(p)}"${p === _specCalc.product ? ' selected' : ''}>${esc(p)}</option>`).join('') || '<option value="">과중 기준 없음</option>'}</select>
+    <select style="${s}" onchange="_specCalcSet('size',this.value)"><option value="">사이즈</option>${sizes.map(z => `<option value="${esc(z)}"${z === _specCalc.size ? ' selected' : ''}>${esc(z)}</option>`).join('')}</select>
+    <span style="display:flex;align-items:center;gap:4px"><input type="number" min="0" step="0.1" inputmode="decimal" value="${esc(_specCalc.kg)}" placeholder="목표" oninput="_specCalcSet('kg',this.value)" style="${s};width:70px">kg</span>
+    <span id="spec-calc-out"></span>
+  </div>`;
+  _specCalcResult();
+}
+
+// ⚙ 사이즈별 과중 기준 — 접힘. 앞뒤 사이즈와 겹치면 노랑, 빈 구간은 회색 줄(표시만). 수정·저장은 admin만(_specCanWrite).
+let _specGramOpen = false, _specGramDraft = null, _specGramBusy = false;
+function _specGramToggle() { _specGramOpen = !_specGramOpen; if (_specGramOpen && _specCanWrite()) _specGramDraft = JSON.parse(JSON.stringify(_specGram)); _specRenderGram(); }
+function _specGramEdit(product, size, idx, val) {
+  if (!_specCanWrite() || !_specGramDraft) return;
+  const r = (_specGramDraft[product] = _specGramDraft[product] || {})[size] = (_specGramDraft[product][size] || [null, null]);
+  r[idx] = val === '' ? null : Number(val);
+  _specRenderGram();
+}
+function _specGramAddRow(product) {
+  if (!_specCanWrite() || !_specGramDraft) return;
+  const size = (document.getElementById('spec-gram-new-' + product.replace(/\W/g, '_'))?.value || '').trim();
+  if (!size) return alert('사이즈를 입력하세요.');
+  const m = (_specGramDraft[product] = _specGramDraft[product] || {});
+  if (m[size]) return alert('이미 있는 사이즈입니다.');
+  m[size] = [null, null]; _specRenderGram();
+}
+function _specGramDelRow(product, size) { if (!_specCanWrite() || !_specGramDraft) return; delete (_specGramDraft[product] || {})[size]; _specRenderGram(); }
+function _specGramAddProduct() {
+  if (!_specCanWrite() || !_specGramDraft) return;
+  const p = document.getElementById('spec-gram-newprod')?.value || '';
+  if (!p) return;
+  if (!_specGramDraft[p]) _specGramDraft[p] = {};
+  _specRenderGram();
+}
+function _specRenderGram() {
+  const el = document.getElementById('spec-gram'); if (!el) return;
+  const W = _specCanWrite(), src = (W && _specGramDraft) ? _specGramDraft : _specGram;
+  const head = `<button type="button" onclick="_specGramToggle()" style="font-size:12px;color:#374151;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${_specGramOpen ? '▾' : '▸'} ⚙ 사이즈별 과중 기준</button>`;
+  if (!_specGramOpen) { el.innerHTML = `<div style="margin-top:12px">${head}</div>`; return; }
+  const inp = 'font-size:12px;padding:2px 4px;width:60px';
+  const prods = Object.keys(src).sort((a, b) => a.localeCompare(b, 'ko'));
+  const tables = prods.map(p => {
+    const sizes = _specGramSizes(p, src);
+    const rg = z => (src[p] || {})[z] || [null, null];
+    const rows = [];
+    sizes.forEach((z, i) => {
+      const r = rg(z), prev = i ? rg(sizes[i - 1]) : null, next = i < sizes.length - 1 ? rg(sizes[i + 1]) : null;
+      const ok = x => x && x[0] != null && x[1] != null;
+      const overlap = ok(r) && ((ok(prev) && prev[1] >= r[0]) || (ok(next) && r[1] >= next[0]));
+      // 앞 사이즈와의 빈 구간(정수 g) — 회색 줄로 표시만
+      if (ok(prev) && ok(r) && r[0] > prev[1] + 1) rows.push(`<tr style="color:#9CA3AF;background:#F9FAFB"><td></td><td colspan="3" style="font-size:11px">빈 구간 ${prev[1] + 1 === r[0] - 1 ? prev[1] + 1 : `${prev[1] + 1}~${r[0] - 1}`}g</td></tr>`);
+      const cell = (idx) => W
+        ? `<input type="number" min="0" value="${r[idx] == null ? '' : r[idx]}" onchange="_specGramEdit('${esc(p)}','${esc(z)}',${idx},this.value)" style="${inp}">`
+        : (r[idx] == null ? '-' : r[idx]);
+      rows.push(`<tr${overlap ? ' style="background:#FEF9C3"' : ''}><td>${esc(z)}</td><td>${cell(0)}</td><td>${cell(1)}</td><td style="font-size:11px;color:#A16207">${overlap ? '겹침' : ''}${W ? ` <button type="button" onclick="_specGramDelRow('${esc(p)}','${esc(z)}')" style="border:none;background:none;color:#9CA3AF;cursor:pointer">✕</button>` : ''}</td></tr>`);
+    });
+    const addRow = W ? `<div style="margin-top:4px;display:flex;gap:4px;align-items:center"><input id="spec-gram-new-${p.replace(/\W/g, '_')}" placeholder="사이즈" style="${inp};width:70px"><button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="_specGramAddRow('${esc(p)}')">＋ 사이즈</button></div>` : '';
+    return `<div style="flex:1 1 220px;min-width:0;max-width:320px"><div style="font-size:12px;font-weight:500;color:#1E3A5F;margin-bottom:4px">${esc(p)}</div>
+      <table style="min-width:0;width:100%;font-size:12px"><thead><tr><th>사이즈</th><th>최소 g</th><th>최대 g</th><th></th></tr></thead><tbody>${rows.join('') || '<tr><td colspan="4" style="color:#9CA3AF">사이즈 없음</td></tr>'}</tbody></table>${addRow}</div>`;
+  }).join('');
+  const tools = W ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px">
+      <select id="spec-gram-newprod" style="font-size:12px;padding:3px 6px">${buildProductOptgroupHTML(false, { firstOption: '<option value="">품목 추가…</option>' })}</select>
+      <button type="button" class="btn" style="font-size:12px;padding:3px 10px" onclick="_specGramAddProduct()">＋ 품목</button>
+      <button type="button" class="btn pri" style="font-size:12px;padding:4px 12px;margin-left:auto" onclick="saveSpecGram()">과중 기준 저장</button></div>` : '';
+  el.innerHTML = `<div style="margin-top:12px">${head}
+    <div style="margin-top:8px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-radius:8px">
+      <div style="font-size:11px;color:#6B7280;margin-bottom:6px">노랑 = 앞뒤 사이즈와 겹침 · 회색 = 빈 구간${W ? '' : ' · 보기 전용'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px">${tables || '<span style="font-size:12px;color:#9CA3AF">등록된 과중 기준이 없습니다.</span>'}</div>${tools}
+    </div></div>`;
+}
+// 저장 — settings.size_gram_ranges 한 줄(품목 전체 객체). saveProductWeights와 같은 방식(있으면 PATCH·영향 행 확인, 없으면 insert).
+async function saveSpecGram() {
+  if (!_specCanWrite() || _specGramBusy || !_specGramDraft) return;
+  // 숫자 검사 — 빈칸·최소>최대는 저장하지 않는다
+  const value = {};
+  for (const [p, m] of Object.entries(_specGramDraft)) {
+    value[p] = {};
+    for (const [z, r] of Object.entries(m || {})) {
+      if (!Array.isArray(r) || r[0] == null || r[1] == null || !Number.isFinite(r[0]) || !Number.isFinite(r[1])) return alert(`${p} ${z}: 최소·최대 g을 모두 넣으세요.`);
+      if (r[0] > r[1]) return alert(`${p} ${z}: 최소가 최대보다 큽니다.`);
+      value[p][z] = [r[0], r[1]];
+    }
+  }
+  _specGramBusy = true;
+  try {
+    const rows = await sbGet('settings', 'key=eq.size_gram_ranges');
+    if (rows && rows.length) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.size_gram_ranges`, {
+        method: 'PATCH', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ value, updated_at: new Date().toISOString() })
+      });
+      if (!res.ok) throw new Error(`과중 기준 저장 실패: HTTP ${res.status}`);
+      const json = await res.json();
+      if (!Array.isArray(json) || !json.length) throw new Error('과중 기준 저장 실패: 영향받은 행 없음');
+    } else {
+      await sbInsert('settings', { key: 'size_gram_ranges', value });
+    }
+    _specGram = value; _specGramDraft = JSON.parse(JSON.stringify(value));
+    _specRenderGram(); _specRenderCalc(); renderSpec();
+    showToast('과중 기준이 저장되었습니다.');
+  } catch (e) { alert('저장 오류: ' + e.message); }
+  finally { _specGramBusy = false; }
 }
