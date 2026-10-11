@@ -26257,6 +26257,9 @@ let _specRows = [];          // work_specs(is_void=false)
 let _specGram = {};          // settings size_gram_ranges — { 품목: { 사이즈: [최소g, 최대g] } }
 let _specOb = [];            // 최근 90일 outbound_records(재고 출고 참고용, 읽기만)
 let _specLoaded = false, _specLoadErr = '';
+let _specMasters = { channels: [], businesses: [], packs: [], brix: [] };   // settings.spec_masters — 등록 창 선택 목록(v719)
+let _specUse = {};          // 목록 이름별 사용 건수(work_specs 삭제 표시 포함 전체) — 목록 관리의 삭제 가능 판정
+function _specNormMasters(v) { const o = (v && typeof v === 'object') ? v : {}; return { channels: Array.isArray(o.channels) ? o.channels : [], businesses: Array.isArray(o.businesses) ? o.businesses : [], packs: Array.isArray(o.packs) ? o.packs : [], brix: Array.isArray(o.brix) ? o.brix : [] }; }
 const _specUi = { date: '', type: '', product: '', q: '' };   // 도구줄 상태
 const _specOpen = new Set();   // 펼친 예정·이력 — 키 + '|fut' / '|hist'
 let _specView = [];            // 지금 화면에 그린 카드 묶음(onclick은 이 배열의 번호로 가리킨다 — 키 문자열을 속성에 넣지 않으려고)
@@ -26273,7 +26276,7 @@ async function openSpecTab() {
   await _specLoad();
   renderSpec();
   _specGramEditing = false; _specGramDraft = null;   // 과중 표는 열 때마다 보기 모드(수정 초안은 버린다)
-  _specRenderCalc(); _specRenderGram();
+  _specRenderCalc(); _specRenderGram(); _specRenderMasters();
 }
 async function _specLoad() {
   const d = new Date(td() + 'T00:00:00'); d.setDate(d.getDate() - 90);
@@ -26281,10 +26284,15 @@ async function _specLoad() {
   try {
     // ① 기준표·과중 기준 먼저 → ② 그 기준표에 있는 거래처(channel)의 최근 90일 출고만(재고 출고 참고용).
     //   예전엔 90일 출고 전체(약 7,800행)를 받아 JS로 걸렀다 — 카드가 쓰는 건 '같은 거래처·품목 최근 3건'뿐이라 거래처로 줄인다.
-    const [rows, gs] = await Promise.all([
+    const [rows, gs, msr, useRows] = await Promise.all([
       sbGetAll('work_specs', 'is_void=eq.false&order=valid_from.desc,created_at.desc'),
       sbGet('settings', 'key=eq.size_gram_ranges'),
+      sbGet('settings', 'key=eq.spec_masters'),
+      sbGetAll('work_specs', 'select=id,channel,business,pack,brix'),   // 목록 사용 건수 — 삭제 표시(is_void)된 것까지 센다
     ]);
+    _specMasters = _specNormMasters(msr && msr[0] && msr[0].value);
+    _specUse = { channels: {}, businesses: {}, packs: {}, brix: {} };
+    (useRows || []).forEach(r => SPEC_MASTER_LISTS.forEach(([k]) => { const n = r[SPEC_MASTER_COL[k]]; if (n) _specUse[k][n] = (_specUse[k][n] || 0) + 1; }));
     const chans = [...new Set((rows || []).map(r => String(r.channel || '').trim()).filter(Boolean))];
     let ob = [];
     // ★거래처 이름은 큰따옴표로 감싸 encodeURIComponent(한글·쉼표·괄호 안전, 이름 안 " 는 \")·50개씩 나눠 URL 길이를 막는다.
@@ -26507,16 +26515,46 @@ async function delSpec(id) {
   finally { _specBusy = false; }
 }
 function _specIsCitrus(product) { return (PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류'; }
-// 배열 한 줄 — 감귤류는 사이즈 select(SIZES_감귤류), 만감류는 자유 입력('13수') + 품목 규칙 사이즈 제안(sizesForProduct)
+// ── 등록 창 선택 목록(v719) — 채널·사업자·상품규격·브릭스는 settings.spec_masters에서 고른다(자유 입력으로 이름이 흐트러지지 않게).
+// ★저장된 값이 목록에 없거나 숨김이면 _selEnsureVal로 그 값 하나를 '(목록에 없음)'으로 붙여 둔다 — 수정 때 다른 칸만 고쳐도 값이 안 지워지게.
+const SPEC_PARTNER_TYPES = ['마트', '공판장', '거래처'];   // 이 구분은 거래처 마스터(partners.category) 이름도 채널 후보로
+const SPEC_BRIX_CUSTOM = '__custom';
+const _specKeepLbl = v => `${v} (목록에 없음)`;
+function _specVis(key) { return ((_specMasters || {})[key] || []).filter(x => x && x.name && !x.hidden).map(x => x.name); }
+function _specChannelNames(ct) {
+  const ms = ((_specMasters || {}).channels || []).filter(c => c && c.name && !c.hidden && (!ct || c.type === ct)).map(c => c.name);
+  const pts = ct ? (SPEC_PARTNER_TYPES.includes(ct) ? [ct] : []) : SPEC_PARTNER_TYPES;
+  const ps = partners.filter(p => p.is_active !== false && pts.includes(p.category)).map(p => p.name);
+  return [...new Set([...ms, ...ps])];
+}
+// select 채우기 + 비었으면 회색 안내. keep = 지금 값(목록에 없으면 '(목록에 없음)'으로 유지할 값, 없으면 '')
+function _specFillSel(id, names, first, keep, hintId) {
+  const el = document.getElementById(id); if (!el) return;
+  el.innerHTML = first + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  _selEnsureVal(el, keep || '', _specKeepLbl(keep || ''));
+  const h = hintId && document.getElementById(hintId);
+  if (h) h.style.display = names.length ? 'none' : '';
+}
+function _specFillChannel(keep) { _specFillSel('spm-channel', _specChannelNames(document.getElementById('spm-ctype')?.value || ''), '<option value="">선택</option>', keep, 'spm-channel-hint'); }
+// 품목의 사이즈 목록 — 감귤류 SIZES_감귤류 / 만감류 SIZES_만감류(_specSizeList와 같은 기준)
+function _specProdSizes(product) { return product ? _specSizeList(product) : []; }
+function _specSizeOpts(sizes) { return '<option value="">사이즈</option>' + sizes.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(''); }
+// 사용 사이즈 '시작~끝' — keepFrom/keepTo는 열 때 저장값(목록에 없으면 유지), 품목을 바꿀 땐 새 목록에 있는 값만 남긴다
+function _specFillSizeRange(keepFrom, keepTo) {
+  const sizes = _specProdSizes(document.getElementById('spm-product')?.value || '');
+  ['spm-sz-from', 'spm-sz-to'].forEach((id, i) => {
+    const el = document.getElementById(id); if (!el) return;
+    const k = i ? keepTo : keepFrom;
+    el.innerHTML = _specSizeOpts(sizes);
+    _selEnsureVal(el, k || '', _specKeepLbl(k || ''));
+  });
+}
+// 배열 한 줄 — 사이즈 select(품목 목록) + 상단·하단(0~40 정수, 저장 전 검사)
 function _specLayoutRowHtml(product, row = {}) {
-  const sz = String(row.size || '');
-  const sizeCtl = _specIsCitrus(product)
-    ? `<select class="spm-size" style="${_qrInpS};width:auto;min-width:70px"><option value="">사이즈</option>${SIZES_감귤류.map(s => `<option value="${esc(s)}"${s === sz ? ' selected' : ''}>${esc(s)}</option>`).join('')}${sz && !SIZES_감귤류.includes(sz) ? `<option value="${esc(sz)}" selected>${esc(sz)}</option>` : ''}</select>`
-    : `<input class="spm-size" list="spm-size-dl" placeholder="예 13수" value="${esc(sz)}" style="${_qrInpS};width:80px">`;
   const n = v => (v === 0 || v) ? esc(String(v)) : '';
-  return `<div class="spm-lrow" style="display:flex;gap:6px;align-items:center;margin-bottom:4px">${sizeCtl}
-    <span style="font-size:12px;color:#6B7280">상</span><input class="spm-top" type="number" min="0" inputmode="numeric" value="${n(row.top)}" style="${_qrInpS};width:60px" oninput="_specFormCalc()">
-    <span style="font-size:12px;color:#6B7280">하</span><input class="spm-bot" type="number" min="0" inputmode="numeric" value="${n(row.bottom)}" style="${_qrInpS};width:60px" oninput="_specFormCalc()">
+  return `<div class="spm-lrow" style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><select class="spm-size" style="${_qrInpS};width:auto;min-width:76px">${_specSizeOpts(_specProdSizes(product))}</select>
+    <span style="font-size:12px;color:#6B7280">상</span><input class="spm-top" type="number" min="0" max="40" step="1" inputmode="numeric" value="${n(row.top)}" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">
+    <span style="font-size:12px;color:#6B7280">하</span><input class="spm-bot" type="number" min="0" max="40" step="1" inputmode="numeric" value="${n(row.bottom)}" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">
     <button type="button" onclick="this.closest('.spm-lrow').remove();_specFormCalc()" style="border:none;background:none;color:#9CA3AF;cursor:pointer;font-size:16px;line-height:1">✕</button></div>`;
 }
 function _specReadLayout() {
@@ -26526,17 +26564,43 @@ function _specReadLayout() {
     bottom: parseInt(r.querySelector('.spm-bot')?.value, 10) || 0,
   }));
 }
-function _specRebuildLayout(rows) {
+// 상단·하단 칸 검사 — 빈칸 또는 0~40 정수만. 틀린 칸은 빨간 테두리. 반환: 통과 여부
+function _specLayoutValid() {
+  let ok = true;
+  document.querySelectorAll('#spm-layout .spm-top, #spm-layout .spm-bot').forEach(inp => {
+    const s = (inp.value || '').trim();
+    const bad = s !== '' && !(/^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= 40);
+    inp.style.borderColor = bad ? '#DC2626' : '';
+    if (bad) ok = false;
+  });
+  return ok;
+}
+// rows = 그릴 줄들. keep=true면(열 때) 목록에 없는 저장 사이즈를 '(목록에 없음)'으로 유지, false면(품목 변경) 비운다.
+function _specRebuildLayout(rows, keep = false) {
   const box = document.getElementById('spm-layout'); if (!box) return;
   const product = document.getElementById('spm-product')?.value || '';
-  box.innerHTML = (rows && rows.length ? rows : [{}]).map(r => _specLayoutRowHtml(product, r)).join('');
-  const dl = document.getElementById('spm-size-dl');
-  if (dl) dl.innerHTML = (product && !_specIsCitrus(product) ? sizesForProduct(product) : []).map(s => `<option value="${esc(s)}">`).join('');
+  const list = rows && rows.length ? rows : [{}];
+  box.innerHTML = list.map(r => _specLayoutRowHtml(product, r)).join('');
+  [...box.querySelectorAll('.spm-lrow .spm-size')].forEach((el, i) => {
+    const sz = String(list[i].size || '');
+    if (keep) _selEnsureVal(el, sz, _specKeepLbl(sz)); else el.value = _specProdSizes(product).includes(sz) ? sz : '';
+  });
   _specFormCalc();
 }
 function _specAddLayoutRow() {
   const box = document.getElementById('spm-layout'); if (!box) return;
   box.insertAdjacentHTML('beforeend', _specLayoutRowHtml(document.getElementById('spm-product')?.value || ''));
+}
+// 품목 변경 — 사용 사이즈·배열 사이즈 select를 새 품목 목록으로(새 목록에 없는 값은 비운다)
+function _specProductChanged() {
+  const sizes = _specProdSizes(document.getElementById('spm-product')?.value || '');
+  const f = document.getElementById('spm-sz-from')?.value || '', t = document.getElementById('spm-sz-to')?.value || '';
+  _specFillSizeRange(sizes.includes(f) ? f : '', sizes.includes(t) ? t : '');
+  _specRebuildLayout(_specReadLayout(), false);
+}
+function _specBrixChanged() {
+  const c = document.getElementById('spm-brix-custom');
+  if (c) c.style.display = document.getElementById('spm-brix')?.value === SPEC_BRIX_CUSTOM ? '' : 'none';
 }
 function _specKindChanged() {
   const k = document.getElementById('spm-kind')?.value;
@@ -26570,10 +26634,9 @@ function openSpecModal(o = {}) {
     sizes: src ? src.sizes : '', layout: src ? src.layout : [], brix: src ? src.brix : '', note: src ? src.note : '',
     author: sessionStorage.getItem('citrus_adm_user') || '',
   };
-  const uniq = arr => [...new Set(arr.map(s => String(s || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
-  const dl = (id, arr) => `<datalist id="${id}">${uniq(arr).map(s => `<option value="${esc(s)}">`).join('')}</datalist>`;
   const fv = x => (x === 0 || x) ? esc(String(x)) : '';
   const lab = t => `<label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">${t}</label>`;
+  const hint = id => `<div id="${id}" style="display:none;font-size:11px;color:#9CA3AF;margin-top:2px">목록 관리에서 먼저 등록</div>`;
   const m = document.createElement('div');
   m.id = 'modal-spec';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:16px;box-sizing:border-box;overflow-y:auto';
@@ -26584,29 +26647,26 @@ function openSpecModal(o = {}) {
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div>${lab('기록')}<select id="spm-kind" style="${_qrInpS}" onchange="_specKindChanged()"><option value="기준"${kind === '기준' ? ' selected' : ''}>기준</option><option value="출고"${kind === '출고' ? ' selected' : ''}>출고</option></select></div>
-        <div>${lab('구분')}<select id="spm-ctype" style="${_qrInpS}"><option value="">선택</option>${SPEC_TYPES.map(t => `<option value="${esc(t)}"${t === v.channel_type ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
-        <div>${lab('채널 *')}<input id="spm-channel" list="spm-dl-channel" value="${esc(v.channel)}" placeholder="예 쿠팡·하나로마트" style="${_qrInpS}"></div>
-        <div>${lab('사업자')}<input id="spm-business" list="spm-dl-business" value="${esc(v.business)}" style="${_qrInpS}"></div>
-        <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specRebuildLayout(_specReadLayout())">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
-        <div>${lab('상품·규격 *')}<input id="spm-pack" list="spm-dl-pack" value="${esc(v.pack)}" placeholder="예 3kg 선물세트" style="${_qrInpS}"></div>
+        <div>${lab('기록')}<select id="spm-kind" style="${_qrInpS}" onchange="_specKindChanged();_specFormCalc()"><option value="기준"${kind === '기준' ? ' selected' : ''}>기준</option><option value="출고"${kind === '출고' ? ' selected' : ''}>출고</option></select></div>
+        <div>${lab('구분')}<select id="spm-ctype" style="${_qrInpS}" onchange="_specFillChannel('')"><option value="">선택</option>${SPEC_TYPES.map(t => `<option value="${esc(t)}"${t === v.channel_type ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <div>${lab('채널 *')}<select id="spm-channel" style="${_qrInpS}"></select>${hint('spm-channel-hint')}</div>
+        <div>${lab('사업자')}<select id="spm-business" style="${_qrInpS}"></select></div>
+        <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specProductChanged()">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
+        <div>${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}"></select>${hint('spm-pack-hint')}</div>
         <div><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
         <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
         <div style="grid-column:1/-1"><label id="spm-w-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">박스 중량(kg)</label>
           <div style="display:flex;gap:6px;align-items:center"><input id="spm-wmin" type="number" step="0.01" min="0" value="${fv(v.weight_min)}" placeholder="최소" style="${_qrInpS}" oninput="_specFormCalc()"><span style="color:#9CA3AF">~</span><input id="spm-wmax" type="number" step="0.01" min="0" value="${fv(v.weight_max)}" placeholder="최대" style="${_qrInpS}" oninput="_specFormCalc()"></div></div>
-        <div style="grid-column:1/-1">${lab('사용 사이즈')}<input id="spm-sizes" value="${esc(v.sizes || '')}" placeholder="예 2S1~S1" style="${_qrInpS}"></div>
-        <div style="grid-column:1/-1">${lab('선물세트 배열(상단/하단 개수)')}
+        <div style="grid-column:1/-1">${lab('사용 사이즈')}<div style="display:flex;gap:6px;align-items:center"><select id="spm-sz-from" style="${_qrInpS}"></select><span style="color:#9CA3AF">~</span><select id="spm-sz-to" style="${_qrInpS}"></select></div></div>
+        <div style="grid-column:1/-1">${lab('선물세트 배열(상단/하단 개수, 0~40)')}
           <div id="spm-layout"></div>
           <button type="button" onclick="_specAddLayoutRow()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 줄 추가</button>
           <div id="spm-calc" style="font-size:12px;margin-top:6px"></div></div>
-        <div>${lab('브릭스')}<input id="spm-brix" value="${esc(v.brix || '')}" placeholder="예 11브릭스 이상" style="${_qrInpS}"></div>
+        <div>${lab('브릭스')}<select id="spm-brix" style="${_qrInpS}" onchange="_specBrixChanged()"></select>
+          <input id="spm-brix-custom" placeholder="직접 입력" style="${_qrInpS};margin-top:4px;display:none"></div>
         <div>${lab('작성자')}<input id="spm-author" value="${esc(v.author)}" style="${_qrInpS}"></div>
         <div style="grid-column:1/-1">${lab('메모')}<input id="spm-note" value="${esc(v.note || '')}" style="${_qrInpS}"></div>
       </div>
-      ${dl('spm-dl-channel', [...partners.filter(p => p.is_active !== false).map(p => p.name), ..._specRows.map(r => r.channel)])}
-      ${dl('spm-dl-business', _specRows.map(r => r.business))}
-      ${dl('spm-dl-pack', _specRows.map(r => r.pack))}
-      <datalist id="spm-size-dl"></datalist>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
         <button id="spm-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveSpec()">${ed ? '수정 저장' : '저장'}</button>
@@ -26614,8 +26674,20 @@ function openSpecModal(o = {}) {
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(입력 손실 방지)
   document.body.appendChild(m);
+  // 선택 목록 채우기 — 열 때는 저장값을 지킨다(목록에 없으면 '(목록에 없음)')
+  _specFillChannel(v.channel);
+  _specFillSel('spm-business', _specVis('businesses'), '<option value="">(없음)</option>', v.business);
+  _specFillSel('spm-pack', _specVis('packs'), '<option value="">선택</option>', v.pack, 'spm-pack-hint');
+  const brixList = _specVis('brix');
+  const bEl = document.getElementById('spm-brix');
+  bEl.innerHTML = '<option value="">(없음)</option>' + brixList.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') + `<option value="${SPEC_BRIX_CUSTOM}">직접 입력…</option>`;
+  if (v.brix && !brixList.includes(v.brix)) { bEl.value = SPEC_BRIX_CUSTOM; document.getElementById('spm-brix-custom').value = v.brix; }   // 목록에 없는 브릭스는 직접 입력 칸에
+  else bEl.value = v.brix || '';
+  _specBrixChanged();
+  const [sf, st] = String(v.sizes || '').split('~').map(s => s.trim());
+  _specFillSizeRange(sf || '', st || '');
   _specKindChanged();
-  _specRebuildLayout(Array.isArray(v.layout) ? v.layout : []);
+  _specRebuildLayout(Array.isArray(v.layout) ? v.layout : [], true);
 }
 
 async function saveSpec() {
@@ -26624,17 +26696,25 @@ async function saveSpec() {
   const num = id => { const s = gv2(id); if (s === '') return null; const n = Number(s); return Number.isFinite(n) ? n : NaN; };
   const kind = gv2('spm-kind') === '출고' ? '출고' : '기준';
   const channel = gv2('spm-channel'), product = gv2('spm-product'), pack = gv2('spm-pack'), valid_from = gv2('spm-from');
-  if (!channel || !product || !pack || !valid_from) return alert('채널·품목·상품·규격·날짜는 필수입니다.');
+  if (!channel) return alert(_specChannelNames(gv2('spm-ctype')).length ? '채널을 고르세요.' : '채널 목록이 비어 있습니다. 목록 관리에서 먼저 등록하세요.');
+  if (!pack) return alert(_specVis('packs').length ? '상품·규격을 고르세요.' : '상품규격 목록이 비어 있습니다. 목록 관리에서 먼저 등록하세요.');
+  if (!product || !valid_from) return alert('품목·날짜는 필수입니다.');
   const valid_to = kind === '기준' ? (gv2('spm-to') || null) : null;
   if (valid_to && valid_to < valid_from) return alert('종료일이 시작일보다 앞입니다.');
   const weight_min = num('spm-wmin'), weight_max = num('spm-wmax');
   if (Number.isNaN(weight_min) || Number.isNaN(weight_max)) return alert('중량은 숫자로 입력하세요.');
   if (weight_min != null && weight_max != null && weight_min > weight_max) return alert('중량 최소가 최대보다 큽니다.');
+  if (!_specLayoutValid()) return alert('배열 상단·하단은 0~40 정수만 넣을 수 있습니다(빨간 칸).');
   const layout = _specReadLayout().filter(x => x.size && (x.top > 0 || x.bottom > 0));
+  // 사용 사이즈 — 둘 다면 '시작~끝'(같으면 하나), 한쪽만이면 그 값, 둘 다 비면 null
+  const szF = gv2('spm-sz-from'), szT = gv2('spm-sz-to');
+  const sizes = (szF && szT) ? (szF === szT ? szF : `${szF}~${szT}`) : (szF || szT || null);
+  const bSel = gv2('spm-brix');
+  const brix = bSel === SPEC_BRIX_CUSTOM ? (gv2('spm-brix-custom') || null) : (bSel || null);   // 직접 입력은 목록에 자동 추가하지 않는다
   const payload = {
     kind, channel_type: gv2('spm-ctype') || null, channel, business: gv2('spm-business') || null, product, pack,
-    valid_from, valid_to, weight_min, weight_max, sizes: gv2('spm-sizes') || null,
-    layout: layout.length ? layout : null, brix: gv2('spm-brix') || null, note: gv2('spm-note') || null,
+    valid_from, valid_to, weight_min, weight_max, sizes,
+    layout: layout.length ? layout : null, brix, note: gv2('spm-note') || null,
     author: gv2('spm-author') || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
   };
   // 같은 키·같은 시작일의 기준이 이미 있으면 한 번 묻는다(나중에 넣은 것이 현재 기준이 된다)
@@ -26868,21 +26948,129 @@ async function saveSpecGram() {
   if (!(await showConfirmEdit('과중 기준 저장', diffs.join(' · ')))) return;
   _specGramBusy = true;
   try {
-    const rows = await sbGet('settings', 'key=eq.size_gram_ranges');
-    if (rows && rows.length) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.size_gram_ranges`, {
-        method: 'PATCH', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ value, updated_at: new Date().toISOString() })
-      });
-      if (!res.ok) throw new Error(`과중 기준 저장 실패: HTTP ${res.status}`);
-      const json = await res.json();
-      if (!Array.isArray(json) || !json.length) throw new Error('과중 기준 저장 실패: 영향받은 행 없음');
-    } else {
-      await sbInsert('settings', { key: 'size_gram_ranges', value });
-    }
+    await _specSettingsPatch('size_gram_ranges', value);
     _specGram = value; _specGramEditing = false; _specGramDraft = null;
     _specRenderGram(); _specRenderCalc(); renderSpec();
     showToast('과중 기준이 저장되었습니다.');
   } catch (e) { alert('저장 오류: ' + e.message); }
   finally { _specGramBusy = false; }
+}
+
+// ── settings 한 줄 저장(있으면 PATCH·영향 행 확인, 없으면 insert) — saveProductWeights와 같은 방식. 과중 기준·목록 관리가 같이 쓴다.
+async function _specSettingsPatch(key, value) {
+  const rows = await sbGet('settings', `key=eq.${key}`);
+  if (rows && rows.length) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/settings?key=eq.${key}`, {
+      method: 'PATCH', headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ value, updated_at: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error(`${key} 저장 실패: HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || !json.length) throw new Error(`${key} 저장 실패: 영향받은 행 없음`);
+  } else {
+    await sbInsert('settings', { key, value });
+  }
+}
+
+// ── ⚙ 목록 관리(v719, admin) — settings.spec_masters { channels:[{type,name,hidden}], businesses·packs·brix:[{name,hidden}] }.
+//   배열 순서 = 표시 순서. 동작마다 즉시 저장하고, 실패하면 알린 뒤 DB 값으로 다시 읽는다.
+//   ★삭제는 그 이름을 쓰는 work_specs(삭제 표시된 것 포함 전체)가 0건일 때만 — 쓰는 곳이 있으면 숨김만(이름 변경은 없다).
+const SPEC_MASTER_LISTS = [['channels', '채널'], ['businesses', '사업자'], ['packs', '상품규격'], ['brix', '브릭스']];
+const SPEC_MASTER_COL = { channels: 'channel', businesses: 'business', packs: 'pack', brix: 'brix' };
+let _specMastersOpen = false, _specMastersBusy = false;
+function _specUseCnt(key, name) { return ((_specUse || {})[key] || {})[name] || 0; }
+function _specRenderMasters() {
+  const el = document.getElementById('spec-masters'); if (!el) return;
+  if (!_specCanWrite()) { el.innerHTML = ''; return; }
+  const head = `<button type="button" onclick="_specMastersOpen=!_specMastersOpen;_specRenderMasters()" style="font-size:12px;color:#374151;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${_specMastersOpen ? '▾' : '▸'} ⚙ 목록 관리</button>`;
+  if (!_specMastersOpen) { el.innerHTML = `<div style="margin-top:12px">${head}</div>`; return; }
+  const mb = 'font-size:11px;padding:0 6px;border-radius:5px;cursor:pointer;font-family:inherit;background:#fff;border:1px solid #E5E7EB;color:#374151;line-height:1.6';
+  const row = (key, x, i) => {
+    const use = _specUseCnt(key, x.name);
+    return `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-top:0.5px solid #F3F4F6;font-size:12px">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${x.hidden ? '#9CA3AF' : '#374151'}">${esc(x.name)}${x.hidden ? ' <span style="font-size:10px">숨김</span>' : ''}</span>
+      <button type="button" onclick="_specMasterMove('${key}',${i},-1)" style="${mb}" title="위로">↑</button>
+      <button type="button" onclick="_specMasterMove('${key}',${i},1)" style="${mb}" title="아래로">↓</button>
+      <button type="button" onclick="_specMasterHide('${key}',${i})" style="${mb}">${x.hidden ? '보이기' : '숨김'}</button>
+      ${use ? `<span style="font-size:11px;color:#9CA3AF;white-space:nowrap">사용 ${use}건</span>` : `<button type="button" onclick="_specMasterDel('${key}',${i})" style="${mb};border-color:#FCA5A5;color:#DC2626">삭제</button>`}
+    </div>`;
+  };
+  const inp = 'font-size:12px;padding:3px 6px;min-width:0';
+  const cols = SPEC_MASTER_LISTS.map(([key, label]) => {
+    const list = (_specMasters[key] || []).map((x, i) => ({ x, i }));
+    let body;
+    if (key === 'channels') {
+      const types = [...SPEC_TYPES, ...new Set(list.map(o => o.x.type).filter(t => t && !SPEC_TYPES.includes(t)))];
+      body = types.map(t => {
+        const its = list.filter(o => (o.x.type || '기타') === t);
+        return its.length ? `<div style="font-size:11px;color:#1E3A5F;margin-top:6px">${esc(t)}</div>${its.map(o => row(key, o.x, o.i)).join('')}` : '';
+      }).join('');
+    } else body = list.map(o => row(key, o.x, o.i)).join('');
+    const add = key === 'channels'
+      ? `<select id="spec-ms-type" style="${inp}">${SPEC_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select><input id="spec-ms-new-${key}" placeholder="이름" style="${inp};flex:1">`
+      : `<input id="spec-ms-new-${key}" placeholder="이름" style="${inp};flex:1">`;
+    return `<div style="flex:1 1 220px;min-width:0;max-width:340px">
+      <div style="font-size:12px;font-weight:500;color:#1E3A5F;margin-bottom:2px">${label} <span style="color:#9CA3AF;font-weight:400">${list.length}</span></div>
+      ${body || '<div style="font-size:12px;color:#9CA3AF;padding:3px 0">비어 있음</div>'}
+      <div style="display:flex;gap:4px;margin-top:6px">${add}<button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="_specMasterAdd('${key}')">추가</button></div>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="margin-top:12px">${head}
+    <div style="margin-top:8px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-radius:8px">
+      <div style="font-size:11px;color:#6B7280;margin-bottom:6px">등록 창의 선택 목록 · 쓰는 기준이 있으면 숨김만 가능</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px">${cols}</div>
+    </div></div>`;
+}
+async function _specMastersSave(next, msg) {
+  if (!_specCanWrite() || _specMastersBusy) return false;
+  _specMastersBusy = true;
+  try {
+    await _specSettingsPatch('spec_masters', next);
+    _specMasters = next; _specRenderMasters();
+    if (msg) showToast(msg);
+    return true;
+  } catch (e) {
+    alert('목록 저장 오류: ' + e.message);
+    try { const r = await sbGet('settings', 'key=eq.spec_masters'); _specMasters = _specNormMasters(r && r[0] && r[0].value); } catch (e2) {}
+    _specRenderMasters();
+    return false;
+  } finally { _specMastersBusy = false; }
+}
+function _specMastersClone() { return JSON.parse(JSON.stringify(_specMasters)); }
+async function _specMasterAdd(key) {
+  if (!_specCanWrite()) return;
+  const inp = document.getElementById('spec-ms-new-' + key);
+  const name = (inp?.value || '').trim();
+  if (!name) return alert('이름을 넣으세요.');
+  if ((_specMasters[key] || []).some(x => String(x.name).trim() === name)) return alert('이미 있는 이름입니다.');   // 같은 칸 안 중복 금지
+  const next = _specMastersClone();
+  next[key].push(key === 'channels' ? { type: document.getElementById('spec-ms-type')?.value || SPEC_TYPES[0], name, hidden: false } : { name, hidden: false });
+  await _specMastersSave(next, `${name} 추가`);
+}
+// 순서 — 채널은 같은 구분 안에서 앞뒤 항목과, 나머지는 바로 앞뒤와 자리를 바꾼다
+async function _specMasterMove(key, i, dir) {
+  if (!_specCanWrite()) return;
+  const next = _specMastersClone(), list = next[key];
+  if (!list[i]) return;
+  const same = x => key !== 'channels' || (x.type || '기타') === (list[i].type || '기타');
+  let j = i + dir;
+  while (j >= 0 && j < list.length && !same(list[j])) j += dir;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  await _specMastersSave(next);
+}
+async function _specMasterHide(key, i) {
+  if (!_specCanWrite()) return;
+  const next = _specMastersClone(); if (!next[key][i]) return;
+  next[key][i].hidden = !next[key][i].hidden;
+  await _specMastersSave(next);
+}
+async function _specMasterDel(key, i) {
+  if (!_specCanWrite()) return;
+  const x = (_specMasters[key] || [])[i]; if (!x) return;
+  const use = _specUseCnt(key, x.name);
+  if (use) return alert(`이 이름을 쓰는 작업 기준이 ${use}건 있어 삭제할 수 없습니다. 숨김을 쓰세요.`);
+  if (!(await showConfirmEdit('목록에서 삭제', `${x.name} — 등록 창 선택 목록에서 지웁니다.`))) return;
+  const next = _specMastersClone(); next[key].splice(i, 1);
+  await _specMastersSave(next, `${x.name} 삭제`);
 }
