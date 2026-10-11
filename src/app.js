@@ -26356,9 +26356,25 @@ function _specGroups(asOf) {
     return g;
   });
 }
-function _specLayoutTxt(layout) {
-  return (Array.isArray(layout) ? layout : []).filter(x => x && x.size)
-    .map(x => `${esc(x.size)} 상${fmtN(Number(x.top) || 0)}/하${fmtN(Number(x.bottom) || 0)}`).join(' · ');
+// 배열 글자 — 감귤 '2S1 상8/하7' / 만감류 '19수 10과'(+ 실측이 있으면 '· 실측 1.60kg' + 평균 대비 차이).
+//   차이 색: 실측이 그 줄 예상 범위(개수×[최소g,최대g]) 밖이면 #DC2626, 안이면 #6B7280. 과중 기준이 없으면 차이는 생략.
+function _specLayoutTxt(layout, product) {
+  return (Array.isArray(layout) ? layout : []).filter(x => x && x.size).map(x => {
+    if (x.count === undefined || x.count === null || x.count === '') return `${esc(x.size)} 상${fmtN(Number(x.top) || 0)}/하${fmtN(Number(x.bottom) || 0)}`;
+    const cnt = _specRowCount(x);
+    let t = `${esc(x.size)} ${fmtN(cnt)}과`;
+    const act = Number(x.actual_kg);
+    if (x.actual_kg != null && x.actual_kg !== '' && act > 0) {
+      t += ` · 실측 ${act.toFixed(2)}kg`;
+      const gr = _specGr(product, String(x.size).trim());
+      if (gr && cnt > 0) {
+        const ag = act * 1000, d = Math.round((ag - cnt * (gr[0] + gr[1]) / 2) / 10) / 100;   // 평균 대비 차이(kg, 둘째 자리)
+        const out = ag < cnt * gr[0] || ag > cnt * gr[1];
+        t += ` <span style="color:${out ? '#DC2626' : '#6B7280'}">${d > 0 ? '+' + d.toFixed(2) : d < 0 ? '−' + Math.abs(d).toFixed(2) : '±0'}</span>`;
+      }
+    }
+    return t;
+  }).join(' · ');
 }
 function _specWTxt(v) {
   const a = v.weight_min, b = v.weight_max;
@@ -26378,7 +26394,7 @@ function _specBody(g, v, color = '#374151') {
     L(v.kind === '출고' ? '날짜' : '기간', esc(_specPeriod(g, v))),
     L(v.kind === '출고' ? '실제' : '중량', esc(_specWTxt(v))),
     L('사이즈', esc(v.sizes || '')),
-    L('배열', _specLayoutTxt(v.layout)),
+    L('배열', _specLayoutTxt(v.layout, v.product)),
     _specExpHtml(v.product, v.layout, v.weight_min, v.weight_max, v.kind !== '출고'),
     L('브릭스', esc(v.brix || '')),
     L('메모', esc(v.note || '')),
@@ -26549,30 +26565,44 @@ function _specFillSizeRange(keepFrom, keepTo) {
     _selEnsureVal(el, k || '', _specKeepLbl(k || ''));
   });
 }
-// 배열 한 줄 — 사이즈 select(품목 목록) + 상단·하단(0~40 정수, 저장 전 검사)
+// 배열 한 줄 — 감귤: 사이즈 select + 상단·하단(0~40 정수) / 만감류: '수' select + 과(0~60 정수) + 실측 kg(선택, 0 초과·둘째 자리)
+//   만감류는 상단/하단이 없다(v720). 저장 형식: 감귤 {size, top, bottom} · 만감류 {size, count, actual_kg?}
 function _specLayoutRowHtml(product, row = {}) {
   const n = v => (v === 0 || v) ? esc(String(v)) : '';
-  return `<div class="spm-lrow" style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><select class="spm-size" style="${_qrInpS};width:auto;min-width:76px">${_specSizeOpts(_specProdSizes(product))}</select>
-    <span style="font-size:12px;color:#6B7280">상</span><input class="spm-top" type="number" min="0" max="40" step="1" inputmode="numeric" value="${n(row.top)}" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">
-    <span style="font-size:12px;color:#6B7280">하</span><input class="spm-bot" type="number" min="0" max="40" step="1" inputmode="numeric" value="${n(row.bottom)}" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">
+  const lb = t => `<span style="font-size:12px;color:#6B7280">${t}</span>`;
+  const sel = `<select class="spm-size" style="${_qrInpS};width:auto;min-width:76px">${_specSizeOpts(_specProdSizes(product))}</select>`;
+  const fields = (product && !_specIsCitrus(product))
+    ? `<input class="spm-cnt" type="number" min="0" max="60" step="1" inputmode="numeric" value="${n(row.count)}" placeholder="0" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">${lb('과')}
+       <input class="spm-act" type="number" min="0" step="0.01" inputmode="decimal" value="${n(row.actual_kg)}" placeholder="실측" style="${_qrInpS};width:76px" oninput="this.style.borderColor='';_specFormCalc()">${lb('kg')}`
+    : `${lb('상')}<input class="spm-top" type="number" min="0" max="40" step="1" inputmode="numeric" value="${n(row.top)}" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">
+       ${lb('하')}<input class="spm-bot" type="number" min="0" max="40" step="1" inputmode="numeric" value="${n(row.bottom)}" style="${_qrInpS};width:60px" oninput="this.style.borderColor='';_specFormCalc()">`;
+  return `<div class="spm-lrow" style="display:flex;gap:6px;align-items:center;margin-bottom:4px">${sel}${fields}
     <button type="button" onclick="this.closest('.spm-lrow').remove();_specFormCalc()" style="border:none;background:none;color:#9CA3AF;cursor:pointer;font-size:16px;line-height:1">✕</button></div>`;
 }
 function _specReadLayout() {
-  return [...document.querySelectorAll('#spm-layout .spm-lrow')].map(r => ({
-    size: (r.querySelector('.spm-size')?.value || '').trim(),
-    top: parseInt(r.querySelector('.spm-top')?.value, 10) || 0,
-    bottom: parseInt(r.querySelector('.spm-bot')?.value, 10) || 0,
-  }));
+  return [...document.querySelectorAll('#spm-layout .spm-lrow')].map(r => {
+    const size = (r.querySelector('.spm-size')?.value || '').trim();
+    const cntEl = r.querySelector('.spm-cnt');
+    if (cntEl) {   // 만감류 줄
+      const a = (r.querySelector('.spm-act')?.value || '').trim();
+      return { size, count: parseInt(cntEl.value, 10) || 0, actual_kg: a === '' ? null : Number(a) };
+    }
+    return { size, top: parseInt(r.querySelector('.spm-top')?.value, 10) || 0, bottom: parseInt(r.querySelector('.spm-bot')?.value, 10) || 0 };
+  });
 }
-// 상단·하단 칸 검사 — 빈칸 또는 0~40 정수만. 틀린 칸은 빨간 테두리. 반환: 통과 여부
+// 배열 칸 검사 — 상단·하단 0~40 정수, 과 0~60 정수, 실측은 빈칸 또는 0 초과(소수 둘째 자리까지). 틀린 칸은 빨간 테두리. 반환: 통과 여부
 function _specLayoutValid() {
   let ok = true;
-  document.querySelectorAll('#spm-layout .spm-top, #spm-layout .spm-bot').forEach(inp => {
+  const chk = (sel, test) => document.querySelectorAll(sel).forEach(inp => {
     const s = (inp.value || '').trim();
-    const bad = s !== '' && !(/^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= 40);
+    const bad = s !== '' && !test(s);
     inp.style.borderColor = bad ? '#DC2626' : '';
     if (bad) ok = false;
   });
+  const intIn = max => s => /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= max;
+  chk('#spm-layout .spm-top, #spm-layout .spm-bot', intIn(40));
+  chk('#spm-layout .spm-cnt', intIn(60));
+  chk('#spm-layout .spm-act', s => /^\d+(\.\d{1,2})?$/.test(s) && Number(s) > 0);
   return ok;
 }
 // rows = 그릴 줄들. keep=true면(열 때) 목록에 없는 저장 사이즈를 '(목록에 없음)'으로 유지, false면(품목 변경) 비운다.
@@ -26613,7 +26643,11 @@ function _specFormCalc() {
   const el = document.getElementById('spm-calc'); if (!el) return;
   const product = document.getElementById('spm-product')?.value || '';
   const n = id => { const s = (document.getElementById(id)?.value || '').trim(); return s === '' ? null : Number(s); };
-  el.innerHTML = _specExpHtml(product, _specReadLayout(), n('spm-wmin'), n('spm-wmax'), document.getElementById('spm-kind')?.value !== '출고');
+  const lay = _specReadLayout();
+  // 만감류는 줄별 '19수 10과 · 실측 … ±차이'도 미리 보여 준다(카드와 같은 _specLayoutTxt)
+  const rowsTxt = (product && !_specIsCitrus(product)) ? _specLayoutTxt(lay.filter(x => x.size && _specRowCount(x) > 0), product) : '';
+  el.innerHTML = _specExpHtml(product, lay, n('spm-wmin'), n('spm-wmax'), document.getElementById('spm-kind')?.value !== '출고')
+    + (rowsTxt ? `<div style="color:#374151;margin-top:2px">${rowsTxt}</div>` : '');
 }
 
 function openSpecModal(o = {}) {
@@ -26704,8 +26738,10 @@ async function saveSpec() {
   const weight_min = num('spm-wmin'), weight_max = num('spm-wmax');
   if (Number.isNaN(weight_min) || Number.isNaN(weight_max)) return alert('중량은 숫자로 입력하세요.');
   if (weight_min != null && weight_max != null && weight_min > weight_max) return alert('중량 최소가 최대보다 큽니다.');
-  if (!_specLayoutValid()) return alert('배열 상단·하단은 0~40 정수만 넣을 수 있습니다(빨간 칸).');
-  const layout = _specReadLayout().filter(x => x.size && (x.top > 0 || x.bottom > 0));
+  if (!_specLayoutValid()) return alert('배열 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
+  // 개수가 있는 줄만. 감귤은 {size, top, bottom} 그대로, 만감류는 {size, count, actual_kg?}(실측 없으면 키를 넣지 않는다)
+  const layout = _specReadLayout().filter(x => x.size && _specRowCount(x) > 0)
+    .map(x => ('count' in x) ? { size: x.size, count: x.count, ...(x.actual_kg != null ? { actual_kg: x.actual_kg } : {}) } : x);
   // 사용 사이즈 — 둘 다면 '시작~끝'(같으면 하나), 한쪽만이면 그 값, 둘 다 비면 null
   const szF = gv2('spm-sz-from'), szT = gv2('spm-sz-to');
   const sizes = (szF && szT) ? (szF === szT ? szF : `${szF}~${szT}`) : (szF || szT || null);
@@ -26765,24 +26801,32 @@ function _specGr(product, size) {
   return pick(_specGram[product]) || ((product !== SPEC_GRAM_COMMON && !_specIsCitrus(product)) ? pick(_specGram[SPEC_GRAM_COMMON]) : null);
 }
 function _specGramLabel(key) { return key === SPEC_GRAM_COMMON ? '만감류 (공통)' : key; }
-// 예상 중량 {min, max}(kg) = Σ(상+하) × [최소g, 최대g] / 1000. 과중 기준이 없는 사이즈가 하나라도 있으면 null(모르는 값을 0으로 치지 않는다).
+// 배열 한 줄의 개수 — 만감류는 count(과), 감귤은 상단+하단. ★개수 판정은 여기 하나(예상 중량·카드·폼·검증 공용).
+function _specRowCount(x) {
+  if (!x) return 0;
+  return (x.count !== undefined && x.count !== null && x.count !== '') ? (Number(x.count) || 0) : (Number(x.top) || 0) + (Number(x.bottom) || 0);
+}
+// g → 'x.xx'(kg, 소수 둘째 자리). g 단위에서 반올림한다 — (0.855).toFixed(2)가 '0.85'가 되는 부동소수 오차를 피하려고.
+function _specKg2(g) { return (Math.round(g / 10) / 100).toFixed(2); }
+// 예상 중량 {min, max, avg}(kg) + 같은 값의 g(gmin·gmax·gavg). min/max = Σ개수×[최소g,최대g], avg = Σ개수×(최소g+최대g)/2.
+//   과중 기준이 없는 사이즈가 하나라도 있으면 null(모르는 값을 0으로 치지 않는다).
 function _specExpKg(product, layout) {
-  const rows = (Array.isArray(layout) ? layout : []).filter(x => x && x.size && ((Number(x.top) || 0) + (Number(x.bottom) || 0)) > 0);
+  const rows = (Array.isArray(layout) ? layout : []).filter(x => x && x.size && _specRowCount(x) > 0);
   if (!rows.length) return null;
   let a = 0, b = 0;
   for (const x of rows) {
     const gr = _specGr(product, String(x.size).trim()); if (!gr) return null;
-    const cnt = (Number(x.top) || 0) + (Number(x.bottom) || 0);
+    const cnt = _specRowCount(x);
     a += cnt * gr[0]; b += cnt * gr[1];
   }
-  return { min: Math.round(a) / 1000, max: Math.round(b) / 1000 };
+  return { min: Math.round(a) / 1000, max: Math.round(b) / 1000, avg: (a + b) / 2000, gmin: a, gmax: b, gavg: (a + b) / 2 };
 }
-// '예상 a~b kg' (+ 기준 중량과 구간이 안 겹치면 빨간 경고). check=false면 경고 없이 예상만(출고 기록).
+// '예상 a~b kg (평균 c kg)' (+ 기준 중량과 구간이 안 겹치면 빨간 경고 — 판정은 예전 그대로). check=false면 경고 없이(출고 기록).
 function _specExpHtml(product, layout, wmin, wmax, check = true) {
   const e = _specExpKg(product, layout); if (!e) return '';
   const lo = (wmin === 0 || wmin) ? Number(wmin) : null, hi = (wmax === 0 || wmax) ? Number(wmax) : null;
   const bad = check && (lo != null || hi != null) && ((hi != null && e.min > hi) || (lo != null && e.max < lo));
-  return `<span style="white-space:nowrap"><span style="color:#9CA3AF">예상</span> ${e.min}~${e.max}kg${bad ? ' <span style="color:#DC2626">⚠️ 기준 중량과 안 맞음</span>' : ''}</span>`;
+  return `<span style="white-space:nowrap"><span style="color:#9CA3AF">예상</span> ${_specKg2(e.gmin)}~${_specKg2(e.gmax)} kg <span style="color:#6B7280">(평균 ${_specKg2(e.gavg)} kg)</span>${bad ? ' <span style="color:#DC2626">⚠️ 기준 중량과 안 맞음</span>' : ''}</span>`;
 }
 // 키(품목 또는 '만감류')의 사이즈 목록 상수 — 감귤류 품목은 SIZES_감귤류, 만감류 품목·'만감류' 키는 SIZES_만감류
 function _specSizeList(key) { return (key !== SPEC_GRAM_COMMON && _specIsCitrus(key)) ? SIZES_감귤류 : SIZES_만감류; }
@@ -26801,13 +26845,13 @@ const _specCalc = { mode: 'kg', product: '', size: '', kg: '', cnt: '' };
 function _specCalcResult() {
   const el = document.getElementById('spec-calc-out'); if (!el) return;
   const gr = _specGr(_specCalc.product, _specCalc.size);
-  const kg2 = g => (g / 1000).toFixed(2);
+  const kg2 = _specKg2;   // g → kg 둘째 자리(g 단위 반올림)
   const grTxt = gr ? ` <span style="color:#9CA3AF">(과중 ${gr[0]}~${gr[1]}g)</span>` : '';
   const strong = t => `<strong style="font-weight:500;color:#1E3A5F">${t}</strong>`;
   if (_specCalc.mode === 'cnt') {
     const c = Number(_specCalc.cnt);
     if (!gr || !(c > 0) || !Number.isInteger(c)) { el.innerHTML = '<span style="color:#9CA3AF">품목·사이즈·개수(정수)를 넣으세요</span>'; return; }
-    el.innerHTML = `실중량 ${strong(`${kg2(c * gr[0])}~${kg2(c * gr[1])} kg`)}${grTxt}`;
+    el.innerHTML = `실중량 ${strong(`${kg2(c * gr[0])}~${kg2(c * gr[1])} kg`)} <span style="color:#6B7280">(평균 ${_specKg2(c * (gr[0] + gr[1]) / 2)} kg)</span>${grTxt}`;
     return;
   }
   const kg = Number(_specCalc.kg);
