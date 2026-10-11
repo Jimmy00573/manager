@@ -1192,7 +1192,7 @@ const ROLE_TRANSPORT_TABS = { ext_driver: ['cal', 'disp', 'dash'] };   // 첫 �
 const IB_FORM_ROLES = ['admin', 'ext_driver'];
 // 빠른 회수 창(openQuickRecovery·saveQuickRecovery·_qrSaveTransfer)을 쓸 수 있는 역할. 외부 기사는 농가 대상만(이동도 농가→농가)·오늘 날짜·빈콘회수.
 const QR_ROLES = ['admin', 'ext_driver'];
-// 수확 캘린더 쓰기(등록·시작·완료·수정·마무리·계획 입력)를 쓸 수 있는 역할. ★삭제·＋다음 차수·전체 종료/해제는 관리자 전용 그대로.
+// 수확 캘린더 쓰기(등록·시작·완료·수정·마무리·계획 입력·＋다음 차수·전체 종료/해제)를 쓸 수 있는 역할. ★삭제는 관리자 전용 그대로.
 const HV_ROLES = ['admin', 'ext_driver'];
 function _hvCanWrite() { return HV_ROLES.includes(sessionStorage.getItem('citrus_role')); }
 // 배차(콘테이너 배송) 등록을 쓸 수 있는 역할. 외부 기사는 대상 '농가'만. ★수정·삭제·되돌리기는 관리자 전용 그대로.
@@ -4868,7 +4868,7 @@ function _hvFinishBadge(h, dStr) {
 }
 function harvestActBtns(h) {
   if (!_hvCanWrite()) return '';
-  // ★외부 기사도 시작·완료·수정·마무리·되돌리기는 쓴다. 삭제·＋다음 차수·전체 종료/해제는 관리자만(관리자 출력은 수정 전과 같다).
+  // ★외부 기사도 시작·완료·수정·마무리·되돌리기·＋다음 차수·전체 종료/해제를 쓴다(v708). 삭제만 관리자(관리자 출력은 수정 전과 같다).
   const _hvAdmB = sessionStorage.getItem('citrus_role') === 'admin';
   const st = h.status || '수확전';
   // ★차수를 움직이는 버튼(＋ 다음 차수·■ 전체 종료·↩ 되돌리기·↩ 종료 해제)은 그 농가의 최신 차수 줄에서만.
@@ -4877,7 +4877,7 @@ function harvestActBtns(h) {
   //   ★최신 차수 판정식은 startNextRound의 nextRound 계산과 같은 기준(같은 농가·round 최댓값)이다 — 다르게 만들지 말 것.
   const maxRound = harvests.filter(x => x.farm === h.farm).reduce((m, x) => Math.max(m, x.round || 1), 0);
   const isLatest = (h.round || 1) >= maxRound;
-  const canNext = _hvAdmB && st === '수확완료' && !h.is_final && isLatest;   // 수확완료 & 전체종료 전 & 최신 차수 → 차수 이어가기 가능(관리자만)
+  const canNext = st === '수확완료' && !h.is_final && isLatest;   // 수확완료 & 전체종료 전 & 최신 차수 → 차수 이어가기 가능
   // 되돌리기(한 단계씩): 수확완료→수확중, 수확중→수확전. 수확전은 더 되돌릴 게 없고, 전체 종료 상태는 '종료 해제'가 대신.
   const backTo = (!isLatest || h.is_final) ? '' : (st === '수확완료' ? '수확중' : (st === '수확중' ? '수확전' : ''));
   // 옛 차수 줄에서 버튼이 빠진 이유를 보이게. ★줄을 더 만들지 않고 변수로 붙인다 —
@@ -4892,7 +4892,7 @@ function harvestActBtns(h) {
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#6D28D9;color:#fff;border:none;border-radius:6px" onclick="startNextRound(${h.id})">＋ 다음 차수</button>` : ''}
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#374151;color:#fff;border:none;border-radius:6px" onclick="finishAllHarvest(${h.id})">■ 전체 종료</button>` : ''}
     ${h.is_final
-      ? ((isLatest && _hvAdmB) ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="unfinishAllHarvest(${h.id})">↩ 종료 해제</button>` : '')
+      ? (isLatest ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="unfinishAllHarvest(${h.id})">↩ 종료 해제</button>` : '')
       : (backTo ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="setHarvestStatus(${h.id},'${backTo}')">↩ 되돌리기</button>` : '')}
     <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
     ${_hvAdmB ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>` : ''}`;
@@ -6389,7 +6389,7 @@ function _calAddFarmChanged(v) {
 //     날짜를 고쳤고, 미래 차수가 오늘 '수확중'으로 잡혀 다가오는 수확·외근 인원까지 틀어졌다.
 //   기본값: 시작일 내일(로컬) · 농가·밭·품목은 이전 차수 그대로 · 종료일·메모 빈칸. 저장은 saveHarvestEdit → _hvSaveNewRound.
 function startNextRound(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  if (!_hvCanWrite()) return alert('관리자만 가능합니다.');
   const h = harvests.find(x => x.id === id);
   if (!h) return;
   // 같은 농가의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
@@ -6434,10 +6434,10 @@ async function _hvOfferDispatch(farm, date, field) {
 
 // 수확 전체 종료 — is_final=true(더 이상 차수 추가 불가). 확인 모달로 실수 방지.
 async function finishAllHarvest(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   const h = harvests.find(x => x.id === id);
   if (!h) return;
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  if (!_hvCanWrite()) return alert('관리자만 가능합니다.');
   if (!(await showConfirmEdit('수확 전체 종료', `${h.farm} 수확을 전체 종료할까요?\n더 이상 차수를 추가할 수 없습니다.`))) return;
   harvests = harvests.map(x => x.id === id ? { ...x, is_final: true, status: '수확완료' } : x);   // 로컬 먼저 반영
   renderCal();
@@ -6447,10 +6447,10 @@ async function finishAllHarvest(id) {
 }
 // 수확 전체 종료 해제 — is_final=false(다시 차수 추가 가능). status는 '수확완료' 그대로. finishAllHarvest 대칭.
 async function unfinishAllHarvest(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   const h = harvests.find(x => x.id === id);
   if (!h) return;
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  if (!_hvCanWrite()) return alert('관리자만 가능합니다.');
   if (!(await showConfirmEdit('수확 종료 해제', `${h.farm} ${h.round||1}차 수확의 전체 종료를 해제할까요?\n다시 차수를 추가할 수 있습니다.`))) return;
   harvests = harvests.map(x => x.id === id ? { ...x, is_final: false } : x);   // 로컬 먼저 반영
   renderCal();
