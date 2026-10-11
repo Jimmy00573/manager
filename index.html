@@ -351,7 +351,7 @@
 
 <!-- 배차·배출 + 수거 -->
 <div id="p-disp" class="panel">
-  <div class="disp-tabs" style="margin-bottom:14px">
+  <div class="disp-tabs xd-hide" style="margin-bottom:14px">
     <button class="dtab active" id="ptab-disp" onclick="switchPT('disp')">🚛 콘테이너 배송</button>
     <button class="dtab" id="ptab-pick" onclick="switchPT('pick')">🔄 수거·회수</button>
   </div>
@@ -362,7 +362,7 @@
     <div class="form-card"><div class="form-title">배차 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
-        <div class="fg"><label>대상 종류</label><select id="dp-target-type" onchange="refreshDpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
+        <div class="fg xd-hide"><label>대상 종류</label><select id="dp-target-type" onchange="refreshDpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
         <div class="fg"><label>대상명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
         <div class="fg" id="dp-field-wrap" style="display:none"><label>밭 *</label><select id="dp-field"></select></div>
         <!-- ★내부 운영 단순화(2026-08-18): 아래 자동 채움 필드는 화면에서만 숨김. DOM은 그대로 둔다 —
@@ -400,14 +400,14 @@
            .disp-sms-col은 _extDrvUISync()가 토글 — 외부 기사가 생기면 자동으로 다시 보인다. -->
       <div class="form-actions"><button class="btn copy disp-sms-col" style="display:none" onclick="previewMsg()">📋 문자 미리보기</button><button class="btn pri" id="dp-save-btn" onclick="addDisp()">✅ 배출완료로 등록</button></div>
     </div>
-    <div id="harvest-no-disp-sec" style="display:none;margin-bottom:12px"></div>
+    <div id="harvest-no-disp-sec" class="xd-hide" style="display:none;margin-bottom:12px"></div>
     <div class="tbl-wrap"><div class="disp-tabs"><button class="dtab active" id="dtab2-w" onclick="switchDT2('w')">배출 대기</button><button class="dtab" id="dtab2-d" onclick="switchDT2('d')">배출 완료</button></div>
     <table><thead><tr><th>날짜</th><th>농가명</th><th>기사</th><th>시간대</th><th>차수</th><th>소속</th><th>수량</th><th>종류</th><th>수확예정일</th><th>품목</th><th>차량</th><th>상태</th><th class="disp-sms-col" style="display:none">문자</th><th class="stk-r"></th></tr></thead><tbody id="disp-tb"></tbody></table>
     <div class="pagination" id="disp2-pg"></div></div>
   </div>
 
   <!-- 수거·회수 섹션 -->
-  <div id="pt-pick-sec" style="display:none">
+  <div id="pt-pick-sec" class="xd-hide" style="display:none">
     <div class="form-card"><div class="form-title">수거·회수 등록</div>
       <div class="form-grid">
         <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
@@ -2076,6 +2076,6 @@
 <script src="src/supabase-client.js?v=30"></script>
 <script src="src/db.js?v=28"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=704"></script>
+<script src="src/app.js?v=705"></script>
 </body>
 </html>

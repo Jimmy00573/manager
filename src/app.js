@@ -1186,7 +1186,7 @@ const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 't
 // ★공항(airport) 계정은 주스·청 한 탭만 본다. ★외부 기사는 입고 목록이 있는 미선과 탭만(1단계는 보기 전용).
 const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'], ext_driver: ['uns'] };
 // 역할별 수확·수송 하위 탭 화이트리스트(없으면 전부 = admin). 첫 값 = 허용 안 된 하위 탭을 부를 때 대신 갈 탭(transportSub).
-const ROLE_TRANSPORT_TABS = { ext_driver: ['cal'] };
+const ROLE_TRANSPORT_TABS = { ext_driver: ['cal', 'disp'] };   // 첫 칸이 첫 화면(캘린더)
 // 입고 등록(원물)을 쓸 수 있는 역할 — 폼 표시(_applyEditRestrictions)·열기(toggleIbForm)·저장(_addInboundCore)이 이 표 하나를 본다.
 // ★외부 기사는 원물 입고 등록만(2-1단계). 선과품(saveInboundSorted)·수정·삭제는 관리자 전용 그대로.
 const IB_FORM_ROLES = ['admin', 'ext_driver'];
@@ -1195,6 +1195,8 @@ const QR_ROLES = ['admin', 'ext_driver'];
 // 수확 캘린더 쓰기(등록·시작·완료·수정·마무리·계획 입력)를 쓸 수 있는 역할. ★삭제·＋다음 차수·전체 종료/해제는 관리자 전용 그대로.
 const HV_ROLES = ['admin', 'ext_driver'];
 function _hvCanWrite() { return HV_ROLES.includes(sessionStorage.getItem('citrus_role')); }
+// 배차(콘테이너 배송) 등록을 쓸 수 있는 역할. 외부 기사는 대상 '농가'만. ★수정·삭제·되돌리기는 관리자 전용 그대로.
+const DISP_ROLES = ['admin', 'ext_driver'];
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
 
 // 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
@@ -1231,7 +1233,12 @@ function setRole(r) {
       // popSels는 고르던 값이 목록에 없으면 '(목록에 없음)'으로 붙여 둔다 — 이전 계정이 고른 거래처가 남지 않게 농가 아닌 옵션은 뗀다.
       const ibf = document.getElementById('ib-farm');
       if (ibf) { [...ibf.options].forEach(o => { if (o.value && !farms.some(f => f.name === o.value)) o.remove(); }); fsSync('ib-farm'); }
+      // 배차 탭: 배송 섹션·대상 '농가'로 맞춘다(수거·회수 섹션과 대상 종류 칸은 xd-hide). 이전 계정이 바꿔 둔 상태가 남지 않게.
+      switchPT('disp');
+      const dtt = document.getElementById('dp-target-type');
+      if (dtt && dtt.value !== '농가') { dtt.value = '농가'; refreshDpFarmOpts(); }
     }
+    renderDisp();   // 배차 목록 버튼이 역할마다 다르다(관리자: 완료·되돌리기·수정·삭제 / 외부 기사: 오늘 배차 완료만) — 역할이 정해질 때 다시 그린다
     _applyEditRestrictions(r);
     T('inv');   // airport는 T→invTab('sum')이 invTab 안에서 'juice'로 교정된다(교정 지점은 한 곳뿐)
     // ★외부 기사의 첫 화면은 수확 캘린더 — 재고(입고) 조회는 위 T('inv')로 출발시켜 두고 넘어간다
@@ -2574,8 +2581,12 @@ function _dpSyncSaveLabel() {
   btn.textContent = document.getElementById('dp-reserve')?.checked === true ? '📅 예약으로 등록' : '✅ 배출완료로 등록';
 }
 async function addDisp() {
+  const _dpRole = sessionStorage.getItem('citrus_role');
+  if (!DISP_ROLES.includes(_dpRole)) return;
+  const _dpXd = _dpRole === 'ext_driver';
   const date = gv('dp-date'), farm = gv('dp-farm'), drv = gv('dp-drv');
-  const targetType = gv('dp-target-type') || '농가';   // 배차 대상 종류(농가/농협/거래처)
+  const targetType = _dpXd ? '농가' : (gv('dp-target-type') || '농가');   // 배차 대상 종류(농가/농협/거래처) — 외부 기사는 농가 고정
+  if (_dpXd && farm && !farms.some(f => f.name === farm)) { alert('농가만 선택할 수 있습니다.'); return; }
   // ★예약 등록 — 배차 행만 '배출 대기'로 만들고 배출 pick·작업 보고는 만들지 않는다.
   //   그 둘은 완료 처리 시점에 _completeDispatch가 같은 형태로 만든다.
   //   해제(기본)면 아래 경로가 예전과 한 글자도 다르지 않게 흐른다.
@@ -2972,7 +2983,9 @@ function renderDisp() {
     <td><span class="badge ${sc[d.status] || 'b-neu'}">${esc(d.status)}</span></td>
     <td class="disp-sms-col"><button class="btn copy" style="padding:4px 8px" onclick="showMsgById(${d.id})">📱</button></td>
     <td class="stk-r"><div style="display:flex;gap:4px;align-items:center">
-      ${!isAdm ? '' : d.status !== '배출완료'
+      ${!isAdm ? ((sessionStorage.getItem('citrus_role') === 'ext_driver' && d.status !== '배출완료' && d.date === td())
+          ? `<button class="btn grn" onclick="xdDispDone('${esc(String(d.id))}')">완료</button>` : '')   // 외부 기사: 오늘 배차만 기사 완료 경로로(xdDispDone)
+        : d.status !== '배출완료'
         ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>`
         : `<button class="btn" style="background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="updDisp(${d.id},'배차완료')">↩ 되돌리기</button>`}
       ${isAdm ? `<button class="btn edt" onclick="openDispEdit(${d.id})">✏️</button>` : ''}
@@ -6409,7 +6422,7 @@ async function _hvSaveNewRound(data) {
 //   ★showConfirmEdit은 맨 뒤 — 앞에 두면 배차가 있어도 확인창이 떠버린다.
 // 보유는 getFCS(현황판 '처리필요'와 같은 헬퍼) 그대로 — 음수면 음수로 보인다(확인 필요 신호).
 async function _hvOfferDispatch(farm, date, field) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;   // 배차 폼으로 가는 제안 — 배차 등록 권한이 있는 역할만
+  if (!DISP_ROLES.includes(sessionStorage.getItem('citrus_role'))) return;   // 배차 폼으로 가는 제안 — 배차 등록 권한이 있는 역할만
   const md = s => { const [, m, d] = s.split('-'); return `${+m}/${+d}`; };
   if (date > td() && _dispForHarvest(farm, date).cnt === 0 && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (현재 보유 ${fmtN(getFCS(farm).hold)}개 · 배송일 기본 ${md(_dayBefore(date))})`)) {
     _hvGoDispatch(farm, date, field);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크·밭까지 채운다
