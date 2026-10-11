@@ -993,6 +993,7 @@ async function chkStaffLogin() {
 function doLogout() {
   sessionStorage.removeItem('citrus_role');
   sessionStorage.removeItem('citrus_drv');
+  sessionStorage.removeItem('citrus_adm_user');   // ★안 지우면 다음 로그인(PIN 기사·직원)의 created_by·staff에 이전 계정 이름이 남는다(adminLogout과 같은 처리)
   ['citrus_keep','citrus_role','citrus_drv','citrus_adm_user'].forEach(k => localStorage.removeItem(k));
   _loggedDrv = null;
   document.getElementById('hdr-btns').style.display = 'flex';
@@ -5299,7 +5300,9 @@ function renderCal() {
     const tIbs = _ibTruckGroups((inboundRecords || []).filter(r => r.date === todayStr && !r.is_void));
     // 외부 기사는 0건인 날에도 머리 줄('＋ 빈콘 회수')이 보여야 한다 — 다른 역할은 예전처럼 0건이면 숨김.
     const _xdTrans = sessionStorage.getItem('citrus_role') === 'ext_driver';
-    if (!tOuts.length && !tIbs.length && !_xdTrans) {
+    const _xdPkHtml = _xdTodayPkHtml();   // 외부 기사 '오늘 회수·이동(내 등록)' — 한 번만 계산(다른 역할은 '')
+    // 숨김: 배출·원물 0건 && 내 회수·이동 없음 && 외부 기사 아님. ★외부 기사는 0건이어도 '＋ 빈콘 회수' 머리 줄이 보여야 해서 그대로 둔다(v701).
+    if (!tOuts.length && !tIbs.length && !_xdPkHtml && !_xdTrans) {
       transEl.style.display = 'none';
     } else {
       const byDrv = new Map();   // 기사명('' = 미정) → 항목 HTML[]
@@ -5343,7 +5346,7 @@ function renderCal() {
         + (_xdTrans ? `<button type="button" onclick="event.stopPropagation();xdQrPickFarm()" style="float:right;font-size:11px;padding:2px 8px;border:1px solid #1565C0;color:#1565C0;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit">＋ 빈콘 회수</button>` : '')
         + `</div>`
         + names.map(n => `<div style="margin-top:6px"><div style="font-size:13px;font-weight:500;padding-bottom:3px">${n ? esc(n) : '기사 미정'}</div>${byDrv.get(n).join('')}</div>`).join('')
-        + _xdTodayPkHtml();   // 외부 기사만 — 내가 오늘 넣은 빈콘 회수·이동(줄마다 삭제). 다른 역할은 ''
+        + _xdPkHtml;   // 외부 기사만 — 내가 오늘 넣은 빈콘 회수·이동(줄마다 삭제). 다른 역할은 ''
       transEl.style.display = '';
     }
   }
