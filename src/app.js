@@ -26559,8 +26559,7 @@ function _specCard(g, i) {
   const W = _specCanWrite();
   const mini = 'font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer;font-family:inherit;background:#fff';
   const head = `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
-      <span style="font-size:14px;font-weight:500;color:#111827">${esc(g.channel)}</span>
-      <span style="font-size:12px;color:#6B7280">${[g.business, g.product, g.pack].filter(Boolean).map(esc).join(' · ')}</span>
+      <span style="font-size:14px;font-weight:500;color:#111827">${[g.product, g.pack].filter(Boolean).map(esc).join(' · ')}${g.business ? `<span style="font-size:12px;font-weight:400;color:#6B7280"> · ${esc(g.business)}</span>` : ''}</span>
       ${W || g.cur ? `<span style="margin-left:auto;display:flex;flex-wrap:wrap;gap:4px">
         ${g.cur ? `<button type="button" onclick="_specField(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">현장 보기</button>` : ''}
         ${W ? `<button type="button" onclick="_specOpenFrom(${i},'기준')" style="${mini};border:1px solid #1E3A5F;color:#1E3A5F">기준 변경</button>
