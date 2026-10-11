@@ -26364,8 +26364,17 @@ function _specBody(g, v, color = '#374151') {
     L('브릭스', esc(v.brix || '')),
     L('메모', esc(v.note || '')),
     L('작성', esc(v.author || '')),
+    _specRowBtns(v),
   ].filter(Boolean);
   return `<div style="font-size:12px;color:${color};line-height:1.7;display:flex;flex-wrap:wrap;gap:2px 12px">${parts.join('')}</div>`;
+}
+// 줄마다 ✏️ 수정·삭제 — admin만(_specCanWrite). id는 숫자(bigint)라 속성에 그대로 넣는다.
+function _specRowBtns(v) {
+  if (!_specCanWrite() || v.id == null) return '';
+  const b = 'font-size:11px;padding:0 6px;border-radius:5px;cursor:pointer;font-family:inherit;background:#fff;line-height:1.6';
+  return `<span style="margin-left:auto;display:flex;gap:4px;white-space:nowrap">
+    <button type="button" onclick="openSpecEdit(${Number(v.id)})" style="${b};border:1px solid #D1D5DB;color:#374151">✏️ 수정</button>
+    <button type="button" onclick="delSpec(${Number(v.id)})" style="${b};border:1px solid #FCA5A5;color:#DC2626">삭제</button></span>`;
 }
 
 function renderSpec() {
@@ -26447,6 +26456,45 @@ function _specOpenFrom(i, kind) {
 
 // ── 등록 모달(기준·출고 공용) — 매번 새로 만든다(옛 셸 재사용 금지)
 let _specBusy = false;
+let _specEditId = null;   // 수정 중인 행 id(없으면 새 등록)
+// 이력(audit_logs)에 남길 칸 — 내용 칸만(id·작성 시각 등 제외)
+function _specAuditVal(r) {
+  if (!r) return null;
+  const o = {};
+  ['kind', 'channel_type', 'channel', 'business', 'product', 'pack', 'valid_from', 'valid_to', 'weight_min', 'weight_max', 'sizes', 'layout', 'brix', 'note', 'author']
+    .forEach(k => { if (r[k] !== undefined) o[k] = r[k]; });
+  return o;
+}
+// ✏️ 수정 — 같은 모달을 그 행 값으로 연다
+function openSpecEdit(id) {
+  if (!_specCanWrite()) return;
+  const r = _specRows.find(x => x.id === id); if (!r) return;
+  openSpecModal({ edit: r });
+}
+// 삭제 — soft delete(is_void=true·사유·작업자·시각) + audit_logs. 물리 삭제 금지.
+async function delSpec(id) {
+  if (!_specCanWrite() || _specBusy) return;
+  const r = _specRows.find(x => x.id === id); if (!r) return;
+  const res = await showConfirmDanger({
+    title: '작업 기준 삭제', subtitle: '목록에서 빠지고 이력에 남습니다',
+    items: [`${r.kind} · ${r.channel}${r.business ? ' · ' + r.business : ''} · ${r.product} · ${r.pack} · ${_specMD(r.valid_from)}`],
+    confirmText: '삭제', needWorker: true,
+  });
+  if (!res || !res.ok) return;
+  _specBusy = true;
+  try {
+    const now = new Date().toISOString();
+    await sbUpdate('work_specs', id, { is_void: true, void_reason: res.reason, void_by: res.worker, void_at: now, updated_at: now });
+    _specRows = _specRows.filter(x => x.id !== id);
+    try {
+      await dbInsertAuditLog({ target_table: 'work_specs', target_id: String(id), before_val: _specAuditVal(r), after_val: { is_void: true },
+        reason: res.reason, staff: res.worker });
+    } catch (le) { console.warn('작업 기준 삭제 이력 기록 실패:', le.message); }
+    renderSpec();
+    showToast('작업 기준을 삭제했습니다.');
+  } catch (e) { alert('삭제 오류: ' + e.message); }
+  finally { _specBusy = false; }
+}
 function _specIsCitrus(product) { return (PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류'; }
 // 배열 한 줄 — 감귤류는 사이즈 select(SIZES_감귤류), 만감류는 자유 입력('13수') + 품목 규칙 사이즈 제안(sizesForProduct)
 function _specLayoutRowHtml(product, row = {}) {
@@ -26496,9 +26544,14 @@ function _specFormCalc() {
 function openSpecModal(o = {}) {
   if (!_specCanWrite()) return;
   document.getElementById('modal-spec')?.remove();
-  const g = o.group || null, src = o.from || null;
-  const kind = o.kind === '출고' ? '출고' : '기준';
-  const v = {
+  const g = o.group || null, src = o.from || null, ed = o.edit || null;   // ed = 수정할 행(3단계) — 그 값 그대로 채운다
+  _specEditId = ed ? ed.id : null;
+  const kind = (ed ? ed.kind : o.kind) === '출고' ? '출고' : '기준';
+  const v = ed ? {
+    channel_type: ed.channel_type || '', channel: ed.channel || '', business: ed.business || '', product: ed.product || '', pack: ed.pack || '',
+    valid_from: ed.valid_from || td(), valid_to: ed.valid_to || '', weight_min: ed.weight_min, weight_max: ed.weight_max,
+    sizes: ed.sizes || '', layout: ed.layout || [], brix: ed.brix || '', note: ed.note || '', author: ed.author || '',
+  } : {
     channel_type: (src && src.channel_type) || (g && g.type !== '기타' ? g.type : '') || '',
     channel: g ? g.channel : '', business: g ? g.business : '', product: g ? g.product : '', pack: g ? g.pack : '',
     valid_from: kind === '출고' ? td() : (src ? _dayAfter(td()) : td()), valid_to: '',
@@ -26516,7 +26569,7 @@ function openSpecModal(o = {}) {
   m.innerHTML = `
     <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);margin:auto 0">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
-        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">📋 작업 기준 등록</div>
+        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">${ed ? '✏️ 작업 기준 수정' : '📋 작업 기준 등록'}</div>
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -26545,7 +26598,7 @@ function openSpecModal(o = {}) {
       <datalist id="spm-size-dl"></datalist>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
-        <button id="spm-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveSpec()">저장</button>
+        <button id="spm-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveSpec()">${ed ? '수정 저장' : '저장'}</button>
       </div>
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(입력 손실 방지)
@@ -26574,9 +26627,30 @@ async function saveSpec() {
     author: gv2('spm-author') || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
   };
   // 같은 키·같은 시작일의 기준이 이미 있으면 한 번 묻는다(나중에 넣은 것이 현재 기준이 된다)
-  if (kind === '기준' && _specRows.some(r => r.kind === '기준' && _specKey(r) === _specKey(payload) && r.valid_from === valid_from)
+  const editId = _specEditId;
+  if (kind === '기준' && _specRows.some(r => r.id !== editId && r.kind === '기준' && _specKey(r) === _specKey(payload) && r.valid_from === valid_from)
       && !(await showConfirmEdit('같은 시작일의 기준이 이미 있습니다', `${channel} · ${pack} · ${_specMD(valid_from)}부터 — 새로 넣은 기준이 그날의 현재 기준이 됩니다. 저장할까요?`))) return;
   _specBusy = true;
+  if (editId != null) {
+    // 수정 — 같은 행 update + updated_at. created_by(처음 등록 계정)는 그대로 둔다. 변경 전·후를 audit_logs에 남긴다.
+    const prev = _specRows.find(r => r.id === editId);
+    delete payload.created_by;
+    payload.updated_at = new Date().toISOString();
+    try {
+      const rows = await sbUpdate('work_specs', editId, payload);
+      _specRows = _specRows.map(r => r.id === editId ? { ...r, ...(rows[0] || payload), id: r.id } : r);
+      try {
+        await dbInsertAuditLog({ target_table: 'work_specs', target_id: String(editId), before_val: _specAuditVal(prev), after_val: _specAuditVal(payload),
+          reason: '작업 기준 수정', staff: sessionStorage.getItem('citrus_adm_user') || 'admin' });
+      } catch (le) { console.warn('작업 기준 수정 이력 기록 실패:', le.message); }
+      _specEditId = null;
+      document.getElementById('modal-spec')?.remove();
+      renderSpec();
+      showToast(`${channel} · ${pack} ${kind} 수정`);
+    } catch (e) { alert('수정 오류: ' + e.message); }
+    finally { _specBusy = false; }
+    return;
+  }
   try {
     const rows = await sbInsert('work_specs', payload);
     if (rows && rows[0]) _specRows.unshift(rows[0]);
