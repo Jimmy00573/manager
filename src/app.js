@@ -1192,6 +1192,9 @@ const ROLE_TRANSPORT_TABS = { ext_driver: ['cal'] };
 const IB_FORM_ROLES = ['admin', 'ext_driver'];
 // 빠른 회수 창(openQuickRecovery·saveQuickRecovery)을 쓸 수 있는 역할. 외부 기사는 농가 대상·공장(회수)·오늘 날짜만.
 const QR_ROLES = ['admin', 'ext_driver'];
+// 수확 캘린더 쓰기(등록·시작·완료·수정·마무리·계획 입력)를 쓸 수 있는 역할. ★삭제·＋다음 차수·전체 종료/해제는 관리자 전용 그대로.
+const HV_ROLES = ['admin', 'ext_driver'];
+function _hvCanWrite() { return HV_ROLES.includes(sessionStorage.getItem('citrus_role')); }
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
 
 // 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
@@ -4681,7 +4684,7 @@ function _farmExtDrv(farm) {
 //   계획이 없으면 관리자는 '＋ 계획 입력 · 꼬리', 그 밖 역할은 꼬리만 있는 줄(클릭 없음).
 function _hvPlanLine(h, dStr, style = '') {
   if (!h || !dStr) return '';
-  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const isAdm = _hvCanWrite();   // 계획 입력 가능(HV_ROLES — 관리자·외부 기사)
   const p = _hvPlanDay(h, dStr);
   const t = _hvPlanText(p);
   // 담당 외부 기사 꼬리 — 그날 오전·오후 기사(amd/pmd)를 둘 다 안 골랐고 오늘 이후일 때만. 하나라도 골랐으면 그 값이 우선.
@@ -4699,7 +4702,7 @@ function _hvPlanLine(h, dStr, style = '') {
 }
 // 확인 체크 버튼(그 날짜) — 관리자만(수확 레코드를 쓰는 다른 동작과 같은 기준). 그날 계획이 없으면 체크할 것도 없어 안 그린다.
 function _hvPlanCheckBtn(h, dStr) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
+  if (!_hvCanWrite()) return '';
   const p = _hvPlanDay(h, dStr);
   if (!_hvPlanHas(p)) return '';
   const done = !!p.chk;
@@ -4742,7 +4745,7 @@ async function _hvPlanPatchDay(id, dStr, mutate) {
 
 // 확인 토글(그 날짜) — chk에 시각 기록/해제. ★수확 상태(status)·완료 처리와는 무관하다(계획 메모 처리 여부일 뿐).
 async function toggleHarvestPlanCheck(id, dStr) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   if (!dStr || !harvests.some(x => x.id === id)) return;
   const want = !(_hvPlanDay(harvests.find(x => x.id === id), dStr) || {}).chk;   // 화면에 보이던 상태의 반대
   try {
@@ -4762,7 +4765,7 @@ async function toggleHarvestPlanCheck(id, dStr) {
 //   ★폰 숫자 키패드엔 Enter가 없을 수 있어 [저장][취소] 버튼도 둔다. 버튼은 pointerdown을 막아 입력칸 포커스를
 //     빼앗지 않게 한다(안 막으면 ✕를 누르는 순간 focusout이 먼저 '바깥 클릭 저장'을 해 버린다).
 function startHvPlanEdit(el, id, dStr) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   if (!el || !el.isConnected || !dStr || el.querySelector('.hv-plan-editor')) return;   // 이미 편집 중
   const h = harvests.find(x => x.id === id);
   if (!h) return;
@@ -4848,7 +4851,9 @@ function _hvFinishBadge(h, dStr) {
   return `<span class="badge b-warn" style="font-size:10px">🏁 ${dStr === td() ? '오늘 ' : ''}마무리 예정</span>`;
 }
 function harvestActBtns(h) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return '';
+  if (!_hvCanWrite()) return '';
+  // ★외부 기사도 시작·완료·수정·마무리·되돌리기는 쓴다. 삭제·＋다음 차수·전체 종료/해제는 관리자만(관리자 출력은 수정 전과 같다).
+  const _hvAdmB = sessionStorage.getItem('citrus_role') === 'admin';
   const st = h.status || '수확전';
   // ★차수를 움직이는 버튼(＋ 다음 차수·■ 전체 종료·↩ 되돌리기·↩ 종료 해제)은 그 농가의 최신 차수 줄에서만.
   //   예전엔 줄 자신의 status만 봤다 → 3차가 있는데 2차 줄에서 누르면 엉뚱한 차수가 생기거나
@@ -4856,7 +4861,7 @@ function harvestActBtns(h) {
   //   ★최신 차수 판정식은 startNextRound의 nextRound 계산과 같은 기준(같은 농가·round 최댓값)이다 — 다르게 만들지 말 것.
   const maxRound = harvests.filter(x => x.farm === h.farm).reduce((m, x) => Math.max(m, x.round || 1), 0);
   const isLatest = (h.round || 1) >= maxRound;
-  const canNext = st === '수확완료' && !h.is_final && isLatest;   // 수확완료 & 전체종료 전 & 최신 차수 → 차수 이어가기 가능
+  const canNext = _hvAdmB && st === '수확완료' && !h.is_final && isLatest;   // 수확완료 & 전체종료 전 & 최신 차수 → 차수 이어가기 가능(관리자만)
   // 되돌리기(한 단계씩): 수확완료→수확중, 수확중→수확전. 수확전은 더 되돌릴 게 없고, 전체 종료 상태는 '종료 해제'가 대신.
   const backTo = (!isLatest || h.is_final) ? '' : (st === '수확완료' ? '수확중' : (st === '수확중' ? '수확전' : ''));
   // 옛 차수 줄에서 버튼이 빠진 이유를 보이게. ★줄을 더 만들지 않고 변수로 붙인다 —
@@ -4871,10 +4876,10 @@ function harvestActBtns(h) {
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#6D28D9;color:#fff;border:none;border-radius:6px" onclick="startNextRound(${h.id})">＋ 다음 차수</button>` : ''}
     ${canNext ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#374151;color:#fff;border:none;border-radius:6px" onclick="finishAllHarvest(${h.id})">■ 전체 종료</button>` : ''}
     ${h.is_final
-      ? (isLatest ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="unfinishAllHarvest(${h.id})">↩ 종료 해제</button>` : '')
+      ? ((isLatest && _hvAdmB) ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="unfinishAllHarvest(${h.id})">↩ 종료 해제</button>` : '')
       : (backTo ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="setHarvestStatus(${h.id},'${backTo}')">↩ 되돌리기</button>` : '')}
     <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
-    <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>`;
+    ${_hvAdmB ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>` : ''}`;
 }
 // 금일 수확일정의 연락 줄 '📍 주소 · 📞 전화' — 그날 농가에 가는 사람이 바로 전화·이동하게.
 //   addr은 호출부가 _recAddr(기록)로 넘긴다(고른 밭 우선). 없는 조각은 빼고, 둘 다 없으면 ''.
@@ -4916,7 +4921,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
   const todayStr = td();
-  const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
+  const canEdit = _hvCanWrite();   // 수확 쓰기(HV_ROLES) — 금일 수확일정 자동 버튼·등록 폼. 삭제 버튼은 아래에서 관리자만.
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   document.getElementById('cal-month-title').textContent = `${calYear}년 ${months[calMonth]}`;
 
@@ -4969,7 +4974,7 @@ function renderCal() {
             <button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확중')">▶ 시작</button>
             <button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확완료')">✅ 완료</button>
             <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
-            <button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>` : '';
+            ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>` : ''}` : '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
@@ -5722,7 +5727,7 @@ function _hvProgCard(g) {
       ${open ? `<div style="padding:8px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff">
         ${ct ? `<div style="display:flex;flex-wrap:wrap;gap:3px">${ct}</div>` : ''}
         <span style="font-size:11px;color:#888">수확 기록이 없습니다.</span>
-        ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button type="button" onclick="_hvGoHarvestAdd('${_fsQ(g.farm)}')" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>` : ''}
+        ${_hvCanWrite() ? `<button type="button" onclick="_hvGoHarvestAdd('${_fsQ(g.farm)}')" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>` : ''}
       </div>` : ''}
     </div>`;
   }
@@ -6133,7 +6138,7 @@ function _mhFill(v) {
 function _mhSetTitle(t) { const el = document.querySelector('#modal-harvest .modal-title'); if (el) el.textContent = t; }
 function closeHarvestModal() { _hvNewRoundFrom = null; CM('harvest'); }
 function openHarvestEdit(id) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   const h = harvests.find(x => x.id === id); if (!h) return;
   _editHarvestId = id;
   _hvNewRoundFrom = null;
@@ -6142,7 +6147,7 @@ function openHarvestEdit(id) {
   document.getElementById('modal-harvest').style.display = 'flex';
 }
 async function saveHarvestEdit() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   const date = document.getElementById('mh-date').value;
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
@@ -6199,7 +6204,7 @@ async function _syncDispHarvestDate(farm, oldDate, newDate) {
 }
 
 async function autoSetHarvestStatus(farm, date, item, status) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   let h = harvests.find(x => x.farm === farm && x.date === date);
   if (!h) {
     try {
@@ -6219,7 +6224,7 @@ async function autoSetHarvestStatus(farm, date, item, status) {
 }
 
 async function autoOpenHarvestEdit(farm, date, item) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   let h = harvests.find(x => x.farm === farm && x.date === date);
   if (!h) {
     try { const row = await dbInsertHarvest({ date, farm, item: item || null }); harvests.push(row); h = row; }
@@ -6252,7 +6257,7 @@ async function _hvAskDoneDate(h) {
   return null;
 }
 async function setHarvestStatus(id, status) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   const cur = harvests.find(h => h.id === id);
   // ★완료 처리할 때 확인창(_hvAskDoneDate)에서 고른 날(오늘/어제)로 종료일을 '항상 덮어쓴다' — 완료 = 실제 완료일 확정.
   //   end_date는 등록·수정 때의 '종료 예정일'과 '실제 완료일'을 겸한다. 예정일이 있어도 완료하면 실제 완료일로 바뀐다
@@ -6284,7 +6289,7 @@ async function setHarvestStatus(id, status) {
 // cancel = [↩ 마무리 취소] — end_date를 비운다(null). 눌러 덮어쓴 예전 예정일은 복구하지 않는다(필요하면 ✏️).
 let _hvFinishBusy = false;   // 연타 방지
 async function setHarvestFinishToday(id, cancel = false) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   if (_hvFinishBusy) return;
   _hvFinishBusy = true;
   try {
@@ -6353,6 +6358,7 @@ async function _hvSaveNewRound(data) {
 //   ★showConfirmEdit은 맨 뒤 — 앞에 두면 배차가 있어도 확인창이 떠버린다.
 // 보유는 getFCS(현황판 '처리필요'와 같은 헬퍼) 그대로 — 음수면 음수로 보인다(확인 필요 신호).
 async function _hvOfferDispatch(farm, date, field) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;   // 배차 폼으로 가는 제안 — 배차 등록 권한이 있는 역할만
   const md = s => { const [, m, d] = s.split('-'); return `${+m}/${+d}`; };
   if (date > td() && _dispForHarvest(farm, date).cnt === 0 && await showConfirmEdit('배송 예약', `${farm} ${date} 수확 — 콘테이너 배송을 예약할까요? (현재 보유 ${fmtN(getFCS(farm).hold)}개 · 배송일 기본 ${md(_dayBefore(date))})`)) {
     _hvGoDispatch(farm, date, field);   // 배차 폼으로 이동 + 농가·수확일·배송일(전날)·예약 체크·밭까지 채운다
@@ -6387,7 +6393,7 @@ async function unfinishAllHarvest(id) {
 }
 
 async function addHarvest() {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (!_hvCanWrite()) return;
   const date = document.getElementById('cal-add-date')?.value;
   const farm = document.getElementById('cal-add-farm')?.value;
   const end_date = document.getElementById('cal-add-end')?.value || null;
