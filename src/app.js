@@ -26395,6 +26395,66 @@ function _specPeriod(g, v) {
 function _specTag(t, bd = '#D1D5DB', c = '#374151') {
   return `<span style="font-size:11px;padding:0 6px;border-radius:4px;border:1px solid ${bd};color:${c};background:#fff;white-space:nowrap;line-height:1.6">${esc(t)}</span>`;
 }
+// ── 변경 표시(v724) ─────────────────────────
+// 두 기준 버전의 바뀐 점 → [{label, from, to}] (같으면 []). prev가 없으면 [](신규 판정은 _specChg).
+//   비교: 박스·중량·사용 사이즈·브릭스·구성(_specComboLine 글자, 판정 기호 없이)·종료일·메모. 빈 값은 '없음'.
+function _specDiff(prev, cur) {
+  if (!prev || !cur) return [];
+  const w = v => {
+    const a = v.weight_min, b = v.weight_max, f = x => Number(x).toFixed(2);
+    if ((a == null || a === '') && (b == null || b === '')) return '';
+    if (a != null && a !== '' && b != null && b !== '' && Number(a) !== Number(b)) return `${f(a)}~${f(b)}`;
+    return f(a != null && a !== '' ? a : b);
+  };
+  const combo = v => {
+    const d = document.createElement('div');
+    d.innerHTML = _specCombos(v.layout).map((c, i) => _specComboLine(v.product, c, i, v.weight_min, v.weight_max, false)).join('');
+    return [...d.children].map(x => x.textContent.replace(/\s+/g, ' ').trim()).join(' / ');
+  };
+  const items = [['박스', v => v.box || ''], ['중량', w], ['사용 사이즈', v => v.sizes || ''], ['브릭스', v => v.brix || ''],
+    ['구성', combo], ['종료일', v => v.valid_to ? _specMD(v.valid_to) : ''], ['메모', v => v.note || '']];
+  return items.map(([label, fn]) => ({ label, from: fn(prev), to: fn(cur) }))
+    .filter(x => x.from !== x.to)
+    .map(x => ({ label: x.label, from: x.from || '없음', to: x.to || '없음' }));
+}
+function _specDiffHtml(diff) {
+  return diff.length ? `<div style="font-size:11px;color:#6B7280;line-height:1.6;margin-top:2px">바뀐 점: ${diff.map(d => `${esc(d.label)} ${esc(d.from)} → ${esc(d.to)}`).join(' · ')}</div>` : '';
+}
+// 기준일 기준 날짜 경계 — 최근 7일(기준일 포함 7일: asOf−6 ~ asOf)·곧 만료(asOf ~ asOf+3)
+function _specShift(ds, n) { for (let k = 0; k < Math.abs(n); k++) ds = n < 0 ? _dayBefore(ds) : _dayAfter(ds); return ds; }
+// 카드 한 장의 변경 상태(카드 칩·채널 점·요약 줄 공용) → { prev, isNew, recent, diff, soon }
+function _specChg(g, asOf) {
+  const cur = g.cur;
+  if (!cur) return { prev: null, isNew: false, recent: false, diff: [], soon: false };
+  const prev = g.std[g.std.indexOf(cur) - 1] || null;
+  const recent = !!prev && cur.valid_from >= _specShift(asOf, -6) && cur.valid_from <= asOf;
+  const soon = !g.expired && !!cur.valid_to && cur.valid_to >= asOf && cur.valid_to <= _specShift(asOf, 3);
+  return { prev, isNew: !prev, recent, diff: prev ? _specDiff(prev, cur) : [], soon };
+}
+// 맨 위 요약 줄 항목 판정(누르면 _specJump가 같은 판정으로 첫 카드를 찾는다)
+const SPEC_SUM = [['chg', '최근 7일 변경', (g, c) => c.recent], ['fut', '예정', g => g.fut.length > 0], ['soon', '곧 만료', (g, c) => c.soon]];
+function _specSummaryHtml(asOf) {
+  const parts = SPEC_SUM.map(([k, label, fn]) => {
+    const n = _specView.filter(g => fn(g, _specChg(g, asOf))).length;
+    return n ? `<button type="button" onclick="_specJump('${k}')" style="font-size:12px;color:#C05800;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${label} ${n}</button>` : '';
+  }).filter(Boolean);
+  return parts.length ? `<div style="font-size:12px;color:#6B7280;margin-bottom:4px;display:flex;flex-wrap:wrap;gap:2px 6px;align-items:center">🔔 ${parts.join('<span style="color:#D1D5DB">·</span>')}</div>` : '';
+}
+// 요약 항목 → 그 판정에 걸린 첫 카드의 채널을 펼치고(구분도) 그 카드로 스크롤. 예정이면 예정도 펼친다.
+function _specJump(k) {
+  const asOf = _specUi.date || td();
+  const fn = (SPEC_SUM.find(x => x[0] === k) || [])[2]; if (!fn) return;
+  const g = _specView.find(x => fn(x, _specChg(x, asOf))); if (!g) return;
+  const ck = g.type + '|' + g.channel;
+  _specTypeShut.delete(g.type);
+  if (_specFiltOn()) _specChShut.delete(ck); else _specChOpen.add(ck);
+  if (k === 'fut') _specOpen.add(g.key + '|fut');
+  renderSpec();
+  const ci = _specChView.indexOf(ck);
+  const within = _specView.filter(x => x.type + '|' + x.channel === ck).findIndex(x => x.key === g.key);   // 다시 그려 묶음 객체가 새것 — 키로 찾는다
+  const card = document.querySelector(`#spec-list [data-spec-ch="${ci}"] > div`)?.children[within];
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 // 한 버전의 내용 줄(현재·예정·이력 공용)
 function _specBody(g, v, color = '#374151') {
   const L = (k, val) => val ? `<span style="white-space:nowrap"><span style="color:#9CA3AF">${k}</span> ${val}</span>` : '';
@@ -26451,7 +26511,7 @@ function renderSpec() {
   _specTypeView = tree.map(t => t.type);
   _specChView = [];
   const rowBtn = 'display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;width:100%;text-align:left;cursor:pointer;font-family:inherit';
-  let html = '';
+  let html = _specSummaryHtml(asOf);   // 🔔 최근 7일 변경·예정·곧 만료(v724) — 모두 0이면 ''
   tree.forEach((t, ti) => {
     const tOpen = !_specTypeShut.has(t.type);
     const nCard = t.chans.reduce((a, c) => a + c.cards.length, 0);
@@ -26465,7 +26525,7 @@ function renderSpec() {
       const info = [`상품 ${c.cards.length}`, outs.length ? `최근 출고 ${_specMD(outs[outs.length - 1])}` : '', nFut ? `예정 ${nFut}` : ''].filter(Boolean).join(' · ');
       html += `<div data-spec-ch="${ci}" style="margin-bottom:6px">
         <button type="button" onclick="_specChToggle(${ci})" style="${rowBtn};background:#fff;border:1px solid ${open ? '#1E3A5F' : '#E5E7EB'};border-radius:8px;padding:8px 12px">
-          <span style="font-size:13px;font-weight:500;color:#111827">${open ? '▾' : '▸'} ${esc(c.name || '(채널 없음)')}</span>
+          <span style="font-size:13px;font-weight:500;color:#111827">${open ? '▾' : '▸'} ${esc(c.name || '(채널 없음)')}${c.cards.some(x => _specChg(x.g, asOf).recent) ? ' <span title="최근 7일 변경" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#C05800;vertical-align:middle"></span>' : ''}</span>
           <span style="font-size:12px;color:#6B7280">${info}</span></button>
         ${open ? `<div style="margin:6px 0 0 8px">${c.cards.map(x => _specCard(x.g, x.i)).join('')}</div>` : ''}
       </div>`;
@@ -26503,18 +26563,24 @@ function _specCard(g, i) {
       <span style="font-size:12px;color:#6B7280">${[g.business, g.product, g.pack].filter(Boolean).map(esc).join(' · ')}</span>
       ${W ? `<span style="margin-left:auto;display:flex;gap:4px">
         <button type="button" onclick="_specOpenFrom(${i},'기준')" style="${mini};border:1px solid #1E3A5F;color:#1E3A5F">기준 변경</button>
-        <button type="button" onclick="_specOpenFrom(${i},'출고')" style="${mini};border:1px solid #D1D5DB;color:#374151">출고 기록</button></span>` : ''}
+        <button type="button" onclick="_specOpenFrom(${i},'출고')" style="${mini};border:1px solid #D1D5DB;color:#374151">출고 기록</button>
+        ${g.cur ? `<button type="button" onclick="_specCopy(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">복사</button>` : ''}</span>` : ''}
     </div>`;
   // 현재 기준
+  // 변경 칩(v724) — 앞 버전 있고 최근 7일 시작이면 주황 '변경 M/D' + 바뀐 점, 앞 버전 없으면 회색 '신규'
+  const asOf = _specUi.date || td(), chg = _specChg(g, asOf);
+  const chgHtml = !g.cur ? '' : chg.isNew ? `<div style="margin-bottom:2px">${_specTag('신규', '#D1D5DB', '#6B7280')}</div>`
+    : chg.recent ? `<div style="margin-bottom:2px">${_specTag('변경 ' + _specMD(g.cur.valid_from), '#C05800', '#C05800')}${_specDiffHtml(chg.diff)}</div>` : '';
   let cur;
   if (!g.cur) cur = `<div style="font-size:12px;color:#9CA3AF">${g.std.length ? '현재 기준 없음' : `기준 없음 · 출고 기록 ${g.out.length}`}</div>`;
   else if (g.expired) cur = `<div style="font-size:11px;color:#6B7280;margin-bottom:2px"><span style="border:1px solid #D1D5DB;border-radius:4px;padding:0 5px;background:#F3F4F6">기준 만료(~${esc(_specMD(g.cur.valid_to))})</span></div>${_specBody(g, g.cur, '#9CA3AF')}`;
   else cur = _specBody(g, g.cur) + _specGuideCard(g, i, g.cur);   // 띠 + ▸ 과수별 표(v722)
+  cur = chgHtml + cur;
   // 예정 — 점선 칩, 누르면 펼친다
   const futOpen = _specOpen.has(g.key + '|fut');
   const fut = g.fut.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${g.fut.map(v =>
       `<button type="button" onclick="_specToggle(${i},'fut')" style="${mini};border:1px dashed #1565C0;color:#1565C0">${esc(_specMD(v.valid_from))}부터 새 기준 ${futOpen ? '▾' : '▸'}</button>`).join('')}</div>`
-    + (futOpen ? g.fut.map(v => `<div style="margin-top:4px;padding:6px 8px;border:1px dashed #BFDBFE;border-radius:6px">${_specBody(g, v, '#1565C0')}</div>`).join('') : '') : '';
+    + (futOpen ? g.fut.map(v => `<div style="margin-top:4px;padding:6px 8px;border:1px dashed #BFDBFE;border-radius:6px">${_specBody(g, v, '#1565C0')}${_specDiffHtml(_specDiff(g.cur, v))}</div>`).join('') : '') : '';
   // 직전 출고
   const lo = g.lastOut ? `<div style="margin-top:6px;padding-top:6px;border-top:0.5px solid #F3F4F6"><div style="font-size:11px;color:#6B7280;margin-bottom:1px">직전 출고</div>${_specBody(g, g.lastOut)}</div>` : '';
   // 재고 출고 참고(같은 이름 거래처 · 같은 품목, 최근 3건)
@@ -26543,6 +26609,12 @@ function _specOpenFrom(i, kind) {
   openSpecModal({ kind, group: g, from: src });
 }
 
+// 카드의 [복사](v724, admin) — 현재 기준 값을 그대로 채운 새 기준 등록 창. 채널만 비우고 시작일 = 기준일, 작성자 비움.
+//   저장하면 새 키의 첫 버전(같은 키·같은 시작일이 있으면 saveSpec의 기존 확인창).
+function _specCopy(i) {
+  const g = _specView[i]; if (!g || !g.cur || !_specCanWrite()) return;
+  openSpecModal({ kind: '기준', group: { ...g, channel: '' }, from: g.cur, fromDate: _specUi.date || td(), copy: true });
+}
 // ── 등록 모달(기준·출고 공용) — 매번 새로 만든다(옛 셸 재사용 금지)
 let _specBusy = false;
 let _specEditId = null;   // 수정 중인 행 id(없으면 새 등록)
@@ -26825,7 +26897,7 @@ function openSpecModal(o = {}) {
   } : {
     channel_type: (src && src.channel_type) || (g && g.type !== '기타' ? g.type : '') || '',
     channel: g ? g.channel : '', business: g ? g.business : '', product: g ? g.product : '', pack: g ? g.pack : '',
-    valid_from: kind === '출고' ? td() : (src ? _dayAfter(td()) : td()), valid_to: '',
+    valid_from: kind === '출고' ? td() : (o.fromDate || (src ? _dayAfter(td()) : td())), valid_to: '',
     weight_min: src ? src.weight_min : null, weight_max: src ? src.weight_max : null,
     sizes: src ? src.sizes : '', layout: src ? src.layout : [], brix: src ? src.brix : '', note: src ? src.note : '',
     box: (src && src.box) || '',
@@ -26840,7 +26912,7 @@ function openSpecModal(o = {}) {
   m.innerHTML = `
     <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);margin:auto 0">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
-        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">${ed ? '✏️ 작업 기준 수정' : '📋 작업 기준 등록'}</div>
+        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">${ed ? '✏️ 작업 기준 수정' : o.copy ? '📋 기준 복사 — 채널을 고르세요' : '📋 작업 기준 등록'}</div>
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
