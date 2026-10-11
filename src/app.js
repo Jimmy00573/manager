@@ -1306,6 +1306,7 @@ function setRole(r) {
       const dtt = document.getElementById('dp-target-type');
       if (dtt && dtt.value !== '농가') { dtt.value = '농가'; refreshDpFarmOpts(); }
     }
+    _xdDrvFilterUI(r);   // 외부 기사만 수확·수송 하위 탭 바에 '기사:' 필터(다른 역할은 지운다)
     renderDisp();   // 배차 목록 버튼이 역할마다 다르다(관리자: 완료·되돌리기·수정·삭제 / 외부 기사: 오늘 배차 완료만) — 역할이 정해질 때 다시 그린다
     _applyEditRestrictions(r);
     T('inv');   // airport는 T→invTab('sum')이 invTab 안에서 'juice'로 교정된다(교정 지점은 한 곳뿐)
@@ -3066,7 +3067,9 @@ function fillDispForm(farm, harvestDate, item) {
 
 function renderDisp() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const f = dispatches.filter(d => _dt2 === 'w' ? d.status === '배차완료' : d.status === '배출완료');
+  const _xf = _xdDrvFilter();   // 외부 기사 기사 필터 — 기사 = 그 기사인 배차만(관리자는 '')
+  const f = dispatches.filter(d => (_dt2 === 'w' ? d.status === '배차완료' : d.status === '배출완료') && (!_xf || d.driver === _xf));
+  _xdSetStaticTag(document.getElementById('dtab2-w')?.parentElement);
   const page = f.slice((_d2p - 1) * PER, _d2p * PER);
   const sc = { '배차완료': 'b-info', '배출완료': 'b-ok' };
   document.getElementById('disp-tb').innerHTML = page.length ? page.map(d => `<tr>
@@ -3708,6 +3711,40 @@ function _xdMine(row) {
   const me = sessionStorage.getItem('citrus_adm_user');
   return !!(me && row && row.created_by === me && row.created_at && ymd(new Date(row.created_at)) === td());
 }
+// ── 외부 기사 기사 필터(v712) — 수확·수송 화면을 '고른 기사가 담당인 농가'(배차 목록은 기사=그 기사)로 좁혀 보기만.
+//   데이터·저장과 무관. 관리자·직원은 늘 '' → 모든 화면이 예전과 같다. 값은 sessionStorage(탭 단위)에 기억.
+const XD_DRV_FILTER_KEY = 'citrus_xd_drv_filter';
+function _xdDrvFilter() {
+  if (!_xdOn()) return '';
+  let v = ''; try { v = sessionStorage.getItem(XD_DRV_FILTER_KEY) || ''; } catch (e) {}
+  return (v && drivers.some(d => d.name === v && d.type === '외부' && d.pin_active !== false)) ? v : '';
+}
+function _xdFarmOk(farm) { const f = _xdDrvFilter(); return !f || gf(farm).staff === f; }
+function _xdFilterTag() { const f = _xdDrvFilter(); return f ? ` <span class="xd-ftag" style="font-weight:400;color:#9CA3AF;text-transform:none;letter-spacing:0">(${esc(f)} 담당만)</span>` : ''; }
+// 정적 HTML 제목(현황판 섹션·배송 목록 탭 줄)에 꼬리표를 붙이거나 뗀다
+//   ★앞 공백 없이 margin으로 띄운다 — 공백 글자를 넣으면 꼬리표를 뗄 때 공백이 남아 '전체'로 돌아와도 HTML이 달라진다.
+function _xdSetStaticTag(el) {
+  if (!el) return;
+  el.querySelector('.xd-ftag')?.remove();
+  const f = _xdDrvFilter();
+  if (f) el.insertAdjacentHTML('beforeend', `<span class="xd-ftag" style="margin-left:4px;font-weight:400;font-size:11px;color:#9CA3AF;text-transform:none;letter-spacing:0">(${esc(f)} 담당만)</span>`);
+}
+function xdSetDrvFilter(v) {
+  if (!_xdOn()) return;
+  try { sessionStorage.setItem(XD_DRV_FILTER_KEY, v || ''); } catch (e) {}
+  renderCal(); renderDash(); renderDisp();
+}
+// 수확·수송 하위 탭 바 오른쪽 선택칸 — setRole이 역할마다 부른다(외부 기사만 만들고, 그 밖엔 지운다 → 관리자 HTML 그대로).
+function _xdDrvFilterUI(r) {
+  document.getElementById('xd-drv-filter-wrap')?.remove();
+  if (r !== 'ext_driver') return;
+  const bar = document.getElementById('transport-subtab'); if (!bar) return;
+  const cur = _xdDrvFilter();
+  const opts = drivers.filter(d => d.type === '외부' && d.pin_active !== false)
+    .map(d => `<option value="${esc(d.name)}"${d.name === cur ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+  bar.insertAdjacentHTML('beforeend', `<span id="xd-drv-filter-wrap" style="margin-left:auto;display:flex;align-items:center;gap:4px;padding:0 10px;font-size:12px;color:#374151;white-space:nowrap">기사:
+    <select id="xd-drv-filter" onchange="xdSetDrvFilter(this.value)" style="font-size:12px;padding:3px 6px;border:1px solid #D1D5DB;border-radius:6px;background:#fff;font-family:inherit"><option value="">전체</option>${opts}</select></span>`);
+}
 function _xdCanDelDisp(d) { return _xdOn() && !!d && d.status === '배차완료' && _xdMine(d); }
 function _xdCanUndoDisp(d) {
   if (!_xdOn() || !d || d.status !== '배출완료') return false;
@@ -4040,7 +4077,8 @@ function getTargetContainerHold(name, targetType) {
 function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '농협'); }
 function renderFarmTbl() {
   const isAdm = QR_ROLES.includes(sessionStorage.getItem('citrus_role'));   // 🧺 회수 버튼 — 빠른 회수 창을 쓸 수 있는 역할(외부 기사 포함, 농가 대상)
-  const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; });
+  const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; }).filter(f => _xdFarmOk(f.name));   // 외부 기사 기사 필터
+  _xdSetStaticTag(document.getElementById('farm-dash-summary')?.previousElementSibling?.querySelector('.sec-title'));
   document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${_farmAddrText(f.name) ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(_farmAddrText(f.name))}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
@@ -5216,7 +5254,7 @@ function renderCal() {
     const prev = _byFarm.get(e.farm);
     if (!prev || (!_isHarvestEv(prev) && _isHarvestEv(e))) _byFarm.set(e.farm, e);
   }
-  const allTodayItems = [..._byFarm.values()];
+  const allTodayItems = [..._byFarm.values()].filter(e => _xdFarmOk(e.farm));   // 외부 기사 기사 필터(관리자는 늘 통과)
 
   const todayEl = document.getElementById('cal-today-strip');
   if (todayEl) {
@@ -5246,7 +5284,7 @@ function renderCal() {
         </div>`;
       }).join('');
       todayEl.innerHTML =
-        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)</div>` +
+        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)${_xdFilterTag()}</div>` +
         `<div style="display:flex;flex-direction:column;gap:5px">${rows}</div>`;
     } else {
       todayEl.style.display = 'none';
@@ -5297,9 +5335,11 @@ function renderCal() {
       const names = [...byDrv.keys()].filter(n => n).sort((a, b) =>
         (ord.indexOf(a) < 0 ? 9999 : ord.indexOf(a)) - (ord.indexOf(b) < 0 ? 9999 : ord.indexOf(b)));
       if (byDrv.has('')) names.push('');
+      const _xf = _xdDrvFilter();   // 외부 기사 기사 필터 — 그 기사 묶음만(관리자는 '')
+      if (_xf) names.splice(0, names.length, ...names.filter(n => n === _xf));
       transEl.innerHTML =
         `<div style="font-size:13px;font-weight:500;color:#1E3A5F;margin-bottom:6px">🚚 금일 수송 `
-        + `<span style="font-size:11px;font-weight:400;color:#9CA3AF">배출 ${tOuts.length} · 원물 ${tIbs.length} · 기사 ${names.filter(n => n).length}명</span>`
+        + `<span style="font-size:11px;font-weight:400;color:#9CA3AF">배출 ${tOuts.length} · 원물 ${tIbs.length} · 기사 ${names.filter(n => n).length}명</span>${_xdFilterTag()}`
         + (_xdTrans ? `<button type="button" onclick="event.stopPropagation();xdQrPickFarm()" style="float:right;font-size:11px;padding:2px 8px;border:1px solid #1565C0;color:#1565C0;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit">＋ 빈콘 회수</button>` : '')
         + `</div>`
         + names.map(n => `<div style="margin-top:6px"><div style="font-size:13px;font-weight:500;padding-bottom:3px">${n ? esc(n) : '기사 미정'}</div>${byDrv.get(n).join('')}</div>`).join('')
@@ -5605,7 +5645,7 @@ function renderUpcomingHarvest() {
   for (let i = 0; i < UPCOMING_DAYS; i++) {
     const d = new Date(base); d.setDate(base.getDate() + i);
     const dStr = ymd(d);
-    const list = _upcomingHarvestsOn(dStr).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));
+    const list = _upcomingHarvestsOn(dStr).filter(x => _xdFarmOk(x.farm)).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko'));   // 외부 기사 기사 필터
     const farmSet = new Set(list.map(x => x.farm));
     // ★경고 기준(2026-08-21 수정): '그 날짜 배차가 없음'이 아니라 '콘테이너가 아예 없음'.
     //   이전 차수에서 남은 콘테이너로 수확하는 게 정상 운영이다 —
@@ -5721,7 +5761,7 @@ function renderUpcomingHarvest() {
   el.style.display = '';
   el.innerHTML = `
     <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🔭 다가오는 수확 (${UPCOMING_DAYS}일)</div>
+      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🔭 다가오는 수확 (${UPCOMING_DAYS}일)${_xdFilterTag()}</div>
       <div style="font-size:11px;color:#aaa">${totalCnt}건${nd.length ? ' · <span style="color:#C62828;font-weight:600">콘테이너 없음 ' + nd.length + '건</span>' : ''}</div>
     </div>
     ${banner}
@@ -6081,14 +6121,14 @@ function _hvProgCard(g) {
 function renderHarvestProgress() {
   const el = document.getElementById('cal-harvest-progress');
   if (!el) return;
-  const groups = _hvProgGroups();
+  const groups = _hvProgGroups().filter(g => _xdFarmOk(g.farm));   // 외부 기사 기사 필터
   if (!groups.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   const cnt = { wait: 0, stale: 0, active: 0, done: 0 };
   groups.forEach(g => cnt[g.kind]++);
   el.style.display = '';
   el.innerHTML = `
     <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🗂 농가별 진행 현황</div>
+      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🗂 농가별 진행 현황${_xdFilterTag()}</div>
       <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
         ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => {
           const k = _HV_PROG_KIND[kd];
