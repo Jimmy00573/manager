@@ -292,6 +292,7 @@
 <div id="anav" class="nav">
   <button class="nbtn active" onclick="T('inv')" data-tab="inv">📦 재고관리</button>
   <button class="nbtn" onclick="T('transport')" data-tab="transport">🚜 수확 및 수송 관리</button>
+  <button class="nbtn" onclick="T('spec')" data-tab="spec">📋 작업 기준표</button>
   <div style="flex:1"></div>
   <button class="nbtn" onclick="T('set')" data-tab="set" style="border-left:1px solid var(--border)">⚙ 설정</button>
 </div>
@@ -320,6 +321,12 @@
 <div id="sync-bar" style="display:none"></div>
 
 <div class="main">
+
+<!-- 📋 작업 기준표 — 채널(마켓·마트·사업자)별 포장 기준의 현재·예정·직전 출고·이력. 내용은 app.js renderSpec이 그린다. 쓰기는 admin만(_specCanWrite). -->
+<div id="p-spec" class="panel">
+  <div id="spec-toolbar"></div>
+  <div id="spec-list"></div>
+</div>
 
 <!-- 현황판 -->
 <div id="p-dash" class="panel active">
@@ -2076,6 +2083,6 @@
 <script src="src/supabase-client.js?v=30"></script>
 <script src="src/db.js?v=29"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=713"></script>
+<script src="src/app.js?v=714"></script>
 </body>
 </html>

@@ -1250,7 +1250,7 @@ const OFFICE_ROLES = ['admin', 'staff', 'airport', 'ext_driver'];
 const ADM_ROLES = ['admin', 'airport', 'ext_driver'];
 const ADM_ROLE_LABEL = { admin: '관리자', airport: '공항(조회 전용)', ext_driver: '외부 기사' };
 // 역할별 상단 탭 화이트리스트(없으면 전부 보임 = admin). ★T()의 진입 가드도 이 표를 본다(한 곳).
-const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 'transport'] };
+const ROLE_NAV_TABS = { staff: ['inv', 'spec'], airport: ['inv'], ext_driver: ['inv', 'transport'] };   // 'spec' = 📋 작업 기준표(직원은 보기만)
 // 역할별 재고 화면 하위 탭 화이트리스트(없으면 전부 보임 = admin). 첫 값 = 허용 안 된 탭을 부를 때 대신 갈 탭(invTab).
 // ★공항(airport) 계정은 주스·청 한 탭만 본다. ★외부 기사는 입고 목록이 있는 미선과 탭만(1단계는 보기 전용).
 const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'], ext_driver: ['uns'] };
@@ -1345,10 +1345,11 @@ function T(id) {
   if (_stEl) _stEl.style.display = 'none';
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'chist', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set'].forEach(p => {
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'chist', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set', 'spec'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
+  if (id === 'spec') openSpecTab();   // 📋 작업 기준표 — 열 때마다 새로 읽는다
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
   if (id === 'vehicle') renderVehicles();
@@ -1385,7 +1386,7 @@ function transportSub(sub) {
     });
   }
   // 전체 패널 먼저 끄고, 해당 sub만 켜기
-  ['dash','disp','ext','cal','dboard','chist','farm','drv','vehicle','stats','export','inv','set'].forEach(p => {
+  ['dash','disp','ext','cal','dboard','chist','farm','drv','vehicle','stats','export','inv','set','spec'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const cur = document.getElementById('p-' + sub); if (cur) cur.classList.add('active');
@@ -10273,7 +10274,7 @@ const _BK_TABLES = [
   'picks', 'processing_records', 'product_category_map', 'product_size_master', 'product_weight_master',
   'quality_criteria', 'reports', 'settings', 'size_grades', 'sorting_details',
   'sorting_details_backup_before_inventory', 'sorting_results', 'sorting_results_backup_before_inventory',
-  'storage_locations', 'vehicles',
+  'storage_locations', 'vehicles', 'work_specs',
 ];
 // ★백업 파일에서 지울 컬럼 — 비밀번호는 파일에 남기지 않는다.
 //   계정 행 자체는 담는다(복구 때 어떤 계정이 있었는지 알아야 함). 비밀번호는 복구 후 설정에서 다시 정하면 된다.
@@ -26244,3 +26245,336 @@ document.addEventListener('click', e => {
     _openMenuId = null;
   }
 });
+
+// ═══════════════════ 📋 작업 기준표(work_specs) ═══════════════════
+// 채널(오픈마켓·마트·공판장·거래처…)·사업자·품목·상품(규격)마다 포장 기준(박스 중량·사이즈·선물세트 배열·브릭스)이 다르고 자주 바뀐다.
+// 한 키(channel|business|product|pack)의 '현재 기준·예정 기준·직전 출고·이력'을 한 카드에 모아 모두가 같은 화면을 본다.
+// ★기록 단위: kind '기준'(valid_from = 적용 시작일, valid_to = 명시 종료일·선택) / '출고'(valid_from = 출고일). soft delete(is_void)만.
+// ★쓰기(등록·수정·삭제·과중 저장)는 admin만 — 판정은 _specCanWrite 한 곳(버튼 표시·함수 첫 줄 모두 이것만 본다).
+// ★날짜는 'YYYY-MM-DD' 문자열 비교 + 로컬 헬퍼(td·_dayBefore·_dayAfter·calFmtShort)만 — toISOString 금지.
+const SPEC_TYPES = ['오픈마켓', '마트', '공판장', '거래처', '기타'];
+let _specRows = [];          // work_specs(is_void=false)
+let _specGram = {};          // settings size_gram_ranges — { 품목: { 사이즈: [최소g, 최대g] } }
+let _specOb = [];            // 최근 90일 outbound_records(재고 출고 참고용, 읽기만)
+let _specLoaded = false, _specLoadErr = '';
+const _specUi = { date: '', type: '', product: '', q: '' };   // 도구줄 상태
+const _specOpen = new Set();   // 펼친 예정·이력 — 키 + '|fut' / '|hist'
+let _specView = [];            // 지금 화면에 그린 카드 묶음(onclick은 이 배열의 번호로 가리킨다 — 키 문자열을 속성에 넣지 않으려고)
+function _specCanWrite() { return sessionStorage.getItem('citrus_role') === 'admin'; }
+function _specKey(r) { return [r.channel || '', r.business || '', r.product || '', r.pack || ''].join('|'); }
+function _specMD(s) { return s ? calFmtShort(s) : ''; }
+
+// 탭을 열 때마다 새로 읽는다(기준이 자주 바뀌고, 다른 사람이 방금 넣은 걸 봐야 한다).
+async function openSpecTab() {
+  if (!_specUi.date) _specUi.date = td();
+  _specRenderToolbar();
+  const list = document.getElementById('spec-list');
+  if (list && !_specLoaded) list.innerHTML = '<div class="note">불러오는 중…</div>';
+  await _specLoad();
+  renderSpec();
+}
+async function _specLoad() {
+  const d = new Date(td() + 'T00:00:00'); d.setDate(d.getDate() - 90);
+  const d90 = ymd(d);
+  try {
+    // 출고 참고는 최근 90일만 받아 JS로 거른다(거래처 이름을 쿼리에 넣지 않는다 — 한글 인코딩 사고 방지).
+    const [rows, gs, ob] = await Promise.all([
+      sbGetAll('work_specs', 'is_void=eq.false&order=valid_from.desc,created_at.desc'),
+      sbGet('settings', 'key=eq.size_gram_ranges'),
+      sbGetAll('outbound_records', `is_void=eq.false&date=gte.${d90}&select=id,date,partner_name,product,size_code,quantity,unit&order=date.desc`),
+    ]);
+    _specRows = rows || [];
+    _specGram = (gs && gs[0] && gs[0].value && typeof gs[0].value === 'object') ? gs[0].value : {};
+    _specOb = ob || [];
+    _specLoaded = true; _specLoadErr = '';
+  } catch (e) { _specLoadErr = e.message || String(e); }
+}
+
+function _specRenderToolbar() {
+  const el = document.getElementById('spec-toolbar'); if (!el) return;
+  const chip = (v, label) => {
+    const on = _specUi.type === v;
+    return `<button type="button" onclick="_specSetType('${v}')" style="font-size:12px;padding:3px 10px;border-radius:12px;cursor:pointer;font-family:inherit;border:1px solid ${on ? '#1E3A5F' : '#E5E7EB'};background:${on ? '#1E3A5F' : '#fff'};color:${on ? '#fff' : '#374151'}">${label}</button>`;
+  };
+  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
+    <label style="font-size:12px;color:#6B7280;display:flex;align-items:center;gap:4px;white-space:nowrap">기준일 <input type="date" id="spec-date" value="${esc(_specUi.date)}" onchange="_specUi.date=this.value||td();renderSpec()" style="font-size:12px;padding:3px 6px"></label>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">${chip('', '전체')}${SPEC_TYPES.map(t => chip(t, t)).join('')}</div>
+    <select id="spec-product" onchange="_specUi.product=this.value;renderSpec()" style="font-size:12px;padding:3px 6px">${buildProductOptgroupHTML(false, { firstOption: '<option value="">전체 품목</option>', selected: _specUi.product })}</select>
+    <input id="spec-q" placeholder="채널·사업자·상품 검색" value="${esc(_specUi.q)}" oninput="_specUi.q=this.value.trim();renderSpec()" style="font-size:12px;padding:3px 8px;flex:1 1 140px;min-width:0;max-width:240px">
+    ${_specCanWrite() ? `<span style="display:flex;gap:6px;margin-left:auto"><button class="btn pri" style="font-size:12px;padding:4px 10px" onclick="openSpecModal({kind:'기준'})">＋ 기준 등록</button><button class="btn" style="font-size:12px;padding:4px 10px" onclick="openSpecModal({kind:'출고'})">＋ 출고 기록</button></span>` : ''}
+  </div>`;
+}
+function _specSetType(t) { _specUi.type = t; _specRenderToolbar(); renderSpec(); }
+
+// 버전의 끝 날짜 = 명시 종료일(valid_to) || 다음 버전 시작 하루 전 || null(계속)
+function _specEnd(g, v) {
+  if (v.valid_to) return v.valid_to;
+  const nx = g.std.find(x => x.valid_from > v.valid_from);
+  return nx ? _dayBefore(nx.valid_from) : null;
+}
+// 키별 묶음 + 기준일 기준 현재·예정·직전 출고·이력
+function _specGroups(asOf) {
+  const by = new Map();
+  _specRows.forEach(r => {
+    const k = _specKey(r);
+    if (!by.has(k)) by.set(k, { key: k, channel: r.channel || '', business: r.business || '', product: r.product || '', pack: r.pack || '', std: [], out: [] });
+    (r.kind === '출고' ? by.get(k).out : by.get(k).std).push(r);
+  });
+  // 같은 날짜면 나중에 넣은 것이 뒤(= 현재로 뽑힌다)
+  const cmp = (a, b) => String(a.valid_from).localeCompare(String(b.valid_from)) || String(a.created_at || '').localeCompare(String(b.created_at || ''));
+  return [...by.values()].map(g => {
+    g.std.sort(cmp); g.out.sort(cmp);
+    const latest = [...g.std, ...g.out].sort(cmp).pop();
+    g.type = (latest && latest.channel_type) || '기타';
+    g.cur = g.std.filter(v => v.valid_from <= asOf).pop() || null;
+    g.fut = g.std.filter(v => v.valid_from > asOf);
+    g.lastOut = g.out.filter(v => v.valid_from <= asOf).pop() || null;
+    g.expired = !!(g.cur && g.cur.valid_to && g.cur.valid_to < asOf);
+    g.hist = [...g.std.filter(v => v !== g.cur && !g.fut.includes(v)), ...g.out.filter(v => v !== g.lastOut)]
+      .sort((a, b) => cmp(b, a));
+    return g;
+  });
+}
+function _specLayoutTxt(layout) {
+  return (Array.isArray(layout) ? layout : []).filter(x => x && x.size)
+    .map(x => `${esc(x.size)} 상${fmtN(Number(x.top) || 0)}/하${fmtN(Number(x.bottom) || 0)}`).join(' · ');
+}
+function _specWTxt(v) {
+  const a = v.weight_min, b = v.weight_max;
+  if (a == null && b == null) return '';
+  if (a != null && b != null && Number(a) !== Number(b)) return `${Number(a)}~${Number(b)}kg`;
+  return `${Number(a ?? b)}kg`;
+}
+function _specPeriod(g, v) {
+  if (v.kind === '출고') return _specMD(v.valid_from);
+  const e = _specEnd(g, v);
+  return `${_specMD(v.valid_from)}~${e ? _specMD(e) : ''}`;
+}
+// 한 버전의 내용 줄(현재·예정·이력 공용)
+function _specBody(g, v, color = '#374151') {
+  const L = (k, val) => val ? `<span style="white-space:nowrap"><span style="color:#9CA3AF">${k}</span> ${val}</span>` : '';
+  const parts = [
+    L(v.kind === '출고' ? '날짜' : '기간', esc(_specPeriod(g, v))),
+    L(v.kind === '출고' ? '실제' : '중량', esc(_specWTxt(v))),
+    L('사이즈', esc(v.sizes || '')),
+    L('배열', _specLayoutTxt(v.layout)),
+    L('브릭스', esc(v.brix || '')),
+    L('메모', esc(v.note || '')),
+    L('작성', esc(v.author || '')),
+  ].filter(Boolean);
+  return `<div style="font-size:12px;color:${color};line-height:1.7;display:flex;flex-wrap:wrap;gap:2px 12px">${parts.join('')}</div>`;
+}
+
+function renderSpec() {
+  const el = document.getElementById('spec-list'); if (!el) return;
+  if (_specLoadErr) { el.innerHTML = `<div class="note" style="color:#DC2626">작업 기준표를 불러오지 못했습니다 — ${esc(_specLoadErr)}</div>`; return; }
+  if (!_specLoaded) return;
+  const asOf = _specUi.date || td();
+  const q = (_specUi.q || '').toLowerCase();
+  const tIdx = t => { const i = SPEC_TYPES.indexOf(t); return i < 0 ? 99 : i; };
+  const ko = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko');
+  _specView = _specGroups(asOf)
+    .filter(g => !_specUi.type || g.type === _specUi.type)
+    .filter(g => !_specUi.product || g.product === _specUi.product)
+    .filter(g => !q || [g.channel, g.business, g.product, g.pack].some(s => String(s).toLowerCase().includes(q)))
+    .sort((a, b) => tIdx(a.type) - tIdx(b.type) || ko(a.type, b.type) || ko(a.channel, b.channel) || ko(a.business, b.business) || ko(a.product, b.product) || ko(a.pack, b.pack));
+  if (!_specView.length) {
+    el.innerHTML = `<div class="note">${_specRows.length ? '조건에 맞는 기준이 없습니다.' : '등록된 작업 기준이 없습니다.'}</div>`;
+    return;
+  }
+  let html = '', lastType = null;
+  _specView.forEach((g, i) => {
+    if (g.type !== lastType) {
+      lastType = g.type;
+      const n = _specView.filter(x => x.type === g.type).length;
+      html += `<div style="font-size:12px;font-weight:500;color:#1E3A5F;margin:14px 0 6px">${esc(g.type)} <span style="color:#9CA3AF;font-weight:400">${n}</span></div>`;
+    }
+    html += _specCard(g, i);
+  });
+  el.innerHTML = html;
+}
+
+function _specCard(g, i) {
+  const W = _specCanWrite();
+  const mini = 'font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer;font-family:inherit;background:#fff';
+  const head = `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
+      <span style="font-size:14px;font-weight:500;color:#111827">${esc(g.channel)}</span>
+      <span style="font-size:12px;color:#6B7280">${[g.business, g.product, g.pack].filter(Boolean).map(esc).join(' · ')}</span>
+      ${W ? `<span style="margin-left:auto;display:flex;gap:4px">
+        <button type="button" onclick="_specOpenFrom(${i},'기준')" style="${mini};border:1px solid #1E3A5F;color:#1E3A5F">기준 변경</button>
+        <button type="button" onclick="_specOpenFrom(${i},'출고')" style="${mini};border:1px solid #D1D5DB;color:#374151">출고 기록</button></span>` : ''}
+    </div>`;
+  // 현재 기준
+  let cur;
+  if (!g.cur) cur = `<div style="font-size:12px;color:#9CA3AF">현재 기준 없음</div>`;
+  else if (g.expired) cur = `<div style="font-size:11px;color:#6B7280;margin-bottom:2px"><span style="border:1px solid #D1D5DB;border-radius:4px;padding:0 5px;background:#F3F4F6">기준 만료(~${esc(_specMD(g.cur.valid_to))})</span></div>${_specBody(g, g.cur, '#9CA3AF')}`;
+  else cur = _specBody(g, g.cur);
+  // 예정 — 점선 칩, 누르면 펼친다
+  const futOpen = _specOpen.has(g.key + '|fut');
+  const fut = g.fut.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${g.fut.map(v =>
+      `<button type="button" onclick="_specToggle(${i},'fut')" style="${mini};border:1px dashed #1565C0;color:#1565C0">${esc(_specMD(v.valid_from))}부터 새 기준 ${futOpen ? '▾' : '▸'}</button>`).join('')}</div>`
+    + (futOpen ? g.fut.map(v => `<div style="margin-top:4px;padding:6px 8px;border:1px dashed #BFDBFE;border-radius:6px">${_specBody(g, v, '#1565C0')}</div>`).join('') : '') : '';
+  // 직전 출고
+  const lo = g.lastOut ? `<div style="margin-top:6px;padding-top:6px;border-top:0.5px solid #F3F4F6"><div style="font-size:11px;color:#6B7280;margin-bottom:1px">직전 출고</div>${_specBody(g, g.lastOut)}</div>` : '';
+  // 재고 출고 참고(같은 이름 거래처 · 같은 품목, 최근 3건)
+  const obs = _specOb.filter(o => o.partner_name === g.channel && o.product === g.product).slice(0, 3);
+  const ob = obs.length ? `<div style="margin-top:4px;font-size:11px;color:#6B7280">재고 출고 참고 · ${obs.map(o => `${esc(_specMD(o.date))} ${esc(o.size_code || '-')} ${fmtN(Number(o.quantity) || 0)}${esc(o.unit || '')}`).join(' · ')}</div>` : '';
+  // 이력
+  const histOpen = _specOpen.has(g.key + '|hist');
+  const hist = g.hist.length ? `<div style="margin-top:6px"><button type="button" onclick="_specToggle(${i},'hist')" style="font-size:11px;color:#6B7280;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${histOpen ? '▾' : '▸'} 이력 ${g.hist.length}건</button>`
+    + (histOpen ? `<div style="margin-top:4px;display:flex;flex-direction:column;gap:4px">${g.hist.map(v =>
+        `<div style="padding:4px 8px;background:#F9FAFB;border-radius:6px"><span style="font-size:11px;color:#6B7280">${v.kind === '출고' ? '출고' : '기준'}</span>${_specBody(g, v, '#6B7280')}</div>`).join('')}</div>` : '') + '</div>' : '';
+  return `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+    ${head}
+    <div style="margin-top:6px">${cur}</div>${fut}${lo}${ob}${hist}
+  </div>`;
+}
+function _specToggle(i, part) {
+  const g = _specView[i]; if (!g) return;
+  const k = g.key + '|' + part;
+  if (_specOpen.has(k)) _specOpen.delete(k); else _specOpen.add(k);
+  renderSpec();
+}
+// 카드의 [기준 변경]·[출고 기록] — 키를 미리 채운다. 기준 변경은 현재(없으면 가장 최근) 기준 내용 + 시작일 내일.
+function _specOpenFrom(i, kind) {
+  const g = _specView[i]; if (!g || !_specCanWrite()) return;
+  const src = kind === '기준' ? (g.cur || g.std[g.std.length - 1] || null) : null;
+  openSpecModal({ kind, group: g, from: src });
+}
+
+// ── 등록 모달(기준·출고 공용) — 매번 새로 만든다(옛 셸 재사용 금지)
+let _specBusy = false;
+function _specIsCitrus(product) { return (PRODUCT_TYPE_MAP[product] || '만감류') === '감귤류'; }
+// 배열 한 줄 — 감귤류는 사이즈 select(SIZES_감귤류), 만감류는 자유 입력('13수') + 품목 규칙 사이즈 제안(sizesForProduct)
+function _specLayoutRowHtml(product, row = {}) {
+  const sz = String(row.size || '');
+  const sizeCtl = _specIsCitrus(product)
+    ? `<select class="spm-size" style="${_qrInpS};width:auto;min-width:70px"><option value="">사이즈</option>${SIZES_감귤류.map(s => `<option value="${esc(s)}"${s === sz ? ' selected' : ''}>${esc(s)}</option>`).join('')}${sz && !SIZES_감귤류.includes(sz) ? `<option value="${esc(sz)}" selected>${esc(sz)}</option>` : ''}</select>`
+    : `<input class="spm-size" list="spm-size-dl" placeholder="예 13수" value="${esc(sz)}" style="${_qrInpS};width:80px">`;
+  const n = v => (v === 0 || v) ? esc(String(v)) : '';
+  return `<div class="spm-lrow" style="display:flex;gap:6px;align-items:center;margin-bottom:4px">${sizeCtl}
+    <span style="font-size:12px;color:#6B7280">상</span><input class="spm-top" type="number" min="0" inputmode="numeric" value="${n(row.top)}" style="${_qrInpS};width:60px" oninput="_specFormCalc()">
+    <span style="font-size:12px;color:#6B7280">하</span><input class="spm-bot" type="number" min="0" inputmode="numeric" value="${n(row.bottom)}" style="${_qrInpS};width:60px" oninput="_specFormCalc()">
+    <button type="button" onclick="this.closest('.spm-lrow').remove();_specFormCalc()" style="border:none;background:none;color:#9CA3AF;cursor:pointer;font-size:16px;line-height:1">✕</button></div>`;
+}
+function _specReadLayout() {
+  return [...document.querySelectorAll('#spm-layout .spm-lrow')].map(r => ({
+    size: (r.querySelector('.spm-size')?.value || '').trim(),
+    top: parseInt(r.querySelector('.spm-top')?.value, 10) || 0,
+    bottom: parseInt(r.querySelector('.spm-bot')?.value, 10) || 0,
+  }));
+}
+function _specRebuildLayout(rows) {
+  const box = document.getElementById('spm-layout'); if (!box) return;
+  const product = document.getElementById('spm-product')?.value || '';
+  box.innerHTML = (rows && rows.length ? rows : [{}]).map(r => _specLayoutRowHtml(product, r)).join('');
+  const dl = document.getElementById('spm-size-dl');
+  if (dl) dl.innerHTML = (product && !_specIsCitrus(product) ? sizesForProduct(product) : []).map(s => `<option value="${esc(s)}">`).join('');
+  _specFormCalc();
+}
+function _specAddLayoutRow() {
+  const box = document.getElementById('spm-layout'); if (!box) return;
+  box.insertAdjacentHTML('beforeend', _specLayoutRowHtml(document.getElementById('spm-product')?.value || ''));
+}
+function _specKindChanged() {
+  const k = document.getElementById('spm-kind')?.value;
+  const toWrap = document.getElementById('spm-to-wrap'); if (toWrap) toWrap.style.display = k === '출고' ? 'none' : '';
+  const fl = document.getElementById('spm-from-lbl'); if (fl) fl.textContent = k === '출고' ? '출고일 *' : '적용 시작일 *';
+  const wl = document.getElementById('spm-w-lbl'); if (wl) wl.textContent = k === '출고' ? '실제 중량(kg)' : '박스 중량(kg)';
+}
+// 폼 하단 계산 줄 — 2단계(예상 중량)에서 채운다. 지금은 비워 둔다.
+function _specFormCalc() {}
+
+function openSpecModal(o = {}) {
+  if (!_specCanWrite()) return;
+  document.getElementById('modal-spec')?.remove();
+  const g = o.group || null, src = o.from || null;
+  const kind = o.kind === '출고' ? '출고' : '기준';
+  const v = {
+    channel_type: (src && src.channel_type) || (g && g.type !== '기타' ? g.type : '') || '',
+    channel: g ? g.channel : '', business: g ? g.business : '', product: g ? g.product : '', pack: g ? g.pack : '',
+    valid_from: kind === '출고' ? td() : (src ? _dayAfter(td()) : td()), valid_to: '',
+    weight_min: src ? src.weight_min : null, weight_max: src ? src.weight_max : null,
+    sizes: src ? src.sizes : '', layout: src ? src.layout : [], brix: src ? src.brix : '', note: src ? src.note : '',
+    author: sessionStorage.getItem('citrus_adm_user') || '',
+  };
+  const uniq = arr => [...new Set(arr.map(s => String(s || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const dl = (id, arr) => `<datalist id="${id}">${uniq(arr).map(s => `<option value="${esc(s)}">`).join('')}</datalist>`;
+  const fv = x => (x === 0 || x) ? esc(String(x)) : '';
+  const lab = t => `<label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">${t}</label>`;
+  const m = document.createElement('div');
+  m.id = 'modal-spec';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:16px;box-sizing:border-box;overflow-y:auto';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);margin:auto 0">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">📋 작업 기준 등록</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>${lab('기록')}<select id="spm-kind" style="${_qrInpS}" onchange="_specKindChanged()"><option value="기준"${kind === '기준' ? ' selected' : ''}>기준</option><option value="출고"${kind === '출고' ? ' selected' : ''}>출고</option></select></div>
+        <div>${lab('구분')}<select id="spm-ctype" style="${_qrInpS}"><option value="">선택</option>${SPEC_TYPES.map(t => `<option value="${esc(t)}"${t === v.channel_type ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <div>${lab('채널 *')}<input id="spm-channel" list="spm-dl-channel" value="${esc(v.channel)}" placeholder="예 쿠팡·하나로마트" style="${_qrInpS}"></div>
+        <div>${lab('사업자')}<input id="spm-business" list="spm-dl-business" value="${esc(v.business)}" style="${_qrInpS}"></div>
+        <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specRebuildLayout(_specReadLayout())">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
+        <div>${lab('상품·규격 *')}<input id="spm-pack" list="spm-dl-pack" value="${esc(v.pack)}" placeholder="예 3kg 선물세트" style="${_qrInpS}"></div>
+        <div><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
+        <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
+        <div style="grid-column:1/-1"><label id="spm-w-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">박스 중량(kg)</label>
+          <div style="display:flex;gap:6px;align-items:center"><input id="spm-wmin" type="number" step="0.01" min="0" value="${fv(v.weight_min)}" placeholder="최소" style="${_qrInpS}" oninput="_specFormCalc()"><span style="color:#9CA3AF">~</span><input id="spm-wmax" type="number" step="0.01" min="0" value="${fv(v.weight_max)}" placeholder="최대" style="${_qrInpS}" oninput="_specFormCalc()"></div></div>
+        <div style="grid-column:1/-1">${lab('사용 사이즈')}<input id="spm-sizes" value="${esc(v.sizes || '')}" placeholder="예 2S1~S1" style="${_qrInpS}"></div>
+        <div style="grid-column:1/-1">${lab('선물세트 배열(상단/하단 개수)')}
+          <div id="spm-layout"></div>
+          <button type="button" onclick="_specAddLayoutRow()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 줄 추가</button>
+          <div id="spm-calc" style="font-size:12px;margin-top:6px"></div></div>
+        <div>${lab('브릭스')}<input id="spm-brix" value="${esc(v.brix || '')}" placeholder="예 11브릭스 이상" style="${_qrInpS}"></div>
+        <div>${lab('작성자')}<input id="spm-author" value="${esc(v.author)}" style="${_qrInpS}"></div>
+        <div style="grid-column:1/-1">${lab('메모')}<input id="spm-note" value="${esc(v.note || '')}" style="${_qrInpS}"></div>
+      </div>
+      ${dl('spm-dl-channel', [...partners.filter(p => p.is_active !== false).map(p => p.name), ..._specRows.map(r => r.channel)])}
+      ${dl('spm-dl-business', _specRows.map(r => r.business))}
+      ${dl('spm-dl-pack', _specRows.map(r => r.pack))}
+      <datalist id="spm-size-dl"></datalist>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button id="spm-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveSpec()">저장</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(입력 손실 방지)
+  document.body.appendChild(m);
+  _specKindChanged();
+  _specRebuildLayout(Array.isArray(v.layout) ? v.layout : []);
+}
+
+async function saveSpec() {
+  if (!_specCanWrite() || _specBusy) return;
+  const gv2 = id => (document.getElementById(id)?.value || '').trim();
+  const num = id => { const s = gv2(id); if (s === '') return null; const n = Number(s); return Number.isFinite(n) ? n : NaN; };
+  const kind = gv2('spm-kind') === '출고' ? '출고' : '기준';
+  const channel = gv2('spm-channel'), product = gv2('spm-product'), pack = gv2('spm-pack'), valid_from = gv2('spm-from');
+  if (!channel || !product || !pack || !valid_from) return alert('채널·품목·상품·규격·날짜는 필수입니다.');
+  const valid_to = kind === '기준' ? (gv2('spm-to') || null) : null;
+  if (valid_to && valid_to < valid_from) return alert('종료일이 시작일보다 앞입니다.');
+  const weight_min = num('spm-wmin'), weight_max = num('spm-wmax');
+  if (Number.isNaN(weight_min) || Number.isNaN(weight_max)) return alert('중량은 숫자로 입력하세요.');
+  if (weight_min != null && weight_max != null && weight_min > weight_max) return alert('중량 최소가 최대보다 큽니다.');
+  const layout = _specReadLayout().filter(x => x.size && (x.top > 0 || x.bottom > 0));
+  const payload = {
+    kind, channel_type: gv2('spm-ctype') || null, channel, business: gv2('spm-business') || null, product, pack,
+    valid_from, valid_to, weight_min, weight_max, sizes: gv2('spm-sizes') || null,
+    layout: layout.length ? layout : null, brix: gv2('spm-brix') || null, note: gv2('spm-note') || null,
+    author: gv2('spm-author') || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+  };
+  // 같은 키·같은 시작일의 기준이 이미 있으면 한 번 묻는다(나중에 넣은 것이 현재 기준이 된다)
+  if (kind === '기준' && _specRows.some(r => r.kind === '기준' && _specKey(r) === _specKey(payload) && r.valid_from === valid_from)
+      && !(await showConfirmEdit('같은 시작일의 기준이 이미 있습니다', `${channel} · ${pack} · ${_specMD(valid_from)}부터 — 새로 넣은 기준이 그날의 현재 기준이 됩니다. 저장할까요?`))) return;
+  _specBusy = true;
+  try {
+    const rows = await sbInsert('work_specs', payload);
+    if (rows && rows[0]) _specRows.unshift(rows[0]);
+    document.getElementById('modal-spec')?.remove();
+    renderSpec();
+    showToast(`${channel} · ${pack} ${kind} 저장`);
+  } catch (e) { alert('저장 오류: ' + e.message); }
+  finally { _specBusy = false; }
+}
