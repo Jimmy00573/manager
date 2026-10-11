@@ -1250,7 +1250,7 @@ const OFFICE_ROLES = ['admin', 'staff', 'airport', 'ext_driver'];
 const ADM_ROLES = ['admin', 'airport', 'ext_driver'];
 const ADM_ROLE_LABEL = { admin: '관리자', airport: '공항(조회 전용)', ext_driver: '외부 기사' };
 // 역할별 상단 탭 화이트리스트(없으면 전부 보임 = admin). ★T()의 진입 가드도 이 표를 본다(한 곳).
-const ROLE_NAV_TABS = { staff: ['inv', 'spec'], airport: ['inv'], ext_driver: ['inv', 'transport'] };   // 'spec' = 📋 작업 기준표(직원은 보기만)
+const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 'transport'] };   // 📋 작업 기준표(spec)는 admin만(v718)
 // 역할별 재고 화면 하위 탭 화이트리스트(없으면 전부 보임 = admin). 첫 값 = 허용 안 된 탭을 부를 때 대신 갈 탭(invTab).
 // ★공항(airport) 계정은 주스·청 한 탭만 본다. ★외부 기사는 입고 목록이 있는 미선과 탭만(1단계는 보기 전용).
 const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'], ext_driver: ['uns'] };
@@ -26272,7 +26272,7 @@ async function openSpecTab() {
   if (list && !_specLoaded) list.innerHTML = '<div class="note">불러오는 중…</div>';
   await _specLoad();
   renderSpec();
-  _specGramDraft = _specCanWrite() ? JSON.parse(JSON.stringify(_specGram)) : null;   // 과중 표 편집본은 열 때마다 DB 값으로 다시
+  _specGramEditing = false; _specGramDraft = null;   // 과중 표는 열 때마다 보기 모드(수정 초안은 버린다)
   _specRenderCalc(); _specRenderGram();
 }
 async function _specLoad() {
@@ -26674,10 +26674,17 @@ async function saveSpec() {
 
 // ── 작업 기준표 2단계: 중량 계산(사이즈별 과중 기준 settings.size_gram_ranges) ─────────────────
 // 품목 → 사이즈 → [최소g, 최대g]. 배열(상/하 개수)로 예상 박스 중량을 내고, 기준 중량과 비교한다.
+// ★'만감류' 키 = 만감류 품목 공통 기준(v718). 품목 키에 그 사이즈가 없고 만감류 품목이면 공통 기준을 쓴다.
+//   예상 중량·계산기·카드·폼이 모두 이 _specGr 하나를 거친다(폴백을 여기저기 두지 않는다).
+const SPEC_GRAM_COMMON = '만감류';
 function _specGr(product, size) {
-  const r = (_specGram[product] || {})[size];
-  return (Array.isArray(r) && r.length === 2 && Number.isFinite(+r[0]) && Number.isFinite(+r[1])) ? [+r[0], +r[1]] : null;
+  const pick = m => {
+    const r = (m || {})[size];
+    return (Array.isArray(r) && r.length === 2 && Number.isFinite(+r[0]) && Number.isFinite(+r[1])) ? [+r[0], +r[1]] : null;
+  };
+  return pick(_specGram[product]) || ((product !== SPEC_GRAM_COMMON && !_specIsCitrus(product)) ? pick(_specGram[SPEC_GRAM_COMMON]) : null);
 }
+function _specGramLabel(key) { return key === SPEC_GRAM_COMMON ? '만감류 (공통)' : key; }
 // 예상 중량 {min, max}(kg) = Σ(상+하) × [최소g, 최대g] / 1000. 과중 기준이 없는 사이즈가 하나라도 있으면 null(모르는 값을 0으로 치지 않는다).
 function _specExpKg(product, layout) {
   const rows = (Array.isArray(layout) ? layout : []).filter(x => x && x.size && ((Number(x.top) || 0) + (Number(x.bottom) || 0)) > 0);
@@ -26697,63 +26704,92 @@ function _specExpHtml(product, layout, wmin, wmax, check = true) {
   const bad = check && (lo != null || hi != null) && ((hi != null && e.min > hi) || (lo != null && e.max < lo));
   return `<span style="white-space:nowrap"><span style="color:#9CA3AF">예상</span> ${e.min}~${e.max}kg${bad ? ' <span style="color:#DC2626">⚠️ 기준 중량과 안 맞음</span>' : ''}</span>`;
 }
-// 품목의 사이즈를 과중 최소값 순서로(감귤류·만감류 공통 — 작은 과일부터)
-function _specGramSizes(product, src) {
-  const m = (src || _specGram)[product] || {};
+// 키(품목 또는 '만감류')의 사이즈 목록 상수 — 감귤류 품목은 SIZES_감귤류, 만감류 품목·'만감류' 키는 SIZES_만감류
+function _specSizeList(key) { return (key !== SPEC_GRAM_COMMON && _specIsCitrus(key)) ? SIZES_감귤류 : SIZES_만감류; }
+// 표·계산기의 사이즈 순서 — 만감류는 SIZES_만감류 순(8수→25수), 감귤은 최소 g 순(작은 과일부터)
+function _specGramSizes(key, src) {
+  const m = (src || _specGram)[key] || {};
+  if (_specSizeList(key) === SIZES_만감류) {
+    const ix = z => { const i = SIZES_만감류.indexOf(z); return i < 0 ? 999 : i; };
+    return Object.keys(m).sort((a, b) => ix(a) - ix(b) || a.localeCompare(b, 'ko'));
+  }
   return Object.keys(m).sort((a, b) => (Number((m[a] || [])[0]) || 0) - (Number((m[b] || [])[0]) || 0) || a.localeCompare(b, 'ko'));
 }
 
-// 🧮 개수 계산기 — 저장 없음, 모든 역할. 품목·사이즈·목표 kg → 약 n~m개(n=ceil(kg/최대g), m=floor(kg/최소g))
-const _specCalc = { product: '', size: '', kg: '' };
+// 🧮 개수 계산기 — 저장 없음. 두 방식: kg → 개수(약 ceil(kg/최대g)~floor(kg/최소g)개) / 개수 → kg(개수×과중)
+const _specCalc = { mode: 'kg', product: '', size: '', kg: '', cnt: '' };
 function _specCalcResult() {
   const el = document.getElementById('spec-calc-out'); if (!el) return;
-  const gr = _specGr(_specCalc.product, _specCalc.size), kg = Number(_specCalc.kg);
+  const gr = _specGr(_specCalc.product, _specCalc.size);
+  const kg2 = g => (g / 1000).toFixed(2);
+  const grTxt = gr ? ` <span style="color:#9CA3AF">(과중 ${gr[0]}~${gr[1]}g)</span>` : '';
+  const strong = t => `<strong style="font-weight:500;color:#1E3A5F">${t}</strong>`;
+  if (_specCalc.mode === 'cnt') {
+    const c = Number(_specCalc.cnt);
+    if (!gr || !(c > 0) || !Number.isInteger(c)) { el.innerHTML = '<span style="color:#9CA3AF">품목·사이즈·개수(정수)를 넣으세요</span>'; return; }
+    el.innerHTML = `실중량 ${strong(`${kg2(c * gr[0])}~${kg2(c * gr[1])} kg`)}${grTxt}`;
+    return;
+  }
+  const kg = Number(_specCalc.kg);
   if (!gr || !(kg > 0)) { el.innerHTML = '<span style="color:#9CA3AF">품목·사이즈·목표 kg을 넣으세요</span>'; return; }
   const n = Math.ceil(kg * 1000 / gr[1]), m = Math.floor(kg * 1000 / gr[0]);
-  el.innerHTML = `약 <strong style="font-weight:500;color:#1E3A5F">${fmtN(n)}~${fmtN(m)}개</strong> <span style="color:#9CA3AF">(과중 ${gr[0]}~${gr[1]}g)</span>`;
+  if (n > m) {   // 그 무게에 딱 맞는 개수가 없다 — 바로 아래·위 개수의 실중량을 보여 준다
+    el.innerHTML = `${strong('딱 맞는 개수 없음')} (${fmtN(n - 1)}개 ${kg2((n - 1) * gr[0])}~${kg2((n - 1) * gr[1])} kg / ${fmtN(n)}개 ${kg2(n * gr[0])}~${kg2(n * gr[1])} kg)${grTxt}`;
+    return;
+  }
+  el.innerHTML = `약 ${strong(n === m ? `${fmtN(n)}개` : `${fmtN(n)}~${fmtN(m)}개`)}${grTxt}`;
 }
 function _specCalcSet(k, v) {
   _specCalc[k] = v;
-  if (k === 'product') { _specCalc.size = ''; _specRenderCalc(); return; }
+  if (k === 'product' || k === 'mode') { if (k === 'product') _specCalc.size = ''; _specRenderCalc(); return; }
   _specCalcResult();
 }
 function _specRenderCalc() {
   const el = document.getElementById('spec-calc'); if (!el) return;
-  const prods = Object.keys(_specGram).sort((a, b) => a.localeCompare(b, 'ko'));
-  if (_specCalc.product && !prods.includes(_specCalc.product)) _specCalc.product = '';
-  if (!_specCalc.product && prods.length) _specCalc.product = prods[0];
-  const sizes = _specGramSizes(_specCalc.product);
+  const keys = Object.keys(_specGram).filter(k => Object.keys(_specGram[k] || {}).length).sort((a, b) => a.localeCompare(b, 'ko'));
+  if (_specCalc.product && !keys.includes(_specCalc.product)) _specCalc.product = '';
+  if (!_specCalc.product && keys.length) _specCalc.product = keys[0];
+  const sizes = _specGramSizes(_specCalc.product).filter(z => _specGr(_specCalc.product, z));
   const s = 'font-size:12px;padding:3px 6px';
+  const chip = (v, label) => { const on = _specCalc.mode === v; return `<button type="button" onclick="_specCalcSet('mode','${v}')" style="font-size:11px;padding:2px 9px;border-radius:12px;cursor:pointer;font-family:inherit;border:1px solid ${on ? '#1E3A5F' : '#E5E7EB'};background:${on ? '#1E3A5F' : '#fff'};color:${on ? '#fff' : '#374151'}">${label}</button>`; };
+  const input = _specCalc.mode === 'cnt'
+    ? `<span style="display:flex;align-items:center;gap:4px"><input type="number" min="1" step="1" inputmode="numeric" value="${esc(_specCalc.cnt)}" placeholder="개수" oninput="_specCalcSet('cnt',this.value)" style="${s};width:70px">개</span>`
+    : `<span style="display:flex;align-items:center;gap:4px"><input type="number" min="0" step="0.1" inputmode="decimal" value="${esc(_specCalc.kg)}" placeholder="목표" oninput="_specCalcSet('kg',this.value)" style="${s};width:70px">kg</span>`;
   el.innerHTML = `<div style="margin-top:16px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-radius:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:#374151">
     <span style="font-weight:500;color:#1E3A5F">🧮 개수 계산기</span>
-    <select style="${s}" onchange="_specCalcSet('product',this.value)">${prods.map(p => `<option value="${esc(p)}"${p === _specCalc.product ? ' selected' : ''}>${esc(p)}</option>`).join('') || '<option value="">과중 기준 없음</option>'}</select>
+    <span style="display:flex;gap:4px">${chip('kg', 'kg → 개수')}${chip('cnt', '개수 → kg')}</span>
+    <select style="${s}" onchange="_specCalcSet('product',this.value)">${keys.map(p => `<option value="${esc(p)}"${p === _specCalc.product ? ' selected' : ''}>${esc(_specGramLabel(p))}</option>`).join('') || '<option value="">과중 기준 없음</option>'}</select>
     <select style="${s}" onchange="_specCalcSet('size',this.value)"><option value="">사이즈</option>${sizes.map(z => `<option value="${esc(z)}"${z === _specCalc.size ? ' selected' : ''}>${esc(z)}</option>`).join('')}</select>
-    <span style="display:flex;align-items:center;gap:4px"><input type="number" min="0" step="0.1" inputmode="decimal" value="${esc(_specCalc.kg)}" placeholder="목표" oninput="_specCalcSet('kg',this.value)" style="${s};width:70px">kg</span>
+    ${input}
     <span id="spec-calc-out"></span>
   </div>`;
   _specCalcResult();
 }
 
-// ⚙ 사이즈별 과중 기준 — 접힘. 앞뒤 사이즈와 겹치면 노랑, 빈 구간은 회색 줄(표시만). 수정·저장은 admin만(_specCanWrite).
-let _specGramOpen = false, _specGramDraft = null, _specGramBusy = false;
-function _specGramToggle() { _specGramOpen = !_specGramOpen; if (_specGramOpen && _specCanWrite()) _specGramDraft = JSON.parse(JSON.stringify(_specGram)); _specRenderGram(); }
+// ⚙ 사이즈별 과중 기준 — 접힘. 기본은 보기 모드(글자만). admin은 [✏️ 수정]으로 수정 모드에 들어가서만 입력·추가·삭제·저장한다.
+//   겹침(노랑)·빈 구간(회색 줄)은 두 모드 모두 표시. 순서와 상관없이 구간으로 판정한다(만감류는 큰 과일→작은 과일 순이다).
+let _specGramOpen = false, _specGramEditing = false, _specGramDraft = null, _specGramBusy = false;
+function _specGramToggle() { _specGramOpen = !_specGramOpen; _specRenderGram(); }
+function _specGramStartEdit() { if (!_specCanWrite()) return; _specGramEditing = true; _specGramDraft = JSON.parse(JSON.stringify(_specGram)); _specGramOpen = true; _specRenderGram(); }
+function _specGramCancel() { _specGramEditing = false; _specGramDraft = null; _specRenderGram(); }   // 초안을 버린다(요청 없음)
 function _specGramEdit(product, size, idx, val) {
-  if (!_specCanWrite() || !_specGramDraft) return;
-  const r = (_specGramDraft[product] = _specGramDraft[product] || {})[size] = (_specGramDraft[product][size] || [null, null]);
+  if (!_specCanWrite() || !_specGramEditing || !_specGramDraft) return;
+  const m = (_specGramDraft[product] = _specGramDraft[product] || {});
+  const r = (m[size] = m[size] || [null, null]);
   r[idx] = val === '' ? null : Number(val);
   _specRenderGram();
 }
 function _specGramAddRow(product) {
-  if (!_specCanWrite() || !_specGramDraft) return;
+  if (!_specCanWrite() || !_specGramEditing || !_specGramDraft) return;
   const size = (document.getElementById('spec-gram-new-' + product.replace(/\W/g, '_'))?.value || '').trim();
-  if (!size) return alert('사이즈를 입력하세요.');
+  if (!size) return alert('사이즈를 고르세요.');
   const m = (_specGramDraft[product] = _specGramDraft[product] || {});
   if (m[size]) return alert('이미 있는 사이즈입니다.');
   m[size] = [null, null]; _specRenderGram();
 }
-function _specGramDelRow(product, size) { if (!_specCanWrite() || !_specGramDraft) return; delete (_specGramDraft[product] || {})[size]; _specRenderGram(); }
+function _specGramDelRow(product, size) { if (!_specCanWrite() || !_specGramEditing || !_specGramDraft) return; delete (_specGramDraft[product] || {})[size]; _specRenderGram(); }
 function _specGramAddProduct() {
-  if (!_specCanWrite() || !_specGramDraft) return;
+  if (!_specCanWrite() || !_specGramEditing || !_specGramDraft) return;
   const p = document.getElementById('spec-gram-newprod')?.value || '';
   if (!p) return;
   if (!_specGramDraft[p]) _specGramDraft[p] = {};
@@ -26761,53 +26797,75 @@ function _specGramAddProduct() {
 }
 function _specRenderGram() {
   const el = document.getElementById('spec-gram'); if (!el) return;
-  const W = _specCanWrite(), src = (W && _specGramDraft) ? _specGramDraft : _specGram;
-  const head = `<button type="button" onclick="_specGramToggle()" style="font-size:12px;color:#374151;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${_specGramOpen ? '▾' : '▸'} ⚙ 사이즈별 과중 기준</button>`;
+  const W = _specCanWrite(), E = W && _specGramEditing && !!_specGramDraft;
+  const src = E ? _specGramDraft : _specGram;
+  const head = `<div style="display:flex;align-items:center;gap:8px"><button type="button" onclick="_specGramToggle()" style="font-size:12px;color:#374151;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${_specGramOpen ? '▾' : '▸'} ⚙ 사이즈별 과중 기준</button>
+    ${(_specGramOpen && W && !E) ? `<button type="button" class="btn" style="font-size:11px;padding:2px 10px;margin-left:auto" onclick="_specGramStartEdit()">✏️ 수정</button>` : ''}</div>`;
   if (!_specGramOpen) { el.innerHTML = `<div style="margin-top:12px">${head}</div>`; return; }
   const inp = 'font-size:12px;padding:2px 4px;width:60px';
-  const prods = Object.keys(src).sort((a, b) => a.localeCompare(b, 'ko'));
-  const tables = prods.map(p => {
+  const ok = x => x && x[0] != null && x[1] != null;
+  const keys = Object.keys(src).sort((a, b) => (a === SPEC_GRAM_COMMON) - (b === SPEC_GRAM_COMMON) || a.localeCompare(b, 'ko'));
+  const tables = keys.map(p => {
     const sizes = _specGramSizes(p, src);
     const rg = z => (src[p] || {})[z] || [null, null];
     const rows = [];
     sizes.forEach((z, i) => {
       const r = rg(z), prev = i ? rg(sizes[i - 1]) : null, next = i < sizes.length - 1 ? rg(sizes[i + 1]) : null;
-      const ok = x => x && x[0] != null && x[1] != null;
-      const overlap = ok(r) && ((ok(prev) && prev[1] >= r[0]) || (ok(next) && r[1] >= next[0]));
-      // 앞 사이즈와의 빈 구간(정수 g) — 회색 줄로 표시만
-      if (ok(prev) && ok(r) && r[0] > prev[1] + 1) rows.push(`<tr style="color:#9CA3AF;background:#F9FAFB"><td></td><td colspan="3" style="font-size:11px">빈 구간 ${prev[1] + 1 === r[0] - 1 ? prev[1] + 1 : `${prev[1] + 1}~${r[0] - 1}`}g</td></tr>`);
-      const cell = (idx) => W
+      const hit = (x, y) => ok(x) && ok(y) && Math.max(x[0], y[0]) <= Math.min(x[1], y[1]);   // 두 구간이 겹치는가
+      const overlap = hit(r, prev) || hit(r, next);
+      // 앞 사이즈와의 빈 구간(정수 g) — 두 구간 중 가벼운 쪽 최대 ~ 무거운 쪽 최소 사이
+      if (ok(prev) && ok(r) && !hit(prev, r)) {
+        const [lo, hi] = prev[0] < r[0] ? [prev, r] : [r, prev];
+        if (hi[0] > lo[1] + 1) rows.push(`<tr style="color:#9CA3AF;background:#F9FAFB"><td></td><td colspan="3" style="font-size:11px">빈 구간 ${lo[1] + 1 === hi[0] - 1 ? lo[1] + 1 : `${lo[1] + 1}~${hi[0] - 1}`}g</td></tr>`);
+      }
+      const cell = idx => E
         ? `<input type="number" min="0" value="${r[idx] == null ? '' : r[idx]}" onchange="_specGramEdit('${esc(p)}','${esc(z)}',${idx},this.value)" style="${inp}">`
         : (r[idx] == null ? '-' : r[idx]);
-      rows.push(`<tr${overlap ? ' style="background:#FEF9C3"' : ''}><td>${esc(z)}</td><td>${cell(0)}</td><td>${cell(1)}</td><td style="font-size:11px;color:#A16207">${overlap ? '겹침' : ''}${W ? ` <button type="button" onclick="_specGramDelRow('${esc(p)}','${esc(z)}')" style="border:none;background:none;color:#9CA3AF;cursor:pointer">✕</button>` : ''}</td></tr>`);
+      rows.push(`<tr${overlap ? ' style="background:#FEF9C3"' : ''}><td>${esc(z)}</td><td>${cell(0)}</td><td>${cell(1)}</td><td style="font-size:11px;color:#A16207">${overlap ? '겹침' : ''}${E ? ` <button type="button" onclick="_specGramDelRow('${esc(p)}','${esc(z)}')" style="border:none;background:none;color:#9CA3AF;cursor:pointer">✕</button>` : ''}</td></tr>`);
     });
-    const addRow = W ? `<div style="margin-top:4px;display:flex;gap:4px;align-items:center"><input id="spec-gram-new-${p.replace(/\W/g, '_')}" placeholder="사이즈" style="${inp};width:70px"><button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="_specGramAddRow('${esc(p)}')">＋ 사이즈</button></div>` : '';
-    return `<div style="flex:1 1 220px;min-width:0;max-width:320px"><div style="font-size:12px;font-weight:500;color:#1E3A5F;margin-bottom:4px">${esc(p)}</div>
+    // 줄 추가 — 그 키의 사이즈 상수(SIZES_감귤류/SIZES_만감류) 중 아직 없는 것만 고른다
+    const left = _specSizeList(p).filter(z => !(src[p] || {})[z]);
+    const addRow = E ? `<div style="margin-top:4px;display:flex;gap:4px;align-items:center"><select id="spec-gram-new-${p.replace(/\W/g, '_')}" style="font-size:12px;padding:2px 4px"><option value="">사이즈</option>${left.map(z => `<option value="${esc(z)}">${esc(z)}</option>`).join('')}</select><button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="_specGramAddRow('${esc(p)}')">＋ 사이즈</button></div>` : '';
+    return `<div style="flex:1 1 220px;min-width:0;max-width:320px"><div style="font-size:12px;font-weight:500;color:#1E3A5F;margin-bottom:4px">${esc(_specGramLabel(p))}</div>
       <table style="min-width:0;width:100%;font-size:12px"><thead><tr><th>사이즈</th><th>최소 g</th><th>최대 g</th><th></th></tr></thead><tbody>${rows.join('') || '<tr><td colspan="4" style="color:#9CA3AF">사이즈 없음</td></tr>'}</tbody></table>${addRow}</div>`;
   }).join('');
-  const tools = W ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px">
+  const tools = E ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px">
       <select id="spec-gram-newprod" style="font-size:12px;padding:3px 6px">${buildProductOptgroupHTML(false, { firstOption: '<option value="">품목 추가…</option>' })}</select>
       <button type="button" class="btn" style="font-size:12px;padding:3px 10px" onclick="_specGramAddProduct()">＋ 품목</button>
-      <button type="button" class="btn pri" style="font-size:12px;padding:4px 12px;margin-left:auto" onclick="saveSpecGram()">과중 기준 저장</button></div>` : '';
+      <span style="margin-left:auto;display:flex;gap:6px"><button type="button" class="btn cancel" style="font-size:12px;padding:4px 12px" onclick="_specGramCancel()">취소</button>
+      <button type="button" class="btn pri" style="font-size:12px;padding:4px 12px" onclick="saveSpecGram()">저장</button></span></div>` : '';
   el.innerHTML = `<div style="margin-top:12px">${head}
-    <div style="margin-top:8px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-radius:8px">
-      <div style="font-size:11px;color:#6B7280;margin-bottom:6px">노랑 = 앞뒤 사이즈와 겹침 · 회색 = 빈 구간${W ? '' : ' · 보기 전용'}</div>
+    <div style="margin-top:8px;padding:10px 12px;background:#fff;border:1px solid ${E ? '#1E3A5F' : '#E5E7EB'};border-radius:8px">
+      <div style="font-size:11px;color:#6B7280;margin-bottom:6px">노랑 = 앞뒤 사이즈와 겹침 · 회색 = 빈 구간${E ? ' · 수정 중' : ''}</div>
       <div style="display:flex;flex-wrap:wrap;gap:16px">${tables || '<span style="font-size:12px;color:#9CA3AF">등록된 과중 기준이 없습니다.</span>'}</div>${tools}
     </div></div>`;
 }
-// 저장 — settings.size_gram_ranges 한 줄(품목 전체 객체). saveProductWeights와 같은 방식(있으면 PATCH·영향 행 확인, 없으면 insert).
+// 저장 — 바뀐 줄을 보여 주고 확인하면 settings.size_gram_ranges 한 줄 PATCH(saveProductWeights 방식). 바뀐 게 없으면 요청하지 않는다.
 async function saveSpecGram() {
-  if (!_specCanWrite() || _specGramBusy || !_specGramDraft) return;
+  if (!_specCanWrite() || _specGramBusy || !_specGramEditing || !_specGramDraft) return;
   // 숫자 검사 — 빈칸·최소>최대는 저장하지 않는다
   const value = {};
   for (const [p, m] of Object.entries(_specGramDraft)) {
     value[p] = {};
     for (const [z, r] of Object.entries(m || {})) {
-      if (!Array.isArray(r) || r[0] == null || r[1] == null || !Number.isFinite(r[0]) || !Number.isFinite(r[1])) return alert(`${p} ${z}: 최소·최대 g을 모두 넣으세요.`);
-      if (r[0] > r[1]) return alert(`${p} ${z}: 최소가 최대보다 큽니다.`);
+      if (!Array.isArray(r) || r[0] == null || r[1] == null || !Number.isFinite(r[0]) || !Number.isFinite(r[1])) return alert(`${_specGramLabel(p)} ${z}: 최소·최대 g을 모두 넣으세요.`);
+      if (r[0] > r[1]) return alert(`${_specGramLabel(p)} ${z}: 최소가 최대보다 큽니다.`);
       value[p][z] = [r[0], r[1]];
     }
   }
+  // 바뀐 줄 — 품목·사이즈·전→후
+  const fmt = r => r ? `${r[0]}~${r[1]}` : '없음';
+  const diffs = [];
+  new Set([...Object.keys(_specGram), ...Object.keys(value)]).forEach(p => {
+    const a = _specGram[p] || {}, b = value[p] || {};
+    new Set([...Object.keys(a), ...Object.keys(b)]).forEach(z => {
+      const ra = Array.isArray(a[z]) ? [+a[z][0], +a[z][1]] : null, rb = b[z] || null;
+      if (JSON.stringify(ra) !== JSON.stringify(rb)) diffs.push(`${_specGramLabel(p)} ${z} ${fmt(ra)} → ${rb ? fmt(rb) : '삭제'}`);
+    });
+    if (!_specGram[p] && value[p] && !Object.keys(value[p]).length) diffs.push(`${_specGramLabel(p)} 품목 추가`);
+  });
+  if (!diffs.length) { showToast('바뀐 내용이 없습니다.'); _specGramCancel(); return; }
+  if (!(await showConfirmEdit('과중 기준 저장', diffs.join(' · ')))) return;
   _specGramBusy = true;
   try {
     const rows = await sbGet('settings', 'key=eq.size_gram_ranges');
@@ -26822,7 +26880,7 @@ async function saveSpecGram() {
     } else {
       await sbInsert('settings', { key: 'size_gram_ranges', value });
     }
-    _specGram = value; _specGramDraft = JSON.parse(JSON.stringify(value));
+    _specGram = value; _specGramEditing = false; _specGramDraft = null;
     _specRenderGram(); _specRenderCalc(); renderSpec();
     showToast('과중 기준이 저장되었습니다.');
   } catch (e) { alert('저장 오류: ' + e.message); }
