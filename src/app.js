@@ -294,6 +294,74 @@ function hideLoading() {
   if (el) el.style.display = 'none';
 }
 
+// ── 쓰기 '처리 중' 표시(공용) — DB 쓰기 요청이 나가는 동안 상단 진행 바 + 직전에 누른 버튼 잠금.
+// ★위 showLoading은 화면 전체를 덮는 조회용이라 따로 둔다(저장마다 화면을 덮으면 입력 흐름이 끊긴다).
+// ★감지는 window.fetch 한 곳: SUPABASE_URL로 가는 GET·HEAD가 아닌 요청. /rpc/는 변경 감지 폴링(sync_latest, 조회)이라 뺀다.
+//   반환값·예외·헤더는 그대로 넘긴다(동작 변화 0). 각 저장 함수의 busy 플래그·'등록 중...' 표시는 그대로 둔다 —
+//   쓰기 시작 시점에 이미 disabled인 버튼은 건드리지 않는다.
+// ★바·버튼 표시는 켜질 때 만들고 꺼질 때 지운다 — 쉬는 동안 화면 HTML은 예전과 같다.
+let _netW = 0, _netShown = false, _netOffT = null, _netSafeT = null;
+let _netLastBtn = null, _netLastAt = 0, _netLock = null;   // 직전에 누른 버튼·시각 / 잠근 버튼 { btn, html, dis, minW }
+const _NET_BUSY_HTML = '<span class="net-busy-spin"></span>처리 중…';
+document.addEventListener('click', e => {
+  const b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if (b) { _netLastBtn = b; _netLastAt = Date.now(); }
+}, true);
+function _netShow() {
+  clearTimeout(_netOffT); _netOffT = null;
+  if (!_netShown) {
+    _netShown = true;
+    const bar = document.createElement('div');
+    bar.id = 'net-busy-bar'; bar.className = 'net-busy-bar';
+    document.body.appendChild(bar);
+    clearTimeout(_netSafeT);
+    _netSafeT = setTimeout(() => { _netW = 0; _netHide(); }, 20000);   // 안전장치 — 20초 넘게 켜져 있으면 강제로 끈다
+  }
+  // 직전(2초 이내)에 누른 버튼을 잠근다 — 아직 화면에 있고, 스스로 disabled를 걸지 않은 버튼만.
+  const b = _netLastBtn;
+  if (!_netLock && b && Date.now() - _netLastAt <= 2000 && b.isConnected && !b.disabled) {
+    _netLock = { btn: b, html: b.innerHTML, dis: b.disabled, minW: b.style.minWidth };
+    b.style.minWidth = b.offsetWidth + 'px';   // 글자가 바뀌어도 버튼 폭은 그대로
+    b.disabled = true; b.setAttribute('aria-busy', 'true'); b.innerHTML = _NET_BUSY_HTML;
+  }
+}
+function _netHide() {
+  clearTimeout(_netOffT); _netOffT = null;
+  clearTimeout(_netSafeT); _netSafeT = null;
+  _netShown = false;
+  document.getElementById('net-busy-bar')?.remove();
+  const L = _netLock; _netLock = null; _netLastBtn = null;
+  if (L && L.btn.isConnected) {   // 모달이 닫혀 버튼이 사라졌으면 할 일 없음
+    if (L.btn.innerHTML === _NET_BUSY_HTML) L.btn.innerHTML = L.html;   // 저장 함수가 그 사이 글자를 바꿨으면 그 값을 존중
+    L.btn.disabled = L.dis; L.btn.removeAttribute('aria-busy'); L.btn.style.minWidth = L.minW;
+  }
+}
+function _netEnd() {
+  _netW = Math.max(0, _netW - 1);
+  if (_netW === 0 && _netShown && !_netOffT) _netOffT = setTimeout(_netHide, 150);   // 연속 저장 사이에 깜빡이지 않게 잠깐 기다린다
+}
+(function () {
+  const f0 = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const m = String((init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+    if (!url.startsWith(SUPABASE_URL)) return f0(input, init);
+    if (m === 'GET' || m === 'HEAD' || url.includes('/rpc/')) {
+      // 조회는 바를 켜지 않는다. 단 바가 이미 켜져 있으면(저장 도중 '쓰기 → 다시 읽기 → 쓰기') 그 조회도 같은 처리로 세어
+      //   중간에 바가 꺼졌다 켜지며 깜빡이지 않게 한다. 버튼 잠금은 하지 않는다.
+      if (!_netShown) return f0(input, init);
+      _netW++; clearTimeout(_netOffT); _netOffT = null;
+      let pg;
+      try { pg = f0(input, init); } catch (e) { _netEnd(); throw e; }
+      return pg.finally(_netEnd);
+    }
+    _netW++; _netShow();
+    let p;
+    try { p = f0(input, init); } catch (e) { _netEnd(); throw e; }
+    return p.finally(_netEnd);
+  };
+})();
+
 // ── kebab 메뉴 외부 클릭/ESC 핸들러 (1회 등록)
 document.addEventListener('click', e => {
   if (!e.target.closest('.inv-kebab') && !e.target.closest('#inv-row-menu')) _closeInvMenu();
