@@ -26408,7 +26408,7 @@ function _specDiff(prev, cur) {
   };
   const combo = v => {
     const d = document.createElement('div');
-    d.innerHTML = _specCombos(v.layout).map((c, i) => _specComboLine(v.product, c, i, v.weight_min, v.weight_max, false)).join('');
+    d.innerHTML = _specCombos(v.layout).map((c, i) => _specComboLine(v.product, c, i, v.weight_min, v.weight_max, false, true, _specPackUnit(v.pack))).join('');
     return [...d.children].map(x => x.textContent.replace(/\s+/g, ' ').trim()).join(' / ');
   };
   const items = [['박스', v => v.box || ''], ['중량', w], ['사용 사이즈', v => v.sizes || ''], ['브릭스', v => v.brix || ''],
@@ -26737,7 +26737,8 @@ function _specCombos(layout) {
   const arr = Array.isArray(layout) ? layout.filter(Boolean) : [];
   if (!arr.length) return [];
   if (arr.every(c => Array.isArray(c.rows))) {
-    return arr.map(c => ({ rows: c.rows.filter(r => r && r.size), actual_kg: (c.actual_kg != null && c.actual_kg !== '') ? Number(c.actual_kg) : null, note: c.note || '' }));
+    return arr.map(c => ({ rows: c.rows.filter(r => r && r.size), actual_kg: (c.actual_kg != null && c.actual_kg !== '') ? Number(c.actual_kg) : null, note: c.note || '',
+      ...((c.qty != null && c.qty !== '') ? { qty: Number(c.qty) } : {}) }));   // qty(v727) = 박스 수 / CT 수 — 출고만, 있을 때만
   }
   const rows = arr.filter(x => x.size && !Array.isArray(x.rows));
   if (!rows.length) return [];
@@ -26774,7 +26775,19 @@ function _specJudge(calc, actual, wmin, wmax) {
 }
 // 구성 한 줄(카드·폼 미리보기 공용): 'A 혼합 11수 4과 + 12수 5과 · 9과 · 예상 2.22~2.43 kg (평균 2.32) · 실측 2.38 +0.06 ✓'
 //   judge=false면 판정 없이(출고 기록 — 그 중량 칸은 기준이 아니라 실제 중량이다). 줄 글자는 _specLayoutTxt 재사용.
-function _specComboLine(product, combo, idx, wmin, wmax, judge = true, showRows = true) {
+//   unit(v727, _specPackUnit): 'box'면 위 + 박스 수('× 4박스'), 'ct'면 '12수 · 5CT · 17.4kg/CT ✓'(실중량을 1CT 기준 wmin~wmax로 판정).
+function _specComboLine(product, combo, idx, wmin, wmax, judge = true, showRows = true, unit = 'box') {
+  if (unit === 'ct') {
+    const size = ((combo.rows || []).find(r => r && r.size) || {}).size || '';
+    const act = combo.actual_kg != null && Number(combo.actual_kg) > 0 ? Number(combo.actual_kg) : null;
+    const seg = [size ? `<strong style="font-weight:500;color:#1E3A5F">${esc(size)}</strong>` : '<span style="color:#9CA3AF">사이즈 없음</span>'];
+    if (combo.qty != null && combo.qty !== '') seg.push(`${fmtN(Number(combo.qty))}CT`);
+    seg.push(act != null ? `${_specKgTxt(act)}kg/CT` : '<span style="color:#9CA3AF">실중량 없음</span>');
+    const j = judge ? _specJudge(null, act, wmin, wmax) : null;
+    if (j) seg.push(`<span style="color:${j.color}">${j.mark}</span>`);
+    if (combo.note) seg.push(`<span style="color:#6B7280">${esc(combo.note)}</span>`);
+    return `<div style="font-size:12px;line-height:1.7;display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline">${seg.join(' · ')}</div>`;
+  }
   const c = _specComboCalc(product, combo);
   const lbl = String.fromCharCode(65 + (idx % 26));
   const rowsTxt = (combo.rows || []).filter(x => x && x.size && _specRowCount(x) > 0).map(r => _specLayoutTxt([r], product)).join(' + ');
@@ -26796,16 +26809,53 @@ function _specComboLine(product, combo, idx, wmin, wmax, judge = true, showRows 
     }
     seg.push(a);
   } else if (c) seg.push('<span style="color:#9CA3AF">실측 없음</span>');
+  if (combo.qty != null && combo.qty !== '') seg.push(`× ${fmtN(Number(combo.qty))}박스`);
   const j = judge ? _specJudge(c, act, wmin, wmax) : null;
   if (j) seg.push(`<span style="color:${j.color}">${j.mark}</span>`);
   if (combo.note) seg.push(`<span style="color:#6B7280">${esc(combo.note)}</span>`);
   return `<div style="font-size:12px;line-height:1.7;display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline">${parts.join(' ')}${seg.length ? ' · ' + seg.join(' · ') : ''}</div>`;
 }
 // 카드의 구성 목록(현재·예정·직전 출고·이력 공용) — 구성이 없으면 ''
+//   v727: 규격 단위(_specPackUnit)로 줄 모양을 고르고, 출고면 총합 줄(_specOutTotal). ct 출고 줄은 그날 기준(_specStdAt)의 1CT 기준 중량으로 판정.
 function _specCombosHtml(v) {
   const cs = _specCombos(v.layout);
   if (!cs.length) return '';
-  return `<div style="flex-basis:100%;min-width:0">${cs.map((c, i) => _specComboLine(v.product, c, i, v.weight_min, v.weight_max, v.kind !== '출고')).join('')}</div>`;
+  const unit = _specPackUnit(v.pack), out = v.kind === '출고';
+  const ref = out && unit === 'ct' ? _specStdAt(_specKey(v), v.valid_from) : v;
+  const judge = !out || (unit === 'ct' && !!ref);
+  return `<div style="flex-basis:100%;min-width:0">${cs.map((c, i) => _specComboLine(v.product, c, i, ref && ref.weight_min, ref && ref.weight_max, judge, true, unit)).join('')}${out ? _specOutTotal(v.product, v.layout, unit) : ''}</div>`;
+}
+// ── 출고 단위·총합(v727) ─────────────────────────
+// 상품규격 단위 — settings.spec_masters.packs[].unit('ct'|'box'). 없거나 목록에 없는 규격은 'box'.
+function _specPackUnit(packName) {
+  const x = ((_specMasters || {}).packs || []).find(p => p && p.name === packName);
+  return x && x.unit === 'ct' ? 'ct' : 'box';
+}
+// kg 글자 — 소수 둘째 자리 반올림, 끝 0 없이(17.4 · 50.8 · 5.05)
+function _specKgTxt(kg) { return String(Math.round(Number(kg) * 100) / 100); }
+// 그 키·그날의 현재 기준(기간 계산은 _specGroups 그대로 호출)
+function _specStdAt(key, date) { const g = _specGroups(date || td()).find(x => x.key === key); return g ? g.cur : null; }
+// 출고 총합 한 줄(카드·폼 공용) — box '총 n박스 · w kg' / ct '총 nCT · w kg · 평균 a kg/CT'. 수량이 하나도 없으면 ''.
+//   무게 합 = Σ 수량 × 실중량(g 정수로 더해 소수 오차 없이). 실중량 없는 구성은 합에서 빼고 '(실측 없는 구성 k개 제외)'.
+function _specOutTotal(product, layout, unit) {
+  const cs = _specCombos(layout).filter(c => c.qty != null && c.qty > 0);
+  if (!cs.length) return '';
+  const n = cs.reduce((a, c) => a + c.qty, 0);
+  const has = cs.filter(c => c.actual_kg != null && c.actual_kg > 0), miss = cs.length - has.length;
+  const g = has.reduce((a, c) => a + c.qty * Math.round(c.actual_kg * 1000), 0), nHas = has.reduce((a, c) => a + c.qty, 0);
+  const parts = [`총 ${fmtN(n)}${unit === 'ct' ? 'CT' : '박스'}`];
+  if (has.length) parts.push(`${_specKgTxt(g / 1000)} kg`);
+  if (unit === 'ct' && nHas) parts.push(`평균 ${(Math.round(g / nHas / 10) / 100).toFixed(2)} kg/CT`);
+  return `<div class="spm-total-line" style="font-size:12px;line-height:1.7;color:#111827">${parts.join(' · ')}${miss ? ` <span style="color:#9CA3AF">(실측 없는 구성 ${miss}개 제외)</span>` : ''}</div>`;
+}
+// 구성들의 사이즈 → 품목 사이즈 순서로 '최소~최대'(하나면 그 값, 없으면 ''). 출고 사용 사이즈 자동 채움용.
+function _specSizeSpan(product, combos, unit) {
+  const used = [...new Set(combos.flatMap(c => (c.rows || []).filter(r => r && r.size && (unit === 'ct' || _specRowCount(r) > 0)).map(r => String(r.size).trim())))];
+  if (!used.length) return '';
+  const list = _specProdSizes(product);
+  const known = used.filter(z => list.includes(z)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
+  const lo = known[0] || used[0], hi = known[known.length - 1] || used[used.length - 1];
+  return lo === hi ? lo : `${lo}~${hi}`;
 }
 
 // ── 등록 창 '실제 구성' 입력 ─────────────────────────
@@ -26832,8 +26882,9 @@ function _specReadRows(box) {
 // 등록 창의 구성들 → [{rows, actual_kg, note}] (화면 그대로 — 빈 줄 포함, 저장 때 거른다)
 function _specReadCombos() {
   return [...document.querySelectorAll('#spm-combos .spm-combo')].map(c => {
-    const a = (c.querySelector('.spm-cact')?.value || '').trim();
-    return { rows: _specReadRows(c.querySelector('.spm-crows')), actual_kg: a === '' ? null : Number(a), note: (c.querySelector('.spm-cnote')?.value || '').trim() };
+    const a = (c.querySelector('.spm-cact')?.value || '').trim(), q = (c.querySelector('.spm-cqty')?.value || '').trim();
+    const rows = c.classList.contains('spm-ct') ? [{ size: (c.querySelector('.spm-size')?.value || '').trim() }] : _specReadRows(c.querySelector('.spm-crows'));
+    return { rows, qty: q === '' ? null : Number(q), actual_kg: a === '' ? null : Number(a), note: (c.querySelector('.spm-cnote')?.value || '').trim() };
   });
 }
 // 칸 검사 — 상단·하단 0~40 정수, 과 0~60 정수, 구성 실측은 빈칸 또는 0 초과(소수 둘째 자리까지). 틀린 칸은 빨간 테두리. 반환: 통과 여부
@@ -26841,7 +26892,7 @@ function _specLayoutValid() {
   let ok = true;
   const chk = (sel, test) => document.querySelectorAll(sel).forEach(inp => {
     const s = (inp.value || '').trim();
-    const bad = s !== '' && !test(s);
+    const bad = s !== '' && !test(s, inp);
     inp.style.borderColor = bad ? '#DC2626' : '';
     if (bad) ok = false;
   });
@@ -26849,10 +26900,19 @@ function _specLayoutValid() {
   chk('#spm-combos .spm-top, #spm-combos .spm-bot', intIn(40));
   chk('#spm-combos .spm-cnt', intIn(60));
   chk('#spm-combos .spm-cact', s => /^\d+(\.\d{1,2})?$/.test(s) && Number(s) > 0);
+  chk('#spm-combos .spm-cqty', (s, inp) => intIn(Number(inp.max) || 0)(s));   // 박스 수 0~9999 · CT 수 0~999(v727)
   return ok;
 }
-function _specComboHtml(product, combo, i) {
+function _specComboHtml(product, combo, i, unit = 'box') {
   const n = v => (v === 0 || v) ? esc(String(v)) : '';
+  // CT형(v727) — 줄 하나 = 수/사이즈 + CT 수(0~999 정수) + 1CT 실중량. 같은 .spm-combo 틀이라 읽기·검사·미리보기가 공용이다.
+  if (unit === 'ct') return `<div class="spm-combo spm-ct" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid #E5E7EB;border-radius:8px;padding:6px 8px;margin-bottom:6px">
+    <select class="spm-size" style="${_qrInpS};width:auto;min-width:76px" onchange="_specFormCalc()">${_specSizeOpts(_specProdSizes(product))}</select>
+    <span class="spm-qwrap" style="display:flex;gap:4px;align-items:center"><input class="spm-cqty" type="number" min="0" max="999" step="1" inputmode="numeric" value="${n(combo.qty)}" placeholder="0" style="${_qrInpS};width:64px" oninput="this.style.borderColor='';_specFormCalc()"><span style="font-size:12px;color:#6B7280">CT</span></span>
+    <input class="spm-cact" type="number" min="0" step="0.1" inputmode="decimal" value="${n(combo.actual_kg)}" placeholder="1CT kg" style="${_qrInpS};width:84px" oninput="this.style.borderColor='';_specFormCalc()"><span style="font-size:12px;color:#6B7280">kg/CT</span>
+    <button type="button" onclick="this.closest('.spm-combo').remove();_specFormCalc()" style="margin-left:auto;border:none;background:none;color:#9CA3AF;cursor:pointer;font-size:16px;line-height:1">✕</button>
+    <div class="spm-cprev" style="flex-basis:100%"></div>
+  </div>`;
   const rows = combo.rows && combo.rows.length ? combo.rows : [{}];
   return `<div class="spm-combo" style="border:1px solid #E5E7EB;border-radius:8px;padding:8px;margin-bottom:6px">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><strong class="spm-clbl" style="font-size:12px;font-weight:500;color:#1E3A5F">${String.fromCharCode(65 + (i % 26))}</strong>
@@ -26862,6 +26922,7 @@ function _specComboHtml(product, combo, i) {
     <button type="button" onclick="_specAddComboRow(this)" style="font-size:11px;padding:2px 8px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 사이즈 추가</button>
     <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
       <input class="spm-cact" type="number" min="0" step="0.01" inputmode="decimal" value="${n(combo.actual_kg)}" placeholder="실측 kg(선택)" style="${_qrInpS};width:110px" oninput="this.style.borderColor='';_specFormCalc()">
+      <span class="spm-qwrap" style="display:flex;gap:4px;align-items:center"><input class="spm-cqty" type="number" min="0" max="9999" step="1" inputmode="numeric" value="${n(combo.qty)}" placeholder="박스 수" style="${_qrInpS};width:80px" oninput="this.style.borderColor='';_specFormCalc()"><span style="font-size:12px;color:#6B7280">박스</span></span>
       <input class="spm-cnote" value="${esc(combo.note || '')}" placeholder="메모(선택)" style="${_qrInpS};flex:1;min-width:0" oninput="_specFormCalc()"></div>
     <div class="spm-cprev" style="margin-top:4px"></div>
   </div>`;
@@ -26870,20 +26931,25 @@ function _specComboHtml(product, combo, i) {
 function _specRenderCombos(combos, keep = false) {
   const box = document.getElementById('spm-combos'); if (!box) return;
   const product = document.getElementById('spm-product')?.value || '';
-  box.innerHTML = combos.map((c, i) => _specComboHtml(product, c, i)).join('') || '<div class="spm-cempty" style="font-size:12px;color:#9CA3AF;padding:2px 0">구성 없음 — [＋ 구성 추가]로 담는 박스를 기록합니다</div>';
+  const unit = _specPackUnit(document.getElementById('spm-pack')?.value || '');
+  box.dataset.unit = unit;
+  const addBtn = document.getElementById('spm-add-combo'); if (addBtn) addBtn.textContent = unit === 'ct' ? '＋ 줄 추가' : '＋ 구성 추가';
+  box.innerHTML = combos.map((c, i) => _specComboHtml(product, c, i, unit)).join('') || `<div class="spm-cempty" style="font-size:12px;color:#9CA3AF;padding:2px 0">${unit === 'ct' ? '줄 없음 — [＋ 줄 추가]로 수·CT 수·1CT 실중량을 기록합니다' : '구성 없음 — [＋ 구성 추가]로 담는 박스를 기록합니다'}</div>`;
   [...box.querySelectorAll('.spm-combo')].forEach((el, ci) => {
     const rows = combos[ci].rows && combos[ci].rows.length ? combos[ci].rows : [{}];
-    [...el.querySelectorAll('.spm-lrow .spm-size')].forEach((s, ri) => {
+    [...el.querySelectorAll('.spm-size')].forEach((s, ri) => {
       const sz = String(rows[ri].size || '');
       if (keep) _selEnsureVal(s, sz, _specKeepLbl(sz)); else s.value = _specProdSizes(product).includes(sz) ? sz : '';
     });
   });
+  _specKindChanged();   // 수량 칸(박스 수·CT 수)은 출고만 — 다시 그릴 때마다 맞춘다
   _specFormCalc();
 }
 function _specAddCombo() {
   const box = document.getElementById('spm-combos'); if (!box) return;
   box.querySelector('.spm-cempty')?.remove();
-  box.insertAdjacentHTML('beforeend', _specComboHtml(document.getElementById('spm-product')?.value || '', { rows: [{}] }, box.querySelectorAll('.spm-combo').length));
+  box.insertAdjacentHTML('beforeend', _specComboHtml(document.getElementById('spm-product')?.value || '', { rows: [{}] }, box.querySelectorAll('.spm-combo').length, box.dataset.unit || 'box'));
+  _specKindChanged();   // 기준이면 새 줄의 수량 칸도 숨긴다
   _specFormCalc();
 }
 function _specAddComboRow(btn) {
@@ -26898,6 +26964,16 @@ function _specProductChanged() {
   _specFillSizeRange(sizes.includes(f) ? f : '', sizes.includes(t) ? t : '');
   _specRenderCombos(_specReadCombos(), false);
 }
+// 상품규격 변경(v727) — 단위(박스/CT)가 바뀌면 구성 입력을 그 모양으로 다시 그린다(사이즈·수량·실중량은 옮기고, 박스 구성의 여러 줄은 첫 사이즈만)
+function _specPackChanged() {
+  const box = document.getElementById('spm-combos'); if (!box) return;
+  const unit = _specPackUnit(document.getElementById('spm-pack')?.value || '');
+  if (unit !== (box.dataset.unit || 'box')) {
+    const cs = _specReadCombos().map(c => ({ ...c, rows: unit === 'ct' ? [{ size: ((c.rows || []).find(r => r.size) || {}).size || '' }] : c.rows }));
+    _specRenderCombos(cs, true);
+  }
+  _specKindChanged(); _specFormCalc();
+}
 function _specBrixChanged() {
   const c = document.getElementById('spm-brix-custom');
   if (c) c.style.display = document.getElementById('spm-brix')?.value === SPEC_BRIX_CUSTOM ? '' : 'none';
@@ -26906,19 +26982,37 @@ function _specKindChanged() {
   const k = document.getElementById('spm-kind')?.value;
   const toWrap = document.getElementById('spm-to-wrap'); if (toWrap) toWrap.style.display = k === '출고' ? 'none' : '';
   const fl = document.getElementById('spm-from-lbl'); if (fl) fl.textContent = k === '출고' ? '출고일 *' : '적용 시작일 *';
-  const wl = document.getElementById('spm-w-lbl'); if (wl) wl.textContent = k === '출고' ? '실제 중량(kg)' : '박스 중량(kg)';
+  const ct = _specPackUnit(document.getElementById('spm-pack')?.value || '') === 'ct';
+  const wl = document.getElementById('spm-w-lbl'); if (wl) wl.textContent = k === '출고' ? '실제 중량(kg)' : ct ? '1CT 기준 중량(kg)' : '박스 중량(kg)';
+  document.querySelectorAll('#spm-combos .spm-qwrap').forEach(el => { el.style.display = k === '출고' ? 'flex' : 'none'; });   // 박스 수·CT 수는 출고만
 }
 // 구성 카드마다 미리보기 한 줄(카드와 같은 _specComboLine — 줄 글자는 입력칸이 보여 주니 생략)
 function _specFormCalc() {
   const box = document.getElementById('spm-combos'); if (!box) return;
   const product = document.getElementById('spm-product')?.value || '';
   const wv = id => (document.getElementById(id)?.value || '').trim();
-  const judge = document.getElementById('spm-kind')?.value !== '출고';
+  const out = document.getElementById('spm-kind')?.value === '출고';
+  const unit = box.dataset.unit || 'box';
+  // 판정 기준 — 기준 기록은 이 창의 중량 칸. CT형 출고는 같은 키·그날의 기준(1CT 기준 중량)으로(v727). box형 출고는 판정 없음(그대로).
+  const ref = !out ? { weight_min: wv('spm-wmin'), weight_max: wv('spm-wmax') }
+    : unit === 'ct' ? _specStdAt(_specKey({ channel: wv('spm-channel'), business: wv('spm-business'), product, pack: wv('spm-pack') }), wv('spm-from')) : null;
+  const judge = !out || !!ref;
   const combos = _specReadCombos();
   [...box.querySelectorAll('.spm-combo')].forEach((el, i) => {
     const p = el.querySelector('.spm-cprev'); if (!p) return;
     const c = combos[i];
-    p.innerHTML = (c.rows || []).some(r => r.size && _specRowCount(r) > 0) ? _specComboLine(product, c, i, wv('spm-wmin'), wv('spm-wmax'), judge, false) : '';
+    const has = unit === 'ct' ? !!(c.rows[0] && c.rows[0].size) : (c.rows || []).some(r => r.size && _specRowCount(r) > 0);
+    p.innerHTML = has ? _specComboLine(product, c, i, ref && ref.weight_min, ref && ref.weight_max, judge, false, unit) : '';
+  });
+  const tot = document.getElementById('spm-total');
+  if (tot) tot.innerHTML = out ? _specOutTotal(product, combos, unit) : '';
+  // 출고 사용 사이즈 자동 — 구성에 사이즈가 있으면 품목 순서로 최소~최대, select는 읽기 전용. 없으면 직접 고른다(옛 기록 호환).
+  const span = out ? _specSizeSpan(product, combos, unit) : '';
+  const [a, b] = span ? span.split('~') : [];
+  ['spm-sz-from', 'spm-sz-to'].forEach((id, k) => {
+    const el = document.getElementById(id); if (!el) return;
+    if (span) { const val = k ? (b || a) : a; _selEnsureVal(el, val, _specKeepLbl(val)); }
+    el.disabled = !!span;
   });
   _specGuideForm();   // 띠 + 과수별 표(v722)
 }
@@ -26960,7 +27054,7 @@ function openSpecModal(o = {}) {
         <div>${lab('채널 *')}<select id="spm-channel" style="${_qrInpS}"></select>${hint('spm-channel-hint')}</div>
         <div>${lab('사업자')}<select id="spm-business" style="${_qrInpS}"></select></div>
         <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specProductChanged()">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
-        <div>${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}"></select>${hint('spm-pack-hint')}</div>
+        <div>${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}" onchange="_specPackChanged()"></select>${hint('spm-pack-hint')}</div>
         <div>${lab('박스')}<select id="spm-box" style="${_qrInpS}"></select></div>
         <div><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
         <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
@@ -26970,7 +27064,8 @@ function openSpecModal(o = {}) {
           <div id="spm-guide"></div></div>
         <div style="grid-column:1/-1">${lab('실제 구성 <span style="font-weight:400;color:#9CA3AF">(담는 박스 하나 = 구성 하나 · 단일 또는 혼합)</span>')}
           <div id="spm-combos"></div>
-          <button type="button" onclick="_specAddCombo()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 구성 추가</button></div>
+          <button type="button" id="spm-add-combo" onclick="_specAddCombo()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 구성 추가</button>
+          <div id="spm-total" style="margin-top:4px"></div></div>
         <div>${lab('브릭스')}<select id="spm-brix" style="${_qrInpS}" onchange="_specBrixChanged()"></select>
           <input id="spm-brix-custom" placeholder="직접 입력" style="${_qrInpS};margin-top:4px;display:none"></div>
         <div>${lab('작성자 *')}<select id="spm-author" style="${_qrInpS}"></select></div>
@@ -26998,8 +27093,8 @@ function openSpecModal(o = {}) {
   _specFillSizeRange(sf || '', st || '');
   // 작성자 — showConfirmDanger 작업자 기본값과 같은 목록(활성 내부 직원). 목록에 없는 저장값(예 'admin')은 '(목록에 없음)'
   _specFillSel('spm-author', _activeDrivers().filter(d => d.type === '내부').map(d => d.name), '<option value="">선택</option>', v.author);
-  _specKindChanged();
   _specRenderCombos(_specCombos(v.layout), true);
+  _specKindChanged(); _specFormCalc();   // 단위별 라벨·수량 칸(v727) — 구성을 그린 뒤
 }
 
 async function saveSpec() {
@@ -27017,16 +27112,19 @@ async function saveSpec() {
   if (Number.isNaN(weight_min) || Number.isNaN(weight_max)) return alert('중량은 숫자로 입력하세요.');
   if (weight_min != null && weight_max != null && weight_min > weight_max) return alert('중량 최소가 최대보다 큽니다.');
   if (!gv2('spm-author')) return alert('작성자를 고르세요.');
-  if (!_specLayoutValid()) return alert('구성 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
+  if (!_specLayoutValid()) return alert('구성 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 박스 수 0~9999·CT 수 0~999 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
+  const unit = _specPackUnit(pack);
   // 구성 — 항상 새 형식 [{rows, actual_kg?, note?}]. 개수가 있는 줄만, 줄이 없는 구성은 버린다(실측·메모는 있을 때만 키를 넣는다)
+  //   v727: CT형은 rows = [{size}](개수 없음), qty = 박스 수 / CT 수(출고만)
   const layout = _specReadCombos().map(c => ({
-    rows: c.rows.filter(x => x.size && _specRowCount(x) > 0),
+    rows: unit === 'ct' ? c.rows.filter(x => x.size).map(x => ({ size: x.size })) : c.rows.filter(x => x.size && _specRowCount(x) > 0),
+    ...(kind === '출고' && c.qty != null ? { qty: c.qty } : {}),
     ...(c.actual_kg != null ? { actual_kg: c.actual_kg } : {}),
     ...(c.note ? { note: c.note } : {}),
   })).filter(c => c.rows.length);
   // 사용 사이즈 — 둘 다면 '시작~끝'(같으면 하나), 한쪽만이면 그 값, 둘 다 비면 null
   const szF = gv2('spm-sz-from'), szT = gv2('spm-sz-to');
-  const sizes = (szF && szT) ? (szF === szT ? szF : `${szF}~${szT}`) : (szF || szT || null);
+  const sizes = (kind === '출고' && _specSizeSpan(product, layout, unit)) || ((szF && szT) ? (szF === szT ? szF : `${szF}~${szT}`) : (szF || szT || null));   // 출고는 구성에서 자동(v727)
   const bSel = gv2('spm-brix');
   const brix = bSel === SPEC_BRIX_CUSTOM ? (gv2('spm-brix-custom') || null) : (bSel || null);   // 직접 입력은 목록에 자동 추가하지 않는다
   const payload = {
@@ -27317,6 +27415,7 @@ function _specRenderMasters() {
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${x.hidden ? '#9CA3AF' : '#374151'}">${esc(x.name)}${x.hidden ? ' <span style="font-size:10px">숨김</span>' : ''}</span>
       <button type="button" onclick="_specMasterMove('${key}',${i},-1)" style="${mb}" title="위로">↑</button>
       <button type="button" onclick="_specMasterMove('${key}',${i},1)" style="${mb}" title="아래로">↓</button>
+      ${key === 'packs' ? `<span style="display:flex;white-space:nowrap" title="단위 — 박스형: 구성·박스 수 / CT형: 줄마다 수·CT 수·1CT 실중량">${['box', 'ct'].map(u => { const on = (x.unit === 'ct' ? 'ct' : 'box') === u; return `<button type="button" onclick="_specMasterUnit(${i},'${u}')" style="${mb};border-radius:0;${on ? 'background:#1E3A5F;color:#fff;border-color:#1E3A5F' : ''}">${u === 'ct' ? 'CT' : '박스'}</button>`; }).join('')}</span>` : ''}
       <button type="button" onclick="_specMasterHide('${key}',${i})" style="${mb}">${x.hidden ? '보이기' : '숨김'}</button>
       ${use ? `<span style="font-size:11px;color:#9CA3AF;white-space:nowrap">사용 ${use}건</span>` : `<button type="button" onclick="_specMasterDel('${key}',${i})" style="${mb};border-color:#FCA5A5;color:#DC2626">삭제</button>`}
     </div>`;
@@ -27370,7 +27469,7 @@ async function _specMasterAdd(key) {
   if (!name) return alert('이름을 넣으세요.');
   if ((_specMasters[key] || []).some(x => String(x.name).trim() === name)) return alert('이미 있는 이름입니다.');   // 같은 칸 안 중복 금지
   const next = _specMastersClone();
-  next[key].push(key === 'channels' ? { type: document.getElementById('spec-ms-type')?.value || SPEC_TYPES[0], name, hidden: false } : { name, hidden: false });
+  next[key].push(key === 'channels' ? { type: document.getElementById('spec-ms-type')?.value || SPEC_TYPES[0], name, hidden: false } : key === 'packs' ? { name, hidden: false, unit: 'box' } : { name, hidden: false });
   await _specMastersSave(next, `${name} 추가`);
 }
 // 순서 — 채널은 같은 구분 안에서 앞뒤 항목과, 나머지는 바로 앞뒤와 자리를 바꾼다
@@ -27384,6 +27483,14 @@ async function _specMasterMove(key, i, dir) {
   if (j < 0 || j >= list.length) return;
   [list[i], list[j]] = [list[j], list[i]];
   await _specMastersSave(next);
+}
+// 상품규격 단위(v727) — 'box' | 'ct'. 같은 값이면 요청 없음.
+async function _specMasterUnit(i, unit) {
+  if (!_specCanWrite()) return;
+  const next = _specMastersClone(), x = next.packs[i]; if (!x) return;
+  if ((x.unit === 'ct' ? 'ct' : 'box') === unit) return;
+  x.unit = unit === 'ct' ? 'ct' : 'box';
+  await _specMastersSave(next, `${x.name} — ${x.unit === 'ct' ? 'CT형' : '박스형'}`);
 }
 async function _specMasterHide(key, i) {
   if (!_specCanWrite()) return;
