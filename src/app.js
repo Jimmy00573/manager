@@ -26564,7 +26564,8 @@ function _specCard(g, i) {
         ${g.cur ? `<button type="button" onclick="_specField(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">현장 보기</button>` : ''}
         ${W ? `<button type="button" onclick="_specOpenFrom(${i},'기준')" style="${mini};border:1px solid #1E3A5F;color:#1E3A5F">기준 변경</button>
         <button type="button" onclick="_specOpenFrom(${i},'출고')" style="${mini};border:1px solid #D1D5DB;color:#374151">출고 기록</button>
-        ${g.cur ? `<button type="button" onclick="_specCopy(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">복사</button>` : ''}` : ''}</span>` : ''}
+        ${g.cur ? `<button type="button" onclick="_specCopy(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">복사</button>` : ''}
+        ${g.out.length ? `<button type="button" onclick="_specOutCopy(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">직전 복사</button>` : ''}` : ''}</span>` : ''}
     </div>`;
   // 현재 기준
   // 변경 칩(v724) — 앞 버전 있고 최근 7일 시작이면 주황 '변경 M/D' + 바뀐 점, 앞 버전 없으면 회색 '신규'
@@ -26582,7 +26583,8 @@ function _specCard(g, i) {
       `<button type="button" onclick="_specToggle(${i},'fut')" style="${mini};border:1px dashed #1565C0;color:#1565C0">${esc(_specMD(v.valid_from))}부터 새 기준 ${futOpen ? '▾' : '▸'}</button>`).join('')}</div>`
     + (futOpen ? g.fut.map(v => `<div style="margin-top:4px;padding:6px 8px;border:1px dashed #BFDBFE;border-radius:6px">${_specBody(g, v, '#1565C0')}${_specDiffHtml(_specDiff(g.cur, v))}</div>`).join('') : '') : '';
   // 직전 출고
-  const lo = g.lastOut ? `<div style="margin-top:6px;padding-top:6px;border-top:0.5px solid #F3F4F6"><div style="font-size:11px;color:#6B7280;margin-bottom:1px">직전 출고</div>${_specBody(g, g.lastOut)}</div>` : '';
+  const outList = _specOutListHtml(g, asOf, 5);   // 최근 출고 5건(v728) — 예전 '직전 출고' 한 줄을 대신한다
+  const lo = outList ? `<div style="margin-top:6px;padding-top:6px;border-top:0.5px solid #F3F4F6"><div style="font-size:11px;color:#6B7280;margin-bottom:1px">최근 출고</div>${outList}</div>` : '';
   // 재고 출고 참고(같은 이름 거래처 · 같은 품목, 최근 3건)
   const obs = _specOb.filter(o => o.partner_name === g.channel && o.product === g.product).slice(0, 3);
   const ob = obs.length ? `<div style="margin-top:4px;font-size:11px;color:#6B7280">재고 출고 참고 · ${obs.map(o => `${esc(_specMD(o.date))} ${esc(o.size_code || '-')} ${fmtN(Number(o.quantity) || 0)}${esc(o.unit || '')}`).join(' · ')}</div>` : '';
@@ -26633,7 +26635,7 @@ function _specField(i) {
     ${sec('구성', _specCombosHtml(v))}
     ${sec('과수별 표', tbl && tbl.length ? _specCountTableHtml(tbl) : '')}
     ${sec('브릭스 · 메모', brixMemo)}
-    ${sec('직전 출고', g.lastOut ? _specBody(g, g.lastOut) : '')}
+    ${sec('최근 출고', _specOutListHtml(g, asOf, 3))}
     ${sec('적용 기간 · 작성자', [esc(_specPeriod(g, v)), esc(v.author || '')].filter(Boolean).join(' · '))}
   </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined || e.target === m) m.remove(); });
@@ -26647,6 +26649,16 @@ function _specFieldPrint() {
   window.addEventListener('afterprint', off);
   window.print();
   setTimeout(off, 1000);   // afterprint가 안 오는 브라우저 대비(print()는 대화상자가 닫힐 때까지 멈춘다)
+}
+// 카드의 [직전 복사](v728, admin) — 가장 최근 출고로 채운 출고 등록 창. 출고일 = 기준일, 작성자 비움.
+//   구성의 사이즈·개수·메모·박스·규격은 유지하고, 실중량(구성 actual_kg·실제 중량 칸)과 수량(qty)은 비운다(이번 출고에서 새로 잰다).
+function _specOutCopy(i) {
+  if (!_specCanWrite()) return;
+  const g = _specView[i]; if (!g || !g.out.length) return;
+  const asOf = _specUi.date || td();
+  const src = g.lastOut || g.out[g.out.length - 1];
+  const layout = _specCombos(src.layout).map(c => ({ rows: c.rows, ...(c.note ? { note: c.note } : {}) }));
+  openSpecModal({ kind: '출고', group: g, from: { ...src, layout, weight_min: null, weight_max: null }, fromDate: asOf });
 }
 // 카드의 [복사](v724, admin) — 현재 기준 값을 그대로 채운 새 기준 등록 창. 채널만 비우고 시작일 = 기준일, 작성자 비움.
 //   저장하면 새 키의 첫 버전(같은 키·같은 시작일이 있으면 saveSpec의 기존 확인창).
@@ -26837,16 +26849,41 @@ function _specKgTxt(kg) { return String(Math.round(Number(kg) * 100) / 100); }
 function _specStdAt(key, date) { const g = _specGroups(date || td()).find(x => x.key === key); return g ? g.cur : null; }
 // 출고 총합 한 줄(카드·폼 공용) — box '총 n박스 · w kg' / ct '총 nCT · w kg · 평균 a kg/CT'. 수량이 하나도 없으면 ''.
 //   무게 합 = Σ 수량 × 실중량(g 정수로 더해 소수 오차 없이). 실중량 없는 구성은 합에서 빼고 '(실측 없는 구성 k개 제외)'.
-function _specOutTotal(product, layout, unit) {
+// 출고 수량·무게 합(v728 분리) → { n 수량 합, g 무게 합(g), nHas 실중량 있는 수량, miss 실중량 없는 구성 수, avg 수량당 평균 kg | null } | null(수량 없음)
+function _specOutSum(layout) {
   const cs = _specCombos(layout).filter(c => c.qty != null && c.qty > 0);
-  if (!cs.length) return '';
-  const n = cs.reduce((a, c) => a + c.qty, 0);
-  const has = cs.filter(c => c.actual_kg != null && c.actual_kg > 0), miss = cs.length - has.length;
+  if (!cs.length) return null;
+  const has = cs.filter(c => c.actual_kg != null && c.actual_kg > 0);
   const g = has.reduce((a, c) => a + c.qty * Math.round(c.actual_kg * 1000), 0), nHas = has.reduce((a, c) => a + c.qty, 0);
-  const parts = [`총 ${fmtN(n)}${unit === 'ct' ? 'CT' : '박스'}`];
-  if (has.length) parts.push(`${_specKgTxt(g / 1000)} kg`);
-  if (unit === 'ct' && nHas) parts.push(`평균 ${(Math.round(g / nHas / 10) / 100).toFixed(2)} kg/CT`);
-  return `<div class="spm-total-line" style="font-size:12px;line-height:1.7;color:#111827">${parts.join(' · ')}${miss ? ` <span style="color:#9CA3AF">(실측 없는 구성 ${miss}개 제외)</span>` : ''}</div>`;
+  return { n: cs.reduce((a, c) => a + c.qty, 0), g, nHas, miss: cs.length - has.length, avg: nHas ? Math.round(g / nHas / 10) / 100 : null };
+}
+function _specOutTotal(product, layout, unit) {
+  const t = _specOutSum(layout);
+  if (!t) return '';
+  const parts = [`총 ${fmtN(t.n)}${unit === 'ct' ? 'CT' : '박스'}`];
+  if (t.nHas) parts.push(`${_specKgTxt(t.g / 1000)} kg`);
+  if (unit === 'ct' && t.nHas) parts.push(`평균 ${t.avg.toFixed(2)} kg/CT`);
+  return `<div class="spm-total-line" style="font-size:12px;line-height:1.7;color:#111827">${parts.join(' · ')}${t.miss ? ` <span style="color:#9CA3AF">(실측 없는 구성 ${t.miss}개 제외)</span>` : ''}</div>`;
+}
+// ── 최근 출고(v728) — 카드(5건)·현장 보기(3건) 공용. 줄 = 날짜 · 박스(있으면) · 사이즈 · 수량 · 실중량 · 총 kg(없으면 '—').
+//   실중량: box = 박스당 평균 kg, ct = 평균 kg/CT. 옛 기록(구성 없음)은 사이즈·중량 칸(_specWTxt)으로. 메모가 있으면 끝에. 첫 줄만 진하게.
+function _specRecentOuts(g, asOf, max) { return g.out.filter(v => v.valid_from <= asOf).slice().reverse().slice(0, max); }
+function _specOutRowHtml(v, first) {
+  const unit = _specPackUnit(v.pack), t = _specOutSum(v.layout), u = unit === 'ct' ? 'CT' : '박스', D = '—';
+  const parts = [
+    `<span style="white-space:nowrap">${esc(_specMD(v.valid_from))}</span>`,
+    v.box ? _specTag('박스 ' + v.box) : '',
+    esc(v.sizes || D),
+    t ? `${fmtN(t.n)}${u}` : D,
+    t ? (t.avg != null ? `${_specKgTxt(t.avg)} kg/${u}` : D) : esc(_specWTxt(v) || D),
+    t && t.nHas ? `총 ${_specKgTxt(t.g / 1000)} kg` : D,
+    v.note ? `<span style="font-weight:400">${esc(v.note)}</span>` : '',   // 메모 — 지금 출고 기록은 수량을 메모에 적어 둔다('15과 22박스' 등)
+  ].filter(Boolean);
+  return `<div style="font-size:12px;line-height:1.7;display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline;color:${first ? '#111827' : '#6B7280'};font-weight:${first ? 500 : 400}">${parts.join('<span style="color:#D1D5DB">·</span>')}${_specRowBtns(v)}</div>`;
+}
+function _specOutListHtml(g, asOf, max) {
+  const vs = _specRecentOuts(g, asOf, max);
+  return vs.length ? vs.map((v, k) => _specOutRowHtml(v, k === 0)).join('') : '';
 }
 // 구성들의 사이즈 → 품목 사이즈 순서로 '최소~최대'(하나면 그 값, 없으면 ''). 출고 사용 사이즈 자동 채움용.
 function _specSizeSpan(product, combos, unit) {
@@ -27030,7 +27067,7 @@ function openSpecModal(o = {}) {
   } : {
     channel_type: (src && src.channel_type) || (g && g.type !== '기타' ? g.type : '') || '',
     channel: g ? g.channel : '', business: g ? g.business : '', product: g ? g.product : '', pack: g ? g.pack : '',
-    valid_from: kind === '출고' ? td() : (o.fromDate || (src ? _dayAfter(td()) : td())), valid_to: '',
+    valid_from: kind === '출고' ? (o.fromDate || td()) : (o.fromDate || (src ? _dayAfter(td()) : td())), valid_to: '',
     weight_min: src ? src.weight_min : null, weight_max: src ? src.weight_max : null,
     sizes: src ? src.sizes : '', layout: src ? src.layout : [], brix: src ? src.brix : '', note: src ? src.note : '',
     box: (src && src.box) || '',
