@@ -1525,6 +1525,22 @@ function afF(p) {
   sv(p + '-tel', f.tel || ''); sv(p + '-ftel', f.tel || ''); sv(p + '-addr', f.addr || '');
   if (p === 'dp' && f.variety) sv('dp-item', f.variety);
   if (p === 'dp') _fillFieldSel('dp', gv('dp-farm'));   // 밭이 여러 곳인 농가면 '밭' 칸이 나온다(그 외엔 숨김)
+  if (p === 'dp') _autoPickStaffDrv('dp-farm', 'dp-drv');   // 농가 담당 기사 자동 선택
+}
+// 농가를 고르면 그 농가 담당(farms.staff)을 기사 칸에 채운다 — 배차(dp-drv, 값=이름)·입고(inv-driver-select, 값=id).
+// ★사람이 직접 고른 기사는 덮어쓰지 않는다: 지금 값이 비었거나 '직전에 자동으로 넣은 값'일 때만 채운다(_autoDrvVal이 그 표시).
+//   담당이 없거나 차단된 기사·목록에 없는 기사면 아무것도 안 한다. 저장은 고른 값 그대로라 저장 로직과 무관.
+const _autoDrvVal = {};   // 기사 칸 id → 마지막으로 자동으로 넣은 값
+function _autoPickStaffDrv(farmSelId, drvSelId) {
+  const sel = document.getElementById(drvSelId); if (!sel) return;
+  if (sel.value && sel.value !== _autoDrvVal[drvSelId]) return;   // 직접 고른 값 — 그대로
+  const name = gf(gv(farmSelId)).staff;
+  const d = name ? drivers.find(x => x.name === name && x.pin_active !== false) : null;
+  if (!d) return;
+  const v = drvSelId === 'inv-driver-select' ? String(d.id) : d.name;
+  if (![...sel.options].some(o => o.value === v)) return;
+  sel.value = v; _autoDrvVal[drvSelId] = v;
+  if (drvSelId === 'dp-drv') afD('dp');   // 연락처·차량 칸(직접 고를 때 onchange와 같은 처리)
 }
 function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv(p + '-car', d.car || ''); }
 
