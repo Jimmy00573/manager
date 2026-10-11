@@ -26454,7 +26454,7 @@ function _specCard(g, i) {
   let cur;
   if (!g.cur) cur = `<div style="font-size:12px;color:#9CA3AF">현재 기준 없음</div>`;
   else if (g.expired) cur = `<div style="font-size:11px;color:#6B7280;margin-bottom:2px"><span style="border:1px solid #D1D5DB;border-radius:4px;padding:0 5px;background:#F3F4F6">기준 만료(~${esc(_specMD(g.cur.valid_to))})</span></div>${_specBody(g, g.cur, '#9CA3AF')}`;
-  else cur = _specBody(g, g.cur);
+  else cur = _specBody(g, g.cur) + _specGuideCard(g, i, g.cur);   // 띠 + ▸ 과수별 표(v722)
   // 예정 — 점선 칩, 누르면 펼친다
   const futOpen = _specOpen.has(g.key + '|fut');
   const fut = g.fut.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${g.fut.map(v =>
@@ -26754,6 +26754,7 @@ function _specFormCalc() {
     const c = combos[i];
     p.innerHTML = (c.rows || []).some(r => r.size && _specRowCount(r) > 0) ? _specComboLine(product, c, i, wv('spm-wmin'), wv('spm-wmax'), judge, false) : '';
   });
+  _specGuideForm();   // 띠 + 과수별 표(v722)
 }
 
 function openSpecModal(o = {}) {
@@ -26797,7 +26798,8 @@ function openSpecModal(o = {}) {
         <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
         <div style="grid-column:1/-1"><label id="spm-w-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">박스 중량(kg)</label>
           <div style="display:flex;gap:6px;align-items:center"><input id="spm-wmin" type="number" step="0.01" min="0" value="${fv(v.weight_min)}" placeholder="최소" style="${_qrInpS}" oninput="_specFormCalc()"><span style="color:#9CA3AF">~</span><input id="spm-wmax" type="number" step="0.01" min="0" value="${fv(v.weight_max)}" placeholder="최대" style="${_qrInpS}" oninput="_specFormCalc()"></div></div>
-        <div style="grid-column:1/-1">${lab('사용 사이즈')}<div style="display:flex;gap:6px;align-items:center"><select id="spm-sz-from" style="${_qrInpS}"></select><span style="color:#9CA3AF">~</span><select id="spm-sz-to" style="${_qrInpS}"></select></div></div>
+        <div style="grid-column:1/-1">${lab('사용 사이즈')}<div style="display:flex;gap:6px;align-items:center"><select id="spm-sz-from" style="${_qrInpS}" onchange="_specFormCalc()"></select><span style="color:#9CA3AF">~</span><select id="spm-sz-to" style="${_qrInpS}" onchange="_specFormCalc()"></select></div>
+          <div id="spm-guide"></div></div>
         <div style="grid-column:1/-1">${lab('실제 구성 <span style="font-weight:400;color:#9CA3AF">(담는 박스 하나 = 구성 하나 · 단일 또는 혼합)</span>')}
           <div id="spm-combos"></div>
           <button type="button" onclick="_specAddCombo()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 구성 추가</button></div>
@@ -27228,4 +27230,85 @@ async function _specMasterDel(key, i) {
   if (!(await showConfirmEdit('목록에서 삭제', `${x.name} — 등록 창 선택 목록에서 지웁니다.`))) return;
   const next = _specMastersClone(); next[key].splice(i, 1);
   await _specMastersSave(next, `${x.name} 삭제`);
+}
+
+// ── 과수별 표 + 바운더리 띠(v722) — 저장하지 않는 자동 표시. 카드(현재 기준)와 등록 창이 같이 쓴다.
+// 품목의 과중 키 — 품목 자체에 값이 있으면 그 품목, 없고 만감류면 '만감류' 공통(_specGr 폴백과 같은 기준)
+function _specGramKey(product) {
+  if (Object.keys(_specGram[product] || {}).length) return product;
+  return (!_specIsCitrus(product) && Object.keys(_specGram[SPEC_GRAM_COMMON] || {}).length) ? SPEC_GRAM_COMMON : product;
+}
+// 사용 사이즈 문자열 'A~B'(또는 'A') → 범위 안인지 판정 함수. 순서는 품목 사이즈 상수(_specProdSizes) 기준.
+function _specInRangeFn(product, sizesStr) {
+  const [a, b] = String(sizesStr || '').split('~').map(s => s.trim());
+  const list = _specProdSizes(product);
+  const ia = list.indexOf(a), ib = list.indexOf(b || a);
+  if (ia < 0 || ib < 0) return null;
+  const lo = Math.min(ia, ib), hi = Math.max(ia, ib);
+  return z => { const i = list.indexOf(z); return i >= lo && i <= hi; };
+}
+// 과수별 표 — 범위 안 사이즈마다 기준 중량(min~max)과 예상 범위가 겹치는 모든 n. ★ = 평균이 기준 중앙에 가장 가까운 n.
+//   → [{size, items:[{n, gmin, gmax, gavg, full, star}]}] | null(기준 중량 두 칸·사용 사이즈 범위가 없으면)
+function _specCountTable(product, sizesStr, wmin, wmax) {
+  const has = x => x !== null && x !== undefined && x !== '' && Number.isFinite(Number(x));
+  if (!has(wmin) || !has(wmax)) return null;
+  const inR = _specInRangeFn(product, sizesStr); if (!inR) return null;
+  const L = Number(wmin) * 1000, H = Number(wmax) * 1000, mid = (L + H) / 2;
+  return _specGramSizes(_specGramKey(product)).filter(inR).map(z => {
+    const gr = _specGr(product, z); if (!gr) return null;
+    const items = [];
+    for (let n = Math.max(1, Math.ceil(L / gr[1])); n * gr[0] <= H; n++) {
+      if (n * gr[1] < L) continue;
+      items.push({ n, gmin: n * gr[0], gmax: n * gr[1], gavg: n * (gr[0] + gr[1]) / 2, full: n * gr[0] >= L && n * gr[1] <= H });
+    }
+    if (items.length) items.reduce((best, x) => Math.abs(x.gavg - mid) < Math.abs(best.gavg - mid) ? x : best).star = true;
+    return { size: z, items };
+  }).filter(Boolean);
+}
+function _specCountTableHtml(rows) {
+  return rows.map(r => `<div style="font-size:12px;line-height:1.7"><strong style="font-weight:500;color:#1E3A5F;display:inline-block;min-width:38px">${esc(r.size)}</strong> ${r.items.length
+    ? r.items.map(x => `${fmtN(x.n)}과 ${_specKg2(x.gmin)}~${_specKg2(x.gmax)} kg <span style="color:#6B7280">(평균 ${_specKg2(x.gavg)})</span> <span style="color:${x.full ? '#6B7280' : '#C05800'}">${x.full ? '✓' : '△'}</span>${x.star ? ' <span style="color:#C05800">★</span>' : ''}`).join(' <span style="color:#D1D5DB">/</span> ')
+    : '<span style="color:#9CA3AF">— 맞는 개수 없음</span>'}</div>`).join('');
+}
+// 바운더리 띠 — 그 품목 과중 기준 사이즈를 한 줄 칸으로. 허용 범위 = 옅은 파랑, 구성에 쓴 칸 = 진한 파랑, 범위 밖인데 쓴 칸 = 빨간 테두리.
+//   폰 폭 가로 스크롤 없이(칸 flex 1). 만감류 칸은 숫자만 보인다(title에 전체 이름).
+function _specBandHtml(product, sizesStr, combos) {
+  const key = _specGramKey(product), sizes = _specGramSizes(key);
+  if (!sizes.length) return '';
+  const inR = _specInRangeFn(product, sizesStr) || (() => false);
+  const used = new Set();
+  (combos || []).forEach(c => (c.rows || []).forEach(r => { if (r && r.size && _specRowCount(r) > 0) used.add(String(r.size).trim()); }));
+  const mg = !_specIsCitrus(product);
+  const cells = sizes.map(z => {
+    const u = used.has(z), r = inR(z);
+    const st = u && r ? 'background:#1565C0;color:#fff;border:1px solid #1565C0'
+      : u ? 'background:#fff;color:#DC2626;border:1px solid #DC2626'
+      : r ? 'background:#E6F1FB;color:#1E3A5F;border:1px solid #E6F1FB'
+      : 'background:#F9FAFB;color:#9CA3AF;border:1px solid #F3F4F6';
+    return `<span title="${esc(z)}" style="flex:1 1 0;min-width:0;overflow:hidden;text-align:center;font-size:11px;padding:2px 0;border-radius:3px;${st}">${esc(mg ? z.replace(/수$/, '') : z)}</span>`;
+  }).join('');
+  const usedOrd = sizes.filter(z => used.has(z)).concat([...used].filter(z => !sizes.includes(z)));
+  const usedTxt = usedOrd.length ? `실제 사용 ${esc(usedOrd[0])}${usedOrd.length > 1 ? '~' + esc(usedOrd[usedOrd.length - 1]) : ''}` : '실제 사용 없음';
+  return `<div style="margin-top:4px"><div style="display:flex;gap:2px">${cells}</div>
+    <div style="font-size:11px;color:#6B7280;margin-top:2px">${sizesStr ? '허용 ' + esc(sizesStr) : '허용 범위 없음'} · ${usedTxt}${mg ? ' <span style="color:#9CA3AF">(칸 = 수)</span>' : ''}</div></div>`;
+}
+// 카드(현재 기준) — 띠 + '▸ 과수별 표 (n)' 접힘
+function _specGuideCard(g, i, v) {
+  const band = _specBandHtml(v.product, v.sizes, _specCombos(v.layout));
+  const tbl = _specCountTable(v.product, v.sizes, v.weight_min, v.weight_max);
+  const open = _specOpen.has(g.key + '|cnt');
+  const tb = tbl && tbl.length ? `<div style="margin-top:4px"><button type="button" onclick="_specToggle(${i},'cnt')" style="font-size:11px;color:#6B7280;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${open ? '▾' : '▸'} 과수별 표 (${tbl.length})</button>${open ? `<div style="margin-top:2px">${_specCountTableHtml(tbl)}</div>` : ''}</div>` : '';
+  return band || tb ? `<div style="margin-top:4px">${band}${tb}</div>` : '';
+}
+// 등록 창 — 기준 중량·사용 사이즈 아래에 펼쳐서(값을 바꾸면 즉시 다시 계산)
+function _specGuideForm() {
+  const el = document.getElementById('spm-guide'); if (!el) return;
+  const product = document.getElementById('spm-product')?.value || '';
+  if (!product) { el.innerHTML = ''; return; }
+  const f = (document.getElementById('spm-sz-from')?.value || '').trim(), t = (document.getElementById('spm-sz-to')?.value || '').trim();
+  const sizesStr = (f && t) ? (f === t ? f : `${f}~${t}`) : (f || t || '');
+  const wv = id => (document.getElementById(id)?.value || '').trim();
+  const tbl = _specCountTable(product, sizesStr, wv('spm-wmin'), wv('spm-wmax'));
+  el.innerHTML = _specBandHtml(product, sizesStr, _specReadCombos())
+    + (tbl && tbl.length ? `<div style="margin-top:6px;padding:6px 8px;background:#F9FAFB;border-radius:6px"><div style="font-size:11px;color:#6B7280;margin-bottom:2px">과수별 표 — ✓ 전부 기준 안 · △ 일부 겹침 · ★ 평균이 기준 중앙에 가장 가까움</div>${_specCountTableHtml(tbl)}</div>` : '');
 }
