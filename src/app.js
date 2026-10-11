@@ -2811,6 +2811,10 @@ async function updDisp(id, s) {
       + `※ 잘못 등록한 배차라면 되돌리기 말고 [삭제]를 쓰세요.${late}`;
     if (!(await showConfirmEdit('배출 되돌리기', msg))) return;
   }
+  await _updDispApply(ids, s);
+}
+// updDisp의 저장 본체(확인창 뒤) — 외부 기사 당일 되돌리기(xdUndoDispDone)도 같은 처리를 쓴다. 반환: 처리한 건수.
+async function _updDispApply(ids, s) {
   // ★여러 건이면 차례로 기존 처리 그대로 — 중간 실패 시 이미 끝난 건은 두고(되돌리지 않음) 몇 건이 남았는지 알린다.
   //   화면은 마지막에 한 번만. 한 건이면 예전과 같다(실패하면 화면 갱신 없이 '오류:' 안내).
   let doneN = 0, err = null;
@@ -2830,6 +2834,7 @@ async function updDisp(id, s) {
     if (_repOpen) renderRep(); renderDash();
   }
   if (err) alert(doneN ? `${doneN}건은 완료됐고 ${ids.length - doneN}건은 처리하지 못했습니다.\n남은 건은 다시 눌러 주세요.\n\n${err.message}` : '오류: ' + err.message);
+  return doneN;
 }
 
 // 이 배차를 지우면 '대표할 배차가 사라지는' 작업 보고를 고른다.
@@ -2850,6 +2855,10 @@ async function delDisp(id) {
   // ★판정은 삭제 '전'에 한다 — dispatches에서 빼고 나면 대상 행의 기사·농가·날짜를 못 읽는다.
   const orphanRpts = _dispOrphanReports(dispatches.find(d => d.id === id), id);
   if (!(await cDel('배차 기록 삭제', orphanRpts.length ? [`연결된 작업보고 ${orphanRpts.length}건도 함께 정리됩니다`] : []))) return;
+  await _delDispCore(id, orphanRpts);
+}
+// delDisp의 삭제 본체(확인창 뒤) — 외부 기사 당일 삭제(xdDelDisp)도 같은 처리를 쓴다. 반환: 성공 여부.
+async function _delDispCore(id, orphanRpts) {
   try {
     const autoPicks = picks.filter(p => p.dispatch_id === id);
     await Promise.all(autoPicks.map(p => dbDeletePick(p.id)));
@@ -2866,7 +2875,8 @@ async function delDisp(id) {
     if (_repOpen) renderRep();
     const rc = document.getElementById('rep-cnt');   // 작업 보고 건수 배지 — updDisp와 같은 식
     if (rc) rc.textContent = (_loggedDrv ? reports.filter(r => r.driver === _loggedDrv.name).length : reports.length) + '건';
-  } catch (e) { alert('오류: ' + e.message); }
+    return true;
+  } catch (e) { alert('오류: ' + e.message); return false; }
 }
 
 function tsBadge(ts) {
@@ -3054,6 +3064,9 @@ function renderDisp() {
     <td class="stk-r"><div style="display:flex;gap:4px;align-items:center">
       ${!isAdm ? ((sessionStorage.getItem('citrus_role') === 'ext_driver' && d.status !== '배출완료' && d.date === td())
           ? `<button class="btn grn" onclick="xdDispDone('${esc(String(d.id))}')">완료</button>` : '')   // 외부 기사: 오늘 배차만 기사 완료 경로로(xdDispDone)
+          // 외부 기사 당일 되돌리기 — 내가 오늘 넣은 배출 대기 배차는 삭제, 내가 오늘 완료 처리한 건 되돌리기
+          + (_xdCanDelDisp(d) ? `<button class="btn del" onclick="xdDelDisp('${esc(String(d.id))}')">🗑 삭제(오늘 등록)</button>` : '')
+          + (_xdCanUndoDisp(d) ? `<button class="btn" style="background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="xdUndoDispDone('${esc(String(d.id))}')">↩ 되돌리기</button>` : '')
         : d.status !== '배출완료'
         ? `<button class="btn grn" onclick="updDisp(${d.id},'배출완료')">완료</button>`
         : `<button class="btn" style="background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9" onclick="updDisp(${d.id},'배차완료')">↩ 되돌리기</button>`}
@@ -3097,10 +3110,14 @@ async function _delTransferPicks(id) {
   const T = p.transfer_id;
   const pair = picks.filter(x => x.transfer_id === T);
   if (!(await cDel(`이동 기록 ${pair.length}행을 함께 삭제합니다`, pair.map(x => `${x.date} ${x.farm} ${x.type} ${x.ctype || ''} ${x.qty}개`)))) return false;
+  await _delTransferCore(T);
+  return true;
+}
+// 이동 짝 삭제 본체(확인창 뒤) — 외부 기사 당일 삭제(xdDelPick)도 같은 처리를 쓴다. 실패는 던진다(호출부가 알림).
+async function _delTransferCore(T) {
   await sbDeleteStrict('picks', `transfer_id=eq.${encodeURIComponent(T)}`);
   picks = picks.filter(x => x.transfer_id !== T);
   renderPick(); renderBkCol(); renderDash();   // 짝 행이 두 목록에 걸쳐 있으므로 둘 다 다시 그린다
-  return true;
 }
 async function delPick(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
@@ -3665,6 +3682,152 @@ async function xdDispDone(id) {
   }
 }
 
+// ── 외부 기사 당일 되돌리기(v710) — 본인 계정(created_by)으로 '오늘' 넣은 배차·배출 완료·빈콘 회수·이동·수확 일정만.
+// ★판정은 두 번: 화면 배열로 버튼 표시(_xdCan*) → 누르면 DB를 다시 읽어 확인(_xdDbRow·sbGet, 실패하면 멈춤).
+// ★처리는 관리자 함수의 본체를 그대로 쓴다(_delDispCore·_updDispApply·_delTransferCore, 단건은 dbDeletePick·dbDeleteHarvest).
+//   created_by가 없는 옛 기록·다른 계정·어제 이전 기록은 대상이 아니다.
+function _xdOn() { return sessionStorage.getItem('citrus_role') === 'ext_driver'; }
+// 내가 오늘 넣은 기록인가 — created_by = 로그인 계정 && created_at의 로컬 날짜 = 오늘(td).
+function _xdMine(row) {
+  const me = sessionStorage.getItem('citrus_adm_user');
+  return !!(me && row && row.created_by === me && row.created_at && ymd(new Date(row.created_at)) === td());
+}
+function _xdCanDelDisp(d) { return _xdOn() && !!d && d.status === '배차완료' && _xdMine(d); }
+function _xdCanUndoDisp(d) {
+  if (!_xdOn() || !d || d.status !== '배출완료') return false;
+  const pk = picks.filter(p => p.dispatch_id === d.id && p.type === '배출');
+  return pk.length > 0 && pk.every(_xdMine);
+}
+// 빈콘 회수 단건(입고·배차 자동 아님, 이동 짝 아님) 또는 이동 짝 전체가 내 오늘 기록
+function _xdCanDelPick(p) {
+  if (!_xdOn() || !p || !_xdMine(p)) return false;
+  if (p.transfer_id) return picks.filter(x => x.transfer_id === p.transfer_id).every(_xdMine);
+  return p.type === '빈콘회수' && !p.inbound_id && !p.dispatch_id;
+}
+function _xdCanDelHarvest(h) {
+  return _xdOn() && !!h && (h.status || '수확전') === '수확전' && _xdMine(h)
+    && !dispatches.some(d => d.farm === h.farm && d.harvest === h.date);
+}
+// 금일 수송 띠 배출 줄의 되돌리기 버튼(외부 기사 · 조건 맞는 줄만). 다른 역할은 '' — 띠 HTML이 예전과 같다.
+const _XD_MINI = 'font-size:11px;padding:2px 8px;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit';
+function _xdUndoBtns(d) {
+  const id = esc(String(d.id));
+  return (_xdCanDelDisp(d) ? `<button type="button" onclick="event.stopPropagation();xdDelDisp('${id}')" style="${_XD_MINI};border:1px solid #DC2626;color:#DC2626">🗑 삭제(오늘 등록)</button>` : '')
+    + (_xdCanUndoDisp(d) ? `<button type="button" onclick="event.stopPropagation();xdUndoDispDone('${id}')" style="${_XD_MINI};border:1px solid #4527A0;color:#4527A0">↩ 되돌리기</button>` : '');
+}
+// 금일 수송 띠 아래 '오늘 회수·이동(내 등록)' — 빈콘 회수는 줄마다, 이동은 짝(transfer_id) 하나를 한 줄로.
+function _xdTodayPkHtml() {
+  if (!_xdOn()) return '';
+  const seen = new Set(), rows = [];
+  picks.filter(_xdCanDelPick).forEach(p => {
+    if (p.transfer_id) {
+      if (seen.has(p.transfer_id)) return; seen.add(p.transfer_id);
+      const pair = picks.filter(x => x.transfer_id === p.transfer_id);
+      const a = pair.filter(x => x.type === '빈콘회수'), b = pair.find(x => x.type === '배출');
+      rows.push({ id: p.id, txt: `↔ 이동 ${esc((a[0] || p).farm)} → ${esc(b ? b.farm : '?')} · ${a.map(x => `${esc(x.ctype || '-')} ${fmtN(Number(x.qty) || 0)}`).join(' · ')}` });
+    } else rows.push({ id: p.id, txt: `🧺 회수 ${esc(p.farm)} · ${esc(p.ctype || '-')} ${fmtN(Number(p.qty) || 0)}개` });
+  });
+  if (!rows.length) return '';
+  return `<div style="margin-top:8px"><div style="font-size:12px;font-weight:500;color:#6B7280;padding-bottom:3px">오늘 회수·이동 (내 등록)</div>`
+    + rows.map(r => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0 4px 14px;border-top:0.5px solid #eee;font-size:12px;color:#374151"><span>${r.txt}</span>`
+      + `<button type="button" onclick="event.stopPropagation();xdDelPick('${esc(String(r.id))}')" style="${_XD_MINI};border:1px solid #DC2626;color:#DC2626;margin-left:auto">🗑 삭제(오늘 등록)</button></div>`).join('')
+    + '</div>';
+}
+async function _xdDbRow(table, id) { return (await sbGet(table, `id=eq.${id}&select=*`))[0] || null; }
+function _xdUndoConfirm(title, items) {
+  return showConfirmDanger({ title, items, confirmText: '삭제', needWorker: true,
+    workerNames: _activeDrivers().filter(d => d.type === '외부').map(d => d.name), defaultReason: '잘못 등록 — 되돌리기' });
+}
+async function _xdUndoLog(table, id, before, res, what) {
+  try {
+    await dbInsertAuditLog({ target_table: table, target_id: String(id), before_val: before, after_val: null,
+      reason: `${res.reason} (외부 기사 ${res.worker} · 당일 ${what})`, staff: sessionStorage.getItem('citrus_adm_user') });
+  } catch (e) { console.warn('외부 기사 되돌리기 이력 기록 실패:', e.message); }
+}
+let _xdUndoBusy = false;
+async function _xdUndoRun(fn) {
+  if (!_xdOn() || _xdUndoBusy) return;
+  _xdUndoBusy = true;
+  try { await fn(); }
+  catch (e) { alert('확인 조회에 실패해 처리하지 않았습니다. 잠시 뒤 다시 시도하세요.\n\n' + e.message); }
+  finally { _xdUndoBusy = false; }
+}
+const _XD_NO = '본인 계정으로 오늘 등록한 기록만 되돌릴 수 있습니다.';
+// 배차 삭제 — 배출 전(배차완료)만. 연결 작업보고 정리까지 delDisp 본체 그대로.
+async function xdDelDisp(id) {
+  if (!_xdOn()) return;
+  await _xdUndoRun(async () => {
+    const d = dispatches.find(x => String(x.id) === String(id));
+    if (!_xdCanDelDisp(d)) return alert(_XD_NO);
+    const row = await _xdDbRow('dispatches', d.id);
+    if (!row) { alert('이미 삭제된 배차입니다.'); renderDisp(); renderCal(); return; }
+    if (row.status !== '배차완료' || !_xdMine(row)) return alert('그 사이 배출 처리됐거나 바뀐 배차라 삭제할 수 없습니다. 사무실에 요청하세요.');
+    const orphan = _dispOrphanReports(d, d.id);
+    const res = await _xdUndoConfirm('배차 삭제(오늘 등록)', [`${d.farm} · ${d.date} · ${d.ctype || '-'} ${fmtN(Number(d.qty) || 0)}개`, ...(orphan.length ? [`연결된 작업보고 ${orphan.length}건도 함께 정리됩니다`] : [])]);
+    if (!res || !res.ok) return;
+    if (await _delDispCore(d.id, orphan)) { await _xdUndoLog('dispatches', d.id, { farm: d.farm, date: d.date, ctype: d.ctype, qty: d.qty, status: d.status }, res, '배차 삭제'); renderCal(); }
+  });
+}
+// 배출 완료 되돌리기 — 그 배출 기록(pick)이 내 오늘 기록일 때. updDisp('배차완료') 본체 그대로(배출 pick 삭제).
+async function xdUndoDispDone(id) {
+  if (!_xdOn()) return;
+  await _xdUndoRun(async () => {
+    const d = dispatches.find(x => String(x.id) === String(id));
+    if (!_xdCanUndoDisp(d)) return alert(_XD_NO);
+    const row = await _xdDbRow('dispatches', d.id);
+    const pk = ((await sbGet('picks', `dispatch_id=eq.${d.id}&select=*`)) || []).filter(p => p.type === '배출');
+    if (!row || row.status !== '배출완료' || !pk.length || !pk.every(_xdMine)) return alert('그 사이 바뀐 배차라 되돌릴 수 없습니다. 사무실에 요청하세요.');
+    const res = await _xdUndoConfirm('배출 완료 되돌리기(오늘 처리)', [`${d.farm} · ${d.date} · ${d.ctype || '-'} ${fmtN(Number(d.qty) || 0)}개`, `배출 기록이 지워지고 '배출 대기'로 돌아갑니다`]);
+    if (!res || !res.ok) return;
+    if (await _updDispApply([d.id], '배차완료')) { await _xdUndoLog('dispatches', d.id, { farm: d.farm, date: d.date, status: '배출완료' }, res, '배출 완료 되돌리기'); renderCal(); }
+  });
+}
+// 빈콘 회수 삭제(단건) 또는 이동 삭제(짝 전체).
+async function xdDelPick(id) {
+  if (!_xdOn()) return;
+  await _xdUndoRun(async () => {
+    const p = picks.find(x => String(x.id) === String(id));
+    if (!_xdCanDelPick(p)) return alert(_XD_NO);
+    if (p.transfer_id) {
+      const T = p.transfer_id;
+      const pair = (await sbGet('picks', `transfer_id=eq.${encodeURIComponent(T)}&select=*`)) || [];
+      if (!pair.length || !pair.every(_xdMine)) return alert('그 사이 바뀐 이동 기록이라 삭제할 수 없습니다. 사무실에 요청하세요.');
+      const res = await _xdUndoConfirm('이동 삭제(오늘 등록)', pair.map(x => `${x.farm} ${x.type} ${x.ctype || ''} ${fmtN(Number(x.qty) || 0)}개`));
+      if (!res || !res.ok) return;
+      try { await _delTransferCore(T); } catch (e) { return alert('오류: ' + e.message); }
+      await _xdUndoLog('picks', T, { transfer_id: T, rows: pair.map(x => ({ farm: x.farm, type: x.type, ctype: x.ctype, qty: x.qty })) }, res, '이동 삭제');
+    } else {
+      const row = await _xdDbRow('picks', p.id);
+      if (!row || row.type !== '빈콘회수' || row.inbound_id || row.dispatch_id || row.transfer_id || !_xdMine(row)) return alert('그 사이 바뀐 회수 기록이라 삭제할 수 없습니다. 사무실에 요청하세요.');
+      const res = await _xdUndoConfirm('빈콘 회수 삭제(오늘 등록)', [`${p.farm} · ${p.ctype || '-'} ${fmtN(Number(p.qty) || 0)}개`]);
+      if (!res || !res.ok) return;
+      try { await dbDeletePick(p.id); picks = picks.filter(x => x.id !== p.id); renderPick(); renderBkCol(); renderDash(); }   // delPick·delBkCol과 같은 처리
+      catch (e) { return alert('오류: ' + e.message); }
+      await _xdUndoLog('picks', p.id, { farm: p.farm, type: p.type, ctype: p.ctype, qty: p.qty, date: p.date }, res, '빈콘 회수 삭제');
+    }
+    renderCal();
+  });
+}
+// 수확 일정 삭제 — 수확전 + 그 수확일·농가로 잡힌 배차 없음 + 그 농가 입고(수확 시작일 이후) 없음.
+async function xdDelHarvest(id) {
+  if (!_xdOn()) return;
+  await _xdUndoRun(async () => {
+    const h = harvests.find(x => String(x.id) === String(id));
+    if (!_xdCanDelHarvest(h)) return alert(_XD_NO);
+    const row = await _xdDbRow('harvests', h.id);
+    if (!row || (row.status || '수확전') !== '수확전' || !_xdMine(row)) return alert('그 사이 바뀐 수확 일정이라 삭제할 수 없습니다. 사무실에 요청하세요.');
+    // 같은 날짜만 서버에서 거르고 농가는 JS로(한글 쿼리 인코딩 사고 방지)
+    const ds = ((await sbGet('dispatches', `harvest=eq.${row.date}&select=id,farm`)) || []).filter(x => x.farm === row.farm);
+    const ibs = ((await sbGet('inbound_records', `date=gte.${row.date}&select=id,farm_name,is_void`)) || []).filter(x => x.farm_name === row.farm && !x.is_void);
+    if (ds.length || ibs.length) return alert('이 수확에 연결된 배차·입고가 있어 삭제할 수 없습니다. 사무실에 요청하세요.');
+    const res = await _xdUndoConfirm('수확 일정 삭제(오늘 등록)', [`${h.farm} · ${h.date} ${h.round || 1}차${h.item ? ' · ' + h.item : ''}`]);
+    if (!res || !res.ok) return;
+    try { await dbDeleteHarvest(h.id); harvests = harvests.filter(x => x.id !== h.id); renderCal(); }   // delHarvest와 같은 처리
+    catch (e) { return alert('오류: ' + e.message); }
+    await _xdUndoLog('harvests', h.id, { farm: h.farm, date: h.date, round: h.round, status: h.status }, res, '수확 일정 삭제');
+  });
+}
+
 function clearRepF() {
   const now = new Date();
   sv('rp-from', ymd(new Date(now.getFullYear(), now.getMonth(), 1)));
@@ -4204,7 +4367,7 @@ async function _qrSaveTransfer(farm, targetType) {
     if (!(await showConfirmEdit('콘테이너 이동 등록', `${farm} → ${to} 이동: ${summary} — 공장 재고는 변하지 않습니다`))) return;
     if (btn) btn.disabled = true;
     const car = drivers.find(d => d.name === driver)?.car || null;
-    const common = { date, driver, car, auto: false, transfer_id: generateUUID() };
+    const common = { date, driver, car, auto: false, transfer_id: generateUUID(), created_by: sessionStorage.getItem('citrus_adm_user') || 'admin' };   // 등록 계정(db.js _withCreatedBy와 같은 값 — 배열 insert라 여기서 직접)
     // 종류마다 A행 → B행 순서. ★한 번의 배열 POST(_extCtInsert와 같은 방식) — DB가 전부 저장하거나 전부 실패하므로
     //   한쪽만 남는 일이 없다(롤백 코드가 필요 없다).
     const payload = list.flatMap(c => [
@@ -4963,7 +5126,7 @@ function harvestActBtns(h) {
       ? (isLatest ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="unfinishAllHarvest(${h.id})">↩ 종료 해제</button>` : '')
       : (backTo ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#EDE7F6;color:#4527A0;border:1px solid #D1C4E9;border-radius:6px" onclick="setHarvestStatus(${h.id},'${backTo}')">↩ 되돌리기</button>` : '')}
     <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="openHarvestEdit(${h.id})">✏️</button>
-    ${_hvAdmB ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>` : ''}`;
+    ${_hvAdmB ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="delHarvest(${h.id})">삭제</button>` : ''}${(!_hvAdmB && _xdCanDelHarvest(h)) ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="xdDelHarvest(${h.id})">🗑 삭제(오늘 등록)</button>` : ''}`;
 }
 // 금일 수확일정의 연락 줄 '📍 주소 · 📞 전화' — 그날 농가에 가는 사람이 바로 전화·이동하게.
 //   addr은 호출부가 _recAddr(기록)로 넘긴다(고른 밭 우선). 없는 조각은 빼고, 둘 다 없으면 ''.
@@ -5101,7 +5264,7 @@ function renderCal() {
         const g = _dispHarvestGuess(o);
         const hv = g ? `<span style="margin-left:auto;font-size:12px;color:${g.guessed ? '#9CA3AF' : '#1565C0'}">${esc(_dispHarvestGuessTxt(g))}</span>` : '';
         push(o.driver || '', line(`${chip('배출', '#E6F1FB', '#0C447C')}<span>${esc(o.farm)}${tt}</span>`
-          + `<span style="color:#6B7280">${ctB(o.ctype)} ${o.qty > 0 ? o.qty + '개' : '미정'}</span>${st}${hv}`));
+          + `<span style="color:#6B7280">${ctB(o.ctype)} ${o.qty > 0 ? o.qty + '개' : '미정'}</span>${st}${_xdUndoBtns(o)}${hv}`));
       });
       // 원물은 첫 등록 시각 오름차순(created_at 없는 차는 맨 뒤) — _ibTruckGroups는 입력 순서라 같은 기사의 여러 대가 뒤섞일 수 있다.
       //   ★정렬은 여기서만 — _ibTruckGroups는 입고 공유 텍스트도 쓰므로 고치지 않는다.
@@ -5123,7 +5286,8 @@ function renderCal() {
         + `<span style="font-size:11px;font-weight:400;color:#9CA3AF">배출 ${tOuts.length} · 원물 ${tIbs.length} · 기사 ${names.filter(n => n).length}명</span>`
         + (_xdTrans ? `<button type="button" onclick="event.stopPropagation();xdQrPickFarm()" style="float:right;font-size:11px;padding:2px 8px;border:1px solid #1565C0;color:#1565C0;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit">＋ 빈콘 회수</button>` : '')
         + `</div>`
-        + names.map(n => `<div style="margin-top:6px"><div style="font-size:13px;font-weight:500;padding-bottom:3px">${n ? esc(n) : '기사 미정'}</div>${byDrv.get(n).join('')}</div>`).join('');
+        + names.map(n => `<div style="margin-top:6px"><div style="font-size:13px;font-weight:500;padding-bottom:3px">${n ? esc(n) : '기사 미정'}</div>${byDrv.get(n).join('')}</div>`).join('')
+        + _xdTodayPkHtml();   // 외부 기사만 — 내가 오늘 넣은 빈콘 회수·이동(줄마다 삭제). 다른 역할은 ''
       transEl.style.display = '';
     }
   }

@@ -37,12 +37,19 @@ async function dbUpdateDriver(id, data) { const r = await sbUpdate('drivers', id
 async function dbDeleteDriver(id) { return sbDelete('drivers', id); }
 
 async function dbGetDispatches() { return sbGet('dispatches', 'order=date.desc,created_at.desc'); }
-async function dbInsertDispatch(data) { const r = await sbInsert('dispatches', data); return r[0]; }
+// 등록 계정 기록 — dispatches·picks·harvests insert에 created_by(로그인 계정 citrus_adm_user, 없으면 'admin')를 붙인다.
+//   ★insert 경로가 12곳이라 여기 한 곳에서 붙인다(새 경로도 자동). 호출부가 직접 넣은 값이 있으면 그대로 둔다.
+//   외부 기사 당일 되돌리기(app.js _xdMine)가 이 값과 created_at으로 '내가 오늘 넣은 기록'을 가린다.
+function _withCreatedBy(d) {
+  return (d && typeof d === 'object' && !Array.isArray(d) && !('created_by' in d))
+    ? { ...d, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin' } : d;
+}
+async function dbInsertDispatch(data) { const r = await sbInsert('dispatches', _withCreatedBy(data)); return r[0]; }
 async function dbUpdateDispatch(id, data) { const r = await sbUpdate('dispatches', id, data); return r[0]; }
 async function dbDeleteDispatch(id) { return sbDelete('dispatches', id); }
 
 async function dbGetPicks() { return sbGet('picks', 'order=date.desc,created_at.desc'); }
-async function dbInsertPick(data) { const r = await sbInsert('picks', data); return r[0]; }
+async function dbInsertPick(data) { const r = await sbInsert('picks', _withCreatedBy(data)); return r[0]; }
 async function dbUpdatePick(id, data) { const r = await sbUpdate('picks', id, data); return r[0]; }
 async function dbDeletePick(id) { return sbDelete('picks', id); }
 
@@ -140,7 +147,7 @@ async function dbDeleteQualityCriteria(id) { return sbDelete('quality_criteria',
 
 // ── 수확 일정
 async function dbGetHarvests() { return sbGet('harvests', 'order=date'); }
-async function dbInsertHarvest(data) { const r = await sbInsert('harvests', data); return r[0]; }
+async function dbInsertHarvest(data) { const r = await sbInsert('harvests', _withCreatedBy(data)); return r[0]; }
 async function dbUpdateHarvest(id, data) { const r = await sbUpdate('harvests', id, data); return r[0]; }
 async function dbDeleteHarvest(id) { return sbDelete('harvests', id); }
 
