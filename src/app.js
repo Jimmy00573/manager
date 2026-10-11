@@ -1219,6 +1219,14 @@ function setRole(r) {
     });
     // 외부 기사 화면 축소(미선과 탭의 다른 블록·입고 폼의 관리용 칸)는 style.css의 body.role-ext-driver .xd-hide 한 규칙이 맡는다.
     document.body.classList.toggle('role-ext-driver', r === 'ext_driver');
+    // 입고 공급처 목록은 역할마다 다르다(외부 기사 = 농가만, buildInboundSupplierOptHtml). 부팅 때 popSels는 로그인 전에 돌 수 있고
+    //   로그아웃→다른 계정 로그인은 같은 페이지라, 역할이 정해지는 여기서 다시 채운다(다른 선택칸은 같은 내용으로 다시 그려질 뿐).
+    popSels();
+    if (r === 'ext_driver') {
+      // popSels는 고르던 값이 목록에 없으면 '(목록에 없음)'으로 붙여 둔다 — 이전 계정이 고른 거래처가 남지 않게 농가 아닌 옵션은 뗀다.
+      const ibf = document.getElementById('ib-farm');
+      if (ibf) { [...ibf.options].forEach(o => { if (o.value && !farms.some(f => f.name === o.value)) o.remove(); }); fsSync('ib-farm'); }
+    }
     _applyEditRestrictions(r);
     T('inv');   // airport는 T→invTab('sum')이 invTab 안에서 'juice'로 교정된다(교정 지점은 한 곳뿐)
     // ★외부 기사의 첫 화면은 수확 캘린더 — 재고(입고) 조회는 위 T('inv')로 출발시켜 두고 넘어간다
@@ -7535,15 +7543,19 @@ function buildSupplierOptHtml() {
 //   위 제외로 사라지는 기존 입고 건은 없다. 값(value)은 이름 그대로라 저장·검색 호환도 그대로.
 const _IB_SUP_EXCLUDE = ['실사확인'];   // 실사 출고 사유용 내부 이름 — 실제 입고처가 아니다
 const _IB_SUP_CATS = ['농협', '거래처'];   // ★입고 공급처에 넣을 partners.category(이 순서대로 optgroup). 새 유형이 입고처면 여기에 추가.
+// ★외부 기사(ext_driver)는 농가 그룹만 — 기사는 농가에서만 원물을 받는다. 거래처('폐기' 등)를 고르면
+//   입고 자동 콘테이너 기록이 대상 '농가'로 저장돼 어느 목록에도 안 잡힌다(테스트 중 실제 발생). 저장도 _addInboundCore가 막는다.
+//   ★역할이 바뀌면 setRole이 popSels로 다시 채운다(로그아웃→다른 계정 로그인은 새로고침이 없다).
 function buildInboundSupplierOptHtml() {
   const byKo = (a, b) => (a.name || '').localeCompare(b.name || '', 'ko');   // ★단순 문자열 비교는 한글 순서가 어긋난다
   const grp = (label, list) => list.length
     ? `<optgroup label="${esc(label)}">` + list.map(x => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('') + '</optgroup>'
     : '';
   const cat = c => partners.filter(p => p.is_active !== false && p.category === c && !_IB_SUP_EXCLUDE.includes(p.name)).sort(byKo);
+  const farmOnly = sessionStorage.getItem('citrus_role') === 'ext_driver';
   return '<option value="">선택</option>'
     + grp('농가', [...farms].sort(byKo))
-    + _IB_SUP_CATS.map(c => grp(c, cat(c))).join('');
+    + (farmOnly ? '' : _IB_SUP_CATS.map(c => grp(c, cat(c))).join(''));
 }
 // ── 농가·공급처 검색형 선택 (공용) ─────────────────────────────
 // 농가가 55곳이라 드롭다운에서 못 찾고, 모바일 비중이 높아 datalist는 조작이 불편하다.
@@ -22928,6 +22940,8 @@ async function _addInboundCore(keepOpen) {
   // 외부 기사는 날짜 칸 값과 무관하게 오늘(td)로 저장한다.
   const date = _role === 'ext_driver' ? td() : gv('ib-date'), product = gv('ib-product'), farm_name = gv('ib-farm');
   if (!date || !product || !farm_name) return alert('날짜, 품목, 농가명은 필수입니다.');
+  // 외부 기사는 농가에서만 받는다 — 목록은 농가만 보이지만(buildInboundSupplierOptHtml) 값을 직접 넣는 경로까지 막는다.
+  if (_role === 'ext_driver' && !farms.some(f => f.name === farm_name)) return alert('농가만 선택할 수 있습니다.');
   // ★수송기사 필수 — 입고 콘테이너의 담당자(staff)를 이 기사 이름으로 저장하므로(55e10a0),
   //  비워 두면 콘테이너 담당자까지 빈칸이 돼 회수·반납 추적이 끊긴다.
   //  검증 위치는 폼 순서(날짜·품목·공급처 → 수송기사 → 콘테이너)에 맞춘다. 선과품 경로(saveInboundSorted)도 같은 규칙.
