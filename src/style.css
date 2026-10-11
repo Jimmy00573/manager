@@ -449,6 +449,38 @@ textarea {
   #inv-sum-div .sum-print-only { display: block !important; }
 }
 
+/* ── 작업 기준표 현장 보기(v725) — 기존 헬퍼 HTML을 그대로 넣고 글자만 키운다(본문 18px · 제목 22px).
+   헬퍼의 인라인 font-size는 .spf-big 안에서 상속으로 덮고, 바운더리 띠(.spf-band)는 폰 폭에 맞게 따로 둔다. */
+#modal-spec-field { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,.5); overflow-y: auto; }
+.spf .spf-sheet { background: #fff; max-width: 720px; min-height: 100%; margin: 0 auto; padding: 16px; box-sizing: border-box; color: #111827; }
+.spf .spf-title { font-size: 22px; font-weight: 500; color: #1E3A5F; line-height: 1.4; }
+.spf .spf-lbl { font-size: 14px; font-weight: 500; color: #6B7280; margin-bottom: 2px; }
+.spf .spf-sec { padding: 10px 0; border-top: 1px solid #E5E7EB; }
+.spf .spf-big { font-size: 18px; line-height: 1.6; }
+.spf .spf-big [style*="font-size"] { font-size: inherit !important; }
+.spf .spf-big .spf-band [style*="font-size"] { font-size: 13px !important; }
+.spf .spf-band span[title] { padding: 4px 0 !important; }
+.spf .spf-sec button { display: none !important; }   /* 보기 전용 — 직전 출고 줄(_specBody)의 수정·삭제 버튼은 숨긴다 */
+.spf .spf-chg { border: 1px solid #C05800; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 18px; line-height: 1.6; color: #C05800; }
+@media print {
+  /* _specFieldPrint가 body에 spf-printing을 잠깐 붙인다 — 이 모달만 남기고 A4 한 장 */
+  body.spf-printing > *:not(#modal-spec-field) { display: none !important; }
+  body.spf-printing #modal-spec-field { position: static !important; background: #fff !important; overflow: visible !important; }
+  body.spf-printing #modal-spec-field .spf-sheet { max-width: none; min-height: 0; padding: 0; }
+  body.spf-printing #modal-spec-field .spf-noprint,
+  body.spf-printing #modal-spec-field button { display: none !important; }
+  body.spf-printing #modal-spec-field .spf-sec { break-inside: avoid; }
+  /* 한 장에 맞추려고 인쇄만 글자를 줄인다(화면은 18/22px 그대로). 바탕은 흰색(body 회색 배경이 빈 곳에 비치지 않게) */
+  body.spf-printing { background: #fff !important; }
+  body.spf-printing #modal-spec-field .spf-title { font-size: 18px; }
+  body.spf-printing #modal-spec-field .spf-big,
+  body.spf-printing #modal-spec-field .spf-chg { font-size: 13px; line-height: 1.5; }
+  body.spf-printing #modal-spec-field .spf-lbl { font-size: 11px; }
+  body.spf-printing #modal-spec-field .spf-sec { padding: 6px 0; }
+  body.spf-printing #modal-spec-field .spf-big .spf-band [style*="font-size"] { font-size: 10px !important; }
+  body.spf-printing #modal-spec-field .spf-band span[title] { padding: 2px 0 !important; }
+}
+
 /* 설정 서브탭 */
 .cfg-stab {
   padding: 8px 14px;

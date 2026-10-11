@@ -26561,10 +26561,11 @@ function _specCard(g, i) {
   const head = `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
       <span style="font-size:14px;font-weight:500;color:#111827">${esc(g.channel)}</span>
       <span style="font-size:12px;color:#6B7280">${[g.business, g.product, g.pack].filter(Boolean).map(esc).join(' · ')}</span>
-      ${W ? `<span style="margin-left:auto;display:flex;gap:4px">
-        <button type="button" onclick="_specOpenFrom(${i},'기준')" style="${mini};border:1px solid #1E3A5F;color:#1E3A5F">기준 변경</button>
+      ${W || g.cur ? `<span style="margin-left:auto;display:flex;flex-wrap:wrap;gap:4px">
+        ${g.cur ? `<button type="button" onclick="_specField(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">현장 보기</button>` : ''}
+        ${W ? `<button type="button" onclick="_specOpenFrom(${i},'기준')" style="${mini};border:1px solid #1E3A5F;color:#1E3A5F">기준 변경</button>
         <button type="button" onclick="_specOpenFrom(${i},'출고')" style="${mini};border:1px solid #D1D5DB;color:#374151">출고 기록</button>
-        ${g.cur ? `<button type="button" onclick="_specCopy(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">복사</button>` : ''}</span>` : ''}
+        ${g.cur ? `<button type="button" onclick="_specCopy(${i})" style="${mini};border:1px solid #D1D5DB;color:#374151">복사</button>` : ''}` : ''}</span>` : ''}
     </div>`;
   // 현재 기준
   // 변경 칩(v724) — 앞 버전 있고 최근 7일 시작이면 주황 '변경 M/D' + 바뀐 점, 앞 버전 없으면 회색 '신규'
@@ -26609,6 +26610,45 @@ function _specOpenFrom(i, kind) {
   openSpecModal({ kind, group: g, from: src });
 }
 
+// ── 현장 보기(v725) — 현재 기준 한 장을 큰 글씨 전체 화면으로. 매번 새로 만든다(옛 셸 재사용 금지).
+// ★내용은 기존 헬퍼 호출만(_specBandHtml·_specCombosHtml·_specCountTable(Html)·_specBody·_specDiff) — 글자 크기는 style.css .spf 클래스가 키운다.
+function _specField(i) {
+  const g = _specView[i]; if (!g || !g.cur) return;
+  document.getElementById('modal-spec-field')?.remove();
+  const v = g.cur, asOf = _specUi.date || td(), chg = _specChg(g, asOf);
+  const sec = (label, body) => body ? `<div class="spf-sec"><div class="spf-lbl">${label}</div><div class="spf-big">${body}</div></div>` : '';
+  const tbl = _specCountTable(v.product, v.sizes, v.weight_min, v.weight_max);
+  const brixMemo = [v.brix ? `브릭스 ${esc(v.brix)}` : '', v.note ? `메모 ${esc(v.note)}` : ''].filter(Boolean).join(' · ');
+  const m = document.createElement('div');
+  m.id = 'modal-spec-field';
+  m.className = 'spf';
+  m.innerHTML = `<div class="spf-sheet">
+    <div class="spf-noprint" style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:8px">
+      <button type="button" onclick="_specFieldPrint()" style="font-size:14px;padding:6px 14px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-family:inherit">🖨 인쇄</button>
+      <button type="button" data-close style="font-size:14px;padding:6px 14px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-family:inherit">✕ 닫기</button></div>
+    ${chg.recent && chg.diff.length ? `<div class="spf-chg"><div class="spf-lbl" style="color:#C05800">바뀐 점 · ${esc(_specMD(v.valid_from))}부터</div>${chg.diff.map(d => `<div>${esc(d.label)} ${esc(d.from)} → ${esc(d.to)}</div>`).join('')}</div>` : ''}
+    <div class="spf-title">${esc(g.channel)}</div>
+    <div class="spf-big" style="margin-bottom:12px">${[g.business, g.product, g.pack].filter(Boolean).map(esc).join(' · ')}${v.box ? ' ' + _specTag('박스 ' + v.box) : ''}</div>
+    ${sec('기준 중량', esc(_specWTxt(v)))}
+    ${sec('사용 사이즈', (v.sizes ? esc(v.sizes) : '') + `<div class="spf-band">${_specBandHtml(v.product, v.sizes, _specCombos(v.layout))}</div>`)}
+    ${sec('구성', _specCombosHtml(v))}
+    ${sec('과수별 표', tbl && tbl.length ? _specCountTableHtml(tbl) : '')}
+    ${sec('브릭스 · 메모', brixMemo)}
+    ${sec('직전 출고', g.lastOut ? _specBody(g, g.lastOut) : '')}
+    ${sec('적용 기간 · 작성자', [esc(_specPeriod(g, v)), esc(v.author || '')].filter(Boolean).join(' · '))}
+  </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined || e.target === m) m.remove(); });
+  document.body.appendChild(m);
+}
+// 인쇄 — body에 spf-printing을 잠깐 붙여(style.css @media print) 이 모달만 남기고 인쇄, 끝나면 뗀다.
+function _specFieldPrint() {
+  if (!document.getElementById('modal-spec-field')) return;
+  document.body.classList.add('spf-printing');
+  const off = () => { document.body.classList.remove('spf-printing'); window.removeEventListener('afterprint', off); };
+  window.addEventListener('afterprint', off);
+  window.print();
+  setTimeout(off, 1000);   // afterprint가 안 오는 브라우저 대비(print()는 대화상자가 닫힐 때까지 멈춘다)
+}
 // 카드의 [복사](v724, admin) — 현재 기준 값을 그대로 채운 새 기준 등록 창. 채널만 비우고 시작일 = 기준일, 작성자 비움.
 //   저장하면 새 키의 첫 버전(같은 키·같은 시작일이 있으면 saveSpec의 기존 확인창).
 function _specCopy(i) {
