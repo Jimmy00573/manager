@@ -3228,7 +3228,8 @@ function showToast(msg) {
 // ── 공용 위험 작업 확인 모달 ──────────────────────────────────────
 let _confirmResolve = null;
 
-function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입니다', items = [], resultNote = '', confirmText = '삭제', cancelText = '취소', needWorker = false, defaultReason = '' }) {
+// workerNames — 작업자 선택지(이름 배열). 안 주면 예전처럼 활성 내부 직원. 외부 기사 본인 삭제(xdDeleteInbound)만 기사 이름을 넘긴다.
+function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입니다', items = [], resultNote = '', confirmText = '삭제', cancelText = '취소', needWorker = false, defaultReason = '', workerNames = null }) {
   return new Promise(resolve => {
     if (_confirmResolve) _confirmResolve(false);
     _confirmResolve = resolve;
@@ -3246,7 +3247,7 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">작업자 *</label>
         <select id="cdg-worker" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
           <option value="">작업자 선택</option>
-          ${_activeDrivers().filter(d=>d.type==='내부').map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}
+          ${(workerNames || _activeDrivers().filter(d=>d.type==='내부').map(d=>d.name)).map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}
         </select>
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px;margin-top:8px">사유 *</label>
         <input id="cdg-reason" placeholder="사유 입력 (필수)" value="${esc(defaultReason)}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
@@ -18850,7 +18851,9 @@ function renderInboundList() {
          <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
       : r._legacy
         ? '<span style="padding:6px 12px;font-size:12px;color:#bbb;display:block">마이그레이션 필요</span>'
-        : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
+        : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>${_xdCanDelete(r) ? `
+         <div class="menu-divider"></div>
+         <button onclick="xdDeleteInbound('${r.id}')" class="menu-danger">🗑 삭제(다시 등록용)</button>` : ''}`;
     const actionCell = `<div style="position:relative;text-align:center">
       <button class="menu-trigger" onclick="event.stopPropagation();toggleRowMenu('${r.id}',event,this)">⋮</button>
       <div id="row-menu-${r.id}" class="row-menu" style="display:none">${menuItems}</div>
@@ -20796,6 +20799,126 @@ async function deleteInbound(id) {
     await loadAndRenderInv();
     if (links.containers > 0 || links.nhfContainers > 0) { renderOwn(); renderPick(); renderNhf(); renderDash(); }   // 콘테이너 현황 갱신(농협 포함)
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+// ── 외부 기사 본인 등록 당일 입고 삭제(다시 등록용) ─────────────────────────
+// ★수정은 열지 않는다(수정 창은 수량을 바꿔도 콘테이너 기록이 안 따라간다) — 잘못 넣었으면 묶음째 지우고 다시 등록한다.
+// 화면 1차 거름(⋮ 메뉴 표시용): 외부 기사 + 본인 계정 등록 + 오늘 + 선과품 아님. 처리 여부는 누른 뒤 DB로 본다.
+function _xdCanDelete(r) {
+  const me = sessionStorage.getItem('citrus_adm_user');
+  return sessionStorage.getItem('citrus_role') === 'ext_driver' && !!me && !!r && !r._legacy
+    && r.staff === me && r.date === td() && (r.inbound_category || '상품') !== '선과품';
+}
+// DB 재확인 — 삭제 묶음과 묶음 각 행의 연결 기록을 돌려준다. 막아야 하면 { block: 안내문 }.
+// ★화면 배열(processingRecords·sortingResults)은 외부 기사 화면에서 비어 있을 수 있어 판정에 쓰지 않는다.
+// ★getInboundLinks를 판정에 쓰지 않는 이유: 조회 실패를 0건으로 삼키고 가공 건수는 화면 배열에서 센다 — 실패가 '처리 안 됨'이 된다.
+//   여기 sbGet은 실패하면 던진다 → 호출부가 삭제를 멈춘다.
+// 묶음 = _ibTruckGroups(같은 날짜·농가·품목·기사 + created_at 2분 이내로 이어진 행) — 한 번의 등록이 카테고리별로 만든 행들.
+async function _xdDelCheck(id) {
+  const me = sessionStorage.getItem('citrus_adm_user');
+  const base = (await sbGet('inbound_records', `id=eq.${id}&select=*`))[0];
+  if (!base || base.is_void) return { block: '이미 삭제됐거나 찾을 수 없는 입고입니다.', gone: true };
+  // 같은 날짜만 서버에서 거르고 농가·품목은 JS로(한글 쿼리 인코딩 사고 방지 — _ibShareGroup과 같은 방식)
+  const sameDay = await sbGet('inbound_records', `date=eq.${base.date}&select=*`);
+  const sibs = (sameDay || []).filter(r => !r.is_void && r.farm_name === base.farm_name && r.product === base.product);
+  const grp = (_ibTruckGroups(sibs.length ? sibs : [base]).find(g => g.rows.some(x => String(x.id) === String(id))) || { rows: [base] }).rows;
+  for (const r of grp) {
+    if (r.staff !== me) return { block: '다른 계정이 등록한 입고가 같은 묶음에 있어 삭제할 수 없습니다. 사무실에 요청하세요.' };
+    if (r.date !== td()) return { block: '오늘 등록한 입고만 삭제할 수 있습니다.' };
+    if ((r.inbound_category || '상품') === '선과품') return { block: '선과품 입고는 삭제할 수 없습니다. 사무실에 요청하세요.' };
+  }
+  const rows = [];
+  for (const r of grp) {
+    const [srs, procs, invs, pks, ois, nis] = await Promise.all([
+      sbGet('sorting_results', `inbound_record_id=eq.${r.id}&select=id`),
+      sbGet('processing_records', `inbound_id=eq.${r.id}&select=id,process_type`),
+      sbGet('inventory_records', `inbound_record_id=eq.${r.id}&select=id,usage,is_void,quantity`),
+      sbGet('picks', `inbound_id=eq.${r.id}&select=*`),
+      sbGet('own_ins', `inbound_id=eq.${r.id}&select=*`),
+      sbGet('nhf_ins', `inbound_id=eq.${r.id}&select=*`)
+    ]);
+    if ((srs || []).length) return { block: '선과가 시작돼 삭제할 수 없습니다. 사무실에 요청하세요.' };
+    if ((procs || []).length) return { block: '선과·출고 처리 기록이 있어 삭제할 수 없습니다. 사무실에 요청하세요.' };
+    // 파치 재고 — 등록 때 모습 그대로여야 한다: 무효 아님 · 사용처가 비었거나 등록 기본값(왕대과 '사용보류') · 수량 그대로(부분 출고 없음)
+    const defUsage = (_IB_PACHI_DEFAULTS[r.inbound_category] || {}).usage ?? null;
+    for (const v of (invs || [])) {
+      const usageOk = v.usage == null || v.usage === '' || v.usage === defUsage;
+      if (v.is_void || !usageOk || Number(v.quantity) !== Number(r.quantity)) {
+        return { block: '파치 재고가 이미 사용처 지정·출고됐습니다. 사무실에 요청하세요.' };
+      }
+    }
+    rows.push({ r, invs: invs || [], picks: pks || [], ownIns: ois || [], nhfIns: nis || [] });
+  }
+  return { rows };
+}
+let _xdDelBusy = false;
+async function xdDeleteInbound(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'ext_driver') return;
+  if (_xdDelBusy) return;
+  const r0 = inboundRecords.find(x => String(x.id) === String(id));
+  if (!_xdCanDelete(r0)) return alert('본인 계정으로 오늘 등록한 원물 입고만 삭제할 수 있습니다.');
+  _xdDelBusy = true;
+  try {
+    let chk;
+    try { chk = await _xdDelCheck(id); }
+    catch (e) { return alert('확인 조회에 실패했습니다. 잠시 뒤 다시 시도하세요.\n\n' + e.message); }
+    if (chk.block) { alert(chk.block); if (chk.gone) await loadAndRenderInv(); return; }
+    const items = [];
+    chk.rows.forEach(({ r, invs, picks: pks, ownIns: ois, nhfIns: nis }) => {
+      items.push(`${r.farm_name} · ${r.product} · ${r.inbound_category || '상품'} ${fmtN(r.quantity)}CT`);
+      pks.forEach(p => items.push(`  └ 콘테이너 ${p.type || '회수'} ${p.ctype || ''} ${fmtN(p.qty)}개`));
+      ois.forEach(o => items.push(`  └ 콘테이너 반납대기 ${o.ctype || ''} ${fmtN(o.qty)}개`));
+      nis.forEach(o => items.push(`  └ ${o.owner_type || '농협'} 콘테이너 ${o.nhf || ''} ${o.type || ''} ${fmtN(o.qty)}개`));
+      invs.forEach(v => items.push(`  └ 파치 재고 ${fmtN(v.quantity)}CT`));
+    });
+    const res = await showConfirmDanger({
+      title: '입고 삭제 (다시 등록용)',
+      items,
+      resultNote: '삭제한 뒤 입고 등록에서 다시 넣어 주세요',
+      confirmText: '삭제',
+      needWorker: true,
+      workerNames: _activeDrivers().filter(d => d.type === '외부').map(d => d.name),
+      defaultReason: '잘못 등록 — 다시 등록'
+    });
+    if (!res || !res.ok) return;
+    // ★확인창이 떠 있는 사이 사무실에서 선과를 시작했을 수 있다 — 지우기 직전에 한 번 더 본다(묶음 행도 같아야 한다).
+    let chk2;
+    try { chk2 = await _xdDelCheck(id); }
+    catch (e) { return alert('확인 조회에 실패했습니다. 삭제하지 않았습니다.\n\n' + e.message); }
+    if (chk2.block) { alert(chk2.block); await loadAndRenderInv(); return; }
+    const ids1 = chk.rows.map(x => String(x.r.id)).sort().join(','), ids2 = chk2.rows.map(x => String(x.r.id)).sort().join(',');
+    if (ids1 !== ids2) { alert('그 사이 입고 내용이 바뀌었습니다. 목록을 새로 불러온 뒤 다시 시도하세요.'); await loadAndRenderInv(); return; }
+    // ★순서: 콘테이너가 안 붙은 행 먼저, 붙은 행(대표 행) 맨 나중. 중간에 실패하면 남는 쪽에 콘테이너 기록이 그대로 붙어 있어
+    //   고아 기록이 생기지 않는다(콘테이너는 cascadeDeleteInbound 안에서 입고 행보다 먼저 지워진다).
+    const hasCt = x => x.picks.length + x.ownIns.length + x.nhfIns.length > 0;
+    const order = [...chk2.rows.filter(x => !hasCt(x)), ...chk2.rows.filter(hasCt)];
+    const me = sessionStorage.getItem('citrus_adm_user');
+    let done = 0, logFail = 0;
+    try {
+      for (const x of order) {
+        const hasLinks = hasCt(x) || x.invs.length > 0;   // 관리자 deleteInbound와 같은 갈래: 연결 있으면 cascade, 없으면 행만
+        if (hasLinks) await cascadeDeleteInbound(x.r.id);
+        else { await dbDeleteInbound(x.r.id); inboundRecords = inboundRecords.filter(y => y.id !== x.r.id); }
+        done++;
+        // 이력 실패로 묶음의 나머지 행 삭제를 멈추지 않는다(멈추면 반쪽 묶음이 남는다) — 실패 건수만 알린다.
+        try {
+          await dbInsertAuditLog({
+            target_table: 'inbound_records', target_id: x.r.id,
+            before_val: { product: x.r.product, farm_name: x.r.farm_name, quantity: x.r.quantity, date: x.r.date },
+            after_val: null,
+            reason: `${res.reason} (외부 기사 ${res.worker} · 다시 등록용 삭제${hasLinks ? '(cascade)' : ''})`,
+            staff: me
+          });
+        } catch (le) { console.warn('외부 기사 입고 삭제 이력 기록 실패:', le.message); logFail++; }
+      }
+      if (logFail) alert(`삭제는 됐지만 변경 이력 ${logFail}건을 남기지 못했습니다.`);
+      showToast(`입고 ${done}행을 삭제했습니다. 다시 등록해 주세요.`);
+    } catch (e) {
+      alert(`삭제가 ${done}/${order.length}행에서 멈췄습니다. 사무실에 알려 주세요.\n\n` + e.message);
+    }
+    await loadAndRenderInv();
+    if (order.some(hasCt)) { renderOwn(); renderPick(); renderNhf(); renderDash(); }   // 콘테이너 현황 갱신(관리자 삭제와 같은 묶음)
+  } finally { _xdDelBusy = false; }
 }
 
 
