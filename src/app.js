@@ -1190,7 +1190,7 @@ const ROLE_TRANSPORT_TABS = { ext_driver: ['cal', 'disp'] };   // 첫 칸이 첫
 // 입고 등록(원물)을 쓸 수 있는 역할 — 폼 표시(_applyEditRestrictions)·열기(toggleIbForm)·저장(_addInboundCore)이 이 표 하나를 본다.
 // ★외부 기사는 원물 입고 등록만(2-1단계). 선과품(saveInboundSorted)·수정·삭제는 관리자 전용 그대로.
 const IB_FORM_ROLES = ['admin', 'ext_driver'];
-// 빠른 회수 창(openQuickRecovery·saveQuickRecovery)을 쓸 수 있는 역할. 외부 기사는 농가 대상·공장(회수)·오늘 날짜만.
+// 빠른 회수 창(openQuickRecovery·saveQuickRecovery·_qrSaveTransfer)을 쓸 수 있는 역할. 외부 기사는 농가 대상만(이동도 농가→농가)·오늘 날짜·빈콘회수.
 const QR_ROLES = ['admin', 'ext_driver'];
 // 수확 캘린더 쓰기(등록·시작·완료·수정·마무리·계획 입력)를 쓸 수 있는 역할. ★삭제·＋다음 차수·전체 종료/해제는 관리자 전용 그대로.
 const HV_ROLES = ['admin', 'ext_driver'];
@@ -4023,7 +4023,9 @@ function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   if (opts.staff) { const qs = document.getElementById('qr-staff'); if (qs) { qs.value = opts.staff; if (qs.value !== opts.staff) qs.value = ''; } }
   if (_qrXd) {
     // ★관리자 창 HTML은 그대로 두고 외부 기사일 때만 그린 뒤에 좁힌다. 담당자 칸(_drvOptsHtml)은 이미 활성 외부 기사를 '기사' 그룹으로 포함한다.
-    m.querySelector('#qr-dest option[value="move"]')?.remove();   // 이동은 관리자 전용(저장에서도 막음)
+    // 이동은 농가 → 농가만 — 받는 곳 유형에서 농협·거래처를 뗀다(저장 _qrSaveTransfer에서도 막음)
+    m.querySelectorAll('#qr-to-type option').forEach(o => { if (o.value !== '농가') o.remove(); });
+    _qrRefreshToOpts();
     // 구분은 빈콘회수만 — 원물수거는 입고 등록 때 자동으로 생겨서, 여기서 또 넣으면 같은 콘테이너가 두 번 회수된다(저장에서도 고정)
     const qt = m.querySelector('#qr-type');
     if (qt) { qt.value = '빈콘회수'; [...qt.options].forEach(o => { if (o.value !== '빈콘회수') o.remove(); }); }
@@ -4038,10 +4040,7 @@ async function saveQuickRecovery(farm, targetType = '농가') {
   const _qrXd = _qrRole === 'ext_driver';
   if (_qrXd && targetType !== '농가') return alert('농가 회수만 등록할 수 있습니다.');
   // ★받는 곳 '이동'만 따로 간다. 공장(회수)은 아래 기존 코드 그대로 — 저장 payload·동작 변경 0.
-  if (document.getElementById('qr-dest')?.value === 'move') {
-    if (_qrXd) return alert('다른 곳으로 이동은 관리자만 등록할 수 있습니다.');
-    return _qrSaveTransfer(farm, targetType);
-  }
+  if (document.getElementById('qr-dest')?.value === 'move') return _qrSaveTransfer(farm, targetType);   // 외부 기사는 그 안에서 농가→농가만
   const date = _qrXd ? td() : (document.getElementById('qr-date')?.value || td());   // 외부 기사는 오늘 고정
   const type = _qrXd ? '빈콘회수' : (document.getElementById('qr-type')?.value || '빈콘회수');   // 외부 기사는 빈콘회수 고정
   const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(필수)
@@ -4115,16 +4114,19 @@ function _qrDestChanged() {
   _qrQtyChanged();
 }
 async function _qrSaveTransfer(farm, targetType) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;   // 이동은 관리자 전용(외부 기사가 빠른 회수 창을 쓰게 되면서 첫 줄에도 둔다)
+  const _qrRole = sessionStorage.getItem('citrus_role');
+  if (!QR_ROLES.includes(_qrRole)) return;
+  const _qrXd = _qrRole === 'ext_driver';   // 외부 기사 — 농가 → 농가만 · 날짜 오늘(아래 검사). 저장 내용은 관리자와 같다.
   if (_qrTransferBusy) return;   // 두 번 눌림 방지 — 확인창이 떠 있는 동안 다시 눌러도 무시
   _qrTransferBusy = true;
   const btn = document.getElementById('qr-save-btn');
   try {
-    const date = document.getElementById('qr-date')?.value || td();
+    const date = _qrXd ? td() : (document.getElementById('qr-date')?.value || td());
     const driver = document.getElementById('qr-staff')?.value || null;
     const toTT = document.getElementById('qr-to-type')?.value || '농가';
     const to = document.getElementById('qr-to-farm')?.value || '';
     const list = _qrCtypeList();
+    if (_qrXd && (targetType !== '농가' || toTT !== '농가' || (to && !farms.some(f => f.name === to)))) return alert('농가에서 농가로만 옮길 수 있습니다.');
     if (!to) return alert('받는 곳을 선택하세요.');
     if (to === farm && toTT === targetType) return alert('같은 곳으로는 옮길 수 없습니다.');
     if (!list.length) return alert('옮길 콘테이너 종류·수량을 입력하세요.');
