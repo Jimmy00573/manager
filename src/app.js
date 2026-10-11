@@ -4008,6 +4008,9 @@ function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   if (_qrXd) {
     // ★관리자 창 HTML은 그대로 두고 외부 기사일 때만 그린 뒤에 좁힌다. 담당자 칸(_drvOptsHtml)은 이미 활성 외부 기사를 '기사' 그룹으로 포함한다.
     m.querySelector('#qr-dest option[value="move"]')?.remove();   // 이동은 관리자 전용(저장에서도 막음)
+    // 구분은 빈콘회수만 — 원물수거는 입고 등록 때 자동으로 생겨서, 여기서 또 넣으면 같은 콘테이너가 두 번 회수된다(저장에서도 고정)
+    const qt = m.querySelector('#qr-type');
+    if (qt) { qt.value = '빈콘회수'; [...qt.options].forEach(o => { if (o.value !== '빈콘회수') o.remove(); }); }
     const qd = document.getElementById('qr-date'); if (qd) { qd.value = td(); qd.readOnly = true; }
   }
   _qrQtyChanged();
@@ -4024,7 +4027,7 @@ async function saveQuickRecovery(farm, targetType = '농가') {
     return _qrSaveTransfer(farm, targetType);
   }
   const date = _qrXd ? td() : (document.getElementById('qr-date')?.value || td());   // 외부 기사는 오늘 고정
-  const type = document.getElementById('qr-type')?.value || '빈콘회수';
+  const type = _qrXd ? '빈콘회수' : (document.getElementById('qr-type')?.value || '빈콘회수');   // 외부 기사는 빈콘회수 고정
   const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(필수)
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
   //   _qrCtypeList가 0을 걸러내므로 비었으면 '종류도 수량도 없음'이다(예전 두 검사를 하나로).
