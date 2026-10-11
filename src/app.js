@@ -1186,7 +1186,7 @@ const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 't
 // ★공항(airport) 계정은 주스·청 한 탭만 본다. ★외부 기사는 입고 목록이 있는 미선과 탭만(1단계는 보기 전용).
 const ROLE_INV_TABS = { staff: ['sum', 'uns', 'srt', 'pachi', 'juice'], airport: ['juice'], ext_driver: ['uns'] };
 // 역할별 수확·수송 하위 탭 화이트리스트(없으면 전부 = admin). 첫 값 = 허용 안 된 하위 탭을 부를 때 대신 갈 탭(transportSub).
-const ROLE_TRANSPORT_TABS = { ext_driver: ['cal', 'disp'] };   // 첫 칸이 첫 화면(캘린더)
+const ROLE_TRANSPORT_TABS = { ext_driver: ['cal', 'disp', 'dash'] };   // 첫 칸이 첫 화면(캘린더) — T('transport')가 첫 칸으로 연다
 // 입고 등록(원물)을 쓸 수 있는 역할 — 폼 표시(_applyEditRestrictions)·열기(toggleIbForm)·저장(_addInboundCore)이 이 표 하나를 본다.
 // ★외부 기사는 원물 입고 등록만(2-1단계). 선과품(saveInboundSorted)·수정·삭제는 관리자 전용 그대로.
 const IB_FORM_ROLES = ['admin', 'ext_driver'];
@@ -1268,7 +1268,8 @@ function T(id) {
   const _allowNav = ROLE_NAV_TABS[_r];
   if (_allowNav && !_allowNav.includes(id)) return;
   // transport 그룹 진입 → 하위 탭으로 위임
-  if (id === 'transport') { transportSub('dash'); return; }
+  // 하위 탭 목록이 있는 역할(외부 기사)은 그 첫 칸(캘린더)으로 — 목록에 'dash'가 들어 있어도 첫 화면이 바뀌지 않게. 관리자는 그대로 'dash'.
+  if (id === 'transport') { transportSub(ROLE_TRANSPORT_TABS[_r] ? ROLE_TRANSPORT_TABS[_r][0] : 'dash'); return; }
   // 하위 탭 바 숨김 (transport 그룹 밖으로 나갈 때)
   const _stEl = document.getElementById('transport-subtab');
   if (_stEl) _stEl.style.display = 'none';
@@ -3791,7 +3792,7 @@ function getTargetContainerHold(name, targetType) {
 }
 function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '농협'); }
 function renderFarmTbl() {
-  const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
+  const isAdm = QR_ROLES.includes(sessionStorage.getItem('citrus_role'));   // 🧺 회수 버튼 — 빠른 회수 창을 쓸 수 있는 역할(외부 기사 포함, 농가 대상)
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; });
   document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${_farmAddrText(f.name) ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(_farmAddrText(f.name))}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
