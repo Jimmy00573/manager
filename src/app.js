@@ -26257,11 +26257,15 @@ let _specRows = [];          // work_specs(is_void=false)
 let _specGram = {};          // settings size_gram_ranges — { 품목: { 사이즈: [최소g, 최대g] } }
 let _specOb = [];            // 최근 90일 outbound_records(재고 출고 참고용, 읽기만)
 let _specLoaded = false, _specLoadErr = '';
-let _specMasters = { channels: [], businesses: [], packs: [], brix: [] };   // settings.spec_masters — 등록 창 선택 목록(v719)
+let _specMasters = { channels: [], businesses: [], packs: [], brix: [], boxes: [] };   // settings.spec_masters — 등록 창 선택 목록(v719, 박스 v723)
 let _specUse = {};          // 목록 이름별 사용 건수(work_specs 삭제 표시 포함 전체) — 목록 관리의 삭제 가능 판정
-function _specNormMasters(v) { const o = (v && typeof v === 'object') ? v : {}; return { channels: Array.isArray(o.channels) ? o.channels : [], businesses: Array.isArray(o.businesses) ? o.businesses : [], packs: Array.isArray(o.packs) ? o.packs : [], brix: Array.isArray(o.brix) ? o.brix : [] }; }
+function _specNormMasters(v) { const o = (v && typeof v === 'object') ? v : {}; return { channels: Array.isArray(o.channels) ? o.channels : [], businesses: Array.isArray(o.businesses) ? o.businesses : [], packs: Array.isArray(o.packs) ? o.packs : [], brix: Array.isArray(o.brix) ? o.brix : [], boxes: Array.isArray(o.boxes) ? o.boxes : [] }; }
 const _specUi = { date: '', type: '', product: '', q: '' };   // 도구줄 상태
 const _specOpen = new Set();   // 펼친 예정·이력 — 키 + '|fut' / '|hist'
+// 계층 보기(v723) 펼침 상태 — 메모리에만(다시 그려도 유지). 채널 키 = 구분 + '|' + 채널.
+//   구분은 기본 펼침(_specTypeShut = 접은 구분), 채널은 기본 접힘(_specChOpen = 펼친 채널).
+//   검색어·품목 필터가 있으면 걸린 채널을 자동으로 펼친다 — 그동안 접은 채널은 _specChShut(필터를 바꾸면 비운다).
+const _specTypeShut = new Set(), _specChOpen = new Set(), _specChShut = new Set();
 let _specView = [];            // 지금 화면에 그린 카드 묶음(onclick은 이 배열의 번호로 가리킨다 — 키 문자열을 속성에 넣지 않으려고)
 function _specCanWrite() { return sessionStorage.getItem('citrus_role') === 'admin'; }
 function _specKey(r) { return [r.channel || '', r.business || '', r.product || '', r.pack || ''].join('|'); }
@@ -26288,10 +26292,10 @@ async function _specLoad() {
       sbGetAll('work_specs', 'is_void=eq.false&order=valid_from.desc,created_at.desc'),
       sbGet('settings', 'key=eq.size_gram_ranges'),
       sbGet('settings', 'key=eq.spec_masters'),
-      sbGetAll('work_specs', 'select=id,channel,business,pack,brix'),   // 목록 사용 건수 — 삭제 표시(is_void)된 것까지 센다
+      sbGetAll('work_specs', 'select=id,channel,business,pack,brix,box'),   // 목록 사용 건수 — 삭제 표시(is_void)된 것까지 센다
     ]);
     _specMasters = _specNormMasters(msr && msr[0] && msr[0].value);
-    _specUse = { channels: {}, businesses: {}, packs: {}, brix: {} };
+    _specUse = { channels: {}, businesses: {}, packs: {}, brix: {}, boxes: {} };
     (useRows || []).forEach(r => SPEC_MASTER_LISTS.forEach(([k]) => { const n = r[SPEC_MASTER_COL[k]]; if (n) _specUse[k][n] = (_specUse[k][n] || 0) + 1; }));
     const chans = [...new Set((rows || []).map(r => String(r.channel || '').trim()).filter(Boolean))];
     let ob = [];
@@ -26320,8 +26324,8 @@ function _specRenderToolbar() {
   el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
     <label style="font-size:12px;color:#6B7280;display:flex;align-items:center;gap:4px;white-space:nowrap">기준일 <input type="date" id="spec-date" value="${esc(_specUi.date)}" onchange="_specUi.date=this.value||td();renderSpec()" style="font-size:12px;padding:3px 6px"></label>
     <div style="display:flex;gap:4px;flex-wrap:wrap">${chip('', '전체')}${SPEC_TYPES.map(t => chip(t, t)).join('')}</div>
-    <select id="spec-product" onchange="_specUi.product=this.value;renderSpec()" style="font-size:12px;padding:3px 6px">${buildProductOptgroupHTML(false, { firstOption: '<option value="">전체 품목</option>', selected: _specUi.product })}</select>
-    <input id="spec-q" placeholder="채널·사업자·상품 검색" value="${esc(_specUi.q)}" oninput="_specUi.q=this.value.trim();renderSpec()" style="font-size:12px;padding:3px 8px;flex:1 1 140px;min-width:0;max-width:240px">
+    <select id="spec-product" onchange="_specUi.product=this.value;_specChShut.clear();renderSpec()" style="font-size:12px;padding:3px 6px">${buildProductOptgroupHTML(false, { firstOption: '<option value="">전체 품목</option>', selected: _specUi.product })}</select>
+    <input id="spec-q" placeholder="채널·사업자·상품 검색" value="${esc(_specUi.q)}" oninput="_specUi.q=this.value.trim();_specChShut.clear();renderSpec()" style="font-size:12px;padding:3px 8px;flex:1 1 140px;min-width:0;max-width:240px">
     ${_specCanWrite() ? `<span style="display:flex;gap:6px;margin-left:auto"><button class="btn pri" style="font-size:12px;padding:4px 10px" onclick="openSpecModal({kind:'기준'})">＋ 기준 등록</button><button class="btn" style="font-size:12px;padding:4px 10px" onclick="openSpecModal({kind:'출고'})">＋ 출고 기록</button></span>` : ''}
   </div>`;
 }
@@ -26387,10 +26391,15 @@ function _specPeriod(g, v) {
   const e = _specEnd(g, v);
   return `${_specMD(v.valid_from)}~${e ? _specMD(e) : ''}`;
 }
+// 테두리 칩(박스·변경·신규 공용) — 흑백 인쇄에서도 테두리로 구분된다. t는 글자(esc 함)
+function _specTag(t, bd = '#D1D5DB', c = '#374151') {
+  return `<span style="font-size:11px;padding:0 6px;border-radius:4px;border:1px solid ${bd};color:${c};background:#fff;white-space:nowrap;line-height:1.6">${esc(t)}</span>`;
+}
 // 한 버전의 내용 줄(현재·예정·이력 공용)
 function _specBody(g, v, color = '#374151') {
   const L = (k, val) => val ? `<span style="white-space:nowrap"><span style="color:#9CA3AF">${k}</span> ${val}</span>` : '';
   const parts = [
+    v.box ? _specTag('박스 ' + v.box) : '',   // 박스 종류(v723) — 버전 속성
     L(v.kind === '출고' ? '날짜' : '기간', esc(_specPeriod(g, v))),
     L(v.kind === '출고' ? '실제' : '중량', esc(_specWTxt(v))),
     L('사이즈', esc(v.sizes || '')),
@@ -26419,25 +26428,71 @@ function renderSpec() {
   const q = (_specUi.q || '').toLowerCase();
   const tIdx = t => { const i = SPEC_TYPES.indexOf(t); return i < 0 ? 99 : i; };
   const ko = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko');
+  const rank = _specChRank(), cr = c => rank.has(c) ? rank.get(c) : Infinity;   // 목록에 없는 채널끼리는 NaN → 가나다
   _specView = _specGroups(asOf)
     .filter(g => !_specUi.type || g.type === _specUi.type)
     .filter(g => !_specUi.product || g.product === _specUi.product)
     .filter(g => !q || [g.channel, g.business, g.product, g.pack].some(s => String(s).toLowerCase().includes(q)))
-    .sort((a, b) => tIdx(a.type) - tIdx(b.type) || ko(a.type, b.type) || ko(a.channel, b.channel) || ko(a.business, b.business) || ko(a.product, b.product) || ko(a.pack, b.pack));
+    .sort((a, b) => tIdx(a.type) - tIdx(b.type) || ko(a.type, b.type) || (cr(a.channel) - cr(b.channel) || 0) || ko(a.channel, b.channel)
+      || ko(a.product, b.product) || ko(a.pack, b.pack) || ko(a.business, b.business));
   if (!_specView.length) {
     el.innerHTML = `<div class="note">${_specRows.length ? '조건에 맞는 기준이 없습니다.' : '등록된 작업 기준이 없습니다.'}</div>`;
     return;
   }
-  let html = '', lastType = null;
+  // 구분 › 채널 › 카드(v723). 정렬이 구분·채널 순이라 이어진 덩어리로 묶인다. 카드 번호 i는 그대로 _specView 번호.
+  const tree = [];
   _specView.forEach((g, i) => {
-    if (g.type !== lastType) {
-      lastType = g.type;
-      const n = _specView.filter(x => x.type === g.type).length;
-      html += `<div style="font-size:12px;font-weight:500;color:#1E3A5F;margin:14px 0 6px">${esc(g.type)} <span style="color:#9CA3AF;font-weight:400">${n}</span></div>`;
-    }
-    html += _specCard(g, i);
+    let t = tree[tree.length - 1];
+    if (!t || t.type !== g.type) tree.push(t = { type: g.type, chans: [] });
+    let c = t.chans[t.chans.length - 1];
+    if (!c || c.name !== g.channel) t.chans.push(c = { name: g.channel, key: g.type + '|' + g.channel, cards: [] });
+    c.cards.push({ g, i });
+  });
+  _specTypeView = tree.map(t => t.type);
+  _specChView = [];
+  const rowBtn = 'display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;width:100%;text-align:left;cursor:pointer;font-family:inherit';
+  let html = '';
+  tree.forEach((t, ti) => {
+    const tOpen = !_specTypeShut.has(t.type);
+    const nCard = t.chans.reduce((a, c) => a + c.cards.length, 0);
+    html += `<button type="button" onclick="_specTypeToggle(${ti})" style="${rowBtn};background:none;border:none;padding:0;margin:14px 0 6px;font-size:12px;font-weight:500;color:#1E3A5F">${tOpen ? '▾' : '▸'} ${esc(t.type)} <span style="color:#9CA3AF;font-weight:400">채널 ${t.chans.length} · 카드 ${nCard}</span></button>`;
+    if (!tOpen) return;
+    t.chans.forEach(c => {
+      const ci = _specChView.push(c.key) - 1;
+      const open = _specChIsOpen(c.key);
+      const outs = c.cards.map(x => x.g.lastOut && x.g.lastOut.valid_from).filter(Boolean).sort();
+      const nFut = c.cards.reduce((a, x) => a + x.g.fut.length, 0);
+      const info = [`상품 ${c.cards.length}`, outs.length ? `최근 출고 ${_specMD(outs[outs.length - 1])}` : '', nFut ? `예정 ${nFut}` : ''].filter(Boolean).join(' · ');
+      html += `<div data-spec-ch="${ci}" style="margin-bottom:6px">
+        <button type="button" onclick="_specChToggle(${ci})" style="${rowBtn};background:#fff;border:1px solid ${open ? '#1E3A5F' : '#E5E7EB'};border-radius:8px;padding:8px 12px">
+          <span style="font-size:13px;font-weight:500;color:#111827">${open ? '▾' : '▸'} ${esc(c.name || '(채널 없음)')}</span>
+          <span style="font-size:12px;color:#6B7280">${info}</span></button>
+        ${open ? `<div style="margin:6px 0 0 8px">${c.cards.map(x => _specCard(x.g, x.i)).join('')}</div>` : ''}
+      </div>`;
+    });
   });
   el.innerHTML = html;
+}
+// 채널 순서 — spec_masters.channels 순서, 그다음 partners 순서(나머지는 renderSpec에서 가나다)
+function _specChRank() {
+  const m = new Map();
+  ((_specMasters || {}).channels || []).forEach(c => { if (c && c.name && !m.has(c.name)) m.set(c.name, m.size); });
+  (partners || []).forEach(p => { if (p && p.name && !m.has(p.name)) m.set(p.name, m.size); });
+  return m;
+}
+let _specTypeView = [], _specChView = [];   // 지금 그린 구분·채널 — onclick은 번호로 가리킨다(이름을 속성에 넣지 않으려고)
+function _specFiltOn() { return !!((_specUi.q || '') || _specUi.product); }
+function _specChIsOpen(k) { return _specFiltOn() ? !_specChShut.has(k) : _specChOpen.has(k); }
+function _specChToggle(ci) {
+  const k = _specChView[ci]; if (k == null) return;
+  const set = _specFiltOn() ? _specChShut : _specChOpen;   // 필터 중엔 '접은 채널', 아니면 '펼친 채널'을 뒤집는다
+  if (set.has(k)) set.delete(k); else set.add(k);
+  renderSpec();
+}
+function _specTypeToggle(ti) {
+  const t = _specTypeView[ti]; if (t == null) return;
+  if (_specTypeShut.has(t)) _specTypeShut.delete(t); else _specTypeShut.add(t);
+  renderSpec();
 }
 
 function _specCard(g, i) {
@@ -26452,7 +26507,7 @@ function _specCard(g, i) {
     </div>`;
   // 현재 기준
   let cur;
-  if (!g.cur) cur = `<div style="font-size:12px;color:#9CA3AF">현재 기준 없음</div>`;
+  if (!g.cur) cur = `<div style="font-size:12px;color:#9CA3AF">${g.std.length ? '현재 기준 없음' : `기준 없음 · 출고 기록 ${g.out.length}`}</div>`;
   else if (g.expired) cur = `<div style="font-size:11px;color:#6B7280;margin-bottom:2px"><span style="border:1px solid #D1D5DB;border-radius:4px;padding:0 5px;background:#F3F4F6">기준 만료(~${esc(_specMD(g.cur.valid_to))})</span></div>${_specBody(g, g.cur, '#9CA3AF')}`;
   else cur = _specBody(g, g.cur) + _specGuideCard(g, i, g.cur);   // 띠 + ▸ 과수별 표(v722)
   // 예정 — 점선 칩, 누르면 펼친다
@@ -26495,7 +26550,7 @@ let _specEditId = null;   // 수정 중인 행 id(없으면 새 등록)
 function _specAuditVal(r) {
   if (!r) return null;
   const o = {};
-  ['kind', 'channel_type', 'channel', 'business', 'product', 'pack', 'valid_from', 'valid_to', 'weight_min', 'weight_max', 'sizes', 'layout', 'brix', 'note', 'author']
+  ['kind', 'channel_type', 'channel', 'business', 'product', 'pack', 'box', 'valid_from', 'valid_to', 'weight_min', 'weight_max', 'sizes', 'layout', 'brix', 'note', 'author']
     .forEach(k => { if (r[k] !== undefined) o[k] = r[k]; });
   return o;
 }
@@ -26766,13 +26821,14 @@ function openSpecModal(o = {}) {
   const v = ed ? {
     channel_type: ed.channel_type || '', channel: ed.channel || '', business: ed.business || '', product: ed.product || '', pack: ed.pack || '',
     valid_from: ed.valid_from || td(), valid_to: ed.valid_to || '', weight_min: ed.weight_min, weight_max: ed.weight_max,
-    sizes: ed.sizes || '', layout: ed.layout || [], brix: ed.brix || '', note: ed.note || '', author: ed.author || '',
+    sizes: ed.sizes || '', layout: ed.layout || [], brix: ed.brix || '', note: ed.note || '', author: ed.author || '', box: ed.box || '',
   } : {
     channel_type: (src && src.channel_type) || (g && g.type !== '기타' ? g.type : '') || '',
     channel: g ? g.channel : '', business: g ? g.business : '', product: g ? g.product : '', pack: g ? g.pack : '',
     valid_from: kind === '출고' ? td() : (src ? _dayAfter(td()) : td()), valid_to: '',
     weight_min: src ? src.weight_min : null, weight_max: src ? src.weight_max : null,
     sizes: src ? src.sizes : '', layout: src ? src.layout : [], brix: src ? src.brix : '', note: src ? src.note : '',
+    box: (src && src.box) || '',
     author: '',   // 작성자는 직원 목록에서 고른다(필수)
   };
   const fv = x => (x === 0 || x) ? esc(String(x)) : '';
@@ -26794,6 +26850,7 @@ function openSpecModal(o = {}) {
         <div>${lab('사업자')}<select id="spm-business" style="${_qrInpS}"></select></div>
         <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specProductChanged()">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
         <div>${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}"></select>${hint('spm-pack-hint')}</div>
+        <div>${lab('박스')}<select id="spm-box" style="${_qrInpS}"></select></div>
         <div><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
         <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
         <div style="grid-column:1/-1"><label id="spm-w-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">박스 중량(kg)</label>
@@ -26819,6 +26876,7 @@ function openSpecModal(o = {}) {
   _specFillChannel(v.channel);
   _specFillSel('spm-business', _specVis('businesses'), '<option value="">(없음)</option>', v.business);
   _specFillSel('spm-pack', _specVis('packs'), '<option value="">선택</option>', v.pack, 'spm-pack-hint');
+  _specFillSel('spm-box', _specVis('boxes'), '<option value="">(없음)</option>', v.box);
   const brixList = _specVis('brix');
   const bEl = document.getElementById('spm-brix');
   bEl.innerHTML = '<option value="">(없음)</option>' + brixList.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') + `<option value="${SPEC_BRIX_CUSTOM}">직접 입력…</option>`;
@@ -26861,7 +26919,7 @@ async function saveSpec() {
   const bSel = gv2('spm-brix');
   const brix = bSel === SPEC_BRIX_CUSTOM ? (gv2('spm-brix-custom') || null) : (bSel || null);   // 직접 입력은 목록에 자동 추가하지 않는다
   const payload = {
-    kind, channel_type: gv2('spm-ctype') || null, channel, business: gv2('spm-business') || null, product, pack,
+    kind, channel_type: gv2('spm-ctype') || null, channel, business: gv2('spm-business') || null, product, pack, box: gv2('spm-box') || null,
     valid_from, valid_to, weight_min, weight_max, sizes,
     layout: layout.length ? layout : null, brix, note: gv2('spm-note') || null,
     author: gv2('spm-author') || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
@@ -27129,11 +27187,11 @@ async function _specSettingsPatch(key, value) {
   }
 }
 
-// ── ⚙ 목록 관리(v719, admin) — settings.spec_masters { channels:[{type,name,hidden}], businesses·packs·brix:[{name,hidden}] }.
+// ── ⚙ 목록 관리(v719, admin) — settings.spec_masters { channels:[{type,name,hidden}], businesses·packs·boxes·brix:[{name,hidden}] }.
 //   배열 순서 = 표시 순서. 동작마다 즉시 저장하고, 실패하면 알린 뒤 DB 값으로 다시 읽는다.
 //   ★삭제는 그 이름을 쓰는 work_specs(삭제 표시된 것 포함 전체)가 0건일 때만 — 쓰는 곳이 있으면 숨김만(이름 변경은 없다).
-const SPEC_MASTER_LISTS = [['channels', '채널'], ['businesses', '사업자'], ['packs', '상품규격'], ['brix', '브릭스']];
-const SPEC_MASTER_COL = { channels: 'channel', businesses: 'business', packs: 'pack', brix: 'brix' };
+const SPEC_MASTER_LISTS = [['channels', '채널'], ['businesses', '사업자'], ['packs', '상품규격'], ['boxes', '박스'], ['brix', '브릭스']];
+const SPEC_MASTER_COL = { channels: 'channel', businesses: 'business', packs: 'pack', boxes: 'box', brix: 'brix' };
 let _specMastersOpen = false, _specMastersBusy = false;
 function _specUseCnt(key, name) { return ((_specUse || {})[key] || {})[name] || 0; }
 function _specRenderMasters() {
