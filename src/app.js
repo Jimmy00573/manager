@@ -3561,6 +3561,23 @@ async function drvDone(id) {
   if (err) alert(doneN ? `${doneN}건은 완료됐고 ${ids.length - doneN}건은 처리하지 못했습니다.\n남은 건은 다시 눌러 주세요.\n\n${err.message}` : '오류: ' + err.message);
 }
 
+// 외부 기사(통합 계정) — 금일 수송 띠의 '✓ 배출 완료'. 처리는 PIN 기사의 drvDone 그대로(같은 차 확인창·배출 pick·작업보고).
+//   통합 계정이라 기사 구분 없이 오늘 예정 배출은 모두 완료할 수 있다. 되돌리기는 관리자 전용 그대로.
+let _xdDispBusy = false;
+async function xdDispDone(id) {
+  if (sessionStorage.getItem('citrus_role') !== 'ext_driver') return;
+  if (_xdDispBusy) return;
+  const d = dispatches.find(x => String(x.id) === String(id));
+  if (!d || d.date !== td() || _isOutDisp(d)) return alert('오늘 배출 예정인 배차만 완료할 수 있습니다.');
+  _xdDispBusy = true;
+  try {
+    await drvDone(d.id);
+  } finally {
+    _xdDispBusy = false;
+    renderCal();   // drvDone은 기사 화면·배차 목록만 다시 그린다 — 띠가 있는 캘린더는 여기서
+  }
+}
+
 function clearRepF() {
   const now = new Date();
   sv('rp-from', ymd(new Date(now.getFullYear(), now.getMonth(), 1)));
@@ -4920,7 +4937,7 @@ function renderCal() {
     }
   }
 
-  // ── 🚚 금일 수송: 오늘 배출(dispatches.date)·원물 입고(inboundRecords)를 기사별로 묶는다 — 표시 전용(버튼 없음).
+  // ── 🚚 금일 수송: 오늘 배출(dispatches.date)·원물 입고(inboundRecords)를 기사별로 묶는다 — 표시 전용(외부 기사만 예정 배출에 '✓ 배출 완료' 버튼).
   //   배출 = _dispOutOn, 원물 = _ibTruckGroups(차 단위), 기사 순서 = _tripDriversOn 그대로(없는 이름은 뒤, 기사 미정은 맨 뒤).
   const transEl = document.getElementById('cal-today-trans');
   if (transEl) {
@@ -4937,7 +4954,11 @@ function renderCal() {
         const tt = o.target_type === '거래처' || o.target_type === '농협' ? `<span style="color:#9CA3AF"> · ${o.target_type}</span>` : '';
         const st = _isOutDisp(o)
           ? `<span style="color:#6B7280">✓</span>`
-          : `<span style="border:1px dashed #1565C0;color:#1565C0;border-radius:3px;padding:0 3px">예정</span>`;
+          : `<span style="border:1px dashed #1565C0;color:#1565C0;border-radius:3px;padding:0 3px">예정</span>`
+            // 외부 기사만 — 예정 배출을 그 자리에서 완료(xdDispDone → drvDone). 다른 역할은 띠 HTML이 예전과 같다.
+            + (sessionStorage.getItem('citrus_role') === 'ext_driver'
+              ? `<button type="button" onclick="event.stopPropagation();xdDispDone('${esc(String(o.id))}')" style="font-size:11px;padding:2px 8px;border:1px solid #1565C0;color:#1565C0;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit">✓ 배출 완료</button>`
+              : '');
         const g = _dispHarvestGuess(o);
         const hv = g ? `<span style="margin-left:auto;font-size:12px;color:${g.guessed ? '#9CA3AF' : '#1565C0'}">${esc(_dispHarvestGuessTxt(g))}</span>` : '';
         push(o.driver || '', line(`${chip('배출', '#E6F1FB', '#0C447C')}<span>${esc(o.farm)}${tt}</span>`
