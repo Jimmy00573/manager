@@ -26279,15 +26279,26 @@ async function _specLoad() {
   const d = new Date(td() + 'T00:00:00'); d.setDate(d.getDate() - 90);
   const d90 = ymd(d);
   try {
-    // 출고 참고는 최근 90일만 받아 JS로 거른다(거래처 이름을 쿼리에 넣지 않는다 — 한글 인코딩 사고 방지).
-    const [rows, gs, ob] = await Promise.all([
+    // ① 기준표·과중 기준 먼저 → ② 그 기준표에 있는 거래처(channel)의 최근 90일 출고만(재고 출고 참고용).
+    //   예전엔 90일 출고 전체(약 7,800행)를 받아 JS로 걸렀다 — 카드가 쓰는 건 '같은 거래처·품목 최근 3건'뿐이라 거래처로 줄인다.
+    const [rows, gs] = await Promise.all([
       sbGetAll('work_specs', 'is_void=eq.false&order=valid_from.desc,created_at.desc'),
       sbGet('settings', 'key=eq.size_gram_ranges'),
-      sbGetAll('outbound_records', `is_void=eq.false&date=gte.${d90}&select=id,date,partner_name,product,size_code,quantity,unit&order=date.desc`),
     ]);
+    const chans = [...new Set((rows || []).map(r => String(r.channel || '').trim()).filter(Boolean))];
+    let ob = [];
+    // ★거래처 이름은 큰따옴표로 감싸 encodeURIComponent(한글·쉼표·괄호 안전, 이름 안 " 는 \")·50개씩 나눠 URL 길이를 막는다.
+    //   품목·최근 3건 거르기는 카드(_specCard)가 그대로 한다.
+    for (let i = 0; i < chans.length; i += 50) {
+      const inList = chans.slice(i, i + 50).map(c => encodeURIComponent('"' + c.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"')).join(',');
+      ob = ob.concat(await sbGetAll('outbound_records', `is_void=eq.false&date=gte.${d90}&partner_name=in.(${inList})&select=id,date,partner_name,product,size_code,quantity,unit&order=date.desc`) || []);
+    }
+    // 여러 번 받은 걸 합쳐도 서버 정렬과 같은 순서(date 내림차순, 같은 날은 id 오름차순 — sbGetAll이 order에 ',id'를 붙인다)
+    const idCmp = (a, b) => (typeof a.id === 'number' && typeof b.id === 'number') ? a.id - b.id : String(a.id).localeCompare(String(b.id));
+    ob.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || idCmp(a, b));
     _specRows = rows || [];
     _specGram = (gs && gs[0] && gs[0].value && typeof gs[0].value === 'object') ? gs[0].value : {};
-    _specOb = ob || [];
+    _specOb = ob;
     _specLoaded = true; _specLoadErr = '';
   } catch (e) { _specLoadErr = e.message || String(e); }
 }
