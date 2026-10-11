@@ -5411,7 +5411,7 @@ function renderUpcomingHarvest() {
       return `<div style="padding:6px 8px;border-top:1px solid #F3F4F6">
         <div style="display:flex;align-items:center;gap:5px;min-width:0">
           <span style="width:7px;height:7px;border-radius:50%;background:${_hvItemColor(x.item)};flex-shrink:0"></span>
-          <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>
+          <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>${_hvStaffBtn(x.farm)}
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
         ${_hvAddrLine(x.farm, x.field)}
@@ -5648,6 +5648,57 @@ function _hvAddrLine(farm, field) {
 // ★한 번 접거나 편 농가는 _hvProgOpen에 남아 그 상태를 유지한다(새로고침하면 다시 전부 접힘).
 function _hvProgIsOpen(g) { return (g.farm in _hvProgOpen) ? _hvProgOpen[g.farm] : false; }
 
+// ── 농가 담당 기사 지정(4일 카드·농가별 진행 현황의 농가 줄) — HV_ROLES ─────────────────────────
+// ★값은 farms.staff — 농가 관리의 '담당직원'과 같은 칸이다. 저장은 { staff } 한 칸만 PATCH(다른 칸은 보내지 않는다).
+//   담당이 외부 기사면 계획 줄에 '(담당)' 꼬리가 붙는다(_farmExtDrv) — 저장 뒤 renderCal로 바로 반영.
+function _hvStaffBtn(farm) {
+  if (!_hvCanWrite()) return '';
+  const cur = gf(farm).staff || '';
+  if (!gf(farm).id) return '';   // 마스터에 없는 이름(배차에만 있는 대상 등)은 저장할 곳이 없다
+  return `<button type="button" onclick="event.stopPropagation();_hvOpenFarmStaff('${_fsQ(farm)}')" title="농가 담당 기사 지정" style="font-size:10px;padding:1px 6px;border:1px solid #D1D5DB;color:${cur ? '#374151' : '#9CA3AF'};background:#fff;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">👤 ${esc(cur || '담당')}</button>`;
+}
+function _hvOpenFarmStaff(farm) {
+  if (!_hvCanWrite()) return;
+  const f = gf(farm); if (!f.id) return;
+  document.getElementById('modal-hv-farm-staff')?.remove();   // 매번 새로 만든다
+  const m = document.createElement('div');
+  m.id = 'modal-hv-farm-staff';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:320px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#1E3A5F">👤 담당 기사 — ${esc(farm)}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px"><select id="hv-farm-staff-sel" style="${_qrInpS}"><option value="">담당 없음</option>${_drvOptsHtml('name')}</select>
+        <div style="font-size:11px;color:#6B7280;margin-top:6px">농가 관리의 담당직원과 같은 값입니다.</div></div>
+      <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
+        <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
+        <button id="hv-farm-staff-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="_hvSaveFarmStaff('${_fsQ(farm)}')">저장</button>
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+  document.body.appendChild(m);
+  // 차단된 기사가 담당이면 '(차단)' 라벨로 유지 — 다른 칸을 안 고치고 저장해도 값이 지워지지 않게
+  _selEnsureVal(document.getElementById('hv-farm-staff-sel'), f.staff || '', _drvKeepLabel(f.staff || ''));
+}
+let _hvFarmStaffBusy = false;
+async function _hvSaveFarmStaff(farm) {
+  if (!_hvCanWrite() || _hvFarmStaffBusy) return;
+  const f = gf(farm); if (!f.id) return;
+  const staff = document.getElementById('hv-farm-staff-sel')?.value || '';
+  if (staff === (f.staff || '')) { document.getElementById('modal-hv-farm-staff')?.remove(); return; }   // 안 바뀌었으면 저장 없음
+  _hvFarmStaffBusy = true;
+  try {
+    await dbUpdateFarm(f.id, { staff });
+    farms = farms.map(x => x.id === f.id ? { ...x, staff } : x);   // DB 성공 뒤에 로컬 반영
+    document.getElementById('modal-hv-farm-staff')?.remove();
+    renderCal();
+    showToast(`${farm} 담당 ${staff || '없음'}`);
+  } catch (e) { alert('담당 저장 오류: ' + e.message); }
+  finally { _hvFarmStaffBusy = false; }
+}
+
 function _hvProgToggle(farm) {
   const g = _hvProgGroups().find(x => x.farm === farm);
   if (!g) return;
@@ -5717,7 +5768,7 @@ function _hvProgCard(g) {
     return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
       <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
-        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm)}
+        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm)}${_hvStaffBtn(g.farm)}
         ${g.planned ? `<span style="font-size:11px;color:#1565C0;font-weight:600">수확 ${esc(g.planned.slice(5).replace('-', '/'))} 예정</span>` : ''}
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <span style="font-size:10px;font-weight:700;color:${t.fg};background:${t.bg};border:1px solid ${t.bd};border-radius:10px;padding:1px 7px;white-space:nowrap">${esc(dayTxt)}</span>
@@ -5751,7 +5802,7 @@ function _hvProgCard(g) {
   return `<div style="border:0.5px solid ${k.bd};border-radius:8px;overflow:hidden">
       <div onclick="_hvProgToggle('${_fsQ(g.farm)}')" style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
-        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm)}
+        <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm)}${_hvStaffBtn(g.farm)}
         ${g.items.length ? `<span style="display:flex;flex-wrap:wrap;gap:3px">${g.items.map(it => `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(it)}">${esc(it)}</span>`).join('')}</span>` : ''}
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           ${chip}<span style="font-size:11px;font-weight:600;color:${k.fg}">${esc(sub)}</span>
