@@ -1190,6 +1190,8 @@ const ROLE_TRANSPORT_TABS = { ext_driver: ['cal'] };
 // 입고 등록(원물)을 쓸 수 있는 역할 — 폼 표시(_applyEditRestrictions)·열기(toggleIbForm)·저장(_addInboundCore)이 이 표 하나를 본다.
 // ★외부 기사는 원물 입고 등록만(2-1단계). 선과품(saveInboundSorted)·수정·삭제는 관리자 전용 그대로.
 const IB_FORM_ROLES = ['admin', 'ext_driver'];
+// 빠른 회수 창(openQuickRecovery·saveQuickRecovery)을 쓸 수 있는 역할. 외부 기사는 농가 대상·공장(회수)·오늘 날짜만.
+const QR_ROLES = ['admin', 'ext_driver'];
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
 
 // 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
@@ -3933,7 +3935,10 @@ function _qrQtyChanged() {
 // opts(선택) = { date, staff } — 입고 목록 ⋮ '🧺 빈콘 회수'(_ibOpenEmptyRecovery)가 입고 날짜·기사로 미리 채울 때만 넘긴다.
 //   ★안 넘기면(현황판 4곳) 날짜 오늘·담당자 빈칸 — 예전과 같다. 기사 목록에 없는 이름이면 담당자는 비워 둔다.
 function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 가능합니다.');
+  const _qrRole = sessionStorage.getItem('citrus_role');
+  if (!QR_ROLES.includes(_qrRole)) return alert('관리자만 가능합니다.');
+  const _qrXd = _qrRole === 'ext_driver';   // 외부 기사 — 농가만 · 이동 없음 · 날짜 오늘 고정(아래 appendChild 뒤에서 좁힌다)
+  if (_qrXd && targetType !== '농가') return alert('농가 회수만 등록할 수 있습니다.');
   document.getElementById('modal-quick-recovery')?.remove();
   const defQty = Math.max(0, Math.round(hold || 0));
   // ★콘테이너 종류 — 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인).
@@ -4000,14 +4005,25 @@ function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   // 검색 입력칸은 나중에 붙는 요소라 창 공통 모양(_qrInpS)이 없다 — 옆 대상 유형 칸과 같게(높이 33px = 이 창 select 실측값, 브라우저 차이 방지로 명시)
   const qrFs = document.getElementById('qr-to-farm-fs'); if (qrFs) qrFs.style.cssText = _qrInpS + ';height:33px';
   if (opts.staff) { const qs = document.getElementById('qr-staff'); if (qs) { qs.value = opts.staff; if (qs.value !== opts.staff) qs.value = ''; } }
+  if (_qrXd) {
+    // ★관리자 창 HTML은 그대로 두고 외부 기사일 때만 그린 뒤에 좁힌다. 담당자 칸(_drvOptsHtml)은 이미 활성 외부 기사를 '기사' 그룹으로 포함한다.
+    m.querySelector('#qr-dest option[value="move"]')?.remove();   // 이동은 관리자 전용(저장에서도 막음)
+    const qd = document.getElementById('qr-date'); if (qd) { qd.value = td(); qd.readOnly = true; }
+  }
   _qrQtyChanged();
   setTimeout(() => _QR_CQ(0)?.focus(), 30);
 }
 async function saveQuickRecovery(farm, targetType = '농가') {
-  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  const _qrRole = sessionStorage.getItem('citrus_role');
+  if (!QR_ROLES.includes(_qrRole)) return;
+  const _qrXd = _qrRole === 'ext_driver';
+  if (_qrXd && targetType !== '농가') return alert('농가 회수만 등록할 수 있습니다.');
   // ★받는 곳 '이동'만 따로 간다. 공장(회수)은 아래 기존 코드 그대로 — 저장 payload·동작 변경 0.
-  if (document.getElementById('qr-dest')?.value === 'move') return _qrSaveTransfer(farm, targetType);
-  const date = document.getElementById('qr-date')?.value || td();
+  if (document.getElementById('qr-dest')?.value === 'move') {
+    if (_qrXd) return alert('다른 곳으로 이동은 관리자만 등록할 수 있습니다.');
+    return _qrSaveTransfer(farm, targetType);
+  }
+  const date = _qrXd ? td() : (document.getElementById('qr-date')?.value || td());   // 외부 기사는 오늘 고정
   const type = document.getElementById('qr-type')?.value || '빈콘회수';
   const driver = document.getElementById('qr-staff')?.value || null;   // 담당자(필수)
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
@@ -4025,8 +4041,36 @@ async function saveQuickRecovery(farm, targetType = '농가') {
     }
     document.getElementById('modal-quick-recovery')?.remove();
     renderDash();   // 농가보유 재계산·현황판 즉시 반영(renderFarmTbl 포함)
+    if (_qrXd) renderCal();   // 외부 기사는 수확 캘린더(금일 수송 띠·카드 보유)에서 연다
     showToast(`${farm} ${type} ${list.map(c => `${c.ct} ${fmtN(c.qty)}`).join(' · ')} 회수 등록`);
   } catch (e) { alert('회수 등록 오류: ' + e.message); }
+}
+
+// 외부 기사 — 금일 수송 띠 '＋ 빈콘 회수' → 농가 고르기 → 빠른 회수 창(openQuickRecovery, 현황판과 같은 getFCS 보유).
+//   농가 목록 = 배차·수거 폼과 같은 _dispTargetOptHtml('농가'), 검색 = attachFarmSearch(fsPick가 change를 쏴서 바로 열린다).
+function xdQrPickFarm() {
+  if (sessionStorage.getItem('citrus_role') !== 'ext_driver') return;
+  document.getElementById('modal-xd-qr-pick')?.remove();   // 매번 새로 만든다(옛 셸 재사용 금지)
+  const m = document.createElement('div');
+  m.id = 'modal-xd-qr-pick';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#1565C0">🧺 빈콘 회수 — 농가 선택</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:16px 18px 20px"><div><select id="xd-qr-farm" style="${_qrInpS}" onchange="xdQrFarmPicked(this.value)">${_dispTargetOptHtml('농가')}</select></div></div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+  document.body.appendChild(m);
+  attachFarmSearch('xd-qr-farm', { placeholder: '농가 검색' });
+  const fs = document.getElementById('xd-qr-farm-fs'); if (fs) { fs.style.cssText = _qrInpS; setTimeout(() => fs.focus(), 30); }
+}
+function xdQrFarmPicked(farm) {
+  if (sessionStorage.getItem('citrus_role') !== 'ext_driver' || !farm) return;
+  document.getElementById('modal-xd-qr-pick')?.remove();
+  openQuickRecovery(farm, getFCS(farm).hold, '농가');
 }
 
 // ── 콘테이너 이동(A→B, 공장 안 거침) — 회수 모달의 '받는 곳 = 다른 곳으로 이동'
@@ -4052,6 +4096,7 @@ function _qrDestChanged() {
   _qrQtyChanged();
 }
 async function _qrSaveTransfer(farm, targetType) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;   // 이동은 관리자 전용(외부 기사가 빠른 회수 창을 쓰게 되면서 첫 줄에도 둔다)
   if (_qrTransferBusy) return;   // 두 번 눌림 방지 — 확인창이 떠 있는 동안 다시 눌러도 무시
   _qrTransferBusy = true;
   const btn = document.getElementById('qr-save-btn');
@@ -4943,7 +4988,9 @@ function renderCal() {
   if (transEl) {
     const tOuts = _dispOutOn(todayStr);
     const tIbs = _ibTruckGroups((inboundRecords || []).filter(r => r.date === todayStr && !r.is_void));
-    if (!tOuts.length && !tIbs.length) {
+    // 외부 기사는 0건인 날에도 머리 줄('＋ 빈콘 회수')이 보여야 한다 — 다른 역할은 예전처럼 0건이면 숨김.
+    const _xdTrans = sessionStorage.getItem('citrus_role') === 'ext_driver';
+    if (!tOuts.length && !tIbs.length && !_xdTrans) {
       transEl.style.display = 'none';
     } else {
       const byDrv = new Map();   // 기사명('' = 미정) → 항목 HTML[]
@@ -4981,7 +5028,9 @@ function renderCal() {
       if (byDrv.has('')) names.push('');
       transEl.innerHTML =
         `<div style="font-size:13px;font-weight:500;color:#1E3A5F;margin-bottom:6px">🚚 금일 수송 `
-        + `<span style="font-size:11px;font-weight:400;color:#9CA3AF">배출 ${tOuts.length} · 원물 ${tIbs.length} · 기사 ${names.filter(n => n).length}명</span></div>`
+        + `<span style="font-size:11px;font-weight:400;color:#9CA3AF">배출 ${tOuts.length} · 원물 ${tIbs.length} · 기사 ${names.filter(n => n).length}명</span>`
+        + (_xdTrans ? `<button type="button" onclick="event.stopPropagation();xdQrPickFarm()" style="float:right;font-size:11px;padding:2px 8px;border:1px solid #1565C0;color:#1565C0;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit">＋ 빈콘 회수</button>` : '')
+        + `</div>`
         + names.map(n => `<div style="margin-top:6px"><div style="font-size:13px;font-weight:500;padding-bottom:3px">${n ? esc(n) : '기사 미정'}</div>${byDrv.get(n).join('')}</div>`).join('');
       transEl.style.display = '';
     }
