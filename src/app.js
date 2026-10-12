@@ -6515,13 +6515,32 @@ function renderStats() {
 
   if (!drivers.length) { el.innerHTML = '<div class="note">등록된 기사가 없습니다</div>'; return; }
 
+  // 원물 수송 — 기간 안 입고(!is_void)를 _ibTruckGroups로 차 단위로 묶고, 기사(_drvNameById(driver_id) || driver_name_manual)별 차수·CT 합.
+  //   ★입고는 부팅 뒤 따로 도착한다 — 아직 오는 중이면 '불러오는 중'으로 두고 도착하면 이 탭이 열려 있을 때만 다시 그린다.
+  const ibWait = !_invLoadOk && _invLoadPending && !!_invLoadP;
+  if (ibWait) _invLoadP.then(() => { if (document.getElementById('p-stats')?.classList.contains('active')) renderStats(); }, () => {});
+  const ibBy = {}; let ibTrips = 0, ibCt = 0;
+  _ibTruckGroups((inboundRecords || []).filter(r => !r.is_void && r.date >= from && r.date <= to)).forEach(g => {
+    const r0 = g.rows[0], nm = _drvNameById(r0.driver_id) || r0.driver_name_manual || '';
+    const o = ibBy[nm] = ibBy[nm] || { trips: 0, ct: 0 };
+    o.trips++; o.ct += g.total; ibTrips++; ibCt += g.total;
+  });
+  // 회수 — picks '빈콘회수'(driver = 기사명) 건·개
+  const recPk = picks.filter(p => p.type === '빈콘회수' && p.date >= from && p.date <= to);
+
   const stats = drivers.map(d => {
     const done = filtered.filter(x => x.driver === d.name);
     const pend = pending.filter(x => x.driver === d.name);
     const totalQty = done.reduce((s, x) => s + x.qty, 0);
     const pendQty = pend.reduce((s, x) => s + x.qty, 0);
-    return { ...d, doneCnt: done.length, doneQty: totalQty, pendCnt: pend.length, pendQty };
-  }).sort((a, b) => b.doneQty - a.doneQty);
+    const rec = recPk.filter(x => x.driver === d.name);
+    const ib = ibBy[d.name] || { trips: 0, ct: 0 };
+    return { ...d, doneCnt: done.length, doneQty: totalQty, pendCnt: pend.length, pendQty,
+      ibTrips: ib.trips, ibCt: ib.ct, recCnt: rec.length, recQty: rec.reduce((s, x) => s + (Number(x.qty) || 0), 0) };
+  }).sort((a, b) => b.doneQty - a.doneQty || b.ibCt - a.ibCt);
+  // drivers에 없는 이름(입고 수기 기사명)·기사 미정 — 표 아래 '미등록'으로
+  const ibUnreg = Object.entries(ibBy).filter(([nm]) => !drivers.some(d => d.name === nm))
+    .sort((a, b) => b[1].ct - a[1].ct || a[0].localeCompare(b[0], 'ko'));
 
   const totalDone = stats.reduce((s, d) => s + d.doneCnt, 0);
   const totalQty = stats.reduce((s, d) => s + d.doneQty, 0);
@@ -6530,6 +6549,7 @@ function renderStats() {
     <div class="kpi-grid" style="margin-bottom:16px">
       <div class="kpi"><div class="kpi-label">총 배출 완료</div><div class="kpi-val kv-gr">${totalDone}건</div></div>
       <div class="kpi"><div class="kpi-label">총 배출 수량</div><div class="kpi-val kv-bl">${totalQty.toLocaleString()}개</div></div>
+      <div class="kpi"><div class="kpi-label">원물 수송</div><div class="kpi-val kv-pu" style="font-size:16px">${ibWait ? '불러오는 중…' : `${ibTrips}차 · ${fmtN(ibCt)} CT`}</div></div>
       <div class="kpi"><div class="kpi-label">기간</div><div class="kpi-val" style="font-size:13px">${from} ~ ${to}</div></div>
     </div>
     <!-- ★가로 스크롤 래퍼 — 전역 table{min-width:700px}로 폰에서 표가 카드 밖으로 넘치는데 body overflow-x:hidden에 잘려
@@ -6540,10 +6560,10 @@ function renderStats() {
         <tr style="background:#f8f8f8;border-bottom:1px solid #e0e0e0">
           <th style="padding:10px 12px;text-align:left">기사명</th>
           <th style="padding:10px 12px;text-align:left">소속</th>
-          <th style="padding:10px 12px;text-align:center">배출완료</th>
-          <th style="padding:10px 12px;text-align:center">완료수량</th>
+          <th style="padding:10px 12px;text-align:center">원물 수송</th>
+          <th style="padding:10px 12px;text-align:center">빈콘 배출</th>
+          <th style="padding:10px 12px;text-align:center">회수</th>
           <th style="padding:10px 12px;text-align:center">배출대기</th>
-          <th style="padding:10px 12px;text-align:center">대기수량</th>
           <th style="padding:10px 12px;text-align:left">실적 비율</th>
         </tr>
       </thead>
@@ -6553,10 +6573,10 @@ function renderStats() {
           return `<tr style="border-bottom:0.5px solid #f0f0f0">
             <td style="padding:10px 12px;font-weight:500">${esc(d.name)}</td>
             <td style="padding:10px 12px"><span class="badge ${d.type==='내부'?'b-ok':'b-pur'}">${typeLabel(d.type)}</span></td>
-            <td style="padding:10px 12px;text-align:center"><span class="badge b-ok">${d.doneCnt}건</span></td>
-            <td style="padding:10px 12px;text-align:center;font-weight:500;color:#2E7D32">${d.doneQty.toLocaleString()}개</td>
-            <td style="padding:10px 12px;text-align:center"><span class="badge b-info">${d.pendCnt}건</span></td>
-            <td style="padding:10px 12px;text-align:center;color:#C05800">${d.pendQty.toLocaleString()}개</td>
+            <td style="padding:10px 12px;text-align:center;white-space:nowrap">${ibWait ? '…' : d.ibTrips ? `<span class="badge b-pur">${d.ibTrips}차</span> <span style="font-weight:500;color:#6A1B9A">${fmtN(d.ibCt)} CT</span>` : '<span style="color:#9CA3AF">-</span>'}</td>
+            <td style="padding:10px 12px;text-align:center;white-space:nowrap"><span class="badge b-ok">${d.doneCnt}건</span> <span style="font-weight:500;color:#2E7D32">${d.doneQty.toLocaleString()}개</span></td>
+            <td style="padding:10px 12px;text-align:center;white-space:nowrap">${d.recCnt ? `<span class="badge b-neu">${d.recCnt}건</span> <span style="font-weight:500;color:#374151">${fmtN(d.recQty)}개</span>` : '<span style="color:#9CA3AF">-</span>'}</td>
+            <td style="padding:10px 12px;text-align:center;white-space:nowrap"><span class="badge b-info">${d.pendCnt}건</span> <span style="color:#C05800">${d.pendQty.toLocaleString()}개</span></td>
             <td style="padding:10px 12px">
               <div style="display:flex;align-items:center;gap:8px">
                 <div style="flex:1;background:#f0f0f0;border-radius:4px;height:8px">
@@ -6570,6 +6590,10 @@ function renderStats() {
       </tbody>
     </table>
     </div>
+    ${ibUnreg.length ? `<div style="margin-top:10px;font-size:12px;color:#6B7280;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center">
+      <span>원물 수송 · 기사 목록에 없음:</span>
+      ${ibUnreg.map(([nm, o]) => `<span style="white-space:nowrap"><span class="badge b-neu" style="font-size:10px">미등록</span> ${esc(nm || '기사 미정')} ${o.trips}차 · ${fmtN(o.ct)} CT</span>`).join('')}
+    </div>` : ''}
   `;
 }
   
