@@ -20,11 +20,24 @@ const SB_HEADERS = {
 // ★PostgREST는 한 번에 최대 1,000행만 돌려준다. 오류가 아니라 조용히 잘려서 온다.
 const SB_PAGE = 1000;
 
+// ── 읽기 GET의 CORS 사전 요청(OPTIONS) 없애기(v731) ─────────────────────────
+// apikey·Authorization·Prefer·Content-Type(json) 헤더가 붙은 GET은 브라우저가 매번 OPTIONS를 먼저 보낸다(요청 수 2배).
+// Supabase는 apikey를 쿼리 파라미터로도 받는다 → 읽기 GET만 헤더 없이 ?apikey=<anon 키>로 보낸다(같은 anon 권한·같은 결과).
+// ★안전장치: 쿼리 방식이 401·403·404(인증 이상)로 오면 이 세션 동안 모든 GET을 예전 헤더 방식으로 되돌리고 같은 요청을 1번 다시 보낸다.
+//   사용자에게는 아무것도 안 보인다(콘솔 경고 한 줄). ★쓰기(POST·PATCH·DELETE·RPC)와 sbGetAll 첫 페이지(count 헤더)는 그대로 헤더 방식.
+let _sbQueryAuthOff = false;
+async function _sbReadFetch(url) {
+  if (!_sbQueryAuthOff) {
+    const res = await fetch(`${url}${url.endsWith('?') ? '' : '&'}apikey=${SUPABASE_ANON_KEY}`, { cache: 'no-store' });
+    if (res.status !== 401 && res.status !== 403 && res.status !== 404) return res;
+    if (!_sbQueryAuthOff) console.warn(`[sbGet] 쿼리 apikey 방식 GET이 ${res.status} — 이 세션은 헤더 방식으로 되돌립니다.`);
+    _sbQueryAuthOff = true;
+  }
+  return fetch(url, { headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }, cache: 'no-store' });
+}
+
 async function sbGet(table, params = '') {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, {
-    headers: { ...SB_HEADERS, 'Prefer': 'return=representation' },
-    cache: 'no-store'
-  });
+  const res = await _sbReadFetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`);
   if (!res.ok) throw new Error(await res.text());
   const json = await res.json();
   // ★정확히 1,000행이 왔다 = 잘렸을 가능성이 매우 높다. 조용한 잘림을 다음엔 바로 알아채도록 남긴다.
