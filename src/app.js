@@ -5198,6 +5198,26 @@ function _hvContactLine(farm, addr) {
   if (!parts.length) return '';
   return `<div style="flex:1 1 100%;font-size:11px;color:#6B7280;padding:2px 0;overflow-wrap:anywhere">${parts.join(' · ')}</div>`;
 }
+// 수확·배차 기록 한 건의 품목 — 기록의 item, 없으면 농가 품종(farms.variety). 둘 다 없으면 ''(묶음에선 '품목 미정').
+function _hvItemOf(rec) {
+  return (rec && rec.item) || gf(rec && rec.farm).variety || '';
+}
+// 금일 수확일정·4일 카드 공용 — [{ rec, html }]을 품목별로 묶어 머리 '🍊 품목 · n곳'을 붙인 HTML.
+//   묶음 순서: 농가 수 많은 품목 → 같으면 가나다순, '품목 미정'은 맨 뒤. 묶음 안은 들어온 순서 그대로.
+//   n곳 = 묶음 안 농가 수(같은 농가 두 건은 한 곳). headStyle은 머리 div 스타일 뒤에 덧붙는다(덮어쓰기용).
+//   ★품목이 하나뿐이면 머리 없이 행만 이어 붙인다 → 수정 전 HTML과 같다. 표시 전용(데이터·버튼 그대로).
+function _hvGroupByItemHtml(entries, headStyle) {
+  const NONE = '품목 미정';
+  const m = new Map();
+  entries.forEach(x => { const k = _hvItemOf(x.rec) || NONE; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
+  if (m.size <= 1) return entries.map(x => x.html).join('');
+  const nFarm = xs => new Set(xs.map(x => x.rec && x.rec.farm)).size;
+  const gs = [...m.entries()].sort(([a, xa], [b, xb]) =>
+    (a === NONE) - (b === NONE) || nFarm(xb) - nFarm(xa) || a.localeCompare(b, 'ko'));
+  return gs.map(([k, xs]) =>
+    `<div style="font-size:12px;font-weight:500;color:#374151;${headStyle || ''}">🍊 ${esc(k)} · ${nFarm(xs)}곳</div>` +
+    xs.map(x => x.html).join('')).join('');
+}
 // ── 수확 거래 방식(harvests.deal_type: '밭떼기'|'관떼기'|null=미지정) ─────────────
 // 칩 — 수확 줄(harvestRow)·4일 카드 공용. null이면 ''(기존 HTML 그대로). 테두리 칩은 _specTag를 같이 쓴다.
 const HV_DEAL_COLOR = { 밭떼기: '#1E3A5F', 관떼기: '#6B7280' };
@@ -5290,12 +5310,12 @@ function renderCal() {
   if (todayEl) {
     if (allTodayItems.length) {
       todayEl.style.display = '';
-      const rows = allTodayItems.map(e => {
+      const rowEntries = allTodayItems.map(e => {
         // 수확 이벤트면 그 harvest 레코드를 id로 정확히(상태 정확) — 배차 이벤트면 농가의 오늘/수확중 harvest 탐색
         const hEntry = _isHarvestEv(e)
           ? harvests.find(h => h.id === e.id)
           : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
-        if (hEntry) return harvestRow(hEntry, false, todayStr, { contact: true });
+        if (hEntry) return { rec: hEntry, html: harvestRow(hEntry, false, todayStr, { contact: true }) };   // rec = 품목 묶음 기준(보이는 기록)
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
         const item = e.item || '';
@@ -5306,13 +5326,14 @@ function renderCal() {
             <button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확완료')">✅ 완료</button>
             <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
             ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>` : ''}` : '';
-        return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
+        return { rec: e, html: `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
           <span class="badge b-warn" style="font-size:10px">수확전</span>
           <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${_hvContactLine(e.farm, _recAddr(e))}
-        </div>`;
-      }).join('');
+        </div>` };
+      });
+      const rows = _hvGroupByItemHtml(rowEntries, 'margin-top:4px');   // 품목별 묶음(품목 하나면 머리 없음)
       todayEl.innerHTML =
         `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)${_xdFilterTag()}</div>` +
         `<div style="display:flex;flex-direction:column;gap:5px">${rows}</div>`;
@@ -5716,7 +5737,7 @@ function renderUpcomingHarvest() {
       tripOut.length ? `외부 ${tripOut.join(' · ')}` : ''
     ].filter(Boolean).join(' · ');
 
-    const rows = day.list.length ? day.list.map(x => {
+    const rows = day.list.length ? _hvGroupByItemHtml(day.list.map(x => ({ rec: x, html: (() => {   // 품목별 묶음(품목 하나면 머리 없음)
       const st = x.status || '수확전';
       const dp = _dispForHarvest(x.farm, x.date);
       // 진행일수 — 시작일 당일이 1일째. 날짜 계산은 로컬 자정 기준(td/ymd와 같은 축).
@@ -5750,7 +5771,10 @@ function renderUpcomingHarvest() {
           <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>${_hvStaffBtn(x.farm)}
         </div>
         <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차${_hvDealChip(x)}</div>
-        ${_hvAddrLine(x.farm, x.field)}
+        ${(() => {   // 연락 줄 '📍 주소 · 📞 전화'(금일 수확일정과 같은 _hvContactLine) — 둘 다 없으면 줄 없음
+          const c = _hvContactLine(x.farm, _recAddr(x));
+          return c ? `<div style="padding-left:12px;margin:0 0 3px">${c}</div>` : '';
+        })()}
         <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${_hvFinishBadge(x, day.dStr)}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
@@ -5761,7 +5785,7 @@ function renderUpcomingHarvest() {
           return ln ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${ln}${_hvPlanCheckBtn(x, day.dStr)}</div>` : '';
         })()}
       </div>`;
-    }).join('') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
+    })() })), 'font-size:11px;padding:6px 8px 0;border-top:1px solid #F3F4F6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
     // ★flex:1 1 0 + min-width — 넓은 화면은 4등분, 좁은 화면은 최소폭을 지키며 컨테이너가 가로 스크롤된다.
     return `<div style="flex:1 1 0;min-width:152px;background:#fff;border:1px solid ${isToday ? '#F59E0B' : '#E5E7EB'};border-radius:8px;overflow:hidden;display:flex;flex-direction:column">
