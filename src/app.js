@@ -4081,6 +4081,58 @@ function getTargetContainerHold(name, targetType) {
   return { out, rec, hold: out - rec };
 }
 function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '농협'); }
+// ── ♻️ 회수 대기 / 📅 일정 없음 — 보유(getFCS.hold > 0) 농가 중 수확이 끝났거나 수확 기록이 없는 곳(표시 전용) ──
+//   done   : harvests 1건 이상 + '수확전'·'수확중'(상태 비면 수확전)이 하나도 없음.
+//            endDate = max(수확완료 harvests의 end_date || date, 원물수거·빈콘회수 pick 날짜), days = 오늘 − endDate.
+//   noPlan : harvests 0건 — ★농가별 진행 현황 '⏳ 대기'(_hvProgGroups의 wait)를 그대로 쓴다(같은 판정을 두 번 만들지 않게).
+//            lastOut = 최근 배송일(배차 date·배출 pick 중 최신), days = 오늘 − lastOut.
+//   수확전·수확중이 있는 농가는 어디에도 없다. 둘 다 days 내림차순(같으면 농가명). 외부 기사는 _xdFarmOk(담당 농가만).
+function _recoveryWaitList() {
+  const gs = _hvProgGroups();
+  const byDays = (a, b) => b.days - a.days || a.farm.localeCompare(b.farm, 'ko');
+  const noPlan = gs.filter(g => g.kind === 'wait' && _xdFarmOk(g.farm))
+    .map(g => ({ farm: g.farm, hold: g.hold, lastOut: g.outDate, days: g.days })).sort(byDays);
+  const done = gs.filter(g => g.kind !== 'wait' && _xdFarmOk(g.farm)
+      && !g.rounds.some(h => (h.status || '수확전') === '수확전' || h.status === '수확중'))
+    .map(g => ({ g, hold: getFCS(g.farm).hold || 0 })).filter(x => x.hold > 0)
+    .map(({ g, hold }) => {
+      const ds = [...g.rounds.filter(h => h.status === '수확완료').map(h => h.end_date || h.date),
+        ...picks.filter(p => p.farm === g.farm && _isFarmTgt(p) && (p.type === '원물수거' || p.type === '빈콘회수')).map(p => p.date)]
+        .filter(Boolean).sort();
+      const endDate = ds.pop() || null;
+      return { farm: g.farm, hold, endDate, days: endDate ? _ibDaysSince(endDate) : 0 };
+    }).sort(byDays);
+  return { done, noPlan };
+}
+// 현황판 맨 위 카드(#d-recov). 두 목록이 다 비면 숨김. 🧺 회수 = 농가표와 같은 openQuickRecovery(QR_ROLES),
+//   ＋ 수확 일정 = 캘린더 등록 폼(_hvGoHarvestAdd, HV_ROLES). 색: 회수 대기 3일+ 주황·7일+ 빨강, 일정 없음 14일+ 빨강.
+function _renderRecoveryWait() {
+  const el = document.getElementById('d-recov'); if (!el) return;
+  const { done, noPlan } = _recoveryWaitList();
+  if (!done.length && !noPlan.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const role = sessionStorage.getItem('citrus_role');
+  const canRec = QR_ROLES.includes(role), canHv = _hvCanWrite();
+  const sum = xs => xs.reduce((s, x) => s + x.hold, 0);
+  const btn = (bg, on, txt) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="${on}">${txt}</button>`;
+  const row = (x, dateTxt, color, extra) => {
+    const drv = _farmExtDrv(x.farm);
+    return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:6px 0;border-top:1px solid #F3F4F6">
+      <span style="font-size:13px;font-weight:500;color:#111827">${esc(x.farm)}</span>
+      <span style="font-size:12px;color:#374151">보유 ${fmtN(x.hold)}개</span>${extra || ''}
+      <span style="font-size:11px;color:${color};font-weight:500">${dateTxt}</span>
+      ${drv ? `<span style="font-size:11px;color:#6B7280">👤 ${esc(drv)}</span>` : ''}
+      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? btn('#1565C0', `openQuickRecovery('${_fsQ(x.farm)}', ${x.hold})`, '🧺 회수') : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');_hvGoHarvestAdd('${_fsQ(x.farm)}')`, '＋ 수확 일정') : ''}</span>
+    </div>`;
+  };
+  const ago = (ds, d) => ds ? `${esc(calFmtShort(ds))} · ${d}일` : '-';
+  const doneHtml = done.length ? `<div style="font-size:13px;font-weight:500;color:#374151">♻️ 회수 대기 ${done.length}곳 · ${fmtN(sum(done))}개${_xdFilterTag()}</div>` +
+    done.map(x => row(x, `수확 끝 ${ago(x.endDate, x.days)}`, x.days >= 7 ? '#DC2626' : x.days >= 3 ? '#C05800' : '#6B7280',
+      (() => { const c = getFCtypes(x.farm); return c ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px">${c}</span>` : ''; })())).join('') : '';
+  const npHtml = noPlan.length ? `<div style="font-size:12px;font-weight:500;color:#374151;${done.length ? 'margin-top:10px' : ''}">📅 일정 없음 ${noPlan.length}곳 · ${fmtN(sum(noPlan))}개${done.length ? '' : _xdFilterTag()}</div>` +
+    noPlan.map(x => row({ ...x, plan: true }, `배출 ${ago(x.lastOut, x.days)}`, x.days >= 14 ? '#DC2626' : '#6B7280')).join('') : '';
+  el.style.display = '';
+  el.innerHTML = `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:10px 12px">${doneHtml}${npHtml}</div>`;
+}
 function renderFarmTbl() {
   const isAdm = QR_ROLES.includes(sessionStorage.getItem('citrus_role'));   // 🧺 회수 버튼 — 빠른 회수 창을 쓸 수 있는 역할(외부 기사 포함, 농가 대상)
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; }).filter(f => _xdFarmOk(f.name));   // 외부 기사 기사 필터
@@ -4667,7 +4719,7 @@ function renderDash() {
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${i.detail}</div>${bdHtml}</div>`;
   }).join('') : '<div class="alert-none">반납 필요 없음</div>';
   document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 회수필요 ${fhi.length + nhfHoldList.length + ptHoldList.length}곳 · ${tfTotal + nhfHoldTotal + ptHoldTotal}개</span><span class="badge b-ok">🟢 반납필요 ${allReturns.length}건 · ${trTotal}개</span>`;
-  renderDDash(); renderFarmTbl();
+  renderDDash(); renderFarmTbl(); _renderRecoveryWait();   // ♻️ 회수 대기 카드(맨 위 #d-recov)
   // 농가것도 농협(nr)과 같은 '이름 (종류)' 형식 — '농가||종류' 조합 기준(외부용기 탭 renderOwn과 동일). KPI 총량(to)은 농가 단위 그대로.
   const oCombos = _ownComboKeys().map(k => { const [farm, ct] = _splitOwnKey(k); return { farm, ct, left: gOwnSt(farm, ct).left }; })
     .filter(c => c.left > 0).sort((a, b) => a.farm.localeCompare(b.farm, 'ko') || a.ct.localeCompare(b.ct, 'ko'));
@@ -5997,11 +6049,6 @@ function _hvAddrTag(farm, max, field) {
   const a = ((field || gf(farm).addr) || '').trim();
   if (!a) return '';
   return `<span title="${esc(a)}" style="font-size:11px;color:#9CA3AF;font-weight:400;max-width:${max || 240}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</span>`;
-}
-function _hvAddrLine(farm, field) {
-  const a = ((field || gf(farm).addr) || '').trim();
-  if (!a) return '';
-  return `<div title="${esc(a)}" style="font-size:10px;color:#9CA3AF;margin:0 0 3px;padding-left:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(a)}</div>`;
 }
 
 // 기본 펼침 = 없음(전 그룹 접힘). 전체를 훑는 화면이라 처음엔 농가 목록만 보이는 게 낫다.
