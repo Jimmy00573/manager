@@ -2967,17 +2967,17 @@ function renderDDash() {
     const hvSfx = d.harvest === d.date ? ' (당일)' : (d.date && _dayAfter(d.date) === d.harvest ? ' (다음날)' : '');
     const hvTag = d.harvest ? `<span style="color:#2E7D32">🌱 수확 ${esc(calFmtShort(d.harvest))}${hvSfx}</span>` : '';
     const addrLine = [_recAddr(d) ? esc(_recAddr(d)) : '', hvTag].filter(Boolean).join(' · ');
-    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border-radius:8px;border:0.5px solid #ebebeb;flex-wrap:wrap">
-      ${tripBadge(d.trip)}
-      <div style="display:flex;flex-direction:column;gap:1px">
-        <span style="font-size:12px;font-weight:600">${esc(d.farm)}</span>
-        ${addrLine ? `<span style="font-size:10px;color:#aaa">${addrLine}</span>` : ''}
-      </div>
-      <span style="font-size:11px;color:#888">·</span>
+    // ★열 고정 grid(style.css .dd-row) — 농가명·주소 길이와 상관없이 기사·수량이 줄마다 같은 세로선(v732).
+    //   칸 순서(DOM)는 예전 그대로라 글자 순서도 같다: 차수 · 농가 · 주소 · 기사·소속 · 수량·종류 · 버튼.
+    return `<div class="dd-row">
+      <span class="dd-trip">${tripBadge(d.trip)}</span>
+      <span class="dd-farm" style="font-size:12px;font-weight:600">${esc(d.farm)}</span>
+      ${addrLine ? `<span class="dd-addr" style="font-size:10px;color:#aaa">${addrLine}</span>` : ''}
+      <span class="dd-drv"><span style="font-size:11px;color:#888">·</span>
       <span style="font-size:12px">${esc(d.driver)}</span>
-      <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${typeLabel(drv.type)}</span>
-      <span style="font-size:12px;color:#555;margin-left:2px">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100;font-size:11px">수량미정</span>'} ${ctB(d.ctype)}</span>
-      <div style="display:flex;gap:4px;margin-left:auto">
+      <span class="badge ${drv.type==='외부'?'b-pur':'b-ok'}" style="font-size:9px">${typeLabel(drv.type)}</span></span>
+      <span class="dd-qty" style="font-size:12px;color:#555">${d.qty > 0 ? d.qty+'개' : '<span style="color:#E65100;font-size:11px">수량미정</span>'} ${ctB(d.ctype)}</span>
+      <div class="dd-btn" style="display:flex;gap:4px">
         ${isAdm ? `<button class="btn edt" style="padding:3px 8px;font-size:11px" onclick="openDispEdit(${d.id})">✏️</button>` : ''}
         ${!isAdm ? '' : _dt === 'w'
           ? `<button class="btn grn" style="padding:3px 8px;font-size:11px" onclick="updDisp(${d.id},'배출완료')">✅ 완료</button>`
