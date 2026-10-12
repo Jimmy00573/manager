@@ -412,7 +412,7 @@ function _escCloseTopModal() {
 // ── 우선처리 기준 로드
 async function loadUrgencySettings() {
   try {
-    const rows = await sbGet('settings', 'key=eq.urgency_thresholds');
+    const rows = await _settingsRows('urgency_thresholds');
     if (rows && rows.length > 0) {
       const v = rows[0].value;
       if (v && typeof v.high === 'number') URGENCY_THRESHOLD_HIGH = v.high;
@@ -426,7 +426,7 @@ const PRODUCT_WEIGHTS_DEFAULT = { 노지감귤:18, 하우스감귤:18, 비가림
 
 async function loadProductWeights() {
   try {
-    const rows = await sbGet('settings', 'key=eq.product_weights');
+    const rows = await _settingsRows('product_weights');
     if (rows && rows.length > 0 && rows[0].value && rows[0].value.weights) {
       productWeights = rows[0].value.weights;
     } else {
@@ -722,12 +722,16 @@ async function initApp() {
     //   ★기사·미로그인은 재고를 보지 않으므로 미리 받지 않는다(불필요 트래픽·권한).
     const _bootRole = sessionStorage.getItem('citrus_role')
       || (localStorage.getItem('citrus_keep') === '1' ? localStorage.getItem('citrus_role') : null);
+    // ★설정 7키를 한 번에(v730) — 아래 로더·재고 조회가 부를 때 이 결과를 쓴다. 부팅 조회를 다 출발시킨 뒤 바로 닫는다(_settingsBootEnd).
+    track(_settingsBootStart());
     if (OFFICE_ROLES.includes(_bootRole)) _invFetchStart(track);
-    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys, brixMaxData, , partnerData, manualTxData, ctypeData] = await Promise.all([
+    const _bootAllP = Promise.all([
       loadAllData(track), track(dbGetQualityCriteria()), track(dbGetLocations()), track(loadUrgencySettings()), track(dbGetPachiUsages()), track(dbGetBrixGrades()), track(dbGetPachiSizes()), track(dbGetPachiConditions()), _catSysBootP, track(loadBrixMaxSize()).catch(() => ({})),
       track(loadProductWeights()),
       track(dbGetPartners()).catch(() => []), track(dbGetManualTransactions()).catch(() => []), track(dbGetContainerTypes()).catch(() => []),
     ]);
+    _settingsBootEnd();   // 이 뒤로 부르는 설정 로더는 예전처럼 개별 조회(재조회 = 항상 최신)
+    const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys, brixMaxData, , partnerData, manualTxData, ctypeData] = await _bootAllP;
     farms = data.farms;
     drivers = data.drivers;
     dispatches = data.dispatches;
@@ -7790,13 +7794,15 @@ async function _invFetch(track, token) {
     //   재고 탭 재진입이 '마지막 조회 성공'으로 보고 재사용해(loadAndRenderInv의 _baseOk) 틀린 상태가 굳는다.
     //   선과 잔여를 계산하는 세 조회(입고·선과 처리·선과 결과)만은 실패하면 성공으로 치지 않는다.
     let critFail = false;
-    const [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, allOutbounds, expiryRows, lowRows, voidLinks] = await Promise.all([
+    let [newIn, newProc, legacyIn, sorted, waste, sizeCfg, catSys, invRecs, juiceMasters, allSorting, juiceBatches, allOutbounds, expiryRows, lowRows, voidLinks] = await Promise.all([
       // ★이 둘은 db.js에서 오류를 안 삼키고 던지므로 라벨을 여기서 붙인다.
       //   (내부에서 catch하는 함수들은 db.js 쪽에 _sbLoadFail이 들어가 있다 — 두 번 붙이지 말 것)
       track(dbGetInbounds()).catch(() => { _loadFail('입고 기록'); critFail = true; return []; }),
       track(dbGetProcessings()).catch(() => { _loadFail('선과 처리 기록'); critFail = true; return []; }),
-      track(dbGetUnsorted(null)).catch(() => []),   // 0행 레거시 표 — 실패해도 영향 없어 라벨 없음
-      track(dbGetSorted(null)), track(dbGetWaste(null)),
+      Promise.resolve([]),   // (자리) 레거시 미선과 — 새 입고가 0건일 때만 아래에서 받는다(v730)
+      // inventory_sorted는 농가 이름 변경 전파(update)가 있어 그대로 받는다.
+      // ★inventory_waste는 앱에 insert·update 경로가 없고(grep — 표시 행 삭제만) 실DB 0행이라 받지 않는다(v730, 빈 배열).
+      track(dbGetSorted(null)), Promise.resolve([]),
       track(loadSizeConfig()), catSysP,
       track(dbGetInventoryRecords()).catch(() => []),
       track(dbGetJuiceMasters()).catch(() => []),
@@ -7807,12 +7813,14 @@ async function _invFetch(track, token) {
       //     같은 행이 이 전량 조회에 이미 들어 있다. 주스 화면도 invOutbounds에서 골라 쓴다.
       track(sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc')).catch(() => { _loadFail('출고 기록'); return []; }),
       // 주스 설정 2건 — 예전엔 위가 다 끝난 뒤 하나씩 기다렸다. 서로·위와 무관해 같이 보낸다(실패 시 직전 값 유지는 아래 그대로).
-      track(sbGet('settings', 'key=eq.juice_expiry_days')).catch(() => SETTING_FAIL),
-      track(sbGet('settings', 'key=eq.juice_low_threshold')).catch(() => SETTING_FAIL),
+      track(_settingsRows('juice_expiry_days')).catch(() => SETTING_FAIL),
+      track(_settingsRows('juice_low_threshold')).catch(() => SETTING_FAIL),
       // void 재고 행이 가리키는 입고 id만(파치 재고 판정용, _pachiStockByProduct). 위 재고 로드(void 제외)는 그대로 둔다.
       //   ★sbGetAll — void 행은 계속 늘어난다(2026-09-28 167행). 실패하면 직전 값 유지(한 번도 못 받았으면 예전 판정으로 폴백).
       track(sbGetAll('inventory_records', 'is_void=eq.true&inbound_record_id=not.is.null&select=inbound_record_id')).catch(() => null),
     ]);
+    // 레거시 미선과(inventory_unsorted, 0행) — 쓰는 곳이 '새 입고 0건'일 때뿐이라 그때만 받는다(v730). 실패는 예전처럼 빈 배열.
+    if (newIn.length === 0) legacyIn = await track(dbGetUnsorted(null)).catch(() => []);
     if (token !== _invLoadToken) return;   // 그사이 더 새 조회가 시작됐다 — 이 결과는 버린다
     // 레거시 데이터(inventory_unsorted)가 있고 새 테이블이 비어있으면 레거시를 표시
     // 마이그레이션 후에는 newIn에 데이터가 채워짐

@@ -2,9 +2,29 @@
 //  DB 레이어 — Supabase REST API 래퍼
 // ============================================================
 
+// ── 부팅 settings 일괄 조회(v730) — 부팅 때 7번 따로 받던 설정 키를 key=in.(…) 한 번으로 받아 두고, 로더들이 키마다 꺼내 쓴다.
+// ★부팅 1회용: initApp이 부팅 조회들을 출발시킨 직후 _settingsBootEnd()로 닫는다. 로더는 '부를 때' 약속을 붙잡으므로
+//   그 뒤의 재조회(재고 탭 새로고침·저장 후 재조회)는 전부 예전처럼 개별 조회 = 항상 최신.
+// ★일괄 조회가 성공했으면 그 결과가 곧 개별 조회 결과다(키가 없으면 빈 배열 — 개별 조회도 빈 배열). 실패했을 때만 그 키를
+//   예전 개별 조회로 폴백 — 결과·실패 처리는 로더 쪽 그대로. (DB에 없는 키 3개 brix_max_size·inv_size_config·juice_low_threshold 때문에)
+const SETTINGS_BOOT_KEYS = ['urgency_thresholds', 'product_weights', 'brix_max_size', 'inv_size_config', 'stock', 'juice_expiry_days', 'juice_low_threshold'];
+let _settingsBootP = null;
+function _settingsBootStart() {
+  _settingsBootP = sbGet('settings', `key=in.(${SETTINGS_BOOT_KEYS.join(',')})`).then(r => Array.isArray(r) ? r : null, () => null);
+  return _settingsBootP;
+}
+function _settingsBootEnd() { _settingsBootP = null; }
+// settings 한 키 조회 — sbGet('settings', 'key=eq.X')와 같은 결과(행 배열). 부팅 중이면 일괄 조회분에서 꺼낸다.
+function _settingsRows(key) {
+  const bootP = _settingsBootP;
+  const one = () => sbGet('settings', `key=eq.${key}`);
+  if (!bootP || !SETTINGS_BOOT_KEYS.includes(key)) return one();
+  return bootP.then(rows => rows ? rows.filter(r => r.key === key) : one());
+}
+
 async function getStockSettings() {
   try {
-    const rows = await sbGet('settings', 'key=eq.stock');
+    const rows = await _settingsRows('stock');
     if (rows && rows.length > 0) return rows[0].value;
   } catch (e) {}
   return { 황제: { init: 500 }, 시트리앙: { init: 300 }, 헌콘테이너: { init: 200 } };   // 종류 이름 = container_types.name과 일치해야 함
@@ -154,7 +174,7 @@ async function dbDeleteHarvest(id) { return sbDelete('harvests', id); }
 // ── 재고: 선과 크기 설정
 async function loadSizeConfig() {
   try {
-    const rows = await sbGet('settings', 'key=eq.inv_size_config');
+    const rows = await _settingsRows('inv_size_config');
     if (rows && rows.length > 0) return rows[0].value || {};
   } catch(e) {}
   return {};
@@ -178,7 +198,7 @@ async function saveSizeConfig(data) {
 // ── 브릭스 분리 최대 사이즈 설정 (key='brix_max_size', value 예: {'감귤류':'M2'}) — loadSizeConfig 패턴
 async function loadBrixMaxSize() {
   try {
-    const rows = await sbGet('settings', 'key=eq.brix_max_size');
+    const rows = await _settingsRows('brix_max_size');
     if (rows && rows.length > 0) return rows[0].value || {};
   } catch(e) { _sbLoadFail('당도 최대 사이즈 설정'); }
   return {};
