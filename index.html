@@ -176,6 +176,7 @@
       <div class="fg"><label>농가명 *</label><select id="mh-farm" onchange="_fillFieldSel('mh', this.value)"><option value="">선택</option></select></div>
       <div class="fg" id="mh-field-wrap" style="display:none"><label>밭 *</label><select id="mh-field"></select></div>
       <div class="fg"><label>품목</label><select id="mh-item"></select></div>
+      <div class="fg"><label>거래 방식</label><select id="mh-deal"><option value="">미지정</option><option value="밭떼기">밭떼기</option><option value="관떼기">관떼기</option></select></div>
       <div class="fg"><label>메모</label><input id="mh-note"></div>
     </div>
     <div class="modal-actions"><button class="btn cancel" onclick="closeHarvestModal()">취소</button><button class="btn pri" onclick="saveHarvestEdit()">저장</button></div>
@@ -555,6 +556,7 @@
     <div class="fg"><label>수확 종료일 <span style="font-size:10px;color:#aaa">(선택)</span></label><input id="cal-add-end" type="date"></div>
     <div class="fg"><label>차수 <span style="font-size:10px;color:#aaa">(밭떼기 여러 날)</span></label><input id="cal-add-round" type="number" min="1" value="1"></div>
     <div class="fg"><label>품목</label><select id="cal-add-item"></select></div>
+    <div class="fg"><label>거래 방식</label><select id="cal-add-deal" onchange="_hvDealTouched('cal-add-deal')"><option value="">미지정</option><option value="밭떼기">밭떼기</option><option value="관떼기">관떼기</option></select></div>
     <div class="fg"><label>메모</label><input id="cal-add-note" placeholder="메모"></div>
   </div>
   <div class="form-actions"><button class="btn pri" onclick="addHarvest()">일정 등록</button></div>
@@ -2086,6 +2088,6 @@
 <script src="src/supabase-client.js?v=31"></script>
 <script src="src/db.js?v=30"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=730"></script>
+<script src="src/app.js?v=731"></script>
 </body>
 </html>

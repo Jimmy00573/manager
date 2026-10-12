@@ -5198,6 +5198,30 @@ function _hvContactLine(farm, addr) {
   if (!parts.length) return '';
   return `<div style="flex:1 1 100%;font-size:11px;color:#6B7280;padding:2px 0;overflow-wrap:anywhere">${parts.join(' · ')}</div>`;
 }
+// ── 수확 거래 방식(harvests.deal_type: '밭떼기'|'관떼기'|null=미지정) ─────────────
+// 칩 — 수확 줄(harvestRow)·4일 카드 공용. null이면 ''(기존 HTML 그대로). 테두리 칩은 _specTag를 같이 쓴다.
+const HV_DEAL_COLOR = { 밭떼기: '#1E3A5F', 관떼기: '#6B7280' };
+function _hvDealChip(h) {
+  const t = h && h.deal_type, c = HV_DEAL_COLOR[t];
+  return c ? ' ' + _specTag(t, c, c) : '';
+}
+// 그 농가의 가장 최근 수확(시작일 → 차수 → id 순) 중 거래 방식이 있는 것의 값 | null
+function _hvLastDeal(farm) {
+  const hs = harvests.filter(h => h.farm === farm && HV_DEAL_COLOR[h.deal_type]);
+  hs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.round || 1) - (a.round || 1) || (Number(b.id) || 0) - (Number(a.id) || 0));
+  return hs.length ? hs[0].deal_type : null;
+}
+// 등록 폼 자동 채움 — _autoPickStaffDrv와 같은 '자동값 기억' 방식: 칸이 비었거나 직전에 자동으로 넣은 값일 때만 바꾼다.
+//   사람이 직접 고른 값(onchange → _hvDealTouched)은 농가를 바꿔도 덮지 않는다.
+const _autoDealVal = {};   // select id → 마지막 자동값('' 포함) | _HV_DEAL_MANUAL(사람이 고름 — '미지정'을 고른 것도 지킨다)
+const _HV_DEAL_MANUAL = {};
+function _hvDealTouched(id) { _autoDealVal[id] = _HV_DEAL_MANUAL; }
+function _hvAutoDeal(id, farm) {
+  const sel = document.getElementById(id); if (!sel) return;
+  if (_autoDealVal[id] === _HV_DEAL_MANUAL || (sel.value && sel.value !== _autoDealVal[id])) return;   // 직접 고른 값 — 그대로
+  const v = (farm && _hvLastDeal(farm)) || '';
+  sel.value = v; _autoDealVal[id] = v;
+}
 // planDate = 이 행이 놓인 카드의 날짜(금일 strip=오늘, 달력 상세=고른 날). 주면 그날 계획 줄·확인 버튼이 붙는다.
 //   ★안 주면 계획을 안 그린다 — 농가별 진행 현황의 차수 목록은 '어느 날' 카드가 아니라 어느 날짜 계획을 보여야 할지 정할 수 없다.
 //   planDate가 있으면 그날 다녀간 기사 줄(_hvTripLine — 4일 카드와 같은 글자)도 계획 줄 아래에 붙는다.
@@ -5212,7 +5236,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
       <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
       <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round||1}차</span>
-      ${h.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(h.item)}">${esc(h.item)}</span>` : ''}
+      ${h.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(h.item)}">${esc(h.item)}</span>` : ''}${_hvDealChip(h)}
       ${h.is_final
         ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>`
         : (st === '수확완료'
@@ -5725,7 +5749,7 @@ function renderUpcomingHarvest() {
           <span style="width:7px;height:7px;border-radius:50%;background:${_hvItemColor(x.item)};flex-shrink:0"></span>
           <span style="font-size:12px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.farm)}">${esc(x.farm)}</span>${_hvStaffBtn(x.farm)}
         </div>
-        <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차</div>
+        <div style="font-size:11px;color:#6B7280;margin:2px 0 3px;padding-left:12px">${x.item ? esc(x.item) + ' ' : ''}${x.round || 1}차${_hvDealChip(x)}</div>
         ${_hvAddrLine(x.farm, x.field)}
         <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${_hvFinishBadge(x, day.dStr)}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
@@ -6497,6 +6521,7 @@ function _mhFill(v) {
   document.getElementById('mh-item').value = v.item || '';
   document.getElementById('mh-note').value = v.note || '';
   document.getElementById('mh-round').value = v.round || 1;
+  document.getElementById('mh-deal').value = HV_DEAL_COLOR[v.deal_type] ? v.deal_type : '';
 }
 function _mhSetTitle(t) { const el = document.querySelector('#modal-harvest .modal-title'); if (el) el.textContent = t; }
 function closeHarvestModal() { _hvNewRoundFrom = null; CM('harvest'); }
@@ -6514,7 +6539,7 @@ async function saveHarvestEdit() {
   const date = document.getElementById('mh-date').value;
   const farm = document.getElementById('mh-farm').value;
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
-  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, field: gv('mh-field') || null, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1 };
+  const data = { date, end_date: document.getElementById('mh-end').value || null, farm, field: gv('mh-field') || null, item: document.getElementById('mh-item').value || null, note: document.getElementById('mh-note').value || null, round: parseInt(document.getElementById('mh-round').value, 10) || 1, deal_type: gv('mh-deal') || null };
   if (_hvNewRoundFrom != null) return _hvSaveNewRound(data);   // 새 차수 모드 — 아래 수정 흐름은 타지 않는다
   const prev = harvests.find(h => h.id === _editHarvestId);   // 변경 전 값 — 배차 동기화 판단에만 쓴다
   try {
@@ -6572,11 +6597,11 @@ async function autoSetHarvestStatus(farm, date, item, status) {
   if (!h) {
     try {
       // ★새 기록이 완료면 종료일 = 그 줄 날짜(오늘). 시작일이 오늘이라 어제 선택이 없어 확인창은 띄우지 않는다.
-      const row = await dbInsertHarvest({ date, farm, item: item || null, status, ...(status === '수확완료' ? { end_date: date } : {}) });
+      const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm), status, ...(status === '수확완료' ? { end_date: date } : {}) });   // 거래 방식 = 그 농가 최근값
       harvests.push(row);
     } catch(e) {
       // status 컬럼 없으면 status 빼고 재시도
-      try { const row = await dbInsertHarvest({ date, farm, item: item || null }); harvests.push(row); h = row; } catch(e2) {}
+      try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm) }); harvests.push(row); h = row; } catch(e2) {}
       harvests[harvests.length - 1].status = status;
       renderCal(); return;
     }
@@ -6590,7 +6615,7 @@ async function autoOpenHarvestEdit(farm, date, item) {
   if (!_hvCanWrite()) return;
   let h = harvests.find(x => x.farm === farm && x.date === date);
   if (!h) {
-    try { const row = await dbInsertHarvest({ date, farm, item: item || null }); harvests.push(row); h = row; }
+    try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm) }); harvests.push(row); h = row; }
     catch(e) { alert('오류: ' + e.message); return; }
   }
   openHarvestEdit(h.id);
@@ -6679,6 +6704,7 @@ function _calAddFarmChanged(v) {
   _fillFieldSel('cal-add', v);
   const r = document.getElementById('cal-add-round');
   if (r) r.value = v ? _hvNextRound(v) : 1;
+  _hvAutoDeal('cal-add-deal', v);   // 거래 방식 — 그 농가 최근값(직접 고른 값은 그대로)
 }
 // 수확 차수 이어가기 — 수확일정 창을 '새 차수' 모드로 연다(바로 저장하지 않는다). 이력 보존.
 //   ★예전엔 누르는 즉시 오늘·수확중으로 만들었다 — 실제 다음 차수는 대개 내일~3일 뒤라 매번 수정 창에서
@@ -6693,7 +6719,7 @@ function startNextRound(id) {
   _editHarvestId = null;
   _hvNewRoundFrom = id;
   _mhSetTitle(`＋ ${nextRound}차 수확 등록`);
-  _mhFill({ date: _dayAfter(td()), end_date: '', farm: h.farm, field: h.field, item: h.item, note: '', round: nextRound });
+  _mhFill({ date: _dayAfter(td()), end_date: '', farm: h.farm, field: h.field, item: h.item, note: '', round: nextRound, deal_type: h.deal_type });   // 거래 방식은 이전 차수 그대로
   document.getElementById('modal-harvest').style.display = 'flex';
 }
 // 새 차수 저장(insert). 시작일이 오늘 이하면 이미 진행 중 → '수확중', 미래면 '수확전'.
@@ -6763,13 +6789,14 @@ async function addHarvest() {
   const item = document.getElementById('cal-add-item')?.value || null;
   const note = document.getElementById('cal-add-note')?.value || null;
   const round = parseInt(document.getElementById('cal-add-round')?.value, 10) || 1;
+  const deal_type = document.getElementById('cal-add-deal')?.value || null;
   // ★오전·오후 차량·빈콘 계획은 여기서 받지 않는다 — 날짜별 값이라 카드의 계획 줄에서 그날 것을 넣는다(startHvPlanEdit).
   if (!date || !farm) { alert('수확 시작일과 농가명을 입력하세요'); return; }
   // ★밭이 여러 곳인 농가는 어느 밭 수확인지를 반드시 고른다(배차 등록과 같은 규칙).
   if (_fieldRequiredMiss('cal-add')) { alert('밭을 선택하세요'); return; }
   const field = gv('cal-add-field') || null;
   try {
-    const row = await dbInsertHarvest({ date, end_date, farm, field, item, note, round, status: '수확전' });
+    const row = await dbInsertHarvest({ date, end_date, farm, field, item, note, round, deal_type, status: '수확전' });
     harvests.push(row);
     document.getElementById('cal-add-date').value = '';
     document.getElementById('cal-add-end').value = '';
@@ -6779,6 +6806,7 @@ async function addHarvest() {
     _fillFieldSel('cal-add', '');   // 농가를 비웠으니 밭 칸도 같이 접는다(다음 등록에 전 값이 남지 않게)
     document.getElementById('cal-add-item').value = '';
     document.getElementById('cal-add-note').value = '';
+    document.getElementById('cal-add-deal').value = ''; _autoDealVal['cal-add-deal'] = '';   // 다음 등록은 다시 자동 채움 대상
     renderCal();
     await _hvOfferDispatch(farm, date, field);   // 미래 일정 + 배차 없음이면 배송 예약 제안(조건·순서는 함수 주석)
   } catch (e) { alert('오류: ' + e.message); }
