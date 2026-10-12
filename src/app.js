@@ -27018,6 +27018,7 @@ function _specBrixChanged() {
 function _specKindChanged() {
   const k = document.getElementById('spm-kind')?.value;
   const toWrap = document.getElementById('spm-to-wrap'); if (toWrap) toWrap.style.display = k === '출고' ? 'none' : '';
+  const fromWrap = document.getElementById('spm-from-wrap'); if (fromWrap) fromWrap.style.gridColumn = k === '출고' ? '1/-1' : '';   // 종료일이 숨으면 출고일이 한 줄 전체(v729)
   const fl = document.getElementById('spm-from-lbl'); if (fl) fl.textContent = k === '출고' ? '출고일 *' : '적용 시작일 *';
   const ct = _specPackUnit(document.getElementById('spm-pack')?.value || '') === 'ct';
   const wl = document.getElementById('spm-w-lbl'); if (wl) wl.textContent = k === '출고' ? '실제 중량(kg)' : ct ? '1CT 기준 중량(kg)' : '박스 중량(kg)';
@@ -27091,9 +27092,9 @@ function openSpecModal(o = {}) {
         <div>${lab('채널 *')}<select id="spm-channel" style="${_qrInpS}"></select>${hint('spm-channel-hint')}</div>
         <div>${lab('사업자')}<select id="spm-business" style="${_qrInpS}"></select></div>
         <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specProductChanged()">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
-        <div>${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}" onchange="_specPackChanged()"></select>${hint('spm-pack-hint')}</div>
         <div>${lab('박스')}<select id="spm-box" style="${_qrInpS}"></select></div>
-        <div><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
+        <div style="grid-column:1/-1">${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}" onchange="_specPackChanged()"></select>${hint('spm-pack-hint')}</div>
+        <div id="spm-from-wrap"><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
         <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
         <div style="grid-column:1/-1"><label id="spm-w-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">박스 중량(kg)</label>
           <div style="display:flex;gap:6px;align-items:center"><input id="spm-wmin" type="number" step="0.01" min="0" value="${fv(v.weight_min)}" placeholder="최소" style="${_qrInpS}" oninput="_specFormCalc()"><span style="color:#9CA3AF">~</span><input id="spm-wmax" type="number" step="0.01" min="0" value="${fv(v.weight_max)}" placeholder="최대" style="${_qrInpS}" oninput="_specFormCalc()"></div></div>
@@ -27449,7 +27450,7 @@ function _specRenderMasters() {
   const row = (key, x, i) => {
     const use = _specUseCnt(key, x.name);
     return `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-top:0.5px solid #F3F4F6;font-size:12px">
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${x.hidden ? '#9CA3AF' : '#374151'}">${esc(x.name)}${x.hidden ? ' <span style="font-size:10px">숨김</span>' : ''}</span>
+      <span style="flex:1;min-width:0;white-space:normal;word-break:keep-all;color:${x.hidden ? '#9CA3AF' : '#374151'}">${esc(x.name)}${x.hidden ? ' <span style="font-size:10px">숨김</span>' : ''}</span>
       <button type="button" onclick="_specMasterMove('${key}',${i},-1)" style="${mb}" title="위로">↑</button>
       <button type="button" onclick="_specMasterMove('${key}',${i},1)" style="${mb}" title="아래로">↓</button>
       ${key === 'packs' ? `<span style="display:flex;white-space:nowrap" title="단위 — 박스형: 구성·박스 수 / CT형: 줄마다 수·CT 수·1CT 실중량">${['box', 'ct'].map(u => { const on = (x.unit === 'ct' ? 'ct' : 'box') === u; return `<button type="button" onclick="_specMasterUnit(${i},'${u}')" style="${mb};border-radius:0;${on ? 'background:#1E3A5F;color:#fff;border-color:#1E3A5F' : ''}">${u === 'ct' ? 'CT' : '박스'}</button>`; }).join('')}</span>` : ''}
