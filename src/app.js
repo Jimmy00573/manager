@@ -27078,6 +27078,57 @@ function _specComboLine(product, combo, idx, wmin, wmax, judge = true, showRows 
   if (combo.note) seg.push(`<span style="color:#6B7280">${esc(combo.note)}</span>`);
   return `<div style="font-size:12px;line-height:1.7;display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline">${parts.join(' ')}${seg.length ? ' · ' + seg.join(' · ') : ''}</div>`;
 }
+// 구성 목록 표(카드·폼 미리보기 공용, 2026-10-13) — 줄마다 같은 종류 값이 같은 열에 오게. 계산·판정·글자는 _specComboLine과 같은 함수 호출.
+//   box: 라벨 | 단일/혼합 | 상단 | 하단 | 과수 | 예상 kg | 평균 | 실측 (+ 박스·판정·메모는 값 있는 구성이 하나라도 있을 때만 열을 만든다).
+//        만감류(행이 count — _specLayoutTxt와 같은 기준)가 섞이면 상단·하단 대신 '구성' 한 열(_specLayoutTxt 글자).
+//   ct : 사이즈 | CT | kg/CT (+ 판정·메모 같은 규칙). 값 없는 칸은 '—'. 숫자 열은 오른쪽 정렬 + tabular-nums(.spec-tbl .num).
+function _specCombosTable(product, combos, wmin, wmax, judge = true, unit = 'box') {
+  const cs = combos || [];
+  if (!cs.length) return '';
+  const NIL = '<span class="nil">—</span>';
+  const cell = (v, num) => `<td${num ? ' class="num"' : ''}>${v === '' || v == null ? NIL : v}</td>`;
+  const actOf = c => (c.actual_kg != null && Number(c.actual_kg) > 0 ? Number(c.actual_kg) : null);
+  const hasQty = cs.some(c => c.qty != null && c.qty !== '');
+  const hasNote = cs.some(c => c.note);
+  const wrap = (head, body) => `<div class="spec-tbl-wrap"><table class="spec-tbl"><tbody><tr class="spec-hd">${head.map(h => `<td${h[1] ? ' class="num"' : ''}>${h[0]}</td>`).join('')}</tr>${body}</tbody></table></div>`;
+  if (unit === 'ct') {
+    const js = cs.map(c => (judge ? _specJudge(null, actOf(c), wmin, wmax) : null));
+    const hasJ = js.some(Boolean);
+    const head = [['사이즈'], ['CT', 1], ['kg/CT', 1], ...(hasJ ? [['판정']] : []), ...(hasNote ? [['메모']] : [])];
+    const body = cs.map((c, i) => {
+      const size = ((c.rows || []).find(r => r && r.size) || {}).size || '', act = actOf(c), j = js[i];
+      return `<tr>${cell(size ? `<strong style="font-weight:500;color:#1E3A5F">${esc(size)}</strong>` : '')}${cell(c.qty != null && c.qty !== '' ? `${fmtN(Number(c.qty))}` : '', 1)}${cell(act != null ? _specKgTxt(act) : '', 1)}`
+        + `${hasJ ? cell(j ? `<span style="color:${j.color}">${j.mark}</span>` : '') : ''}${hasNote ? cell(c.note ? `<span style="color:#6B7280">${esc(c.note)}</span>` : '') : ''}</tr>`;
+    }).join('');
+    return wrap(head, body);
+  }
+  const rowsOf = c => (c.rows || []).filter(x => x && x.size && _specRowCount(x) > 0);
+  const isCnt = x => x.count !== undefined && x.count !== null && x.count !== '';
+  const mangam = cs.some(c => rowsOf(c).some(isCnt));
+  const calcs = cs.map(c => _specComboCalc(product, c));
+  const js = cs.map((c, i) => (judge ? _specJudge(calcs[i], actOf(c), wmin, wmax) : null));
+  const hasJ = js.some(Boolean);
+  const chip = t => `<span style="font-size:10px;padding:0 5px;border-radius:4px;border:1px solid ${t === '혼합' ? '#C4B5FD' : '#D1D5DB'};color:${t === '혼합' ? '#7C3AED' : '#6B7280'}">${t}</span>`;
+  const side = (rs, k) => rs.filter(r => Number(r[k]) > 0).map(r => `${esc(r.size)} ${fmtN(Number(r[k]))}`).join(' + ');
+  const head = [[''], [''], ...(mangam ? [['구성']] : [['상단'], ['하단']]), ['과수', 1], ['예상 kg', 1], ['평균', 1], ['실측', 1],
+    ...(hasQty ? [['박스', 1]] : []), ...(hasJ ? [['판정']] : []), ...(hasNote ? [['메모']] : [])];
+  const body = cs.map((combo, i) => {
+    const c = calcs[i], rs = rowsOf(combo), act = actOf(combo), j = js[i];
+    let actTxt = '';
+    if (act != null) {
+      actTxt = act.toFixed(2);
+      if (c) {   // 평균 대비 차이 — _specComboLine과 같은 식·같은 색(범위 밖 빨강)
+        const d = Math.round((act * 1000 - c.gavg) / 10) / 100, out = act * 1000 < c.gmin || act * 1000 > c.gmax;
+        actTxt += ` <span style="color:${out ? '#DC2626' : '#6B7280'}">(${d > 0 ? '+' + d.toFixed(2) : d < 0 ? '−' + Math.abs(d).toFixed(2) : '±0'})</span>`;
+      }
+    }
+    const lay = mangam ? cell(rs.map(r => _specLayoutTxt([r], product)).join(' + ')) : cell(side(rs, 'top')) + cell(side(rs, 'bottom'));
+    return `<tr>${cell(`<strong style="font-weight:500;color:#1E3A5F">${String.fromCharCode(65 + (i % 26))}</strong>`)}${cell(c ? chip(c.mixed ? '혼합' : '단일') : '')}${lay}`
+      + `${cell(c ? `${fmtN(c.count)}과` : '', 1)}${cell(c ? `${_specKg2(c.gmin)} ~ ${_specKg2(c.gmax)}` : (rs.length ? '<span class="nil">과중 기준 없음</span>' : ''), 1)}${cell(c ? _specKg2(c.gavg) : '', 1)}${cell(actTxt, 1)}`
+      + `${hasQty ? cell(combo.qty != null && combo.qty !== '' ? fmtN(Number(combo.qty)) : '', 1) : ''}${hasJ ? cell(j ? `<span style="color:${j.color}">${j.mark}</span>` : '') : ''}${hasNote ? cell(combo.note ? `<span style="color:#6B7280">${esc(combo.note)}</span>` : '') : ''}</tr>`;
+  }).join('');
+  return wrap(head, body);
+}
 // 카드의 구성 목록(현재·예정·직전 출고·이력 공용) — 구성이 없으면 ''
 //   v727: 규격 단위(_specPackUnit)로 줄 모양을 고르고, 출고면 총합 줄(_specOutTotal). ct 출고 줄은 그날 기준(_specStdAt)의 1CT 기준 중량으로 판정.
 function _specCombosHtml(v) {
@@ -27086,7 +27137,8 @@ function _specCombosHtml(v) {
   const unit = _specPackUnit(v.pack), out = v.kind === '출고';
   const ref = out && unit === 'ct' ? _specStdAt(_specKey(v), v.valid_from) : v;
   const judge = !out || (unit === 'ct' && !!ref);
-  return `<div style="flex-basis:100%;min-width:0">${cs.map((c, i) => _specComboLine(v.product, c, i, ref && ref.weight_min, ref && ref.weight_max, judge, true, unit)).join('')}${out ? _specOutTotal(v.product, v.layout, unit) : ''}</div>`;
+  // ★2026-10-13 줄 글자(_specComboLine) → 열 맞춤 표(_specCombosTable). 값·판정은 같은 함수 호출이라 숫자는 그대로.
+  return `<div style="flex-basis:100%;min-width:0">${_specCombosTable(v.product, cs, ref && ref.weight_min, ref && ref.weight_max, judge, unit)}${out ? _specOutTotal(v.product, v.layout, unit) : ''}</div>`;
 }
 // ── 출고 단위·총합(v727) ─────────────────────────
 // 상품규격 단위 — settings.spec_masters.packs[].unit('ct'|'box'). 없거나 목록에 없는 규격은 'box'.

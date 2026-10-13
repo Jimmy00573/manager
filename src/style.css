@@ -467,6 +467,22 @@ textarea {
   .dd-row .dd-qty { width: 96px; }
 }
 
+/* ── 작업 기준표 구성 표(_specCombosTable, 2026-10-13) — 줄마다 같은 종류 값이 같은 열. 전역 table(min-width:700px·td 패딩·hover)을 이 표에서만 덮는다.
+   폰에선 표 안에서만 가로 스크롤(.spec-tbl-wrap), 인쇄에선 스크롤 없이 펼친다. */
+.spec-tbl-wrap { overflow-x: auto; max-width: 100%; }
+table.spec-tbl { width: auto; min-width: 0; font-size: 12px; line-height: 1.6; border-collapse: collapse; }
+.spec-tbl td { padding: 2px 10px 2px 0; border-bottom: 1px solid #F3F4F6; white-space: nowrap; vertical-align: baseline; }
+.spec-tbl tr:last-child td { border-bottom: 1px solid #F3F4F6; }
+.spec-tbl tr:hover td { background: none; }
+.spec-tbl .spec-hd td { color: #6B7280; font-weight: 400; }
+.spec-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.spec-tbl .nil { color: #9CA3AF; }
+.spf .spf-big table.spec-tbl { font-size: inherit; }
+@media print {
+  .spec-tbl-wrap { overflow: visible !important; }
+  .spec-tbl td { border-bottom: 1px solid #D1D5DB !important; }
+}
+
 /* ── 작업 기준표 현장 보기(v725) — 기존 헬퍼 HTML을 그대로 넣고 글자만 키운다(본문 18px · 제목 22px).
    헬퍼의 인라인 font-size는 .spf-big 안에서 상속으로 덮고, 바운더리 띠(.spf-band)는 폰 폭에 맞게 따로 둔다. */
 #modal-spec-field { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,.5); overflow-y: auto; }
