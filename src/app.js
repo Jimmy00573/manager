@@ -1573,6 +1573,14 @@ function _brKey(rec, farm) {
   const f = String((rec && rec.field) || '').trim();
   return br.includes(f) ? f : br[0];
 }
+// 입고·회수·수거 '밭' 칸의 기본값 — 가지가 있으면 그 농가의 오늘 수확 → 수확중 수확의 field(목록에 있을 때만), 없으면 ''(직접 고르게).
+function _brDefault(farm) {
+  const br = _farmBranches(farm);
+  if (!br) return '';
+  const ok = h => h.farm === farm && br.includes(String(h.field || '').trim());
+  const h = harvests.find(x => ok(x) && x.date === td()) || harvests.find(x => ok(x) && x.status === '수확중');
+  return h ? String(h.field).trim() : '';
+}
 // ★배차·수확 '한 건'의 주소는 여기 하나로만 구한다 — 화면마다 gf(farm).addr을
 //   따로 쓰면 고른 밭이 문자엔 나가고 목록엔 안 나오는 식으로 갈린다.
 //   field가 없는 옛 기록·농협·거래처는 농가 주소로 폴백된다 → 기존 화면과 글자가 같다.
@@ -9183,6 +9191,7 @@ function _validateInboundContainers(key = 'ib') {
 // 입고 저장 후 콘테이너 자동 분배(두 경로 공통). 3분기:
 //   우리것(ours)→picks 원물수거(회수), 농가것(farm)→own_ins(반납대기), 농협(nhf)→nhf_ins(농협명별).
 // opts(선택): { ctx:'mtx', manualTxId, note, targetType } — 수동 거래(D-1c) 입고 방향에서 재사용.
+//   field(선택) = 밭 가지 — 우리것 회수 pick에만 붙는다(먼 밭 농가 입고). 없으면 키 자체를 안 넣는다.
 //   manualTxId가 있으면 inbound_id 대신 manual_tx_id로 연결.
 //   targetType은 우리것 회수 pick에만 부여(배출과 같은 行에서 상계되도록). opts 미전달 시 기존 입고 동작과 100% 동일.
 async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
@@ -9225,7 +9234,7 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
     }
     try {
       if (j.t.owner === 'ours') {
-        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...pickDriverPatch, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...link });
+        const row = await dbInsertPick({ date, farm, type: '원물수거', qty: j.qty, ctype: j.t.name, inbound_id: inbId, auto: true, note: pickNote, ...pickDriverPatch, ...(opts.targetType ? { target_type: opts.targetType } : {}), ...(opts.field ? { field: opts.field } : {}), ...link });
         if (row) picks.unshift(row);
       } else if (j.t.owner === 'nhf') {
         // 농협/거래처는 owner_type으로만 가른다 — 종류 마스터는 하나 그대로(거래처용 종류를 새로 만들지 않는다).
@@ -23448,6 +23457,8 @@ async function saveInboundSorted(keepOpen) {
   }));
   if (!sizeEntries.length) return alert('사이즈별 수량을 입력하세요.');
   if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
+  if (_fieldRequiredMiss('ib')) return alert('밭을 선택하세요');   // 먼 밭이 있는 농가만 칸이 보인다 — 원물수거(회수)가 어느 밭 보유에서 빠질지
+  const ibField = _farmBranches(supplier) ? (gv('ib-field') || null) : null;
   const totalCt = sizeEntries.reduce((s, e) => s + e.ct, 0);
   const grade = gv('ib-sorted-grade') || '일반';   // 한 입고=한 당도(전체 사이즈 적용)
 
@@ -23494,7 +23505,7 @@ async function saveInboundSorted(keepOpen) {
     }
     inventoryRecords.push(...inserted);
     // ★담당자 = 이 입고의 수송기사. select 값은 기사 id라 이름으로 바꿔 넘긴다(미선택이면 undefined → 로그인 계정).
-    await _saveInboundContainers(date, supplier, ibId, { staff: _drvNameById(driver_id) });   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
+    await _saveInboundContainers(date, supplier, ibId, { staff: _drvNameById(driver_id), ...(ibField ? { field: ibField } : {}) });   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
     renderInvSummary(); renderInboundList();
 
     const clearSorted = () => {
@@ -23556,6 +23567,8 @@ async function _addInboundCore(keepOpen) {
   // ★합계는 원물 콘테이너만 센다 — 파렛트·리어카만 입력하면 0이라 여기서 걸린다(원물이 0이니 그게 맞다).
   if (_ibcContainerSum() <= 0) return alert('콘테이너 개수를 입력하세요.\n미선과 수량은 콘테이너 개수 합산으로 자동 계산됩니다.\n(파렛트·리어카 등 운반구는 수량에 반영되지 않습니다.)');
   if (!_validateInboundContainers('ib')) return;   // ★농협명 없는 농협 콘테이너 → 입고 저장 자체를 중단
+  if (_fieldRequiredMiss('ib')) return alert('밭을 선택하세요');   // 먼 밭이 있는 농가만 칸이 보인다 — 원물수거(회수)가 어느 밭 보유에서 빠질지
+  const ibField = _farmBranches(farm_name) ? (gv('ib-field') || null) : null;
   // ★카테고리별 수량 — 입력된 것만 각각 inbound_records 행이 된다(한 차에 섞여 온 경우 한 번에 등록).
   //   상품칸은 '총 수량 − 나머지' 자동이라, 카테고리가 하나뿐이면 예전과 완전히 같은 1행 등록이 된다.
   const catQtys = _ibCatQtyList();
@@ -23739,7 +23752,7 @@ async function _addInboundCore(keepOpen) {
       // ★콘테이너는 차 단위 — 카테고리 수와 무관하게 반드시 한 번만 저장한다(루프 밖).
       //   여기서 카테고리마다 부르면 콘테이너가 카테고리 수만큼 중복 기록된다.
       // ★담당자 = 이 입고의 수송기사(위 saveInboundSorted와 동일 규칙).
-      await _saveInboundContainers(date, farm_name, ibId, { staff: _drvNameById(driver_id) });   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
+      await _saveInboundContainers(date, farm_name, ibId, { staff: _drvNameById(driver_id), ...(ibField ? { field: ibField } : {}) });   // 콘테이너 자동 분배(우리것 회수/남의것 반납대기)
       renderInvSummary(); renderInboundList();
       const _catSummary = catQtys.map(c => `${c.cat} ${fmtN(c.qty)}`).join(' · ');   // 예: 상품 133 · 대과 4 · 소과 1 · 파치 2
       if (keepOpen) {

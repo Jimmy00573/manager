@@ -1014,7 +1014,8 @@
           </div>
           <!-- 공급처: attachFarmSearch('ib-farm')가 이 select를 숨기고 검색 입력칸·목록을 붙인다(_fsAttachAll 참고).
                select는 그대로 값의 주인이라 gv('ib-farm')·popSels()·저장 로직은 손댈 게 없다. -->
-          <div class="fg"><label>공급처 *</label><select id="ib-farm" onchange="_autoPickStaffDrv('ib-farm','inv-driver-select')"><option value="">선택</option></select></div>
+          <div class="fg"><label>공급처 *</label><select id="ib-farm" onchange="_autoPickStaffDrv('ib-farm','inv-driver-select');_fillFieldSel('ib', this.value, _farmBranches(this.value) ? _brDefault(this.value) : '')"><option value="">선택</option></select></div>
+          <div class="fg" id="ib-field-wrap" style="display:none"><label>밭 *</label><select id="ib-field"></select></div>
           <div class="fg">
             <label>수송기사 *</label>
             <!-- ★option 목록은 _fillDrvSel이 런타임에 통째로 다시 만든다(여기 것은 초기 자리표시). -->
@@ -2089,6 +2090,6 @@
 <script src="src/supabase-client.js?v=31"></script>
 <script src="src/db.js?v=30"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=739"></script>
+<script src="src/app.js?v=740"></script>
 </body>
 </html>
