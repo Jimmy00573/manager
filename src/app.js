@@ -4090,18 +4090,17 @@ function getTargetContainerHold(name, targetType) {
 }
 function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '농협'); }
 // ── ♻️ 회수 대기 / 📅 일정 없음 — 보유(getFCS.hold > 0) 농가 중 수확이 끝났거나 수확 기록이 없는 곳(표시 전용) ──
-//   done   : harvests 1건 이상 + '수확전'·'수확중'(상태 비면 수확전)이 하나도 없음.
+//   done   : 전체 종료(_hvProgGroups kind 'done') + 보유 > 0. 차수 사이(종료 전) 농가는 넣지 않는다 — 다음 차수용으로 콘테이너를 두는 중.
 //            endDate = max(수확완료 harvests의 end_date || date, 원물수거·빈콘회수 pick 날짜), days = 오늘 − endDate.
 //   noPlan : harvests 0건 — ★농가별 진행 현황 '⏳ 대기'(_hvProgGroups의 wait)를 그대로 쓴다(같은 판정을 두 번 만들지 않게).
 //            lastOut = 최근 배송일(배차 date·배출 pick 중 최신), days = 오늘 − lastOut.
-//   수확전·수확중이 있는 농가는 어디에도 없다. 둘 다 days 내림차순(같으면 농가명). 외부 기사는 _xdFarmOk(담당 농가만).
+//   종료 전 농가는 어디에도 없다(진행 현황에서 본다). 둘 다 days 내림차순(같으면 농가명). 외부 기사는 _xdFarmOk(담당 농가만).
 function _recoveryWaitList() {
   const gs = _hvProgGroups();
   const byDays = (a, b) => b.days - a.days || a.farm.localeCompare(b.farm, 'ko');
   const noPlan = gs.filter(g => g.kind === 'wait' && _xdFarmOk(g.farm))
     .map(g => ({ farm: g.farm, hold: g.hold, lastOut: g.outDate, days: g.days })).sort(byDays);
-  const done = gs.filter(g => g.kind !== 'wait' && _xdFarmOk(g.farm)
-      && !g.rounds.some(h => (h.status || '수확전') === '수확전' || h.status === '수확중'))
+  const done = gs.filter(g => g.kind === 'done' && _xdFarmOk(g.farm))
     .map(g => ({ g, hold: getFCS(g.farm).hold || 0 })).filter(x => x.hold > 0)
     .map(({ g, hold }) => {
       const ds = [...g.rounds.filter(h => h.status === '수확완료').map(h => h.end_date || h.date),
@@ -4136,10 +4135,10 @@ function _renderRecoveryWait() {
     </div>`;
   };
   const ago = (ds, d) => ds ? `${esc(calFmtShort(ds))} · ${d}일` : '-';
-  const doneHtml = done.length ? `<div style="font-size:13px;font-weight:500;color:#374151">♻️ 회수 대기 ${done.length}곳 · ${fmtN(sum(done))}개${_xdFilterTag()}</div>` +
+  const doneHtml = done.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;background:#FFF7ED;border-left:3px solid #C05800;padding:6px 10px"><span style="font-size:14px;font-weight:500;color:#C05800">♻️ 회수 대기</span><span style="font-size:13px;color:#C05800">${done.length}곳 · ${fmtN(sum(done))}개</span>${_xdFilterTag()}</div>` +
     done.map(x => row(x, `수확 끝 ${ago(x.endDate, x.days)}`, x.days >= 7 ? '#DC2626' : x.days >= 3 ? '#C05800' : '#6B7280',
       (() => { const c = getFCtypes(x.farm); return c ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px">${c}</span>` : ''; })())).join('') : '';
-  const npHtml = noPlan.length ? `<div style="font-size:12px;font-weight:500;color:#374151;${done.length ? 'margin-top:10px' : ''}">📅 일정 없음 ${noPlan.length}곳 · ${fmtN(sum(noPlan))}개${done.length ? '' : _xdFilterTag()}</div>` +
+  const npHtml = noPlan.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;background:#FEF2F2;border-left:3px solid #DC2626;padding:6px 10px;${done.length ? 'margin-top:10px' : ''}"><span style="font-size:14px;font-weight:500;color:#DC2626">📅 일정 없음</span><span style="font-size:13px;color:#DC2626">${noPlan.length}곳 · ${fmtN(sum(noPlan))}개</span>${done.length ? '' : _xdFilterTag()}</div>` +
     noPlan.map(x => row({ ...x, plan: true }, `배출 ${ago(x.lastOut, x.days)}`, x.days >= 14 ? '#DC2626' : '#6B7280')).join('') : '';
   el.style.display = '';
   el.innerHTML = `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:10px 12px">${doneHtml}${npHtml}</div>`;
