@@ -3143,12 +3143,14 @@ async function addPick() {
   //   _rcList가 0을 걸러내므로 비었으면 '종류도 수량도 없음'이다(예전 두 검사를 하나로).
   const list = _rcList('pk');
   if (!list.length) { alert('콘테이너 종류별 수량을 입력하세요.'); return; }
+  if (_fieldRequiredMiss('pk')) { alert('밭을 선택하세요'); return; }
+  const pkField = (targetType === '농가' && _farmBranches(farm)) ? (gv('pk-field') || null) : null;
   const d = gd(gv('pk-drv'));
   try {
     // ★종류마다 pick 행을 따로 만든다 — picks.ctype이 단일 값이라 한 행에 여러 종류를 담을 수 없다.
     //   한 종류만 넣으면 예전과 완전히 같은 1행 등록이 된다.
     for (const c of list) {
-      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false, target_type: targetType });
+      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver: gv('pk-drv'), car: d.car || gv('pk-car'), note: gv('pk-note'), auto: false, target_type: targetType, ...(pkField ? { field: pkField } : {}) });
       picks.unshift(row);
     }
     clr('pk-note'); _syncPkCtype(); renderPick(); renderDash();   // 잔여가 줄었으니 종류 칸도 다시 계산(수량 칸도 초기화됨)
@@ -3338,6 +3340,8 @@ async function addBkCol() {
   // ★종류 없이 저장하면 공장 보유 재고 집계에서 회수분이 통째로 빠진다 — 반드시 막는다.
   const list = _rcList('bk');
   if (!list.length) { alert('콘테이너 종류별 수량을 입력하세요.'); return; }
+  if (_fieldRequiredMiss('bk')) { alert('밭을 선택하세요'); return; }
+  const bkField = (targetType === '농가' && _farmBranches(farm)) ? (gv('bk-field') || null) : null;
   const totalQty = list.reduce((a, x) => a + x.qty, 0);
   try {
     const drvName = gv('bk-drv');
@@ -3345,7 +3349,7 @@ async function addBkCol() {
     const note = gv('bk-note') || null;   // ★지우기 전에 잡아 둔다 — 예전엔 clr 뒤에 읽어 문자에 비고가 늘 비어 있었다
     // ★종류마다 pick 행을 따로 만든다(배차·빠른 회수와 같은 규칙). 한 종류면 예전과 같은 1행.
     for (const c of list) {
-      const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, driver: drvName || null, car: drv?.car || null, note, target_type: targetType });
+      const row = await dbInsertPick({ date, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, driver: drvName || null, car: drv?.car || null, note, target_type: targetType, ...(bkField ? { field: bkField } : {}) });
       picks.unshift(row);
     }
     clr('bk-note');
@@ -4016,9 +4020,9 @@ function getFCtypes(fn, targetType, field) {
   return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); return `<span class="ct ${_ctClass(nt)}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${_ctIcon(nt)} ${r}개</span>`; }).filter(Boolean).join('');
 }
 
-// 회수 모달용 — 실제로 나가 있는 종류만(잔여 1개 이상), 잔여 많은 순.
-function _qrHoldTypes(fn, targetType) {
-  return Object.entries(getFCtypeMap(fn, targetType))
+// 회수 모달용 — 실제로 나가 있는 종류만(잔여 1개 이상), 잔여 많은 순. field(선택) = 밭 가지(없으면 예전과 같다).
+function _qrHoldTypes(fn, targetType, field) {
+  return Object.entries(getFCtypeMap(fn, targetType, field))
     .map(([t, q]) => ({ t, q: Math.round(q) }))
     .filter(x => x.q > 0)
     .sort((a, b) => b.q - a.q);
@@ -4098,8 +4102,19 @@ function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
 }
 // ★대상 유형까지 넘긴다 — getFCtypeMap이 target_type 일치 행만 집계하므로, 안 넘기면 농협/거래처를 골라도
 //   농가 잔여를 보여 주고 회수 가능 종류가 어긋난다.
-function _syncPkCtype() { _syncRecoveryCtypeSel('pk', gv('pk-farm'), gv('pk-target-type') || '농가'); }
-function _syncBkCtype() { _syncRecoveryCtypeSel('bk', gv('bk-farm'), gv('bk-target-type') || '농가'); }
+// ★대상(종류·이름)이 바뀔 때마다 불린다 — 먼 밭이 있는 농가면 '밭' 칸도 여기서 채운다(_fillFieldSel, 그 밖엔 숨김).
+function _syncPkCtype() {
+  const tt = gv('pk-target-type') || '농가', f = gv('pk-farm');
+  _syncRecoveryCtypeSel('pk', f, tt);
+  const bf = (tt === '농가' && _farmBranches(f)) ? f : '';
+  _fillFieldSel('pk', bf, bf ? _brDefault(bf) : '');
+}
+function _syncBkCtype() {
+  const tt = gv('bk-target-type') || '농가', f = gv('bk-farm');
+  _syncRecoveryCtypeSel('bk', f, tt);
+  const bf = (tt === '농가' && _farmBranches(f)) ? f : '';
+  _fillFieldSel('bk', bf, bf ? _brDefault(bf) : '');
+}
 // 대상 유형 배지 — 콘테이너 이력 표와 수거·회수 목록이 같은 모양을 쓰도록 여기 한 곳에서만 정한다.
 // ★원래 renderCH 안의 지역 const였다. 수거·회수 목록에서도 쓰게 되면서 올렸다(스타일 문자열 복제 방지).
 function _tkBadge(t) {
@@ -4331,6 +4346,28 @@ function _qrQtyChanged() {
   // 빈 목록 문구는 이 모달만 안내를 띄운다(모달은 여는 순간 비어 있어 뭘 해야 할지 알려 줘야 한다)
   hint.innerHTML = _ctQtyHint(_qrCtypeList(), _qrTypes, '<span style="color:#9CA3AF">회수할 종류에 수량을 넣으세요</span>');
 }
+// 종류·수량 칸 HTML — _qrTypes·_qrPreVals도 여기서 정한다. 창을 열 때(openQuickRecovery)와 밭을 바꿀 때(_qrFieldChanged) 같이 쓴다.
+function _qrCellsHtml(holdTypes, defQty) {
+  const single = holdTypes.length === 1;                       // 하나뿐이면 잔여를 미리 채운다(기존 동작)
+  _qrTypes = holdTypes.length
+    ? holdTypes.map(x => ({ t: x.t, q: x.q }))
+    : OT_ACTIVE.map(t => ({ t, q: null }));                    // 폴백: 잔여를 모르므로 null
+  _qrPreVals = [];
+  return _qrTypes.map((x, i) => {
+    const pre = (single && x.q != null) ? Math.min(defQty || x.q, x.q) : '';
+    _qrPreVals[i] = pre;
+    // ★비활성이어도 나가 있으면 보여 준다(회수 폼 _syncRecoveryCtypeSel과 같은 이유) — 표기만 붙인다.
+    return `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${_ctIsInactive(x.t) ? ' <small style="font-weight:400;color:#9CA3AF">(사용 안 함)</small>' : ''}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
+      <input id="qr-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" value="${pre}" oninput="_qrQtyChanged()"></label>`;
+  }).join('');
+}
+// 회수 창 '밭'(먼 밭 농가만)을 바꾸면 종류·잔여를 그 가지 기준으로 다시 채운다. 이동 모드면 잔여 전량(_qrDestChanged와 같은 규칙).
+function _qrFieldChanged() {
+  const fld = document.getElementById('qr-field')?.value; if (!fld) return;
+  const grid = document.getElementById('qr-ctype-grid'); if (!grid) return;
+  grid.innerHTML = _qrCellsHtml(_qrHoldTypes(_qrFrom.farm, _qrFrom.tt, fld), Math.max(0, Math.round(getFCS(_qrFrom.farm, fld).hold || 0)));
+  if (document.getElementById('qr-dest')?.value === 'move') _qrDestChanged(); else _qrQtyChanged();
+}
 
 // opts(선택) = { date, staff } — 입고 목록 ⋮ '🧺 빈콘 회수'(_ibOpenEmptyRecovery)가 입고 날짜·기사로 미리 채울 때만 넘긴다.
 //   ★안 넘기면(현황판 4곳) 날짜 오늘·담당자 빈칸 — 예전과 같다. 기사 목록에 없는 이름이면 담당자는 비워 둔다.
@@ -4343,20 +4380,14 @@ function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   const defQty = Math.max(0, Math.round(hold || 0));
   // ★콘테이너 종류 — 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다(실제 사고 원인).
   //   그 대상에 실제로 나가 있는 종류만 보여준다(getFCtypeMap = 현황판 칩과 같은 숫자).
-  const holdTypes = _qrHoldTypes(farm, targetType);
-  const single = holdTypes.length === 1;                       // 하나뿐이면 잔여를 미리 채운다(기존 동작)
-  _qrTypes = holdTypes.length
-    ? holdTypes.map(x => ({ t: x.t, q: x.q }))
-    : OT_ACTIVE.map(t => ({ t, q: null }));                    // 폴백: 잔여를 모르므로 null
+  // ★먼 밭(가지)이 있는 농가만 '밭' 칸 — 기본 = 보유가 가장 큰 가지, 종류·잔여는 그 가지 기준. 그 밖의 대상은 예전과 같다.
+  const qrBr = targetType === '농가' ? _farmBranches(farm) : null;
+  const qrField = qrBr ? qrBr.reduce((a, b) => (getFCS(farm, b).hold > getFCS(farm, a).hold ? b : a)) : undefined;
+  const holdTypes = _qrHoldTypes(farm, targetType, qrField);
   _qrFrom = { farm, tt: targetType };
-  _qrPreVals = [];
-  const cells = _qrTypes.map((x, i) => {
-    const pre = (single && x.q != null) ? Math.min(defQty || x.q, x.q) : '';
-    _qrPreVals[i] = pre;
-    // ★비활성이어도 나가 있으면 보여 준다(회수 폼 _syncRecoveryCtypeSel과 같은 이유) — 표기만 붙인다.
-    return `<label><span>${_ctIcon(x.t)} ${esc(x.t)}${_ctIsInactive(x.t) ? ' <small style="font-weight:400;color:#9CA3AF">(사용 안 함)</small>' : ''}${x.q != null ? ` <small style="font-weight:400;color:#9CA3AF">잔여 ${fmtN(x.q)}</small>` : ''}</span>
-      <input id="qr-cq-${i}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" value="${pre}" oninput="_qrQtyChanged()"></label>`;
-  }).join('');
+  const cells = _qrCellsHtml(holdTypes, defQty);
+  const fieldSel = qrBr ? `<div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">밭 <span style="color:#DC2626">*</span></label>
+          <select id="qr-field" style="${_qrInpS}" onchange="_qrFieldChanged()">${qrBr.map(b => `<option value="${esc(b)}"${b === qrField ? ' selected' : ''}>${esc(b)} (보유 ${fmtN(getFCS(farm, b).hold)})</option>`).join('')}</select></div>` : '';
   const m = document.createElement('div');
   m.id = 'modal-quick-recovery';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
@@ -4382,7 +4413,7 @@ function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
         <div style="font-size:12px;color:#6B7280">현재 ${targetType === '농가' ? '농가보유' : targetType + '보유(우리 콘테이너)'} <strong style="color:#C05800">${defQty}개</strong> — 종류·수량을 확인하세요. (부분 회수 가능)</div>
         <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">날짜</label>
           <input id="qr-date" type="date" value="${opts.date || td()}" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px"></div>
-        <div><label style="font-size:12px;color:#374151;display:block;margin-bottom:5px">콘테이너 종류·수량 <span style="color:#DC2626">*</span> <span style="font-size:10px;color:#9CA3AF">여러 종류를 한 번에 회수할 수 있습니다</span></label>
+        ${fieldSel}<div><label style="font-size:12px;color:#374151;display:block;margin-bottom:5px">콘테이너 종류·수량 <span style="color:#DC2626">*</span> <span style="font-size:10px;color:#9CA3AF">여러 종류를 한 번에 회수할 수 있습니다</span></label>
           <div id="qr-ctype-grid" class="ib-catq">${cells}</div>
           <div id="qr-qty-hint" style="font-size:11px;margin-top:5px;line-height:1.4;color:var(--text-tertiary)"></div></div>
         <div id="qr-type-wrap"><label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">구분</label>
@@ -4433,12 +4464,13 @@ async function saveQuickRecovery(farm, targetType = '농가') {
   const list = _qrCtypeList();
   if (!list.length) return alert('회수할 콘테이너 종류·수량을 입력하세요.');
   if (!driver) return alert('담당자를 선택하세요.');
+  const qrFld = document.getElementById('qr-field')?.value || '';   // 먼 밭 농가만 칸이 있다 — 없으면 field 키를 안 넣는다
   try {
     const car = driver ? (drivers.find(d => d.name === driver)?.car || null) : null;
     // ★종류마다 pick 행을 따로 만든다 — picks.ctype이 단일 값이라 한 행에 여러 종류를 담을 수 없다.
     //   한 종류만 넣으면 예전과 완전히 같은 1행 등록이 된다.
     for (const c of list) {
-      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver, car, auto: false, note: '현황판 회수', target_type: targetType });
+      const row = await dbInsertPick({ date, farm, type, qty: c.qty, ctype: c.ct, driver, car, auto: false, note: '현황판 회수', target_type: targetType, ...(qrFld ? { field: qrFld } : {}) });
       if (row) picks.unshift(row);
     }
     document.getElementById('modal-quick-recovery')?.remove();
