@@ -999,6 +999,7 @@ function doLogout() {
   sessionStorage.removeItem('citrus_drv');
   sessionStorage.removeItem('citrus_adm_user');   // ★안 지우면 다음 로그인(PIN 기사·직원)의 created_by·staff에 이전 계정 이름이 남는다(adminLogout과 같은 처리)
   ['citrus_keep','citrus_role','citrus_drv','citrus_adm_user'].forEach(k => localStorage.removeItem(k));
+  _obIdbClear();   // 출고 보관본(IndexedDB)도 지운다 — 다른 계정이 같은 기기를 쓸 때 대비
   _loggedDrv = null;
   document.getElementById('hdr-btns').style.display = 'flex';
   document.getElementById('hdr-logged').style.display = 'none';
@@ -1024,6 +1025,7 @@ function adminLogout() {
   sessionStorage.removeItem('citrus_drv');
   sessionStorage.removeItem('citrus_adm_user');
   ['citrus_keep','citrus_role','citrus_drv','citrus_adm_user'].forEach(k => localStorage.removeItem(k));
+  _obIdbClear();   // doLogout과 같이 — 출고 보관본(IndexedDB)을 지운다
   document.getElementById('pin-screen').style.display = 'flex';
   document.getElementById('rbtn-logout').style.display = 'none';
   const _ab = document.getElementById('rbtn-adm');
@@ -8049,20 +8051,76 @@ const _obSorted = map => [...map.values()]
   .sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   .map(r => ({ ...r }));
 
+// ── 출고 보관본(IndexedDB) — 새로고침(부팅) 때도 전체 대신 바뀐 행만 받게, 받은 결과를 이 기기에 둔다.
+//   키 하나에 { schema, mark, fullAt, rows }. 30분 규칙은 그대로라 오래된 보관본이면 전체 받기.
+//   ★IndexedDB가 없거나 실패(사파리 사생활 모드 등)하면 조용히 메모리 방식으로만 돈다 — 오류 표시 없음.
+//   ★로그아웃 때 지운다(_obIdbClear — 다른 계정이 같은 기기를 쓸 때 대비).
+const _OB_IDB = { db: 'citriang', store: 'cache', key: 'outbound_v1', schema: 1 };
+let _obIdbTried = false;   // 페이지당 한 번만 읽는다(로그아웃으로 비운 뒤 다시 읽지 않게)
+let _obGen = 0;            // 로그아웃마다 +1 — 그 전에 시작한 받기가 늦게 끝나 지운 보관본을 되살리지 않게
+function _obIdbDo(mode, fn) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const fail = e => { if (!done) { done = true; reject(e); } };
+    setTimeout(() => fail(new Error('IndexedDB 응답 없음')), 3000);   // 열기가 영영 안 끝나는 브라우저 대비 — 기다리지 않고 메모리 방식으로
+    const req = indexedDB.open(_OB_IDB.db, 1);   // indexedDB가 없으면 여기서 throw → reject
+    req.onupgradeneeded = () => req.result.createObjectStore(_OB_IDB.store);
+    req.onerror = () => fail(req.error);
+    req.onblocked = () => fail(new Error('IndexedDB blocked'));
+    req.onsuccess = () => {
+      const db = req.result;
+      if (done) { db.close(); return; }
+      try {
+        const tx = db.transaction(_OB_IDB.store, mode);
+        const r = fn(tx.objectStore(_OB_IDB.store));
+        tx.oncomplete = () => { db.close(); if (!done) { done = true; resolve(r && r.result); } };
+        tx.onerror = tx.onabort = () => { db.close(); fail(tx.error); };
+      } catch (e) { db.close(); fail(e); }
+    };
+  });
+}
+async function _obIdbLoad() {
+  try {
+    const v = await _obIdbDo('readonly', st => st.get(_OB_IDB.key));
+    if (_obCache || !v || v.schema !== _OB_IDB.schema || !Array.isArray(v.rows) || _obTs(v.mark) == null || !(v.fullAt > 0)) return;
+    _obCache = new Map(v.rows.map(r => [r.id, r]));
+    _obMark = v.mark;
+    _obFullAt = v.fullAt;
+  } catch (e) { /* 없거나 막힘 — 전체 받기로 */ }
+}
+// 검증을 통과한 받기 뒤에만 부른다. 화면을 기다리게 하지 않는다(await 안 함).
+function _obIdbSave(gen) {
+  if (gen !== _obGen || !_obCache) return;
+  const v = { schema: _OB_IDB.schema, mark: _obMark, fullAt: _obFullAt, rows: [..._obCache.values()] };
+  _obIdbDo('readwrite', st => { if (gen === _obGen) st.put(v, _OB_IDB.key); }).catch(() => {});
+}
+function _obIdbClear() {
+  _obGen++;
+  _obCache = null; _obMark = null; _obFullAt = 0;
+  try { _obIdbDo('readwrite', st => st.delete(_OB_IDB.key)).catch(() => {}); } catch (e) {}
+}
+
 function _obFetch() {
   const p = _obChain.then(_obFetchRun, _obFetchRun);
   _obChain = p.catch(() => {});
   return p;
 }
 async function _obFetchRun() {
+  const gen = _obGen;
+  if (!_obCache && !_obIdbTried) { _obIdbTried = true; await _obIdbLoad(); }
   const full = async () => {
     const rows = await sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc');
-    _obCache = new Map(rows.map(r => [r.id, r]));
-    _obMark = _obMaxMark(null, rows);
-    _obFullAt = Date.now();
+    if (gen === _obGen) {   // 그사이 로그아웃했으면 보관하지 않는다(받은 배열은 그대로 돌려준다)
+      _obCache = new Map(rows.map(r => [r.id, r]));
+      _obMark = _obMaxMark(null, rows);
+      _obFullAt = Date.now();
+      _obIdbSave(gen);
+    }
     return rows.map(r => ({ ...r }));   // sbGetAll 순서 그대로(예전과 같은 배열)
   };
-  if (!_obCache || _obTs(_obMark) == null || Date.now() - _obFullAt > _OB_FULL_MS) return full();
+  // 기기 시계가 뒤로 간 경우(fullAt이 미래)도 전체 받기 — 아니면 30분 규칙이 오래 멈춘다
+  const age = Date.now() - _obFullAt;
+  if (!_obCache || _obTs(_obMark) == null || age > _OB_FULL_MS || age < 0) return full();
   const w = encodeURIComponent(new Date(_obTs(_obMark) - _OB_OVERLAP_MS).toISOString());
   // 세 요청은 서로 기다릴 필요가 없어 같이 보낸다. 실패는 throw → 호출처의 _loadFail('출고 기록')(보관본은 그대로 남는다).
   const [dels, delta, cnt] = await Promise.all([
@@ -8075,8 +8133,11 @@ async function _obFetchRun() {
   const map = new Map(_obCache);
   for (const r of delta) { if (r.is_void === false) map.set(r.id, r); else map.delete(r.id); }
   if (cnt == null || cnt !== map.size) return full();
-  _obCache = map;
-  _obMark = _obMaxMark(_obMark, delta);
+  if (gen === _obGen) {
+    _obCache = map;
+    _obMark = _obMaxMark(_obMark, delta);
+    _obIdbSave(gen);
+  }
   return _obSorted(map);
 }
 
