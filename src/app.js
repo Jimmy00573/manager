@@ -3962,16 +3962,20 @@ function renderRep() {
 // ── 현황판
 // 농가보유 집계 — target_type '농가'만(null 포함=구데이터). 농협/거래처行 배차는 getTargetContainerHold로 별도.
 function _isFarmTgt(r) { return r.target_type === '농가' || !r.target_type; }
-function getFCS(name) {
-  const out = picks.filter(p => p.farm === name && p.type === '배출' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);
-  const pk = picks.filter(p => p.farm === name && p.type === '원물수거' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);
-  const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수' && _isFarmTgt(p)).reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
+// field(선택) = 밭 가지 — 주면 그 가지(_brKey) 기록만 센다. 안 주면 예전과 똑같다(농가 합계).
+function getFCS(name, field) {
+  const brOk = field === undefined ? () => true : r => _brKey(r, name) === field;
+  const out = picks.filter(p => p.farm === name && p.type === '배출' && _isFarmTgt(p) && brOk(p)).reduce((s, p) => s + p.qty, 0);
+  const pk = picks.filter(p => p.farm === name && p.type === '원물수거' && _isFarmTgt(p) && brOk(p)).reduce((s, p) => s + p.qty, 0);
+  const ret = picks.filter(p => p.farm === name && p.type === '빈콘회수' && _isFarmTgt(p) && brOk(p)).reduce((s, p) => s + p.qty, 0);   // 빈콘회수=잉여회수 통일(농가보유 차감)
   return { out, pk, ret, hold: out - pk - ret };
 }
 // 종류별 잔여 수량 맵 {종류: 잔여}. 계산 본문은 getFCtypes에서 그대로 떼어낸 것 — 로직 변경 없음.
 // 칩 HTML(getFCtypes)과 회수 모달의 종류 옵션이 같은 숫자를 보도록 단일 소스로 쓴다.
-function getFCtypeMap(fn, targetType) {
-  const tgtOk = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
+// field(선택) = 밭 가지 — 주면 배차·pick을 그 가지(_brKey)만 거른다. 안 주면 예전과 똑같다.
+function getFCtypeMap(fn, targetType, field) {
+  const tgtOk0 = (!targetType || targetType === '농가') ? _isFarmTgt : (r => r.target_type === targetType);
+  const tgtOk = field === undefined ? tgtOk0 : (r => tgtOk0(r) && _brKey(r, fn) === field);
   // 배차 종류별 합계(배차엔 ctype 있음) — 해당 대상만
   // ★집계 키는 ctNorm으로 통일 — 옛 이름(초록)과 새 이름(시트리앙)이 섞여 있어도 한 종류로 합쳐 칩이 둘로 갈리지 않게.
   const ob = {}; dispatches.filter(d => d.farm === fn && tgtOk(d) && _isOutDisp(d)).forEach(d => { const k = ctNorm(d.ctype); ob[k] = (ob[k] || 0) + d.qty; });
@@ -3999,8 +4003,8 @@ function getFCtypeMap(fn, targetType) {
 }
 
 // 종류별 잔여 칩 HTML. targetType 생략=농가(기존 호출 그대로). '농협'/'거래처'면 해당 대상行만 집계.
-function getFCtypes(fn, targetType) {
-  const remain = getFCtypeMap(fn, targetType);
+function getFCtypes(fn, targetType, field) {
+  const remain = getFCtypeMap(fn, targetType, field);
   return Object.entries(remain).map(([t, q]) => { const r = Math.round(q); if (r === 0) return ''; const neg = r < 0; const nt = ctNorm(t); return `<span class="ct ${_ctClass(nt)}"${neg ? ' style="color:#DC2626;font-weight:700"' : ''}>${_ctIcon(nt)} ${r}개</span>`; }).filter(Boolean).join('');
 }
 
