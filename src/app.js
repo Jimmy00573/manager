@@ -1554,11 +1554,24 @@ function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv
 // ── 한 농가 · 여러 밭 ────────────────────────────────────────
 // ★농가 = 사람 1명. 밭 주소는 배차·수확 '한 건'에 붙는 꼬리표다
 //   (farms.fields · dispatches.field · harvests.field).
-// ★콘테이너 보유·정산은 여전히 농가(사람) 단위 그대로다 — 밭으로 쪼개면
-//   1번 밭에서 2번 밭으로 옮겨 쓸 때 보유가 +222/−41처럼 갈린다(문기덕 사고).
-//   getFCS·getFCtypes·picks는 field를 보지 않는다. 보유를 field로 나누지 말 것.
+// ★콘테이너 보유·정산의 합계는 농가(사람) 단위 그대로다. 밭별은 _brKey로 '추가로' 나눠 볼 뿐이다
+//   (getFCS·getFCtypeMap·getFCtypes의 field 인자 — 없으면 예전과 똑같다).
+//   가지는 farms.fields 2곳 이상(먼 밭)일 때만 생긴다. 인근 밭은 fields에 따로 넣지 않는다(2026-10-13 운영 규칙)
+//   — 인근 밭끼리 옮겨 쓰면 가지 보유가 +222/−41처럼 갈린다(문기덕 사고).
 function _farmFields(farm) {
   return (gf(farm).fields || []).map(s => String(s).trim()).filter(Boolean);
+}
+// 밭 가지 목록 — fields가 2곳 이상이면 그 배열, 아니면 null(가지 없음). 첫 번째 = 대표 밭.
+function _farmBranches(farm) {
+  const fs = _farmFields(farm);
+  return fs.length >= 2 ? fs : null;
+}
+// 기록 한 건(pick·배차)이 속한 가지 — 가지 없으면 null. field가 목록에 없으면(null·옛 값) 대표 밭.
+function _brKey(rec, farm) {
+  const br = _farmBranches(farm);
+  if (!br) return null;
+  const f = String((rec && rec.field) || '').trim();
+  return br.includes(f) ? f : br[0];
 }
 // ★배차·수확 '한 건'의 주소는 여기 하나로만 구한다 — 화면마다 gf(farm).addr을
 //   따로 쓰면 고른 밭이 문자엔 나가고 목록엔 안 나오는 식으로 갈린다.
