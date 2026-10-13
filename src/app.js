@@ -8034,6 +8034,9 @@ function _invFetchStart(track = p => p, base = null) {
 let _obCache = null;    // Map id → 행(is_void=false만). null = 아직 없음
 let _obMark = null;     // 받은 행들의 max(created_at, updated_at) — 서버 시각 문자열
 let _obFullAt = 0;      // 마지막 전체 받기 시각(로컬 ms)
+// 물리 삭제 때문에 전체를 받은 그 삭제 시각. ★mark와만 비교하면, 삭제 뒤 새 출고·수정이 없는 동안 mark가 그대로라
+//   '삭제가 mark보다 늦음'이 계속 참 → 받을 때마다 전체를 받는다. 이미 반영한 삭제는 다시 전체 받기 사유로 치지 않는다.
+let _obDelSeen = null;
 let _obChain = Promise.resolve();   // 한 번에 하나씩 — 겹쳐 불려도 앞 것이 끝난 뒤 돈다(캐시를 동시에 고치지 않게)
 const _OB_FULL_MS = 30 * 60 * 1000;
 const _OB_OVERLAP_MS = 2 * 60 * 1000;   // 겹침 여유 — created_at은 트랜잭션 시작 시각이라 커밋이 늦으면 기준보다 앞선 값으로 들어온다
@@ -8086,17 +8089,18 @@ async function _obIdbLoad() {
     _obCache = new Map(v.rows.map(r => [r.id, r]));
     _obMark = v.mark;
     _obFullAt = v.fullAt;
+    _obDelSeen = v.delSeen || null;
   } catch (e) { /* 없거나 막힘 — 전체 받기로 */ }
 }
 // 검증을 통과한 받기 뒤에만 부른다. 화면을 기다리게 하지 않는다(await 안 함).
 function _obIdbSave(gen) {
   if (gen !== _obGen || !_obCache) return;
-  const v = { schema: _OB_IDB.schema, mark: _obMark, fullAt: _obFullAt, rows: [..._obCache.values()] };
+  const v = { schema: _OB_IDB.schema, mark: _obMark, fullAt: _obFullAt, delSeen: _obDelSeen, rows: [..._obCache.values()] };
   _obIdbDo('readwrite', st => { if (gen === _obGen) st.put(v, _OB_IDB.key); }).catch(() => {});
 }
 function _obIdbClear() {
   _obGen++;
-  _obCache = null; _obMark = null; _obFullAt = 0;
+  _obCache = null; _obMark = null; _obFullAt = 0; _obDelSeen = null;
   try { _obIdbDo('readwrite', st => st.delete(_OB_IDB.key)).catch(() => {}); } catch (e) {}
 }
 
@@ -8108,12 +8112,13 @@ function _obFetch() {
 async function _obFetchRun() {
   const gen = _obGen;
   if (!_obCache && !_obIdbTried) { _obIdbTried = true; await _obIdbLoad(); }
-  const full = async () => {
+  const full = async (delSeen) => {   // delSeen: 삭제 때문에 받는 경우 그 삭제 시각(받기 전에 본 값이라 결과에 반영돼 있다)
     const rows = await sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc');
     if (gen === _obGen) {   // 그사이 로그아웃했으면 보관하지 않는다(받은 배열은 그대로 돌려준다)
       _obCache = new Map(rows.map(r => [r.id, r]));
       _obMark = _obMaxMark(null, rows);
       _obFullAt = Date.now();
+      if (delSeen) _obDelSeen = delSeen;
       _obIdbSave(gen);
     }
     return rows.map(r => ({ ...r }));   // sbGetAll 순서 그대로(예전과 같은 배열)
@@ -8129,7 +8134,7 @@ async function _obFetchRun() {
     _refCount('outbound_records', 'is_void', false),   // count=exact 헤더만 읽는 기존 헬퍼(실패 = null)
   ]);
   const delAt = _obTs(dels && dels[0] && dels[0].deleted_at);
-  if (delAt != null && delAt > _obTs(_obMark)) return full();
+  if (delAt != null && delAt > _obTs(_obMark) && delAt > (_obTs(_obDelSeen) ?? -Infinity)) return full(dels[0].deleted_at);
   const map = new Map(_obCache);
   for (const r of delta) { if (r.is_void === false) map.set(r.id, r); else map.delete(r.id); }
   if (cnt == null || cnt !== map.size) return full();
