@@ -26760,6 +26760,7 @@ function renderSpec() {
   const el = document.getElementById('spec-list'); if (!el) return;
   if (_specLoadErr) { el.innerHTML = `<div class="note" style="color:#DC2626">작업 기준표를 불러오지 못했습니다 — ${esc(_specLoadErr)}</div>`; return; }
   if (!_specLoaded) return;
+  _specRenderCommon();   // 📐 공통 배열 기준(기준일·저장이 바뀌면 같이 다시 그린다)
   const asOf = _specUi.date || td();
   const q = (_specUi.q || '').toLowerCase();
   const tIdx = t => { const i = SPEC_TYPES.indexOf(t); return i < 0 ? 99 : i; };
@@ -26885,6 +26886,52 @@ function _specOpenFrom(i, kind) {
   const g = _specView[i]; if (!g || !_specCanWrite()) return;
   const src = kind === '기준' ? (g.cur || g.std[g.std.length - 1] || null) : null;
   openSpecModal({ kind, group: g, from: src });
+}
+
+// ── 📐 공통 배열 기준 섹션(2026-10-13) — 과중표(_specRenderGram)와 같은 접기/펴기. 품목·포장 묶음마다 현재·예정·이력.
+//   표는 _specCombosTable(판정 없이), 버튼(수정·새 기준·무효)은 admin만(_specCanWrite). id는 data-id로 넘긴다.
+let _specCommonOpen = false;          // 섹션 펼침(메모리만)
+const _specCommonHist = new Set();    // 이력 펼친 묶음 key(product|pack)
+function _specCommonToggle() { _specCommonOpen = !_specCommonOpen; _specRenderCommon(); }
+function _specCommonHistToggle(k) { if (_specCommonHist.has(k)) _specCommonHist.delete(k); else _specCommonHist.add(k); _specRenderCommon(); }
+function _specRenderCommon() {
+  const el = document.getElementById('spec-common'); if (!el) return;
+  const W = _specCanWrite(), asOf = _specUi.date || td();
+  const by = new Map();
+  _specLayouts.forEach(r => { const k = r.product + '|' + r.pack; if (!by.has(k)) by.set(k, []); by.get(k).push(r); });
+  const btn = (t, on, id, c = '#374151', bd = '#D1D5DB') => `<button type="button" data-id="${esc(String(id ?? ''))}" onclick="${on}" style="font-size:11px;padding:0 6px;border-radius:5px;cursor:pointer;font-family:inherit;background:#fff;line-height:1.6;border:1px solid ${bd};color:${c}">${t}</button>`;
+  const head = `<div style="display:flex;align-items:center;gap:8px"><button type="button" onclick="_specCommonToggle()" style="font-size:12px;color:#374151;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${_specCommonOpen ? '▾' : '▸'} 📐 공통 배열 기준 <span style="color:#9CA3AF">${by.size}묶음</span></button>
+    ${_specCommonOpen && W ? `<button type="button" class="btn" style="font-size:11px;padding:2px 10px;margin-left:auto" onclick="openSpecModal({ mode: 'layout' })">＋ 새 묶음</button>` : ''}</div>`;
+  if (!_specCommonOpen) { el.innerHTML = `<div style="margin-bottom:12px">${head}</div>`; return; }
+  const groups = _specGroups(asOf);
+  const ko = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko');
+  const cards = [...by.entries()].sort(([a], [b]) => ko(a, b)).map(([k, rs]) => {
+    const { product, pack } = rs[0];
+    const unit = _specPackUnit(pack);
+    const asc = rs.slice().sort((a, b) => String(a.valid_from).localeCompare(String(b.valid_from)) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    const cur = _specCommonAt(product, pack, asOf);
+    const fut = asc.filter(r => r.valid_from > asOf), hist = asc.filter(r => r !== cur && r.valid_from <= asOf).reverse();
+    // 이 묶음을 쓰는 채널 — 그날 현재 기준이 있는 같은 품목·포장 카드 중 공통 사용 / 조정
+    const use = groups.filter(g => g.cur && g.product === product && g.pack === pack);
+    const nOvr = use.filter(g => g.cur.layout_override).length;
+    const tbl = r => _specCombosTable(product, _specCombos(r.layout), null, null, false, unit);
+    const meta = r => [esc(_specCommonPeriod(r)), esc(r.author || ''), r.note ? esc(r.note) : ''].filter(Boolean).join(' · ');
+    const rowBtns = r => W ? `<span style="display:flex;gap:4px">${btn('✏️ 수정', 'openSpecModal({ mode: \'layout\', layoutId: this.dataset.id })', r.id)}${btn('무효', '_specLayoutVoid(this.dataset.id)', r.id, '#DC2626', '#FCA5A5')}</span>` : '';
+    const histOpen = _specCommonHist.has(k);
+    return `<div style="border:1px solid #E5E7EB;border-radius:8px;padding:8px 10px;margin-top:6px;background:#fff">
+      <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
+        <span style="font-size:13px;font-weight:500;color:#111827">${esc(product)} · ${esc(pack)}</span>
+        <span style="font-size:11px;color:#6B7280">${cur ? meta(cur) : '현재 기준 없음'}</span>
+        <span style="font-size:11px;color:#9CA3AF">공통 사용 ${use.length - nOvr}곳 · 조정 ${nOvr}곳</span>
+        ${W ? `<span style="margin-left:auto;display:flex;gap:4px">${cur ? rowBtns(cur) : ''}${btn('＋ 새 기준', 'openSpecModal({ mode: \'layout\', layoutId: this.dataset.id, asNew: true })', (cur || asc[asc.length - 1]).id, '#1E3A5F', '#1E3A5F')}</span>` : ''}
+      </div>
+      ${cur ? tbl(cur) : ''}
+      ${fut.map(r => `<div style="margin-top:4px;padding:4px 8px;border:1px dashed #D1D5DB;border-radius:6px"><div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:11px;color:#6B7280">예정 ${meta(r)}${rowBtns(r) ? `<span style="margin-left:auto">${rowBtns(r)}</span>` : ''}</div>${tbl(r)}</div>`).join('')}
+      ${hist.length ? `<div style="margin-top:4px"><button type="button" data-k="${esc(k)}" onclick="_specCommonHistToggle(this.dataset.k)" style="font-size:11px;color:#6B7280;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${histOpen ? '▾' : '▸'} 이력 ${hist.length}</button>
+        ${histOpen ? hist.map(r => `<div style="margin-top:4px;padding:4px 8px;background:#F9FAFB;border-radius:6px"><div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:11px;color:#6B7280">${meta(r)}${rowBtns(r) ? `<span style="margin-left:auto">${rowBtns(r)}</span>` : ''}</div>${tbl(r)}</div>`).join('') : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="margin-bottom:12px">${head}${cards || '<div style="font-size:12px;color:#9CA3AF;margin-top:6px">공통 배열 기준이 없습니다.</div>'}</div>`;
 }
 
 // ── 현장 보기(v725) — 현재 기준 한 장을 큰 글씨 전체 화면으로. 매번 새로 만든다(옛 셸 재사용 금지).
@@ -27354,7 +27401,7 @@ function _specBrixChanged() {
 }
 function _specKindChanged() {
   const k = document.getElementById('spm-kind')?.value;
-  const toWrap = document.getElementById('spm-to-wrap'); if (toWrap) toWrap.style.display = k === '출고' ? 'none' : '';
+  const toWrap = document.getElementById('spm-to-wrap'); if (toWrap) toWrap.style.display = (k === '출고' || _specModalMode === 'layout') ? 'none' : '';
   const fromWrap = document.getElementById('spm-from-wrap'); if (fromWrap) fromWrap.style.gridColumn = k === '출고' ? '1/-1' : '';   // 종료일이 숨으면 출고일이 한 줄 전체(v729)
   const fl = document.getElementById('spm-from-lbl'); if (fl) fl.textContent = k === '출고' ? '출고일 *' : '적용 시작일 *';
   const ct = _specPackUnit(document.getElementById('spm-pack')?.value || '') === 'ct';
@@ -27392,10 +27439,17 @@ function _specFormCalc() {
   _specGuideForm();   // 띠 + 과수별 표(v722)
 }
 
+// o.mode === 'layout'(2026-10-13) — 📐 공통 배열 기준 등록·수정. 같은 배열 편집기를 쓰고 품목·포장·시작일·작성자·메모·배열만 보인다.
+//   o.layoutId = 그 행(수정) / o.asNew면 그 행 값으로 새 기준(시작일 내일). 저장은 saveSpec → _specSaveLayout.
+let _specModalMode = '', _specLayoutEditId = null;
 function openSpecModal(o = {}) {
   if (!_specCanWrite()) return;
   document.getElementById('modal-spec')?.remove();
-  const g = o.group || null, src = o.from || null, ed = o.edit || null;   // ed = 수정할 행(3단계) — 그 값 그대로 채운다
+  const lm = o.mode === 'layout';
+  const lrow = lm && o.layoutId != null ? (_specLayouts.find(r => String(r.id) === String(o.layoutId)) || null) : null;
+  _specModalMode = lm ? 'layout' : '';
+  _specLayoutEditId = lm && lrow && !o.asNew ? lrow.id : null;
+  const g = o.group || null, src = o.from || (lm ? lrow : null), ed = lm ? null : (o.edit || null);   // ed = 수정할 행(3단계) — 그 값 그대로 채운다
   _specEditId = ed ? ed.id : null;
   const kind = (ed ? ed.kind : o.kind) === '출고' ? '출고' : '기준';
   const v = ed ? {
@@ -27411,6 +27465,9 @@ function openSpecModal(o = {}) {
     box: (src && src.box) || '',
     author: '',   // 작성자는 직원 목록에서 고른다(필수)
   };
+  if (lm && lrow) Object.assign(v, { product: lrow.product, pack: lrow.pack });   // 공통 기준 — 품목·포장은 그 행(카드 묶음 g가 없다)
+  if (lm && lrow && !o.asNew) Object.assign(v, { valid_from: lrow.valid_from, author: lrow.author || '', note: lrow.note || '' });   // 공통 기준 수정 — 그 행 값 그대로
+  if (lm && !lrow) v.valid_from = td();
   const fv = x => (x === 0 || x) ? esc(String(x)) : '';
   const lab = t => `<label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">${t}</label>`;
   const hint = id => `<div id="${id}" style="display:none;font-size:11px;color:#9CA3AF;margin-top:2px">목록 관리에서 먼저 등록</div>`;
@@ -27420,7 +27477,7 @@ function openSpecModal(o = {}) {
   m.innerHTML = `
     <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);margin:auto 0">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
-        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">${ed ? '✏️ 작업 기준 수정' : o.copy ? '📋 기준 복사 — 채널을 고르세요' : '📋 작업 기준 등록'}</div>
+        <div id="spm-title" style="font-size:14px;font-weight:500;color:#1E3A5F">${lm ? (_specLayoutEditId != null ? '📐 공통 배열 기준 수정' : '📐 공통 배열 기준 등록') : ed ? '✏️ 작업 기준 수정' : o.copy ? '📋 기준 복사 — 채널을 고르세요' : '📋 작업 기준 등록'}</div>
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -27448,7 +27505,7 @@ function openSpecModal(o = {}) {
       </div>
       <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
         <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">취소</button>
-        <button id="spm-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveSpec()">${ed ? '수정 저장' : '저장'}</button>
+        <button id="spm-save" class="btn pri" style="font-size:13px;padding:7px 16px" onclick="saveSpec()">${ed || _specLayoutEditId != null ? '수정 저장' : '저장'}</button>
       </div>
     </div>`;
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘(입력 손실 방지)
@@ -27469,11 +27526,28 @@ function openSpecModal(o = {}) {
   // 작성자 — showConfirmDanger 작업자 기본값과 같은 목록(활성 내부 직원). 목록에 없는 저장값(예 'admin')은 '(목록에 없음)'
   _specFillSel('spm-author', _activeDrivers().filter(d => d.type === '내부').map(d => d.name), '<option value="">선택</option>', v.author);
   _specRenderCombos(_specCombos(v.layout), true);
+  // 공통 배열 기준 모드 — 채널·구분·사업자·박스·종료일·중량·사용 사이즈·브릭스 칸을 숨긴다(그리드 칸째)
+  if (lm) ['spm-kind', 'spm-ctype', 'spm-channel', 'spm-business', 'spm-box', 'spm-to', 'spm-wmin', 'spm-sz-from', 'spm-brix'].forEach(id => {
+    let e = document.getElementById(id);
+    while (e && e.parentElement && !e.parentElement.style.gridTemplateColumns) e = e.parentElement;
+    if (e) e.style.display = 'none';
+  });
   _specKindChanged(); _specFormCalc();   // 단위별 라벨·수량 칸(v727) — 구성을 그린 뒤
 }
 
+// 등록 창 구성 → 저장 형식 [{rows, qty?(출고만), actual_kg?, note?}] — 개수 있는 줄만, 줄 없는 구성은 버린다. saveSpec·_specSaveLayout 공용.
+//   v727: CT형은 rows = [{size}](개수 없음), qty = 박스 수 / CT 수(출고만)
+function _specFormLayout(kind, unit) {
+  return _specReadCombos().map(c => ({
+    rows: unit === 'ct' ? c.rows.filter(x => x.size).map(x => ({ size: x.size })) : c.rows.filter(x => x.size && _specRowCount(x) > 0),
+    ...(kind === '출고' && c.qty != null ? { qty: c.qty } : {}),
+    ...(c.actual_kg != null ? { actual_kg: c.actual_kg } : {}),
+    ...(c.note ? { note: c.note } : {}),
+  })).filter(c => c.rows.length);
+}
 async function saveSpec() {
   if (!_specCanWrite() || _specBusy) return;
+  if (_specModalMode === 'layout') return _specSaveLayout();   // 📐 공통 배열 기준 모드
   const gv2 = id => (document.getElementById(id)?.value || '').trim();
   const num = id => { const s = gv2(id); if (s === '') return null; const n = Number(s); return Number.isFinite(n) ? n : NaN; };
   const kind = gv2('spm-kind') === '출고' ? '출고' : '기준';
@@ -27489,14 +27563,8 @@ async function saveSpec() {
   if (!gv2('spm-author')) return alert('작성자를 고르세요.');
   if (!_specLayoutValid()) return alert('구성 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 박스 수 0~9999·CT 수 0~999 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
   const unit = _specPackUnit(pack);
-  // 구성 — 항상 새 형식 [{rows, actual_kg?, note?}]. 개수가 있는 줄만, 줄이 없는 구성은 버린다(실측·메모는 있을 때만 키를 넣는다)
-  //   v727: CT형은 rows = [{size}](개수 없음), qty = 박스 수 / CT 수(출고만)
-  const layout = _specReadCombos().map(c => ({
-    rows: unit === 'ct' ? c.rows.filter(x => x.size).map(x => ({ size: x.size })) : c.rows.filter(x => x.size && _specRowCount(x) > 0),
-    ...(kind === '출고' && c.qty != null ? { qty: c.qty } : {}),
-    ...(c.actual_kg != null ? { actual_kg: c.actual_kg } : {}),
-    ...(c.note ? { note: c.note } : {}),
-  })).filter(c => c.rows.length);
+  // 구성 — 항상 새 형식 [{rows, actual_kg?, note?}](실측·메모는 있을 때만 키를 넣는다) — _specFormLayout
+  const layout = _specFormLayout(kind, unit);
   // 사용 사이즈 — 둘 다면 '시작~끝'(같으면 하나), 한쪽만이면 그 값, 둘 다 비면 null
   const szF = gv2('spm-sz-from'), szT = gv2('spm-sz-to');
   const sizes = (kind === '출고' && _specSizeSpan(product, layout, unit)) || ((szF && szT) ? (szF === szT ? szF : `${szF}~${szT}`) : (szF || szT || null));   // 출고는 구성에서 자동(v727)
@@ -27540,6 +27608,67 @@ async function saveSpec() {
     renderSpec();
     showToast(`${channel} · ${pack} ${kind} 저장`);
   } catch (e) { alert('저장 오류: ' + e.message); }
+  finally { _specBusy = false; }
+}
+
+// 📐 공통 배열 기준 저장 — 수정 = PATCH(updated_at) + 감사 로그, 새 기준 = INSERT(created_by). 같은 품목·포장·시작일 비무효 행이 있으면 막는다.
+const _specLayoutAudit = r => r ? { product: r.product, pack: r.pack, valid_from: r.valid_from, layout: r.layout, author: r.author, note: r.note } : null;
+async function _specSaveLayout() {
+  if (!_specCanWrite() || _specBusy) return;
+  const gv2 = id => (document.getElementById(id)?.value || '').trim();
+  const product = gv2('spm-product'), pack = gv2('spm-pack'), valid_from = gv2('spm-from'), author = gv2('spm-author'), note = gv2('spm-note') || null;
+  if (!pack) return alert(_specVis('packs').length ? '상품·규격을 고르세요.' : '상품규격 목록이 비어 있습니다. 목록 관리에서 먼저 등록하세요.');
+  if (!product || !valid_from) return alert('품목·시작일은 필수입니다.');
+  if (!author) return alert('작성자를 고르세요.');
+  if (!_specLayoutValid()) return alert('구성 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
+  const layout = _specFormLayout('기준', _specPackUnit(pack));
+  if (!layout.length) return alert('구성을 하나 이상 넣으세요.');
+  const editId = _specLayoutEditId;
+  if (_specLayouts.some(r => r.id !== editId && r.product === product && r.pack === pack && r.valid_from === valid_from)) return alert('같은 시작일 기준이 이미 있습니다.');
+  const staff = sessionStorage.getItem('citrus_adm_user') || 'admin';
+  _specBusy = true;
+  try {
+    if (editId != null) {
+      const prev = _specLayouts.find(r => r.id === editId);
+      const patch = { product, pack, valid_from, layout, author, note, updated_at: new Date().toISOString() };
+      const rows = await sbUpdate('spec_layouts', editId, patch);
+      _specLayouts = _specLayouts.map(r => r.id === editId ? { ...r, ...((rows && rows[0]) || patch), id: r.id } : r);
+      try {
+        await dbInsertAuditLog({ target_table: 'spec_layouts', target_id: String(editId), before_val: _specLayoutAudit(prev), after_val: _specLayoutAudit(patch), reason: '공통 배열 기준 수정', staff });
+      } catch (le) { console.warn('공통 배열 기준 수정 이력 기록 실패:', le.message); }
+    } else {
+      const rows = await sbInsert('spec_layouts', { product, pack, valid_from, layout, author, note, created_by: staff });
+      if (rows && rows[0]) _specLayouts.unshift(rows[0]);
+    }
+    _specLayoutEditId = null;
+    document.getElementById('modal-spec')?.remove();
+    renderSpec();   // 채널 카드 표 + 📐 섹션
+    showToast(`${product} · ${pack} 공통 배열 기준 ${editId != null ? '수정' : '저장'}`);
+  } catch (e) { alert('저장 오류: ' + e.message); }
+  finally { _specBusy = false; }
+}
+// 📐 공통 배열 기준 무효 — soft delete(is_void·사유·작업자·시각) + 감사 로그. 사유는 showConfirmDanger가 필수로 받는다.
+async function _specLayoutVoid(id) {
+  if (!_specCanWrite() || _specBusy) return;
+  const r = _specLayouts.find(x => String(x.id) === String(id)); if (!r) return;
+  const res = await showConfirmDanger({
+    title: '공통 배열 기준 무효', subtitle: '목록에서 빠지고 이력에 남습니다',
+    items: [`${r.product} · ${r.pack} · ${_specMD(r.valid_from)}~${r.author ? ' · ' + r.author : ''}`],
+    resultNote: '이 기준을 쓰던 채널 카드는 그날의 다른 공통 기준(없으면 빈 칸)을 보여 줍니다.',
+    confirmText: '무효', needWorker: true,
+  });
+  if (!res || !res.ok) return;
+  _specBusy = true;
+  try {
+    const now = new Date().toISOString();
+    await sbUpdate('spec_layouts', r.id, { is_void: true, void_reason: res.reason, void_by: res.worker, void_at: now, updated_at: now });
+    _specLayouts = _specLayouts.filter(x => x.id !== r.id);
+    try {
+      await dbInsertAuditLog({ target_table: 'spec_layouts', target_id: String(r.id), before_val: _specLayoutAudit(r), after_val: { is_void: true }, reason: res.reason, staff: res.worker });
+    } catch (le) { console.warn('공통 배열 기준 무효 이력 기록 실패:', le.message); }
+    renderSpec();
+    showToast('공통 배열 기준을 무효로 했습니다.');
+  } catch (e) { alert('무효 처리 오류: ' + e.message); }
   finally { _specBusy = false; }
 }
 
