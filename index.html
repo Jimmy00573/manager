@@ -425,7 +425,7 @@
         <div class="fg"><label>날짜 *</label><input id="pk-date" type="date"></div>
         <div class="fg"><label>대상 종류</label><select id="pk-target-type" onchange="refreshPkFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
         <div class="fg"><label>대상명 *</label><select id="pk-farm" onchange="afF('pk');_syncPkCtype()"><option value="">선택</option></select></div>
-        <div class="fg" id="pk-field-wrap" style="display:none"><label>밭 *</label><select id="pk-field"></select></div>
+        <div class="fg" id="pk-field-wrap" style="display:none"><label>밭 *</label><select id="pk-field" onchange="_syncRecoveryCtypeSel('pk', gv('pk-farm'), gv('pk-target-type') || '농가', this.value || undefined)"></select></div>
         <div class="fg"><label>연락처</label><input id="pk-tel" class="auto" readonly></div>
         <div class="fg"><label>구분 *</label><select id="pk-type" onchange="onPickTypeChange()"><option value="">선택</option><option value="원물수거">원물수거</option><option value="빈콘회수">⬜ 빈콘회수</option></select></div>
         <!-- ★콘테이너 종류: 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다.
@@ -484,7 +484,7 @@
         <div class="fg"><label>날짜 *</label><input id="bk-date" type="date"></div>
         <div class="fg"><label>대상 종류</label><select id="bk-target-type" onchange="refreshBkFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
         <div class="fg"><label>대상명 *</label><select id="bk-farm" onchange="_syncBkCtype()"><option value="">선택</option></select></div>
-        <div class="fg" id="bk-field-wrap" style="display:none"><label>밭 *</label><select id="bk-field"></select></div>
+        <div class="fg" id="bk-field-wrap" style="display:none"><label>밭 *</label><select id="bk-field" onchange="_syncRecoveryCtypeSel('bk', gv('bk-farm'), gv('bk-target-type') || '농가', this.value || undefined)"></select></div>
         <!-- ★콘테이너 종류: 안 받으면 picks.ctype이 비어 공장 보유 재고가 회수를 반영하지 못한다.
              칸은 _syncBkCtype()가 대상별 잔여로 만든다(여러 종류 동시 회수 가능). -->
         <div class="fg full"><label>콘테이너 종류·수량 * <span style="font-size:10px;color:#aaa">여러 종류를 한 번에 회수할 수 있습니다</span></label>

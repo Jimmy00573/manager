@@ -4079,7 +4079,8 @@ function _rcQtyChanged(pre) {
   hint.innerHTML = _ctQtyHint(list, _RC_STATE[pre]);   // 빈 목록이면 힌트 없음(칸 아래 자리만 비워 둔다)
 }
 // pre = 'pk' | 'bk'. 농가가 바뀌거나 저장 직후에 부른다(잔여가 달라지므로 매번 새로 그린다 = 입력값도 초기화).
-function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
+// field(선택) = 밭 가지 — 주면 잔여를 그 가지 기준으로(_qrHoldTypes). 안 주면 예전과 같다.
+function _syncRecoveryCtypeSel(pre, farm, targetType = '농가', field) {
   const wrap = document.getElementById(`${pre}-ctype-grid`);
   if (!wrap) return;
   const hint = document.getElementById(`${pre}-ctype-hint`);
@@ -4091,7 +4092,7 @@ function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
     if (hint) hint.innerHTML = '';
     return;
   }
-  const holds = _qrHoldTypes(farm, targetType);
+  const holds = _qrHoldTypes(farm, targetType, field);
   // 나가 있는 종류를 못 구함(배출 기록 없음 등) — 잔여를 모르므로 전체 활성 종류를 잔여 없이 보여준다.
   _RC_STATE[pre] = holds.length ? holds.map(x => ({ t: x.t, q: x.q })) : OT_ACTIVE.map(t => ({ t, q: null }));
   // ★나가 있는 종류는 비활성이어도 보여 준다 — 되받는 자리라 빼면 그 잔여가 영영 회수 불가로 묶인다. 표기만 붙인다.
@@ -4105,15 +4106,15 @@ function _syncRecoveryCtypeSel(pre, farm, targetType = '농가') {
 // ★대상(종류·이름)이 바뀔 때마다 불린다 — 먼 밭이 있는 농가면 '밭' 칸도 여기서 채운다(_fillFieldSel, 그 밖엔 숨김).
 function _syncPkCtype() {
   const tt = gv('pk-target-type') || '농가', f = gv('pk-farm');
-  _syncRecoveryCtypeSel('pk', f, tt);
   const bf = (tt === '농가' && _farmBranches(f)) ? f : '';
   _fillFieldSel('pk', bf, bf ? _brDefault(bf) : '');
+  _syncRecoveryCtypeSel('pk', f, tt, (bf && gv('pk-field')) || undefined);   // 밭을 고른 상태면 그 밭 잔여(밭 칸 onchange도 같은 호출)
 }
 function _syncBkCtype() {
   const tt = gv('bk-target-type') || '농가', f = gv('bk-farm');
-  _syncRecoveryCtypeSel('bk', f, tt);
   const bf = (tt === '농가' && _farmBranches(f)) ? f : '';
   _fillFieldSel('bk', bf, bf ? _brDefault(bf) : '');
+  _syncRecoveryCtypeSel('bk', f, tt, (bf && gv('bk-field')) || undefined);   // 밭을 고른 상태면 그 밭 잔여(밭 칸 onchange도 같은 호출)
 }
 // 대상 유형 배지 — 콘테이너 이력 표와 수거·회수 목록이 같은 모양을 쓰도록 여기 한 곳에서만 정한다.
 // ★원래 renderCH 안의 지역 const였다. 수거·회수 목록에서도 쓰게 되면서 올렸다(스타일 문자열 복제 방지).
@@ -4131,6 +4132,7 @@ function getTargetContainerHold(name, targetType) {
 function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '농협'); }
 // ── ♻️ 회수 대기 / 📅 일정 없음 — 보유(getFCS.hold > 0) 농가 중 수확이 끝났거나 수확 기록이 없는 곳(표시 전용) ──
 //   done   : 전체 종료(_hvProgGroups kind 'done') + 보유 > 0. 차수 사이(종료 전) 농가는 넣지 않는다 — 다음 차수용으로 콘테이너를 두는 중.
+//            ★먼 밭 농가는 _hvProgGroups가 '농가 › 밭' 그룹으로 준다 — 보유·끝난 날은 그 밭 가지(getFCS(farm, field)·_brKey) 기준. field = 가지 | null.
 //            endDate = max(수확완료 harvests의 end_date || date, 원물수거·빈콘회수 pick 날짜), days = 오늘 − endDate.
 //   noPlan : harvests 0건 — ★농가별 진행 현황 '⏳ 대기'(_hvProgGroups의 wait)를 그대로 쓴다(같은 판정을 두 번 만들지 않게).
 //            lastOut = 최근 배송일(배차 date·배출 pick 중 최신), days = 오늘 − lastOut.
@@ -4139,15 +4141,15 @@ function _recoveryWaitList() {
   const gs = _hvProgGroups();
   const byDays = (a, b) => b.days - a.days || a.farm.localeCompare(b.farm, 'ko');
   const noPlan = gs.filter(g => g.kind === 'wait' && _xdFarmOk(g.farm))
-    .map(g => ({ farm: g.farm, hold: g.hold, lastOut: g.outDate, days: g.days })).sort(byDays);
+    .map(g => ({ farm: g.farm, field: g.field, hold: g.hold, lastOut: g.outDate, days: g.days })).sort(byDays);
   const done = gs.filter(g => g.kind === 'done' && _xdFarmOk(g.farm))
-    .map(g => ({ g, hold: getFCS(g.farm).hold || 0 })).filter(x => x.hold > 0)
+    .map(g => ({ g, hold: (g.field ? getFCS(g.farm, g.field).hold : getFCS(g.farm).hold) || 0 })).filter(x => x.hold > 0)
     .map(({ g, hold }) => {
       const ds = [...g.rounds.filter(h => h.status === '수확완료').map(h => h.end_date || h.date),
-        ...picks.filter(p => p.farm === g.farm && _isFarmTgt(p) && (p.type === '원물수거' || p.type === '빈콘회수')).map(p => p.date)]
+        ...picks.filter(p => p.farm === g.farm && _isFarmTgt(p) && (p.type === '원물수거' || p.type === '빈콘회수') && (!g.field || _brKey(p, g.farm) === g.field)).map(p => p.date)]
         .filter(Boolean).sort();
       const endDate = ds.pop() || null;
-      return { farm: g.farm, hold, endDate, days: endDate ? _ibDaysSince(endDate) : 0 };
+      return { farm: g.farm, field: g.field, hold, endDate, days: endDate ? _ibDaysSince(endDate) : 0 };
     }).sort(byDays);
   return { done, noPlan };
 }
@@ -4161,23 +4163,24 @@ function _renderRecoveryWait() {
   const canRec = QR_ROLES.includes(role), canHv = _hvCanWrite();
   const sum = xs => xs.reduce((s, x) => s + x.hold, 0);
   // ★농가 이름은 onclick 문자열이 아니라 data-farm으로 넘긴다 — 이름에 ' 가 있어도 클릭이 깨지지 않게(esc + &quot;는 속성용 기존 방식).
-  const btn = (bg, on, txt, farm) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(farm).replace(/"/g, '&quot;')}" onclick="${on}">${txt}</button>`;
+  // field(선택) = 밭 가지 — 있을 때만 data-field를 붙인다(가지 없는 행은 예전 HTML 그대로).
+  const btn = (bg, on, txt, farm, field) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(farm).replace(/"/g, '&quot;')}"${field ? ` data-field="${esc(field).replace(/"/g, '&quot;')}"` : ''} onclick="${on}">${txt}</button>`;
   const row = (x, dateTxt, color, extra) => {
     // 담당 = farms.staff 그대로(내부·외부 모두) — 회수하러 갈 사람. drivers에서 외부면 '(외부)'. ★이 카드만(_farmExtDrv는 그대로).
     const stf = (gf(x.farm).staff || '').trim();
     const drv = stf ? stf + (gd(stf).type === '외부' ? ' (외부)' : '') : '';
     return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:6px 0;border-top:1px solid #F3F4F6">
-      <span style="font-size:13px;font-weight:500;color:#111827">${esc(x.farm)}</span>
+      <span style="font-size:13px;font-weight:500;color:#111827">${esc(x.farm)}${x.field ? ` › ${esc(x.field)}` : ''}</span>
       <span style="font-size:12px;color:#374151">보유 ${fmtN(x.hold)}개</span>${extra || ''}
       <span style="font-size:11px;color:${color};font-weight:500">${dateTxt}</span>
       ${drv ? `<span style="font-size:11px;color:#6B7280">👤 ${esc(drv)}</span>` : ''}
-      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold})`, '🧺 회수', x.farm) : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');_hvGoHarvestAdd(this.dataset.farm)`, '＋ 수확 일정', x.farm) : ''}</span>
+      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? (x.field ? btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold}, '농가', { field: this.dataset.field })`, '🧺 회수', x.farm, x.field) : btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold})`, '🧺 회수', x.farm)) : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');_hvGoHarvestAdd(this.dataset.farm)`, '＋ 수확 일정', x.farm) : ''}</span>
     </div>`;
   };
   const ago = (ds, d) => ds ? `${esc(calFmtShort(ds))} · ${d}일` : '-';
   const doneHtml = done.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;background:#FFF7ED;border-left:3px solid #C05800;padding:6px 10px"><span style="font-size:14px;font-weight:500;color:#C05800">♻️ 회수 대기</span><span style="font-size:13px;color:#C05800">${done.length}곳 · ${fmtN(sum(done))}개</span>${_xdFilterTag()}</div>` +
     done.map(x => row(x, `수확 끝 ${ago(x.endDate, x.days)}`, x.days >= 7 ? '#DC2626' : x.days >= 3 ? '#C05800' : '#6B7280',
-      (() => { const c = getFCtypes(x.farm); return c ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px">${c}</span>` : ''; })())).join('') : '';
+      (() => { const c = x.field ? getFCtypes(x.farm, '농가', x.field) : getFCtypes(x.farm); return c ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px">${c}</span>` : ''; })())).join('') : '';
   const npHtml = noPlan.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;background:#FEF2F2;border-left:3px solid #DC2626;padding:6px 10px;${done.length ? 'margin-top:10px' : ''}"><span style="font-size:14px;font-weight:500;color:#DC2626">📅 일정 없음</span><span style="font-size:13px;color:#DC2626">${noPlan.length}곳 · ${fmtN(sum(noPlan))}개</span>${done.length ? '' : _xdFilterTag()}</div>` +
     noPlan.map(x => row({ ...x, plan: true }, `배출 ${ago(x.lastOut, x.days)}`, x.days >= 14 ? '#DC2626' : '#6B7280')).join('') : '';
   el.style.display = '';
@@ -4370,6 +4373,7 @@ function _qrFieldChanged() {
 }
 
 // opts(선택) = { date, staff } — 입고 목록 ⋮ '🧺 빈콘 회수'(_ibOpenEmptyRecovery)가 입고 날짜·기사로 미리 채울 때만 넘긴다.
+//   opts.field(선택) = 밭 칸 기본값(현황판 회수 대기의 '농가 › 밭' 행). 목록에 없거나 안 넘기면 보유가 가장 큰 밭.
 //   ★안 넘기면(현황판 4곳) 날짜 오늘·담당자 빈칸 — 예전과 같다. 기사 목록에 없는 이름이면 담당자는 비워 둔다.
 function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   const _qrRole = sessionStorage.getItem('citrus_role');
@@ -4382,7 +4386,7 @@ function openQuickRecovery(farm, hold, targetType = '농가', opts = {}) {
   //   그 대상에 실제로 나가 있는 종류만 보여준다(getFCtypeMap = 현황판 칩과 같은 숫자).
   // ★먼 밭(가지)이 있는 농가만 '밭' 칸 — 기본 = 보유가 가장 큰 가지, 종류·잔여는 그 가지 기준. 그 밖의 대상은 예전과 같다.
   const qrBr = targetType === '농가' ? _farmBranches(farm) : null;
-  const qrField = qrBr ? qrBr.reduce((a, b) => (getFCS(farm, b).hold > getFCS(farm, a).hold ? b : a)) : undefined;
+  const qrField = qrBr ? (qrBr.includes(opts.field) ? opts.field : qrBr.reduce((a, b) => (getFCS(farm, b).hold > getFCS(farm, a).hold ? b : a))) : undefined;
   const holdTypes = _qrHoldTypes(farm, targetType, qrField);
   _qrFrom = { farm, tt: targetType };
   const cells = _qrCellsHtml(holdTypes, defQty);
