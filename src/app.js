@@ -26510,6 +26510,7 @@ let _specOb = [];            // 최근 90일 outbound_records(재고 출고 참�
 let _specLoaded = false, _specLoadErr = '';
 let _specMasters = { channels: [], businesses: [], packs: [], brix: [], boxes: [] };   // settings.spec_masters — 등록 창 선택 목록(v719, 박스 v723)
 let _specUse = {};          // 목록 이름별 사용 건수(work_specs 삭제 표시 포함 전체) — 목록 관리의 삭제 가능 판정
+let _specLayouts = [];      // spec_layouts(is_void=false) — 품목·포장별 공통 배열 기준(2026-10-13)
 function _specNormMasters(v) { const o = (v && typeof v === 'object') ? v : {}; return { channels: Array.isArray(o.channels) ? o.channels : [], businesses: Array.isArray(o.businesses) ? o.businesses : [], packs: Array.isArray(o.packs) ? o.packs : [], brix: Array.isArray(o.brix) ? o.brix : [], boxes: Array.isArray(o.boxes) ? o.boxes : [] }; }
 const _specUi = { date: '', type: '', product: '', q: '' };   // 도구줄 상태
 const _specOpen = new Set();   // 펼친 예정·이력 — 키 + '|fut' / '|hist'
@@ -26521,6 +26522,25 @@ let _specView = [];            // 지금 화면에 그린 카드 묶음(onclick�
 function _specCanWrite() { return sessionStorage.getItem('citrus_role') === 'admin'; }
 function _specKey(r) { return [r.channel || '', r.business || '', r.product || '', r.pack || ''].join('|'); }
 function _specMD(s) { return s ? calFmtShort(s) : ''; }
+// ── 공통 배열 기준(spec_layouts, 2026-10-13) — 몇 과·배열(A~E)은 품목·포장마다 하나다. 채널 기준 카드는 조정(layout_override)이 아니면 이걸 보여 준다.
+// 그날(asOf)의 공통 기준 = 같은 품목·포장에서 시작일 <= asOf 중 가장 늦은 행(같은 날이면 나중에 넣은 것) | null. 늦은 행은 '예정'.
+function _specCommonAt(product, pack, asOf) {
+  const d = asOf || _specUi.date || td();
+  return _specLayouts.filter(r => r.product === product && r.pack === pack && r.valid_from <= d)
+    .sort((a, b) => String(a.valid_from).localeCompare(String(b.valid_from)) || String(a.created_at || '').localeCompare(String(b.created_at || ''))).pop() || null;
+}
+// 카드에 보일 배열 — 기준 카드이고 조정이 아니면 공통 기준(없으면 []), 그 밖(조정 기준·출고 = 실제 기록)은 자기 layout.
+//   날짜: 화면 기준일 — 예정 버전이면 그 시작일(그날 적용될 공통 기준).
+function _specEffLayout(v, asOf) {
+  if (!v || v.kind !== '기준' || v.layout_override) return v ? v.layout : [];
+  const scr = _specUi.date || td();
+  return (_specCommonAt(v.product, v.pack, asOf || (v.valid_from > scr ? v.valid_from : scr)) || {}).layout || [];
+}
+// 공통 기준 한 행의 기간 글자 — '10/13~' / 다음 기준이 있으면 '10/13~10/19'(카드 라벨·📐 섹션 공용)
+function _specCommonPeriod(r) {
+  const nx = _specLayouts.filter(x => x.product === r.product && x.pack === r.pack && x.valid_from > r.valid_from).map(x => x.valid_from).sort()[0];
+  return `${_specMD(r.valid_from)}~${nx ? _specMD(_dayBefore(nx)) : ''}`;
+}
 
 // 탭을 열 때마다 새로 읽는다(기준이 자주 바뀌고, 다른 사람이 방금 넣은 걸 봐야 한다).
 async function openSpecTab() {
@@ -26539,15 +26559,17 @@ async function _specLoad() {
   try {
     // ① 기준표·과중 기준 먼저 → ② 그 기준표에 있는 거래처(channel)의 최근 90일 출고만(재고 출고 참고용).
     //   예전엔 90일 출고 전체(약 7,800행)를 받아 JS로 걸렀다 — 카드가 쓰는 건 '같은 거래처·품목 최근 3건'뿐이라 거래처로 줄인다.
-    const [rows, gs, msr, useRows] = await Promise.all([
+    const [rows, gs, msr, useRows, layAll] = await Promise.all([
       sbGetAll('work_specs', 'is_void=eq.false&order=valid_from.desc,created_at.desc'),
       sbGet('settings', 'key=eq.size_gram_ranges'),
       sbGet('settings', 'key=eq.spec_masters'),
       sbGetAll('work_specs', 'select=id,channel,business,pack,brix,box'),   // 목록 사용 건수 — 삭제 표시(is_void)된 것까지 센다
+      sbGetAll('spec_layouts', 'order=valid_from.desc,created_at.desc'),   // 공통 배열 기준 — 무효(is_void)까지 받아 포장 사용 건수에 센다, 화면은 유효만
     ]);
     _specMasters = _specNormMasters(msr && msr[0] && msr[0].value);
     _specUse = { channels: {}, businesses: {}, packs: {}, brix: {}, boxes: {} };
     (useRows || []).forEach(r => SPEC_MASTER_LISTS.forEach(([k]) => { const n = r[SPEC_MASTER_COL[k]]; if (n) _specUse[k][n] = (_specUse[k][n] || 0) + 1; }));
+    (layAll || []).forEach(r => { if (r.pack) _specUse.packs[r.pack] = (_specUse.packs[r.pack] || 0) + 1; });   // 공통 배열 기준이 쓰는 포장도 삭제 막기
     const chans = [...new Set((rows || []).map(r => String(r.channel || '').trim()).filter(Boolean))];
     let ob = [];
     // ★거래처 이름은 큰따옴표로 감싸 encodeURIComponent(한글·쉼표·괄호 안전, 이름 안 " 는 \")·50개씩 나눠 URL 길이를 막는다.
@@ -26560,6 +26582,7 @@ async function _specLoad() {
     const idCmp = (a, b) => (typeof a.id === 'number' && typeof b.id === 'number') ? a.id - b.id : String(a.id).localeCompare(String(b.id));
     ob.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || idCmp(a, b));
     _specRows = rows || [];
+    _specLayouts = (layAll || []).filter(r => !r.is_void);
     _specGram = (gs && gs[0] && gs[0].value && typeof gs[0].value === 'object') ? gs[0].value : {};
     _specOb = ob;
     _specLoaded = true; _specLoadErr = '';
@@ -26659,11 +26682,13 @@ function _specDiff(prev, cur) {
   };
   const combo = v => {
     const d = document.createElement('div');
-    d.innerHTML = _specCombos(v.layout).map((c, i) => _specComboLine(v.product, c, i, v.weight_min, v.weight_max, false, true, _specPackUnit(v.pack))).join('');
+    d.innerHTML = _specCombos(_specEffLayout(v)).map((c, i) => _specComboLine(v.product, c, i, v.weight_min, v.weight_max, false, true, _specPackUnit(v.pack))).join('');
     return [...d.children].map(x => x.textContent.replace(/\s+/g, ' ').trim()).join(' / ');
   };
+  // ★두 버전 모두 공통 배열 기준을 쓰면 구성은 비교하지 않는다 — 공통 기준이 바뀔 때 모든 채널 카드에 '변경'이 번지지 않게.
+  const bothCommon = prev.kind === '기준' && cur.kind === '기준' && !prev.layout_override && !cur.layout_override;
   const items = [['박스', v => v.box || ''], ['중량', w], ['사용 사이즈', v => v.sizes || ''], ['브릭스', v => v.brix || ''],
-    ['구성', combo], ['종료일', v => v.valid_to ? _specMD(v.valid_to) : ''], ['메모', v => v.note || '']];
+    ...(bothCommon ? [] : [['구성', combo]]), ['종료일', v => v.valid_to ? _specMD(v.valid_to) : ''], ['메모', v => v.note || '']];
   return items.map(([label, fn]) => ({ label, from: fn(prev), to: fn(cur) }))
     .filter(x => x.from !== x.to)
     .map(x => ({ label: x.label, from: x.from || '없음', to: x.to || '없음' }));
@@ -26882,7 +26907,7 @@ function _specField(i) {
     <div class="spf-title">${esc(g.channel)}</div>
     <div class="spf-big" style="margin-bottom:12px">${[g.business, g.product, g.pack].filter(Boolean).map(esc).join(' · ')}${v.box ? ' ' + _specTag('박스 ' + v.box) : ''}</div>
     ${sec('기준 중량', esc(_specWTxt(v)))}
-    ${sec('사용 사이즈', (v.sizes ? esc(v.sizes) : '') + `<div class="spf-band">${_specBandHtml(v.product, v.sizes, _specCombos(v.layout))}</div>`)}
+    ${sec('사용 사이즈', (v.sizes ? esc(v.sizes) : '') + `<div class="spf-band">${_specBandHtml(v.product, v.sizes, _specCombos(_specEffLayout(v)))}</div>`)}
     ${sec('구성', _specCombosHtml(v))}
     ${sec('과수별 표', tbl && tbl.length ? _specCountTableHtml(tbl) : '')}
     ${sec('브릭스 · 메모', brixMemo)}
@@ -27132,13 +27157,22 @@ function _specCombosTable(product, combos, wmin, wmax, judge = true, unit = 'box
 // 카드의 구성 목록(현재·예정·직전 출고·이력 공용) — 구성이 없으면 ''
 //   v727: 규격 단위(_specPackUnit)로 줄 모양을 고르고, 출고면 총합 줄(_specOutTotal). ct 출고 줄은 그날 기준(_specStdAt)의 1CT 기준 중량으로 판정.
 function _specCombosHtml(v) {
-  const cs = _specCombos(v.layout);
+  const cs = _specCombos(_specEffLayout(v));   // 기준 카드는 공통 배열 기준(조정이면 자기 것), 출고는 자기 기록
   if (!cs.length) return '';
+  // 기준 카드 표시 — 공통이면 회색 라벨(기간·작성자), 조정이면 보라 칩. 출고 카드는 아무것도 안 붙인다(수정 전과 같다).
+  let tag = '';
+  if (v.kind === '기준') {
+    if (v.layout_override) tag = `<div style="margin-bottom:2px">${_specTag('배열 조정(이 채널만)', '#7C3AED', '#7C3AED')}</div>`;
+    else {
+      const scr = _specUi.date || td(), cm = _specCommonAt(v.product, v.pack, v.valid_from > scr ? v.valid_from : scr);
+      if (cm) tag = `<div style="font-size:11px;color:#9CA3AF;margin-bottom:2px">📐 공통 배열 기준 · ${esc(_specCommonPeriod(cm))}${cm.author ? ' · ' + esc(cm.author) : ''}</div>`;
+    }
+  }
   const unit = _specPackUnit(v.pack), out = v.kind === '출고';
   const ref = out && unit === 'ct' ? _specStdAt(_specKey(v), v.valid_from) : v;
   const judge = !out || (unit === 'ct' && !!ref);
   // ★2026-10-13 줄 글자(_specComboLine) → 열 맞춤 표(_specCombosTable). 값·판정은 같은 함수 호출이라 숫자는 그대로.
-  return `<div style="flex-basis:100%;min-width:0">${_specCombosTable(v.product, cs, ref && ref.weight_min, ref && ref.weight_max, judge, unit)}${out ? _specOutTotal(v.product, v.layout, unit) : ''}</div>`;
+  return `<div style="flex-basis:100%;min-width:0">${tag}${_specCombosTable(v.product, cs, ref && ref.weight_min, ref && ref.weight_max, judge, unit)}${out ? _specOutTotal(v.product, v.layout, unit) : ''}</div>`;
 }
 // ── 출고 단위·총합(v727) ─────────────────────────
 // 상품규격 단위 — settings.spec_masters.packs[].unit('ct'|'box'). 없거나 목록에 없는 규격은 'box'.
@@ -27911,7 +27945,7 @@ function _specBandHtml(product, sizesStr, combos) {
 }
 // 카드(현재 기준) — 띠 + '▸ 과수별 표 (n)' 접힘
 function _specGuideCard(g, i, v) {
-  const band = _specBandHtml(v.product, v.sizes, _specCombos(v.layout));
+  const band = _specBandHtml(v.product, v.sizes, _specCombos(_specEffLayout(v)));
   const tbl = _specCountTable(v.product, v.sizes, v.weight_min, v.weight_max);
   const open = _specOpen.has(g.key + '|cnt');
   const tb = tbl && tbl.length ? `<div style="margin-top:4px"><button type="button" onclick="_specToggle(${i},'cnt')" style="font-size:11px;color:#6B7280;background:none;border:none;padding:0;cursor:pointer;font-family:inherit">${open ? '▾' : '▸'} 과수별 표 (${tbl.length})</button>${open ? `<div style="margin-top:2px">${_specCountTableHtml(tbl)}</div>` : ''}</div>` : '';
