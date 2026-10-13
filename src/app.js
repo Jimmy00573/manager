@@ -5301,8 +5301,8 @@ function harvestActBtns(h) {
   // ★차수를 움직이는 버튼(＋ 다음 차수·■ 전체 종료·↩ 되돌리기·↩ 종료 해제)은 그 농가의 최신 차수 줄에서만.
   //   예전엔 줄 자신의 status만 봤다 → 3차가 있는데 2차 줄에서 누르면 엉뚱한 차수가 생기거나
   //   한 달 전 차수가 수확중으로 되살아나 다가오는 수확 카드에 떴다(2026-09-20 사고).
-  //   ★최신 차수 판정식은 startNextRound의 nextRound 계산과 같은 기준(같은 농가·round 최댓값)이다 — 다르게 만들지 말 것.
-  const maxRound = harvests.filter(x => x.farm === h.farm).reduce((m, x) => Math.max(m, x.round || 1), 0);
+  //   ★최신 차수 판정식은 startNextRound의 nextRound 계산과 같은 기준(_hvMaxRound — 같은 농가·같은 밭 가지·round 최댓값)이다 — 다르게 만들지 말 것.
+  const maxRound = _hvMaxRound(h.farm, h.field);
   const isLatest = (h.round || 1) >= maxRound;
   const canNext = st === '수확완료' && !h.is_final && isLatest;   // 수확완료 & 전체종료 전 & 최신 차수 → 차수 이어가기 가능
   // 되돌리기(한 단계씩): 수확완료→수확중, 수확중→수확전. 수확전은 더 되돌릴 게 없고, 전체 종료 상태는 '종료 해제'가 대신.
@@ -6870,10 +6870,15 @@ async function setHarvestFinishToday(id, cancel = false) {
     _hvFinishBusy = false;
   }
 }
-// 그 농가의 다음 차수 = 같은 농가 round 최댓값 + 1(기록 없으면 1). ＋다음 차수(startNextRound)와 등록 폼이 같이 쓴다.
-//   ★harvestActBtns의 최신 차수 판정(maxRound)과 같은 기준(같은 farm 완전일치·round 최댓값)이다 — 다르게 만들지 말 것.
-function _hvNextRound(farm) {
-  return harvests.filter(x => x.farm === farm).reduce((m, x) => Math.max(m, x.round || 1), 0) + 1;
+// 그 농가(먼 밭이 있으면 그 밭 가지)의 round 최댓값(기록 없으면 0). harvestActBtns의 최신 차수 판정과 _hvNextRound가 같이 쓴다.
+//   ★차수는 밭 가지마다 따로 센다(_brKey — field가 비었거나 목록 밖이면 대표 밭). 가지 없는 농가는 예전과 같다(같은 farm 완전일치).
+function _hvMaxRound(farm, field) {
+  const br = _farmBranches(farm), k = br ? _brKey({ field }, farm) : null;
+  return harvests.filter(x => x.farm === farm && (!br || _brKey(x, farm) === k)).reduce((m, x) => Math.max(m, x.round || 1), 0);
+}
+// 다음 차수 = _hvMaxRound + 1. ＋다음 차수(startNextRound)와 등록 폼이 같이 쓴다 — 최신 차수 판정(maxRound)과 같은 기준.
+function _hvNextRound(farm, field) {
+  return _hvMaxRound(farm, field) + 1;
 }
 // 수확일정 등록 폼 농가 선택(onchange · fsPick) — 밭 칸 + 차수 칸을 그 농가 기준으로 채운다.
 //   ★차수는 늘 1로 시작해서, 이미 1·2차가 있는 농가를 그대로 저장하면 '1차'가 또 생겼다
@@ -6881,7 +6886,7 @@ function _hvNextRound(farm) {
 function _calAddFarmChanged(v) {
   _fillFieldSel('cal-add', v);
   const r = document.getElementById('cal-add-round');
-  if (r) r.value = v ? _hvNextRound(v) : 1;
+  if (r) r.value = v ? _hvNextRound(v, gv('cal-add-field')) : 1;   // 먼 밭 농가는 밭을 고르면 다시 계산(cal-add-field onchange)
   _hvAutoDeal('cal-add-deal', v);   // 거래 방식 — 그 농가 최근값(직접 고른 값은 그대로)
 }
 // 수확 차수 이어가기 — 수확일정 창을 '새 차수' 모드로 연다(바로 저장하지 않는다). 이력 보존.
@@ -6893,7 +6898,7 @@ function startNextRound(id) {
   const h = harvests.find(x => x.id === id);
   if (!h) return;
   // 같은 농가의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
-  const nextRound = _hvNextRound(h.farm);
+  const nextRound = _hvNextRound(h.farm, h.field);
   _editHarvestId = null;
   _hvNewRoundFrom = id;
   _mhSetTitle(`＋ ${nextRound}차 수확 등록`);
@@ -25836,18 +25841,19 @@ async function renderDataCheck() {
   // ④ 수확 이상 — 차수 중복 / 미래 날짜인데 완료 / 전체종료 뒤에 차수 존재
   const c4 = [];
   const _hvSeen = {};
-  harvests.forEach(h => { const k = `${h.farm}||${h.round || 1}`; (_hvSeen[k] = _hvSeen[k] || []).push(h); });
+  // ★차수는 밭 가지마다 따로 센다(_hvMaxRound) — 키에 가지를 넣는다. 가지 없는 농가는 가지 ''라 예전과 같은 묶음·문구.
+  harvests.forEach(h => { const k = `${h.farm}||${_brKey(h, h.farm) || ''}||${h.round || 1}`; (_hvSeen[k] = _hvSeen[k] || []).push(h); });
   Object.entries(_hvSeen).forEach(([k, arr]) => {
     if (arr.length > 1) {
-      const [farm, rd] = k.split('||');
-      c4.push({ 유형: '차수 중복', 내용: `${farm} ${rd}차 ${arr.length}건 (${arr.map(x => x.date).join(', ')})` });
+      const [farm, br, rd] = k.split('||');
+      c4.push({ 유형: '차수 중복', 내용: `${farm}${br ? ' · ' + br : ''} ${rd}차 ${arr.length}건 (${arr.map(x => x.date).join(', ')})` });
     }
   });
   const _dcToday = td();
   harvests.filter(h => h.status === '수확완료' && h.date > _dcToday)
     .forEach(h => c4.push({ 유형: '미래 날짜인데 완료', 내용: `${h.farm} ${h.round || 1}차 (${h.date})` }));
   harvests.filter(h => h.is_final).forEach(h => {
-    const later = harvests.filter(x => x.farm === h.farm && (x.round || 1) > (h.round || 1));
+    const later = harvests.filter(x => x.farm === h.farm && _brKey(x, x.farm) === _brKey(h, h.farm) && (x.round || 1) > (h.round || 1));   // 같은 밭 가지 안에서만(가지 없으면 둘 다 null)
     if (later.length) c4.push({ 유형: '전체종료 뒤 차수 존재', 내용: `${h.farm} ${h.round || 1}차 종료 — 이후 ${later.map(x => (x.round || 1) + '차').join(', ')} 있음` });
   });
 
