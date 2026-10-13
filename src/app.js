@@ -1969,6 +1969,7 @@ async function saveFarmEdit() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const name = document.getElementById('mf-name').value.trim();
   if (!name) { alert('농가명을 입력하세요'); return; }
+  if (_nameHasBadChar(name)) { alert(NAME_BAD_CHARS_MSG); return; }
   // ★다른 농가와 같은 이름이면 cascade 확인창을 띄우기 '전에' 막는다 — 통과하면 두 농가 기록이 한 이름으로 합쳐진다.
   if (_farmNameTaken(name, _editFarmId)) { alert(FARM_NAME_DUP_MSG); return; }
   const oldName = farms.find(f => f.id === _editFarmId)?.name;
@@ -2067,6 +2068,7 @@ async function saveDrvEdit() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const name = document.getElementById('md-name').value.trim(), tel = document.getElementById('md-tel').value.trim();
   if (!name || !tel) { alert('기사명과 연락처를 입력하세요'); return; }
+  if (_nameHasBadChar(name)) { alert(NAME_BAD_CHARS_MSG); return; }
   const data = { name, tel, car: document.getElementById('md-car').value, type: document.getElementById('md-type').value, note: document.getElementById('md-note').value };
   try {
     await dbUpdateDriver(_editDrvId, data);
@@ -2198,6 +2200,10 @@ async function saveExtEdit() {
 }
 
 // ── 농가
+// 농가·거래처·기사 이름에 ' " \ 금지 — 이름을 onclick 인자에 넣는 곳이 남아 있어 입력 단계에서 막는다(v737).
+//   등록·이름 수정 7곳(addFarm·saveFarmEdit·fsAddNew·addDriver·saveDrvEdit·addPartner·savePartnerEdit)이 같이 쓴다.
+const NAME_BAD_CHARS_MSG = '이름에 따옴표(\' ")나 역슬래시(\\)는 쓸 수 없습니다.';
+function _nameHasBadChar(s) { return /['"\\]/.test(String(s || '')); }
 // ★농가명 중복 검사 — 등록 2곳(addFarm·fsAddNew)과 수정(saveFarmEdit)이 같이 쓴다.
 //   farms.name에 유니크 인덱스(farms_name_uniq, 2026-09-13)가 걸려 DB도 거부하지만, 저장 전에 먼저 막는다 —
 //   특히 수정은 이름으로 기록을 찾아 바꾸는 cascade가 있어, 다른 농가 이름으로 바뀌면 두 농가 기록이 합쳐져 되돌릴 수 없다.
@@ -2217,6 +2223,7 @@ function _isUniqueViolation(e) {
 async function addFarm() {
   const name = gv('f-name');
   if (!name) { alert('농가명을 입력하세요'); return; }
+  if (_nameHasBadChar(name)) { alert(NAME_BAD_CHARS_MSG); return; }
   if (_farmNameTaken(name)) { alert(FARM_NAME_DUP_MSG); return; }
   try {
     const row = await dbInsertFarm({ name, tel: gv('f-tel'), addr: gv('f-addr'), variety: gv('f-variety'), contract: n('f-contract'), staff: gv('f-staff'), memo: gv('f-memo') });
@@ -2295,6 +2302,7 @@ function renderFarm() {
 async function addDriver() {
   const name = gv('dv-name'), tel = gv('dv-tel'), type = gv('dv-type');
   if (!name || !tel) { alert('기사명과 연락처를 입력하세요'); return; }
+  if (_nameHasBadChar(name)) { alert(NAME_BAD_CHARS_MSG); return; }
   if (drivers.find(d => d.name === name)) { alert('이미 등록된 기사입니다'); return; }
   const car = type === '내부' ? (document.getElementById('dv-car-sel')?.value || '') : (gv('dv-car') || '');
   const pin = genPin();
@@ -8234,6 +8242,7 @@ async function fsAddNew(selectId, name) {
   const nm = (name || '').trim();
   if (!nm) return;
   if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 농가를 등록할 수 있습니다.');
+  if (_nameHasBadChar(nm)) return alert(NAME_BAD_CHARS_MSG);
   if (_farmNameTaken(nm)) return alert(FARM_NAME_DUP_MSG);
   if (partners.some(p => p.name === nm)) return alert(`"${nm}"은(는) 거래처로 등록돼 있습니다. 목록에서 거래처를 선택하세요.`);
   if (!confirm(`"${nm}"을(를) 새 농가로 등록할까요?
@@ -9839,6 +9848,7 @@ async function addPartner() {
   const nameEl = document.getElementById('pt-name');
   const name = nameEl?.value.trim();
   if (!name) return nameEl?.focus();
+  if (_nameHasBadChar(name)) return alert(NAME_BAD_CHARS_MSG);
   if (partners.some(p => p.name === name)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
   const usage = document.getElementById('pt-usage')?.value || 'both';
   const category = document.getElementById('pt-category')?.value || PARTNER_CAT_DEFAULT;
@@ -9873,6 +9883,7 @@ async function savePartnerEdit() {
   if (!id) return;
   const name = document.getElementById('pe-name').value.trim();
   if (!name) return alert('거래처명을 입력해주세요.');
+  if (_nameHasBadChar(name)) return alert(NAME_BAD_CHARS_MSG);
   if (partners.some(x => x.name === name && x.id !== id)) return alert(`"${name}"은 이미 등록된 거래처입니다.`);
   const usage = document.getElementById('pe-usage').value || 'both';
   const category = document.getElementById('pe-category')?.value || PARTNER_CAT_DEFAULT;
