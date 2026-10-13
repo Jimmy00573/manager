@@ -26996,7 +26996,7 @@ let _specEditId = null;   // 수정 중인 행 id(없으면 새 등록)
 function _specAuditVal(r) {
   if (!r) return null;
   const o = {};
-  ['kind', 'channel_type', 'channel', 'business', 'product', 'pack', 'box', 'valid_from', 'valid_to', 'weight_min', 'weight_max', 'sizes', 'layout', 'brix', 'note', 'author']
+  ['kind', 'channel_type', 'channel', 'business', 'product', 'pack', 'box', 'valid_from', 'valid_to', 'weight_min', 'weight_max', 'sizes', 'layout', 'layout_override', 'brix', 'note', 'author']
     .forEach(k => { if (r[k] !== undefined) o[k] = r[k]; });
   return o;
 }
@@ -27436,7 +27436,29 @@ function _specFormCalc() {
     if (span) { const val = k ? (b || a) : a; _selEnsureVal(el, val, _specKeepLbl(val)); }
     el.disabled = !!span;
   });
+  _specOvrSync(false);   // 기준 카드: 공통 배열 미리보기 / 조정 편집기(2026-10-13)
   _specGuideForm();   // 띠 + 과수별 표(v722)
+}
+// 등록 창 '이 채널만 배열 조정' — 기준 기록(공통 배열 모드 아님)만 보인다.
+//   끔: 편집기를 숨기고 그 품목·포장·시작일의 공통 배열 기준을 읽기 전용 표로(없으면 안내). 저장 시 layout_override=false·layout=[].
+//   켬: 편집기. prefill=true(체크를 켤 때)이고 편집기가 비어 있으면 공통 기준으로 미리 채운다.
+function _specOvrSync(prefill) {
+  const wrap = document.getElementById('spm-ovr-wrap'); if (!wrap) return;
+  const gv2 = id => (document.getElementById(id)?.value || '').trim();
+  const std = gv2('spm-kind') !== '출고' && _specModalMode !== 'layout';
+  const on = std && !!document.getElementById('spm-override')?.checked;
+  wrap.style.display = std ? 'flex' : 'none';
+  ['spm-combos', 'spm-add-combo', 'spm-total'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = (!std || on) ? '' : 'none'; });
+  const product = gv2('spm-product'), pack = gv2('spm-pack');
+  // 날짜 — 카드(_specEffLayout)와 같은 규칙: 화면 기준일, 시작일이 더 늦으면 그 시작일
+  const scr = _specUi.date || td(), fd = gv2('spm-from') || scr;
+  const cm = std ? _specCommonAt(product, pack, fd > scr ? fd : scr) : null;
+  const prev = document.getElementById('spm-common-prev');
+  if (prev) prev.innerHTML = std && !on
+    ? (cm ? `<div style="font-size:11px;color:#9CA3AF;margin-bottom:2px">📐 공통 배열 기준 · ${esc(_specCommonPeriod(cm))}${cm.author ? ' · ' + esc(cm.author) : ''}</div>${_specCombosTable(product, _specCombos(cm.layout), gv2('spm-wmin'), gv2('spm-wmax'), true, _specPackUnit(pack))}`
+      : '<div style="font-size:12px;color:#9CA3AF;padding:2px 0">공통 배열 기준 없음 — 위 📐에서 등록</div>')
+    : '';
+  if (prefill && on && cm && !_specReadCombos().some(c => (c.rows || []).some(r => r.size))) _specRenderCombos(_specCombos(cm.layout), true);
 }
 
 // o.mode === 'layout'(2026-10-13) — 📐 공통 배열 기준 등록·수정. 같은 배열 편집기를 쓰고 품목·포장·시작일·작성자·메모·배열만 보인다.
@@ -27468,6 +27490,9 @@ function openSpecModal(o = {}) {
   if (lm && lrow) Object.assign(v, { product: lrow.product, pack: lrow.pack });   // 공통 기준 — 품목·포장은 그 행(카드 묶음 g가 없다)
   if (lm && lrow && !o.asNew) Object.assign(v, { valid_from: lrow.valid_from, author: lrow.author || '', note: lrow.note || '' });   // 공통 기준 수정 — 그 행 값 그대로
   if (lm && !lrow) v.valid_from = td();
+  // 기준 카드 '이 채널만 배열 조정'(2026-10-13) — 저장값 그대로. ★예전 기록처럼 조정 표시 없이 자기 배열이 있으면 켠 채로 연다(저장해도 배열이 지워지지 않게).
+  const ovrSrc = ed || src;
+  const ovr0 = !lm && !!ovrSrc && (!!ovrSrc.layout_override || (ovrSrc.kind !== '출고' && _specCombos(ovrSrc.layout).length > 0));
   const fv = x => (x === 0 || x) ? esc(String(x)) : '';
   const lab = t => `<label style="font-size:12px;color:#374151;display:block;margin-bottom:3px">${t}</label>`;
   const hint = id => `<div id="${id}" style="display:none;font-size:11px;color:#9CA3AF;margin-top:2px">목록 관리에서 먼저 등록</div>`;
@@ -27488,13 +27513,15 @@ function openSpecModal(o = {}) {
         <div>${lab('품목 *')}<select id="spm-product" style="${_qrInpS}" onchange="_specProductChanged()">${buildProductOptgroupHTML(false, { selected: v.product })}</select></div>
         <div>${lab('박스')}<select id="spm-box" style="${_qrInpS}"></select></div>
         <div style="grid-column:1/-1">${lab('상품·규격 *')}<select id="spm-pack" style="${_qrInpS}" onchange="_specPackChanged()"></select>${hint('spm-pack-hint')}</div>
-        <div id="spm-from-wrap"><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}"></div>
+        <div id="spm-from-wrap"><label id="spm-from-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">적용 시작일 *</label><input id="spm-from" type="date" value="${esc(v.valid_from)}" style="${_qrInpS}" onchange="_specFormCalc()"></div>
         <div id="spm-to-wrap">${lab('종료일(선택)')}<input id="spm-to" type="date" value="${esc(v.valid_to)}" style="${_qrInpS}"></div>
         <div style="grid-column:1/-1"><label id="spm-w-lbl" style="font-size:12px;color:#374151;display:block;margin-bottom:3px">박스 중량(kg)</label>
           <div style="display:flex;gap:6px;align-items:center"><input id="spm-wmin" type="number" step="0.01" min="0" value="${fv(v.weight_min)}" placeholder="최소" style="${_qrInpS}" oninput="_specFormCalc()"><span style="color:#9CA3AF">~</span><input id="spm-wmax" type="number" step="0.01" min="0" value="${fv(v.weight_max)}" placeholder="최대" style="${_qrInpS}" oninput="_specFormCalc()"></div></div>
         <div style="grid-column:1/-1">${lab('사용 사이즈')}<div style="display:flex;gap:6px;align-items:center"><select id="spm-sz-from" style="${_qrInpS}" onchange="_specFormCalc()"></select><span style="color:#9CA3AF">~</span><select id="spm-sz-to" style="${_qrInpS}" onchange="_specFormCalc()"></select></div>
           <div id="spm-guide"></div></div>
         <div style="grid-column:1/-1">${lab('실제 구성 <span style="font-weight:400;color:#9CA3AF">(담는 박스 하나 = 구성 하나 · 단일 또는 혼합)</span>')}
+          <label id="spm-ovr-wrap" style="display:none;font-size:12px;color:#374151;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer"><input type="checkbox" id="spm-override"${ovr0 ? ' checked' : ''} onchange="_specOvrSync(true)"> 이 채널만 배열 조정</label>
+          <div id="spm-common-prev"></div>
           <div id="spm-combos"></div>
           <button type="button" id="spm-add-combo" onclick="_specAddCombo()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 구성 추가</button>
           <div id="spm-total" style="margin-top:4px"></div></div>
@@ -27561,7 +27588,9 @@ async function saveSpec() {
   if (Number.isNaN(weight_min) || Number.isNaN(weight_max)) return alert('중량은 숫자로 입력하세요.');
   if (weight_min != null && weight_max != null && weight_min > weight_max) return alert('중량 최소가 최대보다 큽니다.');
   if (!gv2('spm-author')) return alert('작성자를 고르세요.');
-  if (!_specLayoutValid()) return alert('구성 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 박스 수 0~9999·CT 수 0~999 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
+  // 기준 기록은 '이 채널만 배열 조정'을 켰을 때만 자기 배열을 저장한다(끄면 공통 배열 기준 — 숨긴 편집기는 검사하지 않는다)
+  const ovrOn = kind === '기준' && !!document.getElementById('spm-override')?.checked;
+  if ((kind === '출고' || ovrOn) && !_specLayoutValid()) return alert('구성 칸을 확인하세요(빨간 칸) — 상단·하단 0~40 정수, 과 0~60 정수, 박스 수 0~9999·CT 수 0~999 정수, 실측은 0보다 큰 수(소수 둘째 자리까지).');
   const unit = _specPackUnit(pack);
   // 구성 — 항상 새 형식 [{rows, actual_kg?, note?}](실측·메모는 있을 때만 키를 넣는다) — _specFormLayout
   const layout = _specFormLayout(kind, unit);
@@ -27573,7 +27602,7 @@ async function saveSpec() {
   const payload = {
     kind, channel_type: gv2('spm-ctype') || null, channel, business: gv2('spm-business') || null, product, pack, box: gv2('spm-box') || null,
     valid_from, valid_to, weight_min, weight_max, sizes,
-    layout: layout.length ? layout : null, brix, note: gv2('spm-note') || null,
+    layout: (kind === '기준' && !ovrOn) ? [] : (layout.length ? layout : null), ...(kind === '기준' ? { layout_override: ovrOn } : {}), brix, note: gv2('spm-note') || null,
     author: gv2('spm-author') || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
   };
   // 같은 키·같은 시작일의 기준이 이미 있으면 한 번 묻는다(나중에 넣은 것이 현재 기준이 된다)
@@ -28089,6 +28118,9 @@ function _specGuideForm() {
   const sizesStr = (f && t) ? (f === t ? f : `${f}~${t}`) : (f || t || '');
   const wv = id => (document.getElementById(id)?.value || '').trim();
   const tbl = _specCountTable(product, sizesStr, wv('spm-wmin'), wv('spm-wmax'));
-  el.innerHTML = _specBandHtml(product, sizesStr, _specReadCombos())
+  const ovr = document.getElementById('spm-override'), ow = document.getElementById('spm-ovr-wrap');
+  const bandCs = (ovr && ow && ow.style.display !== 'none' && !ovr.checked)   // 공통 배열 사용 중이면 그 배열로 띠를 그린다
+    ? _specCombos(_specEffLayout({ kind: '기준', layout_override: false, product, pack: wv('spm-pack'), valid_from: wv('spm-from') || td() })) : _specReadCombos();
+  el.innerHTML = _specBandHtml(product, sizesStr, bandCs)
     + (tbl && tbl.length ? `<div style="margin-top:6px;padding:6px 8px;background:#F9FAFB;border-radius:6px"><div style="font-size:11px;color:#6B7280;margin-bottom:2px">과수별 표 — ✓ 전부 기준 안 · △ 일부 겹침 · ★ 평균이 기준 중앙에 가장 가까움</div>${_specCountTableHtml(tbl)}</div>` : '');
 }
