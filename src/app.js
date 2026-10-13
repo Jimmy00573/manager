@@ -5847,7 +5847,7 @@ function renderUpcomingHarvest() {
           return ln ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${ln}${_hvPlanCheckBtn(x, day.dStr)}</div>` : '';
         })()}
       </div>`;
-    })() })), 'font-size:11px;padding:6px 8px 0;border-top:1px solid #F3F4F6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
+    })() })), 'margin:6px 6px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
     // ★flex:1 1 0 + min-width — 넓은 화면은 4등분, 좁은 화면은 최소폭을 지키며 컨테이너가 가로 스크롤된다.
     return `<div style="flex:1 1 0;min-width:152px;background:#fff;border:1px solid ${isToday ? '#F59E0B' : '#E5E7EB'};border-radius:8px;overflow:hidden;display:flex;flex-direction:column">
