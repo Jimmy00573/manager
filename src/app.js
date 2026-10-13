@@ -4113,15 +4113,18 @@ function _renderRecoveryWait() {
   const role = sessionStorage.getItem('citrus_role');
   const canRec = QR_ROLES.includes(role), canHv = _hvCanWrite();
   const sum = xs => xs.reduce((s, x) => s + x.hold, 0);
-  const btn = (bg, on, txt) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="${on}">${txt}</button>`;
+  // ★농가 이름은 onclick 문자열이 아니라 data-farm으로 넘긴다 — 이름에 ' 가 있어도 클릭이 깨지지 않게(esc + &quot;는 속성용 기존 방식).
+  const btn = (bg, on, txt, farm) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(farm).replace(/"/g, '&quot;')}" onclick="${on}">${txt}</button>`;
   const row = (x, dateTxt, color, extra) => {
-    const drv = _farmExtDrv(x.farm);
+    // 담당 = farms.staff 그대로(내부·외부 모두) — 회수하러 갈 사람. drivers에서 외부면 '(외부)'. ★이 카드만(_farmExtDrv는 그대로).
+    const stf = (gf(x.farm).staff || '').trim();
+    const drv = stf ? stf + (gd(stf).type === '외부' ? ' (외부)' : '') : '';
     return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:6px 0;border-top:1px solid #F3F4F6">
       <span style="font-size:13px;font-weight:500;color:#111827">${esc(x.farm)}</span>
       <span style="font-size:12px;color:#374151">보유 ${fmtN(x.hold)}개</span>${extra || ''}
       <span style="font-size:11px;color:${color};font-weight:500">${dateTxt}</span>
       ${drv ? `<span style="font-size:11px;color:#6B7280">👤 ${esc(drv)}</span>` : ''}
-      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? btn('#1565C0', `openQuickRecovery('${_fsQ(x.farm)}', ${x.hold})`, '🧺 회수') : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');_hvGoHarvestAdd('${_fsQ(x.farm)}')`, '＋ 수확 일정') : ''}</span>
+      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold})`, '🧺 회수', x.farm) : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');_hvGoHarvestAdd(this.dataset.farm)`, '＋ 수확 일정', x.farm) : ''}</span>
     </div>`;
   };
   const ago = (ds, d) => ds ? `${esc(calFmtShort(ds))} · ${d}일` : '-';
@@ -4137,7 +4140,7 @@ function renderFarmTbl() {
   const isAdm = QR_ROLES.includes(sessionStorage.getItem('citrus_role'));   // 🧺 회수 버튼 — 빠른 회수 창을 쓸 수 있는 역할(외부 기사 포함, 농가 대상)
   const list = farms.filter(f => { const st = getFCS(f.name); return _ft === 'n' ? st.hold !== 0 : st.hold === 0; }).filter(f => _xdFarmOk(f.name));   // 외부 기사 기사 필터
   _xdSetStaticTag(document.getElementById('farm-dash-summary')?.previousElementSibling?.querySelector('.sec-title'));
-  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${f.name.replace(/'/g,"&#39;")}', ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${_farmAddrText(f.name) ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(_farmAddrText(f.name))}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
+  document.getElementById('d-farm-tb').innerHTML = list.length ? list.map(f => { const st = getFCS(f.name); const ct = getFCtypes(f.name); const recBtn = (isAdm && st.hold > 0) ? `<button class="btn" style="margin-left:6px;font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(f.name).replace(/"/g, '&quot;')}" onclick="openQuickRecovery(this.dataset.farm, ${st.hold})">🧺 회수</button>` : ''; return `<tr><td class="nm">${esc(f.name)}${_farmAddrText(f.name) ? `<div style="font-size:10px;color:#aaa;font-weight:400;margin-top:1px">${esc(_farmAddrText(f.name))}</div>` : ''}</td><td>${st.out}</td><td>${st.pk}</td><td>${st.ret}</td><td><span class="badge ${st.hold !== 0 ? (st.hold < 0 ? 'b-red' : 'b-warn') : 'b-ok'}">${st.hold}개</span>${ct ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center">${ct}</div>` : ''}</td><td class="stk-r">${st.hold > 0 ? '<span class="badge b-red">처리필요</span>' + recBtn : st.hold < 0 ? '<span class="badge b-red">음수(확인필요)</span>' : '<span class="badge b-ok">정상</span>'}</td></tr>`; }).join('') : emr(6, _ft === 'n' ? '처리 필요 농가 없음 🎉' : '없음');
   const need = farms.filter(f => getFCS(f.name).hold !== 0).length;
   document.getElementById('farm-dash-badges').innerHTML = `<span class="badge b-red">처리필요 ${need}개 농가</span><span class="badge b-ok">정상 ${farms.length - need}개 농가</span>`;
 }
@@ -4669,7 +4672,7 @@ function renderDash() {
   // 농협行 회수 항목(농협 배지로 구분) — 🧺 회수 버튼: openQuickRecovery 농협 확장(target_type='농협', C-2b-1). 관리자만.
   const nhfHoldHtml = nhfHoldList.map(x => {
     // ★회수 버튼은 실제로 나가 있을 때(양수)만. 음수는 회수할 게 아니라 기록이 틀린 것이라 확인 배지로 알린다(농가 목록과 동일 규칙).
-    const recBtn = (isAdm && x.hold > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nhf.replace(/'/g,"&#39;")}', ${x.hold}, '농협')">🧺 회수</button>` : '';
+    const recBtn = (isAdm && x.hold > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(x.nhf).replace(/"/g, '&quot;')}" onclick="openQuickRecovery(this.dataset.farm, ${x.hold}, '농협')">🧺 회수</button>` : '';
     const negTag = x.hold < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-teal">농협</span> ${esc(x.nhf)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${negTag}${recBtn}</div></div>
     <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:${x.hold < 0 ? '#C62828' : '#C05800'}">${x.hold}개</strong> 보유 (우리 콘테이너 농협行)</div>
@@ -4678,7 +4681,7 @@ function renderDash() {
   // 거래처行 회수 항목(거래처 배지 파랑으로 구분) — 농협行과 대칭. 관리자만 회수 버튼.
   const ptHoldHtml = ptHoldList.map(x => {
     // ★위 농협行과 같은 규칙 — 회수 버튼은 양수일 때만, 음수는 확인 배지.
-    const recBtn = (isAdm && x.hold > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${x.nm.replace(/'/g,"&#39;")}', ${x.hold}, '거래처')">🧺 회수</button>` : '';
+    const recBtn = (isAdm && x.hold > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(x.nm).replace(/"/g, '&quot;')}" onclick="openQuickRecovery(this.dataset.farm, ${x.hold}, '거래처')">🧺 회수</button>` : '';
     const negTag = x.hold < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name"><span class="badge b-info">거래처</span> ${esc(x.nm)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${x.hold}개</span>${negTag}${recBtn}</div></div>
     <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${x.out}개 − 회수 ${x.rec}개 = <strong style="color:${x.hold < 0 ? '#C62828' : '#C05800'}">${x.hold}개</strong> 보유 (우리 콘테이너 거래처行)</div>
@@ -4689,7 +4692,7 @@ function renderDash() {
     // 농가行 🧺 회수 — 농협行·거래처行과 동일 스타일/위치. targetType 생략 = 기본 '농가'. 관리자만.
     // (농가별 테이블의 회수 버튼은 그대로 — 여긴 요약, 저긴 전체 목록)
     // ★회수 버튼은 실제로 나가 있을 때(양수)만. 음수는 회수할 게 아니라 기록이 틀린 것이라 확인 배지로 알린다(농협行과 동일 규칙).
-    const recBtn = (isAdm && i.total > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickRecovery('${i.name.replace(/'/g,"&#39;")}', ${i.total})">🧺 회수</button>` : '';
+    const recBtn = (isAdm && i.total > 0) ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(i.name).replace(/"/g, '&quot;')}" onclick="openQuickRecovery(this.dataset.farm, ${i.total})">🧺 회수</button>` : '';
     const negTag = i.total < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
     return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt w">${i.total}개</span>${negTag}${recBtn}</div></div>
     <div style="font-size:10px;color:#aaa;margin:2px 0">배출 ${st.out}개 − 원물수거 ${st.pk}개 − 빈콘회수 ${st.ret}개 = <strong style="color:${st.hold < 0 ? '#C62828' : '#C05800'}">${st.hold}개</strong> 보유</div>
