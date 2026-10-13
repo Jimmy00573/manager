@@ -2436,13 +2436,13 @@ async function saveDispEdit() {
     // ★배차에 딸린 '배출' pick도 같이 고친다 — 안 고치면 배차와 pick이 갈린다.
     //   getFCS(농가 보유)는 picks를, getSt(공장 재고)는 dispatches를 보기 때문에
     //   한쪽만 바뀌면 화면마다 숫자가 달라진다(한진수 배출 666 vs 이력 661 사고의 원인).
-    //   ★맞추는 항목 = addDisp가 pick에 넣는 것과 같은 집합: date·farm·qty·driver·car·target_type.
+    //   ★맞추는 항목 = addDisp가 pick에 넣는 것과 같은 집합: date·farm·qty·driver·car·target_type·field(밭 가지 보유).
     //     ctype은 넣지 않는다 — picks에 ctype이 없다는 기존 규칙이 getFCtypeMap의 중복 계상 방지 근거다.
     //   ★순서: 배차 먼저, pick 나중. 배차가 실패하면 아무것도 안 바뀐 채 끝나고(안전),
     //     pick이 실패하면 아래에서 알린다. 이 동기화는 같은 값으로 다시 저장해도 결과가 같으므로
     //     (멱등) '다시 저장'이 곧 복구다 — 배차를 되돌리려다 그것마저 실패하는 쪽보다 낫다.
     const linked = picks.filter(p => p.dispatch_id === _editDispId && p.type === '배출');
-    const pickPatch = { date, farm, qty, driver, car: d.car || '', target_type: data.target_type };
+    const pickPatch = { date, farm, qty, driver, car: d.car || '', target_type: data.target_type, field: data.field };
     try {
       // 옛 배차엔 연결 pick이 없을 수 있다(수량 0으로 등록되던 시절) — 그때는 조용히 넘어간다.
       for (const p of linked) await dbUpdatePick(p.id, pickPatch);
@@ -2732,7 +2732,7 @@ async function addDisp() {
       // ★배출 자동 pick은 배차 행마다 정확히 1건 — dispatch_id로 짝지어야 delDisp가 제 것만 지운다.
       //   (ctype은 넣지 않는다 — 기존과 동일. getFCtypeMap이 배차의 ctype으로 종류별 집계를 하므로 중복 방지.)
       //   ★예약이면 여기서 만들지 않는다 — 완료 처리 때 _completeDispatch가 같은 내용으로 만든다.
-      if (!reserve) await dbInsertPick({ date, farm, type: '배출', qty: c.qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType });
+      if (!reserve) await dbInsertPick({ date, farm, type: '배출', qty: c.qty, driver: drv, car: d.car || '', note: '[자동]', dispatch_id: row.id, auto: true, target_type: targetType, field: dpField || null });
     }
     if (!reserve) picks = await dbGetPicks();
     // ★작업 보고 자동 생성 — 지금까지 '완료' 버튼(updDisp)이 만들어 주던 기록이다(reports 25건 중 24건이 이 경로).
@@ -2786,7 +2786,7 @@ async function _completeDispatch(d, rptNote = '완료처리') {
     // ★거부는 오류가 아니라 '이미 다른 곳에서 처리됨'이다 — 서버의 기존 기록을 로컬로 끌어와
     //   화면을 맞추고, throw하지 않고 아래 작업보고 단계로 계속 간다(throw하면 보고가 통째로 빠진다).
     try {
-      const row = await dbInsertPick({ date: d.date, farm: d.farm, type: '배출', qty: d.qty, driver: d.driver, car: d.car || '', note: '[자동]', dispatch_id: d.id, auto: true, target_type: d.target_type || '농가' });
+      const row = await dbInsertPick({ date: d.date, farm: d.farm, type: '배출', qty: d.qty, driver: d.driver, car: d.car || '', note: '[자동]', dispatch_id: d.id, auto: true, target_type: d.target_type || '농가', field: d.field || null });
       if (row) picks.unshift(row);
     } catch (e) {
       if (!_isUniqueViolation(e)) throw e;   // 네트워크 등 그 밖의 오류는 지금처럼 호출부가 알린다
