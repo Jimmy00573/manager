@@ -6256,7 +6256,7 @@ function renderHarvestProgress() {
         const showList = !isDone || _hvDoneGroupOpen;
         return `<div>
           <div${hdClick} style="${hdCss}font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${hdArrow}${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 수확 기록이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>${showList ? `
-          <div style="display:flex;flex-direction:column;gap:6px">${groups.filter(g => g.kind === kd).map(_hvProgCard).join('')}</div>` : ''}
+          <div style="display:flex;flex-direction:column;gap:6px">${_hvGroupByItemHtml(groups.filter(g => g.kind === kd).map(g => ({ rec: { item: (g.last && g.last.item) || g.items[0] || '', farm: g.farm }, html: _hvProgCard(g) })), 'margin-top:2px')}</div>` : ''}
         </div>`;
       }).join('')}
     </div>`;
