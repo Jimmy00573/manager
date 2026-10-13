@@ -5260,17 +5260,16 @@ function _hvItemOf(rec) {
 // 금일 수확일정·4일 카드 공용 — [{ rec, html }]을 품목별로 묶어 머리 '🍊 품목 · n곳'을 붙인 HTML.
 //   묶음 순서: 농가 수 많은 품목 → 같으면 가나다순, '품목 미정'은 맨 뒤. 묶음 안은 들어온 순서 그대로.
 //   n곳 = 묶음 안 농가 수(같은 농가 두 건은 한 곳). headStyle은 머리 div 스타일 뒤에 덧붙는다(덮어쓰기용).
-//   ★품목이 하나뿐이면 머리 없이 행만 이어 붙인다 → 수정 전 HTML과 같다. 표시 전용(데이터·버튼 그대로).
+//   품목이 하나뿐이어도 머리를 낸다(빈 목록이면 ''). 표시 전용(데이터·버튼 그대로).
 function _hvGroupByItemHtml(entries, headStyle) {
   const NONE = '품목 미정';
   const m = new Map();
   entries.forEach(x => { const k = _hvItemOf(x.rec) || NONE; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
-  if (m.size <= 1) return entries.map(x => x.html).join('');
   const nFarm = xs => new Set(xs.map(x => x.rec && x.rec.farm)).size;
   const gs = [...m.entries()].sort(([a, xa], [b, xb]) =>
     (a === NONE) - (b === NONE) || nFarm(xb) - nFarm(xa) || a.localeCompare(b, 'ko'));
   return gs.map(([k, xs]) =>
-    `<div style="font-size:12px;font-weight:500;color:#374151;${headStyle || ''}">🍊 ${esc(k)} · ${nFarm(xs)}곳</div>` +
+    `<div style="font-size:13px;font-weight:500;color:${k === NONE ? '#6B7280' : '#1E3A5F'};background:#F3F4F6;border-left:3px solid ${k === NONE ? '#9CA3AF' : '#1E3A5F'};border-radius:4px;padding:3px 8px;${headStyle || ''}">🍊 ${esc(k)}<span style="font-weight:400;color:#6B7280;margin-left:4px">· ${nFarm(xs)}곳</span></div>` +
     xs.map(x => x.html).join('')).join('');
 }
 // ── 수확 거래 방식(harvests.deal_type: '밭떼기'|'관떼기'|null=미지정) ─────────────
@@ -5388,7 +5387,7 @@ function renderCal() {
           <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${_hvContactLine(e.farm, _recAddr(e))}
         </div>` };
       });
-      const rows = _hvGroupByItemHtml(rowEntries, 'margin-top:4px');   // 품목별 묶음(품목 하나면 머리 없음)
+      const rows = _hvGroupByItemHtml(rowEntries, 'margin-top:4px');   // 품목별 묶음(품목 하나여도 머리 표시)
       todayEl.innerHTML =
         `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)${_xdFilterTag()}</div>` +
         `<div style="display:flex;flex-direction:column;gap:5px">${rows}</div>`;
@@ -5792,7 +5791,7 @@ function renderUpcomingHarvest() {
       tripOut.length ? `외부 ${tripOut.join(' · ')}` : ''
     ].filter(Boolean).join(' · ');
 
-    const rows = day.list.length ? _hvGroupByItemHtml(day.list.map(x => ({ rec: x, html: (() => {   // 품목별 묶음(품목 하나면 머리 없음)
+    const rows = day.list.length ? _hvGroupByItemHtml(day.list.map(x => ({ rec: x, html: (() => {   // 품목별 묶음(품목 하나여도 머리 표시)
       const st = x.status || '수확전';
       const dp = _dispForHarvest(x.farm, x.date);
       // 진행일수 — 시작일 당일이 1일째. 날짜 계산은 로컬 자정 기준(td/ymd와 같은 축).
