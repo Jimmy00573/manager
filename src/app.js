@@ -8018,6 +8018,68 @@ function _invFetchStart(track = p => p, base = null) {
   return _invLoadP;
 }
 
+// ══ 출고 기록 '바뀐 것만 받기'(2026-10-14) ══════════════════════════════
+// ★2026-10-13 사고: 아이패드 대량 수정 뒤 7대가 거의 동시에 새로고침 → 그때마다 출고 전체(약 8,800행·4.5MB, 9페이지)를 받아
+//   응답 20~30초·statement timeout 27건. 전체는 가끔만 받고, 평소엔 '마지막으로 본 시각' 뒤에 생기거나(created_at)
+//   바뀐(updated_at — BEFORE UPDATE 트리거가 수정·무효화마다 갱신) 행만 받아 합친다.
+// ★결과는 예전 sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc')과 행·순서까지 같아야 한다:
+//   - 보관 대상 = is_void가 정확히 false인 행. is_void는 NULL 가능 컬럼이고 eq.false는 NULL을 빼므로 똑같이 뺀다(=== false).
+//   - 순서 = sbGetAll이 order 뒤에 ',id'를 덧붙인 'date.desc,id' → date 내림차순, 같으면 id 오름차순.
+//     date는 NOT NULL 'YYYY-MM-DD', id는 uuid(DB 정렬 = 소문자 16진 문자열 순서) → 단순 문자열 비교(localeCompare 아님).
+// ★전체 받기로 돌아가는 경우: 캐시 없음 · 마지막 전체 받기 30분 경과 · 물리 삭제 기록(sync_deletes)이 기준 시각보다 늦음 ·
+//   합친 건수가 DB 건수(count=exact)와 다름/건수 확인 실패.
+// ★돌려주는 배열의 행은 얕은 복사본 — 화면 코드가 행을 직접 고쳐도(출고 수정의 r.date = … 등) 보관본은 서버 값 그대로다.
+let _obCache = null;    // Map id → 행(is_void=false만). null = 아직 없음
+let _obMark = null;     // 받은 행들의 max(created_at, updated_at) — 서버 시각 문자열
+let _obFullAt = 0;      // 마지막 전체 받기 시각(로컬 ms)
+let _obChain = Promise.resolve();   // 한 번에 하나씩 — 겹쳐 불려도 앞 것이 끝난 뒤 돈다(캐시를 동시에 고치지 않게)
+const _OB_FULL_MS = 30 * 60 * 1000;
+const _OB_OVERLAP_MS = 2 * 60 * 1000;   // 겹침 여유 — created_at은 트랜잭션 시작 시각이라 커밋이 늦으면 기준보다 앞선 값으로 들어온다
+// 서버 시각 → ms. 소수 초는 3자리로 자른다(사파리가 6자리 '…00.123456+00:00'를 못 읽는 경우 대비). 못 읽으면 null.
+const _obTs = s => { const t = s ? Date.parse(String(s).replace(/(\.\d{3})\d+/, '$1')) : NaN; return isNaN(t) ? null : t; };
+function _obMaxMark(mark, rows) {   // 줄어들지 않는다 — mark보다 늦은 시각만 받아들인다
+  let best = mark, bt = _obTs(mark);
+  for (const r of rows) for (const s of [r.created_at, r.updated_at]) {
+    const t = _obTs(s);
+    if (t != null && (bt == null || t > bt)) { best = s; bt = t; }
+  }
+  return best;
+}
+const _obSorted = map => [...map.values()]
+  .sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  .map(r => ({ ...r }));
+
+function _obFetch() {
+  const p = _obChain.then(_obFetchRun, _obFetchRun);
+  _obChain = p.catch(() => {});
+  return p;
+}
+async function _obFetchRun() {
+  const full = async () => {
+    const rows = await sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc');
+    _obCache = new Map(rows.map(r => [r.id, r]));
+    _obMark = _obMaxMark(null, rows);
+    _obFullAt = Date.now();
+    return rows.map(r => ({ ...r }));   // sbGetAll 순서 그대로(예전과 같은 배열)
+  };
+  if (!_obCache || _obTs(_obMark) == null || Date.now() - _obFullAt > _OB_FULL_MS) return full();
+  const w = encodeURIComponent(new Date(_obTs(_obMark) - _OB_OVERLAP_MS).toISOString());
+  // 세 요청은 서로 기다릴 필요가 없어 같이 보낸다. 실패는 throw → 호출처의 _loadFail('출고 기록')(보관본은 그대로 남는다).
+  const [dels, delta, cnt] = await Promise.all([
+    sbGet('sync_deletes', 'tbl=eq.outbound_records&select=deleted_at&order=deleted_at.desc&limit=1'),
+    sbGetAll('outbound_records', `or=(created_at.gt.${w},updated_at.gt.${w})&order=id`),   // is_void 필터 없음 — 무효화된 행도 받아야 지운다
+    _refCount('outbound_records', 'is_void', false),   // count=exact 헤더만 읽는 기존 헬퍼(실패 = null)
+  ]);
+  const delAt = _obTs(dels && dels[0] && dels[0].deleted_at);
+  if (delAt != null && delAt > _obTs(_obMark)) return full();
+  const map = new Map(_obCache);
+  for (const r of delta) { if (r.is_void === false) map.set(r.id, r); else map.delete(r.id); }
+  if (cnt == null || cnt !== map.size) return full();
+  _obCache = map;
+  _obMark = _obMaxMark(_obMark, delta);
+  return _obSorted(map);
+}
+
 // 조회 + 재고 전역 대입만. 화면(DOM)은 건드리지 않는다 — 부팅 중에는 위치·사용처·품목 마스터가 아직 대입 전일 수 있다.
 async function _invFetch(track, token) {
   try {
@@ -8045,7 +8107,8 @@ async function _invFetch(track, token) {
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
       //   ★주스분만 따로 받던 조회는 2026-09-22에 지웠다 — 받아만 놓고 읽는 곳이 0이었고(grep),
       //     같은 행이 이 전량 조회에 이미 들어 있다. 주스 화면도 invOutbounds에서 골라 쓴다.
-      track(sbGetAll('outbound_records', 'is_void=eq.false&order=date.desc')).catch(() => { _loadFail('출고 기록'); return []; }),
+      //   ★2026-10-14: 받는 방법만 _obFetch(처음·30분마다 전체, 평소엔 바뀐 행만)로 바꿨다 — 돌려주는 배열은 같다.
+      track(_obFetch()).catch(() => { _loadFail('출고 기록'); return []; }),
       // 주스 설정 2건 — 예전엔 위가 다 끝난 뒤 하나씩 기다렸다. 서로·위와 무관해 같이 보낸다(실패 시 직전 값 유지는 아래 그대로).
       track(_settingsRows('juice_expiry_days')).catch(() => SETTING_FAIL),
       track(_settingsRows('juice_low_threshold')).catch(() => SETTING_FAIL),
