@@ -6840,7 +6840,7 @@ async function autoSetHarvestStatus(farm, date, item, status) {
     harvests[harvests.length - 1].status = status;
     renderCal(); return;
   }
-  setHarvestStatus(h.id, status);
+  setHarvestStatus(h.id, status);   // ▶ 시작이면 '시작일 = 오늘' 규칙도 여기서(이 경로는 date = 오늘이라 보통 그대로)
 }
 
 async function autoOpenHarvestEdit(farm, date, item) {
@@ -6889,11 +6889,22 @@ async function setHarvestStatus(id, status) {
   if (status === '수확완료') { doneDate = await _hvAskDoneDate(cur); if (!doneDate) return; }
   const patch = { status };
   if (status === '수확완료') patch.end_date = doneDate;
+  // ▶ 시작(수확전 → 수확중): 예정일이 내일 이후여도 시작일 = 오늘로 당긴다(2026-10-14 Jimmy 결정). 같은 PATCH에 date를 넣는다.
+  //   예정일이 오늘 이하면 date를 보내지 않는다(예전과 같다). 되돌리기(수확완료 → 수확중)는 대상이 아니다.
+  const today = td();
+  const movedFrom = (status === '수확중' && cur && (cur.status || '수확전') === '수확전' && cur.date && cur.date > today) ? cur.date : null;
+  if (movedFrom) patch.date = today;
   // 우선 로컬 상태 먼저 반영 (DB 성공 여부 무관하게 화면 즉시 업데이트)
   harvests = harvests.map(h => h.id === id ? { ...h, ...patch } : h);
   renderCal();
   try {
     await dbUpdateHarvest(id, patch);
+    if (movedFrom) {
+      const md = s => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+      showToast(`예정 ${md(movedFrom)} → 오늘 시작으로 바뀌었습니다`);
+      // 수확일을 옮겼으니 연결 배차의 수확예정일도 — ✏️ 수정 저장(saveHarvestEdit)과 같은 기존 흐름(배차가 없으면 묻지 않는다).
+      if (await _syncDispHarvestDate(cur.farm, movedFrom, today)) renderCal();
+    }
   } catch (e) {
     if (e.message.includes('status') || e.message.includes('column')) {
       // 컬럼 없어도 화면은 동작, 새로고침 시 초기화됨을 안내
