@@ -8108,7 +8108,7 @@ function _invFetchStart(track = p => p, base = null) {
 //   - 보관 대상 = is_void가 정확히 false인 행. is_void는 NULL 가능 컬럼이고 eq.false는 NULL을 빼므로 똑같이 뺀다(=== false).
 //   - 순서 = sbGetAll이 order 뒤에 ',id'를 덧붙인 'date.desc,id' → date 내림차순, 같으면 id 오름차순.
 //     date는 NOT NULL 'YYYY-MM-DD', id는 uuid(DB 정렬 = 소문자 16진 문자열 순서) → 단순 문자열 비교(localeCompare 아님).
-// ★전체 받기로 돌아가는 경우: 캐시 없음 · 마지막 전체 받기 30분 경과 · 물리 삭제 기록(sync_deletes)이 기준 시각보다 늦음 ·
+// ★전체 받기로 돌아가는 경우: 캐시 없음 · 마지막 전체 받기 24시간 경과 · 물리 삭제 기록(sync_deletes)이 기준 시각보다 늦음 ·
 //   합친 건수가 DB 건수(count=exact)와 다름/건수 확인 실패.
 // ★돌려주는 배열의 행은 얕은 복사본 — 화면 코드가 행을 직접 고쳐도(출고 수정의 r.date = … 등) 보관본은 서버 값 그대로다.
 let _obCache = null;    // Map id → 행(is_void=false만). null = 아직 없음
@@ -8118,7 +8118,7 @@ let _obFullAt = 0;      // 마지막 전체 받기 시각(로컬 ms)
 //   '삭제가 mark보다 늦음'이 계속 참 → 받을 때마다 전체를 받는다. 이미 반영한 삭제는 다시 전체 받기 사유로 치지 않는다.
 let _obDelSeen = null;
 let _obChain = Promise.resolve();   // 한 번에 하나씩 — 겹쳐 불려도 앞 것이 끝난 뒤 돈다(캐시를 동시에 고치지 않게)
-const _OB_FULL_MS = 30 * 60 * 1000;
+const _OB_FULL_MS = 24 * 60 * 60 * 1000;   // 2026-10-14 30분→24시간: 바뀐 행 받기마다 sync_deletes·건수 확인이 있어 이건 보험. 30분이면 하루 수십 번 전체 받기로 DB 시간 초과를 냈다.
 const _OB_OVERLAP_MS = 2 * 60 * 1000;   // 겹침 여유 — created_at은 트랜잭션 시작 시각이라 커밋이 늦으면 기준보다 앞선 값으로 들어온다
 // 서버 시각 → ms. 소수 초는 3자리로 자른다(사파리가 6자리 '…00.123456+00:00'를 못 읽는 경우 대비). 못 읽으면 null.
 const _obTs = s => { const t = s ? Date.parse(String(s).replace(/(\.\d{3})\d+/, '$1')) : NaN; return isNaN(t) ? null : t; };
@@ -8135,9 +8135,10 @@ const _obSorted = map => [...map.values()]
   .map(r => ({ ...r }));
 
 // ── 출고 보관본(IndexedDB) — 새로고침(부팅) 때도 전체 대신 바뀐 행만 받게, 받은 결과를 이 기기에 둔다.
-//   키 하나에 { schema, mark, fullAt, rows }. 30분 규칙은 그대로라 오래된 보관본이면 전체 받기.
+//   키 하나에 { schema, mark, fullAt, rows }. 24시간 규칙은 그대로라 오래된 보관본이면 전체 받기.
 //   ★IndexedDB가 없거나 실패(사파리 사생활 모드 등)하면 조용히 메모리 방식으로만 돈다 — 오류 표시 없음.
 //   ★로그아웃 때 지운다(_obIdbClear — 다른 계정이 같은 기기를 쓸 때 대비).
+// ★outbound_records에 컬럼을 추가하면 _OB_IDB.schema를 +1 할 것 — 안 그러면 보관본의 옛 행에 새 컬럼이 최대 24시간 비어 있다.
 const _OB_IDB = { db: 'citriang', store: 'cache', key: 'outbound_v1', schema: 1 };
 let _obIdbTried = false;   // 페이지당 한 번만 읽는다(로그아웃으로 비운 뒤 다시 읽지 않게)
 let _obGen = 0;            // 로그아웃마다 +1 — 그 전에 시작한 받기가 늦게 끝나 지운 보관본을 되살리지 않게
@@ -8203,7 +8204,7 @@ async function _obFetchRun() {
     }
     return rows.map(r => ({ ...r }));   // sbGetAll 순서 그대로(예전과 같은 배열)
   };
-  // 기기 시계가 뒤로 간 경우(fullAt이 미래)도 전체 받기 — 아니면 30분 규칙이 오래 멈춘다
+  // 기기 시계가 뒤로 간 경우(fullAt이 미래)도 전체 받기 — 아니면 24시간 규칙이 오래 멈춘다
   const age = Date.now() - _obFullAt;
   if (!_obCache || _obTs(_obMark) == null || age > _OB_FULL_MS || age < 0) return full();
   const w = encodeURIComponent(new Date(_obTs(_obMark) - _OB_OVERLAP_MS).toISOString());
@@ -8253,7 +8254,7 @@ async function _invFetch(track, token) {
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
       //   ★주스분만 따로 받던 조회는 2026-09-22에 지웠다 — 받아만 놓고 읽는 곳이 0이었고(grep),
       //     같은 행이 이 전량 조회에 이미 들어 있다. 주스 화면도 invOutbounds에서 골라 쓴다.
-      //   ★2026-10-14: 받는 방법만 _obFetch(처음·30분마다 전체, 평소엔 바뀐 행만)로 바꿨다 — 돌려주는 배열은 같다.
+      //   ★2026-10-14: 받는 방법만 _obFetch(처음·24시간마다 전체, 평소엔 바뀐 행만)로 바꿨다 — 돌려주는 배열은 같다.
       track(_obFetch()).catch(() => { _loadFail('출고 기록'); return []; }),
       // 주스 설정 2건 — 예전엔 위가 다 끝난 뒤 하나씩 기다렸다. 서로·위와 무관해 같이 보낸다(실패 시 직전 값 유지는 아래 그대로).
       track(_settingsRows('juice_expiry_days')).catch(() => SETTING_FAIL),
