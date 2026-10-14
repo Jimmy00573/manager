@@ -36,7 +36,62 @@ async function _sbReadFetch(url) {
   return fetch(url, { headers: { ...SB_HEADERS, 'Prefer': 'return=representation' }, cache: 'no-store' });
 }
 
+// ── 부팅 작은 표 묶음 조회(v752) — db.js _settingsBootStart/_settingsBootEnd와 같은 방식.
+// 왜: 2026-10-14 로그 실측 — 부팅 때 동시에 나가는 요청 30여 개가 줄을 서서 5~20행짜리 작은 표도 p50 약 3초(부팅 밖에서는 0.3초).
+//   DB 함수 public.boot_bundle()이 아래 29개 조회 결과를 한 번에 돌려준다(키 = 'table?params', 값 = PostgREST와 같은 행 배열).
+// ★부팅 1회용: initApp이 부팅 조회들을 출발시킨 직후 _bootBundleEnd()로 닫는다. sbGet은 '부를 때' 약속을 붙잡고,
+//   한 번 꺼낸 키는 지운다 → 그 뒤의 재조회(저장 후 재조회·재고 탭 재진입)는 전부 예전처럼 개별 조회 = 항상 최신.
+// ★묶음이 실패했거나 키가 없거나 1,000행 이상이면 그 표만 예전 개별 조회로 간다 — 결과·실패 처리는 로더 쪽 그대로.
+// ★키 규칙: db.js 로더의 sbGet 파라미터를 바꾸면 DB 함수 boot_bundle의 키도 같이 바꿀 것(migrations/003_boot_bundle.sql).
+//   안 바꾸면 그 표만 개별 조회로 돌아간다(안전하지만 느려짐).
+const BOOT_BUNDLE_KEYS = new Set([
+  'farms?order=name',
+  'drivers?order=display_order.asc.nullslast,id.asc',
+  'dispatches?order=date.desc,created_at.desc',
+  'picks?order=date.desc,created_at.desc',
+  'own_ins?order=date.desc',
+  'own_outs?order=date.desc',
+  'nhf_ins?order=date.desc',
+  'nhf_outs?order=date.desc',
+  'reports?order=date.desc,created_at.desc',
+  'harvests?order=date',
+  'vehicles?order=number',
+  'storage_locations?order=sort_order,name',
+  'partners?order=sort_order.asc,name.asc',
+  'manual_transactions?is_void=eq.false&order=date.desc,created_at.desc',
+  'container_types?order=sort_order.asc,id.asc',
+  'pachi_usages?order=sort_order',
+  'brix_grades?order=sort_order',
+  'pachi_sizes?order=sort_order',
+  'pachi_conditions?order=sort_order',
+  'quality_criteria?order=product_name',
+  'categories?order=id',
+  'size_grades?order=sort_order',
+  'items?order=name',
+  'item_size_rules?order=item_id,min_su',
+  'juice_batches?is_void=eq.false&order=inbound_date.desc,created_at.desc',
+  'juice_product_master?is_active=eq.true&order=product_name',
+  'processing_records?order=date.desc,created_at.desc',
+  'inventory_records?or=(is_void.eq.false,is_void.is.null)&order=date.desc,created_at.desc',
+  'inbound_records?select=*,driver:drivers(name,type)&order=date.desc,created_at.desc',
+]);
+let _bootBundleP = null;
+function _bootBundleStart() {
+  // GET — _sbReadFetch의 쿼리 apikey 방식이라 사전 요청(OPTIONS)이 없다. 실패해도 throw하지 않고 null(= 전부 개별 조회).
+  _bootBundleP = _sbReadFetch(`${SUPABASE_URL}/rest/v1/rpc/boot_bundle?`)
+    .then(r => r.ok ? r.json() : null)
+    .then(j => (j && typeof j === 'object' && !Array.isArray(j)) ? j : null)
+    .catch(() => null);
+  return _bootBundleP;
+}
+function _bootBundleEnd() { _bootBundleP = null; }
+
 async function sbGet(table, params = '') {
+  const bp = _bootBundleP, bk = table + '?' + params;   // ★첫 await 전에 붙잡는다 — 부팅 중에 부른 조회만 묶음을 쓴다
+  if (bp && BOOT_BUNDLE_KEYS.has(bk)) {
+    const b = await bp;
+    if (b && Array.isArray(b[bk]) && b[bk].length < SB_PAGE) { const rows = b[bk]; delete b[bk]; return rows; }
+  }
   const res = await _sbReadFetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`);
   if (!res.ok) throw new Error(await res.text());
   const json = await res.json();

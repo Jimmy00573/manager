@@ -731,6 +731,7 @@ async function initApp() {
     //   전체가 막히는 건 예전처럼 loadAllData의 운송 기록 조회가 던질 때뿐이다(그때는 예전에도 뒤의 셋까지 안 불렀다).
     // 품목 분류 — 재고 조회(_invFetch)가 이 약속을 기다렸다가 제대로 받았으면 다시 받지 않는다(중복 4건 제거).
     //   _catSysOk는 이 조회가 끝나는 순간 정한다(부팅 전체가 끝날 때가 아니라) — 재고 조회가 그 사이 판단해야 하므로.
+    track(_bootBundleStart());   // ★작은 표 29개 묶음(v752) — 아래 로더들의 sbGet이 부를 때 이 결과를 쓴다. 품목 분류 조회보다 먼저 열어야 한다.
     _catSysBootP = loadCategorySystem(track).catch(() => null)
       .then(cs => { _catSysOk = !!cs && !_CATSYS_FAIL_LABELS.some(l => _loadFailures.includes(l)); return cs; });
     // ★첫 화면이 재고 탭인 역할이면 재고 조회도 지금 같이 출발시킨다(그리기는 setRole→T('inv')가 결과를 기다려서).
@@ -747,6 +748,7 @@ async function initApp() {
       track(dbGetPartners()).catch(() => []), track(dbGetManualTransactions()).catch(() => []), track(dbGetContainerTypes()).catch(() => []),
     ]);
     _settingsBootEnd();   // 이 뒤로 부르는 설정 로더는 예전처럼 개별 조회(재조회 = 항상 최신)
+    _bootBundleEnd();     // 묶음도 같이 닫는다 — 이 뒤의 sbGet은 전부 개별 조회
     const [data, qcData, locData, , usageData, brixData, pachiSizeData, pachiCondData, catSys, brixMaxData, , partnerData, manualTxData, ctypeData] = await _bootAllP;
     farms = data.farms;
     drivers = data.drivers;
