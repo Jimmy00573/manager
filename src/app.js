@@ -424,6 +424,22 @@ async function loadUrgencySettings() {
 // ── 품목별 선과 중량 기준
 const PRODUCT_WEIGHTS_DEFAULT = { 노지감귤:18, 하우스감귤:18, 비가림:18, 타이벡:18, 천혜향:18, 한라봉:15, 레드향:17, 카라향:17, 수라향:17, 황금향:17 };
 
+// ── 품목 표시 순서(시즌 순) — 감귤류 먼저(하우스감귤 → 비가림 → 유라실생 → 노지감귤), 그다음 만감류(황금향 → 천혜향 → 레드향).
+//   (2026-10-14 Jimmy 결정) 품목 묶음이 날마다 '농가 수 많은 순'으로 바뀌던 것을 늘 같은 순서로 고정한다.
+//   ★타이벡·한라봉·카라향·수라향 위치는 Jimmy 확인 전 가정(시즌 순)이다 — 바꿔도 된다.
+//   ★표시 정렬에만 쓴다. 데이터·필터·합계는 이 순서와 무관하다.
+const PRODUCT_ORDER = ['하우스감귤', '비가림', '유라실생', '노지감귤', '타이벡', '황금향', '천혜향', '레드향', '한라봉', '카라향', '수라향'];
+// 품목의 순서 번호 — 목록 위치(정확일치 → '비가림감귤'처럼 뒤가 붙은 이름은 접두일치).
+//   목록에 없으면 목록 뒤(호출부가 가나다로 가른다), '품목 미정'·빈 값은 맨 뒤.
+function _prodRank(name) {
+  const s = String(name || '').trim();
+  if (!s || s === '품목 미정' || s === '품목 미지정') return PRODUCT_ORDER.length + 1;
+  const i = PRODUCT_ORDER.indexOf(s);
+  if (i >= 0) return i;
+  const j = PRODUCT_ORDER.findIndex(p => s.startsWith(p));
+  return j >= 0 ? j : PRODUCT_ORDER.length;
+}
+
 async function loadProductWeights() {
   try {
     const rows = await _settingsRows('product_weights');
@@ -5347,7 +5363,7 @@ function _hvItemOf(rec) {
   return (rec && rec.item) || gf(rec && rec.farm).variety || '';
 }
 // 금일 수확일정·4일 카드 공용 — [{ rec, html }]을 품목별로 묶어 머리 '🍊 품목 · n곳'을 붙인 HTML.
-//   묶음 순서: 농가 수 많은 품목 → 같으면 가나다순, '품목 미정'은 맨 뒤. 묶음 안은 들어온 순서 그대로.
+//   묶음 순서: 품목 표시 순서(_prodRank, 시즌 순) → 같으면 가나다순, '품목 미정'은 맨 뒤. 묶음 안은 들어온 순서 그대로.
 //   n곳 = 묶음 안 농가 수(같은 농가 두 건은 한 곳). headStyle은 머리 div 스타일 뒤에 덧붙는다(덮어쓰기용).
 //   품목이 하나뿐이어도 머리를 낸다(빈 목록이면 ''). 표시 전용(데이터·버튼 그대로).
 function _hvGroupByItemHtml(entries, headStyle) {
@@ -5356,7 +5372,7 @@ function _hvGroupByItemHtml(entries, headStyle) {
   entries.forEach(x => { const k = _hvItemOf(x.rec) || NONE; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
   const nFarm = xs => new Set(xs.map(x => x.rec && x.rec.farm)).size;
   const gs = [...m.entries()].sort(([a, xa], [b, xb]) =>
-    (a === NONE) - (b === NONE) || nFarm(xb) - nFarm(xa) || a.localeCompare(b, 'ko'));
+    (a === NONE) - (b === NONE) || _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));
   return gs.map(([k, xs]) =>
     `<div style="font-size:13px;font-weight:500;color:${k === NONE ? '#6B7280' : '#1E3A5F'};background:#F3F4F6;border-left:3px solid ${k === NONE ? '#9CA3AF' : '#1E3A5F'};border-radius:4px;padding:3px 8px;${headStyle || ''}">🍊 ${esc(k)}<span style="font-weight:400;color:#6B7280;margin-left:4px">· ${nFarm(xs)}곳</span></div>` +
     xs.map(x => x.html).join('')).join('');
@@ -21015,7 +21031,7 @@ function _renderScTable() {
   // ==================================================================
   // 선과기 세팅 때문에 실제 작업은 한 품목을 몰아서 한다 → 화면도 품목별로 묶는다.
   // ★위 5번 정렬 결과를 순서 그대로 품목별로 나눠 담기만 한다 → 그룹 안 순서 = 5번 정렬
-  //   (기본 카테고리→입고일 · 헤더 클릭 · 진행중 먼저 전부 그대로). 그룹 순서만 잔여 CT 합 많은 품목 먼저.
+  //   (기본 카테고리→입고일 · 헤더 클릭 · 진행중 먼저 전부 그대로). 그룹 순서만 품목 표시 순서(_prodRank, 시즌 순 — 2026-10-14).
   // ★잔여 합은 필터된 rows 기준(화면에 보이는 행의 합). 드롭다운 숫자는 필터 전 전체라 다를 수 있다.
   // 특정 품목을 고르면 이미 좁혀졌으므로 헤더 없이 평면 목록(기존과 동일).
   // _scGrpHead: 행 index → 그 행 앞에 끼울 그룹 머리 <tr>. 6번 행 렌더에서 붙인다.
@@ -21036,7 +21052,7 @@ function _renderScTable() {
     });
     const grps = [...byProd.entries()]
       .map(([p, list]) => ({ p, list, rem: list.reduce((s, r) => s + r.remaining, 0) }))
-      .sort((a, b) => b.rem - a.rem || a.p.localeCompare(b.p, 'ko'));
+      .sort((a, b) => _prodRank(a.p) - _prodRank(b.p) || a.p.localeCompare(b.p, 'ko'));
     rows = [];
     grps.forEach(g => {
       // 품목 배지는 itemColor 기존 구조 그대로(수확 진행현황·캘린더와 같은 모양). nowrap — 표 폭 안에서 한 줄.
