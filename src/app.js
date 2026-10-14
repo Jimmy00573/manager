@@ -4198,11 +4198,13 @@ function _renderRecoveryWait() {
     </div>`;
   };
   const ago = (ds, d) => ds ? `${esc(calFmtShort(ds))} · ${d}일` : '-';
+  // 콘테이너 종류 칩(getFCtypes) — 회수 대기·일정 없음 두 목록이 같이 쓴다. 먼 밭 가지 행은 그 밭 기준.
+  const types = x => { const c = x.field ? getFCtypes(x.farm, '농가', x.field) : getFCtypes(x.farm); return c ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px">${c}</span>` : ''; };
   const doneHtml = done.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;background:#FFF7ED;border-left:3px solid #C05800;padding:6px 10px"><span style="font-size:14px;font-weight:500;color:#C05800">♻️ 회수 대기</span><span style="font-size:13px;color:#C05800">${done.length}곳 · ${fmtN(sum(done))}개</span>${_xdFilterTag()}</div>` +
     done.map(x => row(x, `수확 끝 ${ago(x.endDate, x.days)}`, x.days >= 7 ? '#DC2626' : x.days >= 3 ? '#C05800' : '#6B7280',
-      (() => { const c = x.field ? getFCtypes(x.farm, '농가', x.field) : getFCtypes(x.farm); return c ? `<span style="display:inline-flex;flex-wrap:wrap;gap:3px">${c}</span>` : ''; })())).join('') : '';
+      types(x))).join('') : '';
   const npHtml = noPlan.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;background:#FEF2F2;border-left:3px solid #DC2626;padding:6px 10px;${done.length ? 'margin-top:10px' : ''}"><span style="font-size:14px;font-weight:500;color:#DC2626">📅 일정 없음</span><span style="font-size:13px;color:#DC2626">${noPlan.length}곳 · ${fmtN(sum(noPlan))}개</span>${done.length ? '' : _xdFilterTag()}</div>` +
-    noPlan.map(x => row({ ...x, plan: true }, `배출 ${ago(x.lastOut, x.days)}`, x.days >= 14 ? '#DC2626' : '#6B7280')).join('') : '';
+    noPlan.map(x => row({ ...x, plan: true }, `배출 ${ago(x.lastOut, x.days)}`, x.days >= 14 ? '#DC2626' : '#6B7280', types(x))).join('') : '';
   el.style.display = '';
   el.innerHTML = `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:10px 12px">${doneHtml}${npHtml}</div>`;
 }
