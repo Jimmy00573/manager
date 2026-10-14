@@ -20050,7 +20050,7 @@ function _renderScProductOptions() {
     remTotal += rem;
     if (r.product) remByProd[r.product] = (remByProd[r.product] || 0) + rem;
   });
-  const prods = Object.keys(remByProd).sort();
+  const prods = Object.keys(remByProd).sort((a, b) => _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));   // 품목 표시 순서(시즌 순, v748)
   // ★value는 품목명 그대로(_scProduct 필터 호환). 잔여는 표시 문구에만.
   const opts = [['', `전체 품목 (${fmtCT(remTotal)}CT)`]]
     .concat(prods.map(p => [p, `${p} (${fmtCT(remByProd[p])}CT)`]));
@@ -20075,7 +20075,7 @@ function _renderScDoingProductOptions() {
   const prods = [...new Set(
     inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) >= 1)
       .map(r => r.product).filter(Boolean)
-  )].sort();
+  )].sort((a, b) => _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));   // 품목 표시 순서(시즌 순, v748)
   const cur = [...sel.options].slice(1).map(o => o.value);
   if (JSON.stringify(cur) !== JSON.stringify(prods)) {
     sel.innerHTML = '<option value="">전체 품목</option>' +
@@ -20092,7 +20092,7 @@ function _renderScDoneProductOptions() {
   const prods = [...new Set(
     inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) <= 0)
       .map(r => r.product).filter(Boolean)
-  )].sort();
+  )].sort((a, b) => _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));   // 품목 표시 순서(시즌 순, v748)
   const cur = [...sel.options].slice(1).map(o => o.value);
   if (JSON.stringify(cur) !== JSON.stringify(prods)) {
     sel.innerHTML = '<option value="">전체 품목</option>' +
