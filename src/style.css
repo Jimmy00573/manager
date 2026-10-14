@@ -394,6 +394,8 @@ textarea {
   .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .hdr-title { font-size: 13px; }
+  /* 체크박스 옆 긴 문구('📅 예약 등록 — 배출 대기로만 저장…')가 폰에서 칸 밖으로 넘쳤다 — 폰 폭에서만 줄바꿈 허용(데스크톱은 그대로 한 줄) */
+  .fg .dist-label { white-space: normal; flex-shrink: 1; min-width: 0; }
 }
 @media (max-width: 380px) {
   .form-grid { grid-template-columns: 1fr; }
