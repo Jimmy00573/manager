@@ -27548,6 +27548,7 @@ function _specComboHtml(product, combo, i, unit = 'box') {
   return `<div class="spm-combo" style="border:1px solid #E5E7EB;border-radius:8px;padding:8px;margin-bottom:6px">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><strong class="spm-clbl" style="font-size:12px;font-weight:500;color:#1E3A5F">${String.fromCharCode(65 + (i % 26))}</strong>
       <span style="font-size:11px;color:#9CA3AF">구성</span>
+      <button type="button" class="spm-up" title="위로" onclick="_specComboMove(this, -1)" style="border:1px solid #E5E7EB;background:#fff;color:#374151;border-radius:4px;cursor:pointer;font-size:10px;padding:0 5px;line-height:1.6;font-family:inherit">▲</button><button type="button" class="spm-dn" title="아래로" onclick="_specComboMove(this, 1)" style="border:1px solid #E5E7EB;background:#fff;color:#374151;border-radius:4px;cursor:pointer;font-size:10px;padding:0 5px;line-height:1.6;font-family:inherit">▼</button>
       <button type="button" onclick="this.closest('.spm-combo').remove();_specComboRelabel();_specFormCalc()" style="margin-left:auto;border:none;background:none;color:#9CA3AF;cursor:pointer;font-size:12px;font-family:inherit">구성 삭제 ✕</button></div>
     <div class="spm-crows">${rows.map(r => _specLayoutRowHtml(product, r)).join('')}</div>
     <button type="button" onclick="_specAddComboRow(this)" style="font-size:11px;padding:2px 8px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 사이즈 추가</button>
@@ -27573,6 +27574,7 @@ function _specRenderCombos(combos, keep = false) {
       if (keep) _selEnsureVal(s, sz, _specKeepLbl(sz)); else s.value = _specProdSizes(product).includes(sz) ? sz : '';
     });
   });
+  _specComboRelabel();   // ▲▼ 흐림(첫·끝 칸)
   _specKindChanged();   // 수량 칸(박스 수·CT 수)은 출고만 — 다시 그릴 때마다 맞춘다
   _specFormCalc();
 }
@@ -27580,6 +27582,7 @@ function _specAddCombo() {
   const box = document.getElementById('spm-combos'); if (!box) return;
   box.querySelector('.spm-cempty')?.remove();
   box.insertAdjacentHTML('beforeend', _specComboHtml(document.getElementById('spm-product')?.value || '', { rows: [{}] }, box.querySelectorAll('.spm-combo').length, box.dataset.unit || 'box'));
+  _specComboRelabel();   // ▲▼ 흐림(끝 칸이 바뀌었다)
   _specKindChanged();   // 기준이면 새 줄의 수량 칸도 숨긴다
   _specFormCalc();
 }
@@ -27587,7 +27590,33 @@ function _specAddComboRow(btn) {
   const rows = btn.closest('.spm-combo')?.querySelector('.spm-crows'); if (!rows) return;
   rows.insertAdjacentHTML('beforeend', _specLayoutRowHtml(document.getElementById('spm-product')?.value || ''));
 }
-function _specComboRelabel() { document.querySelectorAll('#spm-combos .spm-combo .spm-clbl').forEach((el, i) => { el.textContent = String.fromCharCode(65 + (i % 26)); }); }
+function _specComboRelabel() {
+  document.querySelectorAll('#spm-combos .spm-combo .spm-clbl').forEach((el, i) => { el.textContent = String.fromCharCode(65 + (i % 26)); });
+  // 첫 칸 ▲·끝 칸 ▼는 흐리게(눌러도 _specComboMove가 아무것도 안 한다)
+  const cs = [...document.querySelectorAll('#spm-combos .spm-combo')];
+  cs.forEach((c, i) => {
+    const up = c.querySelector('.spm-up'), dn = c.querySelector('.spm-dn');
+    if (up) { up.style.opacity = i === 0 ? '.35' : ''; up.style.cursor = i === 0 ? 'default' : 'pointer'; }
+    if (dn) { dn.style.opacity = i === cs.length - 1 ? '.35' : ''; dn.style.cursor = i === cs.length - 1 ? 'default' : 'pointer'; }
+  });
+}
+// 구성 순서 바꾸기(2026-10-14) — 화면(DOM) 순서 = 저장 순서(_specReadCombos가 화면 순서대로 읽는다). 입력값은 노드째 옮겨 그대로 남는다.
+function _specComboMove(btn, d) {
+  const el = btn.closest('.spm-combo'); if (!el) return;
+  const to = d < 0 ? el.previousElementSibling : el.nextElementSibling;
+  if (!to || !to.classList.contains('spm-combo')) return;
+  if (d < 0) to.before(el); else to.after(el);
+  _specComboRelabel(); _specFormCalc();
+}
+// [과수 순 정렬] — 과수(_specComboCalc count) 적은 → 많은 순. 같거나 과수를 못 구하는 구성(빈 칸·사이즈 미정)은 지금 순서대로, 못 구하는 건 뒤로.
+function _specComboSortByCount() {
+  const box = document.getElementById('spm-combos'); if (!box) return;
+  const product = document.getElementById('spm-product')?.value || '';
+  const els = [...box.querySelectorAll('.spm-combo')], combos = _specReadCombos();
+  const cnt = combos.map(c => { const k = _specComboCalc(product, c); return k ? k.count : Infinity; });
+  els.map((el, i) => ({ el, i })).sort((a, b) => cnt[a.i] - cnt[b.i] || a.i - b.i).forEach(x => box.appendChild(x.el));
+  _specComboRelabel(); _specFormCalc();
+}
 // 품목 변경 — 사용 사이즈·구성 줄을 새 품목 형태·목록으로(맞지 않는 값은 비운다)
 function _specProductChanged() {
   const sizes = _specProdSizes(document.getElementById('spm-product')?.value || '');
@@ -27659,6 +27688,9 @@ function _specOvrSync(prefill) {
   const on = std && !!document.getElementById('spm-override')?.checked;
   wrap.style.display = std ? 'flex' : 'none';
   ['spm-combos', 'spm-add-combo', 'spm-total'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = (!std || on) ? '' : 'none'; });
+  // [과수 순 정렬] — 편집기가 보일 때 + 박스형만(CT형 줄은 과수가 없다)
+  const sortBtn = document.getElementById('spm-sort-combo');
+  if (sortBtn) sortBtn.style.display = ((!std || on) && (document.getElementById('spm-combos')?.dataset.unit || 'box') !== 'ct') ? '' : 'none';
   const product = gv2('spm-product'), pack = gv2('spm-pack');
   // 날짜 — 카드(_specEffLayout)와 같은 규칙: 화면 기준일, 시작일이 더 늦으면 그 시작일
   const scr = _specUi.date || td(), fd = gv2('spm-from') || scr;
@@ -27734,6 +27766,7 @@ function openSpecModal(o = {}) {
           <div id="spm-common-prev"></div>
           <div id="spm-combos"></div>
           <button type="button" id="spm-add-combo" onclick="_specAddCombo()" style="font-size:12px;padding:3px 10px;border:1px dashed #D1D5DB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit">＋ 구성 추가</button>
+          <button type="button" id="spm-sort-combo" onclick="_specComboSortByCount()" style="font-size:12px;padding:3px 10px;border:1px solid #E5E7EB;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-family:inherit;margin-left:4px">과수 순 정렬</button>
           <div id="spm-total" style="margin-top:4px"></div></div>
         <div>${lab('브릭스')}<select id="spm-brix" style="${_qrInpS}" onchange="_specBrixChanged()"></select>
           <input id="spm-brix-custom" placeholder="직접 입력" style="${_qrInpS};margin-top:4px;display:none"></div>
