@@ -5390,6 +5390,20 @@ function _hvLastDeal(farm) {
   hs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.round || 1) - (a.round || 1) || (Number(b.id) || 0) - (Number(a.id) || 0));
   return hs.length ? hs[0].deal_type : null;
 }
+// 입고 한 건이 속한 수확 | null — 입고 내역의 거래 방식 칩(_hvDealChip)용. 배차의 _dispForHarvest와 반대 방향.
+//   같은 농가 중 입고일이 시작일 ~ (종료일 || 오늘) 안에 드는 것(여럿이면 시작일 늦은 것) → 없으면 입고일 이전 가장 늦은 수확.
+//   field(선택) = 그 입고의 밭 — 먼 밭 농가면 같은 밭 가지(_brKey) 수확을 먼저 본다(없으면 전체). 모르면 날짜 기준만.
+function _hvForInbound(farm, date, field) {
+  if (!farm || !date) return null;
+  const today = td();
+  let hs = harvests.filter(h => h.farm === farm && h.date && h.date <= date);
+  if (field && _farmBranches(farm)) {
+    const k = _brKey({ field }, farm), same = hs.filter(h => _brKey(h, farm) === k);
+    if (same.length) hs = same;
+  }
+  hs.sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.round || 1) - (a.round || 1) || (Number(b.id) || 0) - (Number(a.id) || 0));
+  return hs.find(h => date <= (h.end_date || today)) || hs[0] || null;
+}
 // 등록 폼 자동 채움 — _autoPickStaffDrv와 같은 '자동값 기억' 방식: 칸이 비었거나 직전에 자동으로 넣은 값일 때만 바꾼다.
 //   사람이 직접 고른 값(onchange → _hvDealTouched)은 농가를 바꿔도 덮지 않는다.
 const _autoDealVal = {};   // select id → 마지막 자동값('' 포함) | _HV_DEAL_MANUAL(사람이 고름 — '미지정'을 고른 것도 지킨다)
@@ -19726,9 +19740,13 @@ function renderInboundList() {
     const locCell = r.distribution_group_id
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
       : esc(r.location || '-');
+    // 거래 방식(밭떼기/관떼기) 칩 — 그 입고의 수확(_hvForInbound)에 deal_type이 있을 때만. 없으면 예전 HTML 그대로.
+    //   먼 밭 농가만 그 입고의 원물수거 pick에서 밭을 찾아 넘긴다(입고 자체엔 밭 칸이 없다).
+    const _ibField = _farmBranches(r.farm_name) ? (picks.find(p => p.inbound_id === r.id && p.field) || {}).field : undefined;
+    const dealChip = _hvDealChip(_hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
