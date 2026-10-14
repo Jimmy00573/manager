@@ -1270,6 +1270,8 @@ const QR_ROLES = ['admin', 'ext_driver'];
 // 수확 캘린더 쓰기(등록·시작·완료·수정·마무리·계획 입력·＋다음 차수·전체 종료/해제)를 쓸 수 있는 역할. ★삭제는 관리자 전용 그대로.
 const HV_ROLES = ['admin', 'ext_driver'];
 function _hvCanWrite() { return HV_ROLES.includes(sessionStorage.getItem('citrus_role')); }
+// 관리자 판정(범용). 2026-10-14 신규 — 지금은 농가 담당 지정(_hvStaffBtn·_hvOpenFarmStaff·_hvSaveFarmStaff)만 쓴다(기존 인라인 판정은 그대로).
+function _isAdmin() { return sessionStorage.getItem('citrus_role') === 'admin'; }
 // 배차(콘테이너 배송) 등록을 쓸 수 있는 역할. 외부 기사는 대상 '농가'만. ★수정·삭제·되돌리기는 관리자 전용 그대로.
 const DISP_ROLES = ['admin', 'ext_driver'];
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
@@ -6157,17 +6159,19 @@ function _hvAddrTag(farm, max, field) {
 // ★한 번 접거나 편 농가는 _hvProgOpen에 남아 그 상태를 유지한다(새로고침하면 다시 전부 접힘).
 function _hvProgIsOpen(g) { return (g.key in _hvProgOpen) ? _hvProgOpen[g.key] : false; }
 
-// ── 농가 담당 기사 지정(4일 카드·농가별 진행 현황의 농가 줄) — HV_ROLES ─────────────────────────
+// ── 농가 담당 기사 지정(금일 수확일정·4일 카드·농가별 진행 현황의 농가 줄) — 관리자 전용 ─────────────────────────
+// ★2026-10-14 Jimmy 결정: 담당 = 외부 기사 화면 필터(_xdFarmOk)라 관리자만 바꾼다(외부 기사의 다른 수확 쓰기 HV_ROLES는 그대로).
+//   바꿀 때마다 audit_logs에 1건(이전·새 담당) 남긴다.
 // ★값은 farms.staff — 농가 관리의 '담당직원'과 같은 칸이다. 저장은 { staff } 한 칸만 PATCH(다른 칸은 보내지 않는다).
 //   담당이 외부 기사면 계획 줄에 '(담당)' 꼬리가 붙는다(_farmExtDrv) — 저장 뒤 renderCal로 바로 반영.
 function _hvStaffBtn(farm) {
-  if (!_hvCanWrite()) return '';
+  if (!_isAdmin()) return '';
   const cur = gf(farm).staff || '';
   if (!gf(farm).id) return '';   // 마스터에 없는 이름(배차에만 있는 대상 등)은 저장할 곳이 없다
   return `<button type="button" onclick="event.stopPropagation();_hvOpenFarmStaff('${_fsQ(farm)}')" title="농가 담당 기사 지정" style="font-size:10px;padding:1px 6px;border:1px solid #D1D5DB;color:${cur ? '#374151' : '#9CA3AF'};background:#fff;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">👤 ${esc(cur || '담당')}</button>`;
 }
 function _hvOpenFarmStaff(farm) {
-  if (!_hvCanWrite()) return;
+  if (!_isAdmin()) return;
   const f = gf(farm); if (!f.id) return;
   document.getElementById('modal-hv-farm-staff')?.remove();   // 매번 새로 만든다
   const m = document.createElement('div');
@@ -6193,7 +6197,7 @@ function _hvOpenFarmStaff(farm) {
 }
 let _hvFarmStaffBusy = false;
 async function _hvSaveFarmStaff(farm) {
-  if (!_hvCanWrite() || _hvFarmStaffBusy) return;
+  if (!_isAdmin() || _hvFarmStaffBusy) return;
   const f = gf(farm); if (!f.id) return;
   const staff = document.getElementById('hv-farm-staff-sel')?.value || '';
   if (staff === (f.staff || '')) { document.getElementById('modal-hv-farm-staff')?.remove(); return; }   // 안 바뀌었으면 저장 없음
@@ -6201,6 +6205,15 @@ async function _hvSaveFarmStaff(farm) {
   try {
     await dbUpdateFarm(f.id, { staff });
     farms = farms.map(x => x.id === f.id ? { ...x, staff } : x);   // DB 성공 뒤에 로컬 반영
+    // 담당 변경 이력 — 실패해도 저장은 되돌리지 않는다(콘솔만)
+    try {
+      await dbInsertAuditLog({
+        target_table: 'farms', target_id: String(f.id),
+        before_val: { staff: f.staff || '' }, after_val: { staff },
+        reason: '농가 담당 변경(수확 화면)',
+        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      });
+    } catch (e2) { console.warn('농가 담당 변경 이력 기록 실패:', e2.message); }
     document.getElementById('modal-hv-farm-staff')?.remove();
     renderCal();
     showToast(`${farm} 담당 ${staff || '없음'}`);
