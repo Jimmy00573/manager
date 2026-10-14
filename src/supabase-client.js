@@ -41,7 +41,8 @@ async function _sbReadFetch(url) {
 //   DB 함수 public.boot_bundle()이 아래 29개 조회 결과를 한 번에 돌려준다(키 = 'table?params', 값 = PostgREST와 같은 행 배열).
 // ★부팅 1회용: initApp이 부팅 조회들을 출발시킨 직후 _bootBundleEnd()로 닫는다. sbGet은 '부를 때' 약속을 붙잡고,
 //   한 번 꺼낸 키는 지운다 → 그 뒤의 재조회(저장 후 재조회·재고 탭 재진입)는 전부 예전처럼 개별 조회 = 항상 최신.
-// ★묶음이 실패했거나 키가 없거나 1,000행 이상이면 그 표만 예전 개별 조회로 간다 — 결과·실패 처리는 로더 쪽 그대로.
+// ★묶음이 실패했거나 키가 없으면 그 표만 예전 개별 조회로 간다 — 결과·실패 처리는 로더 쪽 그대로.
+//   묶음은 서버 함수(json_agg)라 PostgREST 1,000행 상한이 없다 → 행 수와 상관없이 그대로 쓴다(v753).
 // ★키 규칙: db.js 로더의 sbGet 파라미터를 바꾸면 DB 함수 boot_bundle의 키도 같이 바꿀 것(migrations/003_boot_bundle.sql).
 //   안 바꾸면 그 표만 개별 조회로 돌아간다(안전하지만 느려짐).
 const BOOT_BUNDLE_KEYS = new Set([
@@ -90,15 +91,25 @@ async function sbGet(table, params = '') {
   const bp = _bootBundleP, bk = table + '?' + params;   // ★첫 await 전에 붙잡는다 — 부팅 중에 부른 조회만 묶음을 쓴다
   if (bp && BOOT_BUNDLE_KEYS.has(bk)) {
     const b = await bp;
-    if (b && Array.isArray(b[bk]) && b[bk].length < SB_PAGE) { const rows = b[bk]; delete b[bk]; return rows; }
+    if (b && Array.isArray(b[bk])) { const rows = b[bk]; delete b[bk]; return rows; }   // 서버 함수라 1,000행 상한 없이 전부 온다(v753)
   }
   const res = await _sbReadFetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`);
   if (!res.ok) throw new Error(await res.text());
   const json = await res.json();
-  // ★정확히 1,000행이 왔다 = 잘렸을 가능성이 매우 높다. 조용한 잘림을 다음엔 바로 알아채도록 남긴다.
-  //   limit을 직접 준 조회(sbGetAll의 페이지 포함)는 의도한 개수이므로 넘어간다.
+  // ★정확히 1,000행이 왔다 = PostgREST가 오류 없이 잘라서 준 것이다 → sbGetAll로 전체를 다시 받아 돌려준다(v753).
+  //   왜: 경고만 남기던 시절엔 잘린 배열이 그대로 화면에 갔다. 2026-10-15 실측 회수 437행·입고 539행 → 약 53~55일 뒤 1,000행
+  //   (성수기엔 더 빠름). 넘는 순간 재고·현황이 조용히 틀어지므로 호출처(100곳 이상)를 고치지 않고 여기 한 곳에서 막는다.
+  //   limit을 직접 준 조회(sbGetAll의 페이지·더 보기 등)는 의도한 개수이므로 넘어간다.
+  // ★무한 반복 없음: sbGetAll은 페이지를 limit=을 붙여 sbGet으로 받으므로 이 조건에 다시 걸리지 않는다.
+  // ★이어 받기가 실패하면 예전과 똑같이 1,000행을 돌려준다(더 나빠지지 않게). id 컬럼이 없는 표(settings·op_settings·
+  //   morning_plans·product_category_map·sync_deletes)는 sbGetAll의 order=id가 실패할 수 있어 이 경로로 간다 — 실제로 1,000행에 닿을 일은 없다.
   if (Array.isArray(json) && json.length === SB_PAGE && !/(^|&)limit=/.test(params)) {
-    console.warn(`[sbGet] ${table} 응답이 정확히 ${SB_PAGE}행입니다 — 잘렸을 수 있습니다. sbGetAll 사용을 검토하세요. (?${params})`);
+    console.info(`[sbGet] ${table} 1,000행 도달 — sbGetAll로 전체 받기 (?${params})`);
+    try { return await sbGetAll(table, params); }
+    catch (e) {
+      console.warn(`[sbGet] ${table} 응답이 정확히 ${SB_PAGE}행입니다 — 잘렸을 수 있습니다. sbGetAll 사용을 검토하세요. (?${params}) — 이어 받기 실패: ${e && e.message}`);
+      return json;
+    }
   }
   return json;
 }
