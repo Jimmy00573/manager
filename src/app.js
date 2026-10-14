@@ -5401,11 +5401,14 @@ function _hvGroupByItemHtml(entries, headStyle) {
     xs.map(x => x.html).join('')).join('');
 }
 // ── 수확 거래 방식(harvests.deal_type: '밭떼기'|'관떼기'|null=미지정) ─────────────
-// 칩 — 수확 줄(harvestRow)·4일 카드 공용. null이면 ''(기존 HTML 그대로). 테두리 칩은 _specTag를 같이 쓴다.
-const HV_DEAL_COLOR = { 밭떼기: '#1E3A5F', 관떼기: '#6B7280' };
+// 칩 — 수확 줄(harvestRow)·4일 카드·입고 내역 공용. null이면 ''(기존 HTML 그대로).
+//   색 채움 + 흰 글자(2026-10-14 Jimmy B안 — 테두리만으로는 작은 칩에서 구분이 안 됐다). 크기·모양은 _specTag 칩과 같다
+//   (같은 색 1px 테두리를 둬서 높이·폭도 테두리 칩과 똑같다 — 빼면 2px 작아진다).
+//   ★HV_DEAL_COLOR는 키 판정(_hvLastDeal·수정 창 select)에도 쓰인다 — 키를 바꾸면 거기도 같이 본다.
+const HV_DEAL_COLOR = { 밭떼기: '#1E3A5F', 관떼기: '#C05800' };
 function _hvDealChip(h) {
   const t = h && h.deal_type, c = HV_DEAL_COLOR[t];
-  return c ? ' ' + _specTag(t, c, c) : '';
+  return c ? ` <span style="font-size:11px;padding:0 6px;border-radius:4px;border:1px solid ${c};background:${c};color:#fff;white-space:nowrap;line-height:1.6;font-weight:500">${esc(t)}</span>` : '';
 }
 // 그 농가의 가장 최근 수확(시작일 → 차수 → id 순) 중 거래 방식이 있는 것의 값 | null
 function _hvLastDeal(farm) {
