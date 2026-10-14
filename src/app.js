@@ -4231,7 +4231,11 @@ function buildContainerHistory() {
   // ★이동(transfer_id) B 배출도 여기서 — 배차 행이 없어 안 넣으면 B만 걸러 볼 때 누적 잔여가 보유(getFCS)와 어긋난다. xfer = 이동 표시용.
   picks.filter(p => p.type === '배출' && (p.outbound_id || p.manual_tx_id || p.transfer_id)).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p) }));
   // 회수(원물수거/빈콘회수) — 이동 A행 포함(원래부터 들어옴, 표시만 붙인다)
-  picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p) }));
+  // content = 무엇을 담아 돌아왔나: 빈콘회수 '빈콘', 원물수거는 이어진 입고(inbound_id)의 카테고리(빈 값 = '상품', categoryBadge와 같은 규칙).
+  //   ★입고를 더 조회하지 않는다 — 지금 불러온 inboundRecords에 없으면(무효·미로드) '원물'.
+  const ibCat = new Map((inboundRecords || []).map(r => [r.id, r.inbound_category || '상품']));
+  picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p),
+    content: p.type === '빈콘회수' ? '빈콘' : (ibCat.get(p.inbound_id) || '원물') }));
   // 농가것 반입/반납
   ownIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_in' }));
   ownOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_out' }));
@@ -4253,17 +4257,33 @@ function renderContainerHistory() {
     catEl.value = cur;
     if (catEl.value !== cur) catEl.value = '';
   }
-  const tk = gv('ch-tkind'), kd = gv('ch-kind'), ct = gv('ch-cat'), q = gv('ch-q'), from = gv('ch-from'), to = gv('ch-to');
+  // 회수 내용 순서 — 입고 카테고리 기본 순서(IB_CAT_SORT_ORDER) → 그 밖(가나다) → 원물 → 빈콘. 필터 옵션·요약이 같이 쓴다.
+  const _chCont = c => { const i = IB_CAT_SORT_ORDER.indexOf(c); return c === '빈콘' ? 99 : c === '원물' ? 98 : i >= 0 ? i : 50; };
+  const _chContSort = (a, b) => _chCont(a) - _chCont(b) || a.localeCompare(b, 'ko');
+  // 회수 내용 select 동적 채움(종류 select와 같은 방식)
+  const contEl = document.getElementById('ch-cont');
+  if (contEl) {
+    const cur = contEl.value;
+    const conts = [...new Set(all.map(r => r.content).filter(Boolean))].sort(_chContSort);
+    contEl.innerHTML = '<option value="">전체</option>' + conts.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    contEl.value = cur;
+    if (contEl.value !== cur) contEl.value = '';
+  }
+  const tk = gv('ch-tkind'), kd = gv('ch-kind'), ct = gv('ch-cat'), cn = gv('ch-cont'), q = gv('ch-q'), from = gv('ch-from'), to = gv('ch-to');
   const list = all.filter(r =>
-    (!tk || r.targetKind === tk) && (!kd || r.kind === kd) && (!ct || r.category === ct) &&
+    (!tk || r.targetKind === tk) && (!kd || r.kind === kd) && (!ct || r.category === ct) && (!cn || r.content === cn) &&
     (!q || (r.target || '').includes(q)) && (!from || (r.date || '') >= from) && (!to || (r.date || '') <= to)
   ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const totQty = list.reduce((s, r) => s + r.qty, 0);
   const kColor = { 배출: '#DC2626', 회수: '#2E7D32', 반입: '#1565C0', 반납: '#C05800' };
   // 유형별 소계(필터된 list 기준) — 0인 유형은 생략
   const kindTot = {}; list.forEach(r => { kindTot[r.kind] = (kindTot[r.kind] || 0) + r.qty; });
+  // 회수 내용별 합 — 회수 배지 바로 뒤에 '(상품 1,200 · 대과 80 · 빈콘 300)'. 회수가 없으면 안 붙는다.
+  const contTot = {}; list.forEach(r => { if (r.kind === '회수' && r.content) contTot[r.content] = (contTot[r.content] || 0) + r.qty; });
+  const contTxt = Object.keys(contTot).sort(_chContSort).map(c => `${esc(c)} ${fmtN(contTot[c])}`).join(' · ');
   const kindHtml = ['배출', '회수', '반입', '반납'].filter(k => kindTot[k])
-    .map(k => `<span class="badge" style="background:#fff;border:1px solid ${kColor[k]};color:${kColor[k]}">${k} ${kindTot[k]}개</span>`).join(' ');
+    .map(k => `<span class="badge" style="background:#fff;border:1px solid ${kColor[k]};color:${kColor[k]}">${k} ${kindTot[k]}개</span>`
+      + (k === '회수' && contTxt ? ` <span style="font-size:12px;color:#6B7280">(${contTxt})</span>` : '')).join(' ');
   const sum = document.getElementById('ch-sum');
   if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>${kindHtml ? ' ' + kindHtml : ''}`;
   const tkBadge = _tkBadge;   // 모듈 레벨로 옮김(수거·회수 목록과 공용) — 사용부는 그대로.
@@ -4280,7 +4300,8 @@ function renderContainerHistory() {
   // ★표시 조건 2가지
   //   · 대상이 하나 — 여러 농가가 섞이면 누적이 뜻을 잃는다
   //   · 유형(kd) 필터 없음 — '회수'만 걸러 보면 잔액이 아니라 회수 누계가 된다(종류·분류 필터는 그 종류의 잔액이라 괜찮다)
-  const runOK = targets.length === 1 && !kd;
+  //   · 회수 내용(cn) 필터 없음 — 회수 행만 남아 유형 필터와 같은 이유로 잔액이 아니다
+  const runOK = targets.length === 1 && !kd && !cn;
 
   // ★기간을 좁히면 그 이전 기록이 빠져 누적이 틀어진다 → 이전 잔액을 '이월'로 먼저 계산해 얹는다.
   //   누적 열을 숨기는 쪽이 더 쉽지만, '최근 한 달만 보기'가 이 기능을 제일 많이 쓸 상황이라
@@ -4328,13 +4349,13 @@ function renderContainerHistory() {
   };
   // 이월 행 — 기간 이전 잔액이 있을 때만. 가장 오래된 위치(최신순이므로 맨 아래)에 붙인다.
   const carryRow = (runOK && from && (carried.ours || carried.theirs))
-    ? `<tr style="background:#FAFAFA;color:#888"><td colspan="5" style="text-align:right;font-size:11px">${esc(from)} 이전 이월</td>`
+    ? `<tr style="background:#FAFAFA;color:#888"><td colspan="6" style="text-align:right;font-size:11px">${esc(from)} 이전 이월</td>`
       + `<td style="font-weight:700">${axesUsed.map(a => `${axesUsed.length > 1 ? _chAxisLabel[a] + ' ' : ''}${fmtN(carried[a])}`).join(' / ')}</td><td>—</td></tr>`
     : '';
 
   tb.innerHTML = list.length ? list.map((r, i) =>
-    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[i])}</td><td>${esc(r.staff || '—')}</td></tr>`
-  ).join('') + carryRow : emr(7, '이력 없음');
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.content ? categoryBadge(r.content) : '<span style="color:#ccc">—</span>'}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[i])}</td><td>${esc(r.staff || '—')}</td></tr>`
+  ).join('') + carryRow : emr(8, '이력 없음');
 }
 
 // 담당자(직원·기사) select 옵션 — 이름 값(picks.driver / own_out·nhf_out.staff 모두 이름 저장). 선택사항.
