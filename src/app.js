@@ -5395,7 +5395,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${_hvStBg[st]||'#FFF3E0'};border-radius:8px;border:0.5px solid #e0e0e0;flex-wrap:wrap">
       ${showDate ? `<span style="font-size:11px;font-weight:600;color:#888;min-width:38px">${h.date.slice(5).replace('-','/')}</span>` : ''}
       ${h.end_date ? `<span style="font-size:10px;color:#bbb">~ ${h.end_date.slice(5).replace('-','/')}</span>` : ''}
-      <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>
+      <span style="font-size:13px;font-weight:700">${esc(h.farm)}</span>${opts.staff ? _hvStaffBtn(h.farm) : ''}
       <span style="font-size:11px;font-weight:600;color:#1565C0">${h.round||1}차</span>
       ${h.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;${itemColor(h.item)}">${esc(h.item)}</span>` : ''}${_hvDealChip(h)}
       ${h.is_final
@@ -5456,7 +5456,7 @@ function renderCal() {
         const hEntry = _isHarvestEv(e)
           ? harvests.find(h => h.id === e.id)
           : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
-        if (hEntry) return { rec: hEntry, html: harvestRow(hEntry, false, todayStr, { contact: true }) };   // rec = 품목 묶음 기준(보이는 기록)
+        if (hEntry) return { rec: hEntry, html: harvestRow(hEntry, false, todayStr, { contact: true, staff: true }) };   // rec = 품목 묶음 기준(보이는 기록)
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
         const item = e.item || '';
@@ -5468,7 +5468,7 @@ function renderCal() {
             <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
             ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>` : ''}` : '';
         return { rec: e, html: `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
-          <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>
+          <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>${_hvStaffBtn(e.farm)}
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
           <span class="badge b-warn" style="font-size:10px">수확전</span>
           <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${_hvContactLine(e.farm, _recAddr(e))}
