@@ -82,6 +82,9 @@ const _CT_ICON = {
   플라스틱바구니: '🧺', 천바구니: '👝', 리어카: '🛒',   // 우리것(2026-08-21 추가) — 색 원(🟡🟢)이 동난 자리라 물건 모양으로
   농가: '🟠', 사각: '🔲',                          // 농가것
   콘테이너: '🔵', 파렛트: '🟣',                    // 농협·거래처것
+  // 파렛 5종(2026-09-10 추가, v763) — 맵에 없어 전부 📦 폴백이라 구분이 안 됐다.
+  //   농협파렛 = 모든 농협 통합 파렛이라 옛 '파렛트'와 같은 🟣. KPP·아주는 둘 다 임대 파렛이라 같은 🔷로 묶는다.
+  농협파렛: '🟣', KPP파렛: '🔷', 아주파렛: '🔷', 우리파렛트: '🟫', 기타파렛: '⬛',
   노랑: '🟡', 초록: '🟢', 헌콘: '⬜',              // 옛 이름 호환(ctNorm 전 값이 들어와도 아이콘이 나오게)
 };
 function _ctIcon(v) { return _CT_ICON[ctNorm(v)] || _CT_ICON[v] || '📦'; }
@@ -93,6 +96,7 @@ const _CT_CLASS = {
   플라스틱바구니: 'ctb', 천바구니: 'ctb2', 리어카: 'ctr',   // 우리것(2026-08-21 추가) — 청록·갈색·분홍
   농가: 'ctf', 사각: 'ctf2',                          // 농가것
   콘테이너: 'ctn', 파렛트: 'ctn2',                    // 농협·거래처것
+  농협파렛: 'ctn2', KPP파렛: 'ctn2', 아주파렛: 'ctn2', 우리파렛트: 'cto', 기타파렛: 'ctn2',   // 파렛 5종(v763) — 새 클래스 없이 기존 것만
   노랑: 'cty', 초록: 'ctg', 헌콘: 'cto',              // 옛 이름 호환
 };
 function _ctClass(v) { return _CT_CLASS[ctNorm(v)] || _CT_CLASS[v] || ''; }
@@ -4308,29 +4312,29 @@ function renderContainerHistory() {
   const _CH_SIGN = { 배출: 1, 회수: -1, 반입: 1, 반납: -1 };
   const _chAxisLabel = { ours: '우리것', theirs: '남의것' };
   const targets = [...new Set(list.map(r => r.target))];
-  // ★표시 조건 2가지
-  //   · 대상이 하나 — 여러 농가가 섞이면 누적이 뜻을 잃는다
+  // ★v763: 잔액 단위 = 대상 × 축 × 종류(키 _chKey). 예전엔 대상 1곳일 때만, 축 안의 종류를 합친 총합을 크게 보였다 —
+  //   '남원농협' 검색이 '남원농협(정익수)'까지 걸리면 전부 '—'였고, 콘테이너와 파렛을 더한 총합은 뜻 없는 숫자였다.
+  //   이제 행마다 '그 대상의 그 종류가 이 기록 직후 남은 수' 한 숫자. 대상이 여러 곳이어도 키가 갈라 주므로 계산한다.
+  // ★표시 조건
   //   · 유형(kd) 필터 없음 — '회수'만 걸러 보면 잔액이 아니라 회수 누계가 된다(종류·분류 필터는 그 종류의 잔액이라 괜찮다)
   //   · 회수 내용(cn) 필터 없음 — 회수 행만 남아 유형 필터와 같은 이유로 잔액이 아니다
-  const runOK = targets.length === 1 && !kd && !cn;
+  const runOK = !kd && !cn;
+  const _chKey = r => `${r.target || ''}\u0001${_CH_AXIS[r.kind]}\u0001${r.category || ''}`;
 
-  // ★기간을 좁히면 그 이전 기록이 빠져 누적이 틀어진다 → 이전 잔액을 '이월'로 먼저 계산해 얹는다.
+  // ★기간을 좁히면 그 이전 기록이 빠져 누적이 틀어진다 → 이전 잔액을 '이월'로 키별로 먼저 계산해 얹는다.
   //   누적 열을 숨기는 쪽이 더 쉽지만, '최근 한 달만 보기'가 이 기능을 제일 많이 쓸 상황이라
   //   그때 기능이 사라지면 만든 뜻이 없다. 비용은 전체 행을 한 번 더 훑는 정도다.
-  const runBal = { ours: 0, theirs: 0 };
-  const runCat = { ours: {}, theirs: {} };
+  const runBal = {};   // _chKey → 잔액
   if (runOK && from) {
     all.filter(r =>
       (!tk || r.targetKind === tk) && (!ct || r.category === ct) &&
       (!q || (r.target || '').includes(q)) && (r.date || '') < from
     ).forEach(r => {
-      const ax = _CH_AXIS[r.kind]; if (!ax) return;
-      const v = _CH_SIGN[r.kind] * (r.qty || 0);
-      runBal[ax] += v;
-      if (r.category) runCat[ax][r.category] = (runCat[ax][r.category] || 0) + v;
+      if (!_CH_AXIS[r.kind]) return;
+      const k = _chKey(r); runBal[k] = (runBal[k] || 0) + _CH_SIGN[r.kind] * (r.qty || 0);
     });
   }
-  const carried = { ours: runBal.ours, theirs: runBal.theirs };
+  const carried = { ...runBal };
 
   // ★화면은 최신순이므로 누적은 배열을 거꾸로(오래된 것부터) 훑어 각 행에 붙인다.
   //   같은 날 안의 순서는 화면에 보이는 순서 그대로 쓴다 — 계산과 표시가 어긋나지 않게.
@@ -4339,29 +4343,30 @@ function renderContainerHistory() {
     for (let i = list.length - 1; i >= 0; i--) {
       const r = list[i];
       const ax = _CH_AXIS[r.kind]; if (!ax) { cells[i] = null; continue; }
-      const v = _CH_SIGN[r.kind] * (r.qty || 0);
-      runBal[ax] += v;
-      if (r.category) runCat[ax][r.category] = (runCat[ax][r.category] || 0) + v;
-      cells[i] = { ax, total: runBal[ax], cats: { ...runCat[ax] } };
+      const k = _chKey(r);
+      runBal[k] = (runBal[k] || 0) + _CH_SIGN[r.kind] * (r.qty || 0);
+      cells[i] = { ax, cat: r.category || '', bal: runBal[k], target: r.target };
     }
   }
-  const axesUsed = [...new Set(list.map(r => _CH_AXIS[r.kind]).filter(Boolean))];
+  // 우리것/남의것 작은 표시 — 그 대상에 두 축이 다 있을 때만(대상 단위. 예전 axTag 규칙을 대상마다 적용).
+  const axByTarget = {};
+  list.forEach(r => { const ax = _CH_AXIS[r.kind]; if (ax) (axByTarget[r.target] = axByTarget[r.target] || new Set()).add(ax); });
   const chCell = c => {
     if (!c) return '<span style="color:#ccc">—</span>';
-    // 종류가 하나뿐이면 칩을 생략한다 — 숫자 옆에 같은 말을 두 번 쓰는 셈이라 표만 무거워진다.
-    const cats = Object.entries(c.cats).filter(([, n]) => n !== 0);
-    const chips = cats.length > 1
-      ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:2px;justify-content:flex-end">${cats
-          .map(([k2, n]) => `<span class="ct ${_ctClass(k2)}">${_ctIcon(k2)} ${fmtN(n)}</span>`).join('')}</div>`
-      : '';
-    const axTag = axesUsed.length > 1 ? `<span style="font-size:9px;color:#999;margin-right:3px">${_chAxisLabel[c.ax]}</span>` : '';
-    const col = c.total < 0 ? '#DC2626' : c.total > 0 ? '#C05800' : '#6B7280';
-    return `${axTag}<strong style="color:${col}">${fmtN(c.total)}</strong>${chips}`;
+    const axTag = (axByTarget[c.target] && axByTarget[c.target].size > 1) ? `<span style="font-size:9px;color:#999;margin-right:3px">${_chAxisLabel[c.ax]}</span>` : '';
+    const col = c.bal < 0 ? '#DC2626' : c.bal > 0 ? '#C05800' : '#6B7280';
+    // 한 칸에 한 숫자 — '{종류 아이콘} {잔액}'. 종류가 빈 옛 행(picks ctype null)은 아이콘 없이 잔액만.
+    return `${axTag}<strong style="color:${col};font-variant-numeric:tabular-nums">${c.cat ? _ctIcon(c.cat) + ' ' : ''}${fmtN(c.bal)}</strong>`;
   };
-  // 이월 행 — 기간 이전 잔액이 있을 때만. 가장 오래된 위치(최신순이므로 맨 아래)에 붙인다.
-  const carryRow = (runOK && from && (carried.ours || carried.theirs))
+  // 이월 행 — 대상이 1곳이고 기간 이전 잔액이 있을 때만(여러 대상이면 행 없이 계산에만 반영). 가장 오래된 위치(맨 아래).
+  //   내용도 키(축 × 종류)별 — 두 축이 다 있으면 축 이름을 붙인다.
+  const carriedKeys = Object.keys(carried).filter(k => carried[k]);
+  const carryRow = (runOK && from && targets.length === 1 && carriedKeys.length)
     ? `<tr style="background:#FAFAFA;color:#888"><td colspan="6" style="text-align:right;font-size:11px">${esc(from)} 이전 이월</td>`
-      + `<td style="font-weight:700">${axesUsed.map(a => `${axesUsed.length > 1 ? _chAxisLabel[a] + ' ' : ''}${fmtN(carried[a])}`).join(' / ')}</td><td>—</td></tr>`
+      + `<td style="font-weight:700;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums">${carriedKeys.map(k => {
+          const [, ax, cat] = k.split('\u0001');
+          return `${new Set(carriedKeys.map(x => x.split('\u0001')[1])).size > 1 ? _chAxisLabel[ax] + ' ' : ''}${cat ? _ctIcon(cat) + ' ' : ''}${fmtN(carried[k])}`;
+        }).join(' / ')}</td><td>—</td></tr>`
     : '';
 
   tb.innerHTML = list.length ? list.map((r, i) =>

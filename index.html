@@ -568,9 +568,9 @@
 </div>
   <div id="cal-stats-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px"></div>
   <div id="cal-today-strip" style="display:none;background:#FFFDE7;border:1px solid #FFE082;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
-  <div id="cal-today-trans" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
   <div id="cal-alert-strip" style="display:none;padding:8px 12px;border-radius:8px;background:#FFEBEE;border:0.5px solid #FFCDD2;font-size:12px;color:#C62828;margin-bottom:12px;display:flex;align-items:center;gap:6px"></div>
   <div id="cal-upcoming-harvest" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:12px"></div>
+  <div id="cal-today-trans" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
   <div id="cal-harvest-progress" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:12px"></div>
   <!-- ★달력(월 그리드)은 조망용이라 맨 아래. 매일 보는 것은 위의 금일·다가오는·농가별 진행 현황이다.
        cal-detail-panel(날짜 클릭 상세)은 반드시 그리드 바로 뒤에 붙어 있어야 한다 — 떨어지면 클릭한 날 내용이 화면 위쪽에 열린다. -->
@@ -633,8 +633,8 @@
     </div>
     <div id="ch-sum" style="margin-top:10px"></div>
   </div>
-  <!-- ★'누적 잔여'는 대상 하나를 검색했을 때만 값이 찬다(여러 대상이 섞이면 누적이 뜻을 잃는다). 그 외에는 '—'. -->
-  <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>유형</th><th>대상</th><th>종류</th><th>회수 내용</th><th>수량</th><th>누적 잔여</th><th>담당자</th></tr></thead><tbody id="ch-tb"></tbody></table></div>
+  <!-- ★'누적 잔여' = 그 대상 × 그 종류(우리것/남의것 축 따로)의 이 기록 직후 잔액(v763). 유형·회수 내용 필터가 걸리면 '—'. -->
+  <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>유형</th><th>대상</th><th>종류</th><th>회수 내용</th><th>수량</th><th title="그 대상의 그 종류가 이 기록 직후 남은 수">누적 잔여</th><th>담당자</th></tr></thead><tbody id="ch-tb"></tbody></table></div>
 </div>
 
 <!-- 내보내기 -->
@@ -2081,6 +2081,6 @@
 <script src="src/supabase-client.js?v=33"></script>
 <script src="src/db.js?v=30"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=760"></script>
+<script src="src/app.js?v=761"></script>
 </body>
 </html>
