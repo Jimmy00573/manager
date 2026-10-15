@@ -175,7 +175,7 @@
       <div class="fg"><label>차수</label><input id="mh-round" type="number" min="1" value="1"></div>
       <div class="fg"><label>농가명 *</label><select id="mh-farm" onchange="_fillFieldSel('mh', this.value)"><option value="">선택</option></select></div>
       <div class="fg" id="mh-field-wrap" style="display:none"><label>밭 *</label><select id="mh-field" onchange="const f = gv('mh-farm'); if (_hvNewRoundFrom != null && f && _farmBranches(f)) sv('mh-round', _hvNextRound(f, this.value, gv('mh-item')))"></select></div>
-      <div class="fg"><label>품목</label><select id="mh-item"></select></div>
+      <div class="fg"><label>품목</label><select id="mh-item" onchange="const f = gv('mh-farm'); if (_hvNewRoundFrom != null && f) sv('mh-round', _hvNextRound(f, gv('mh-field'), this.value))"></select></div>
       <div class="fg"><label>거래 방식</label><select id="mh-deal"><option value="">미지정</option><option value="밭떼기">밭떼기</option><option value="관떼기">관떼기</option></select></div>
       <div class="fg"><label>메모</label><input id="mh-note"></div>
     </div>
@@ -2094,6 +2094,6 @@
 <script src="src/supabase-client.js?v=33"></script>
 <script src="src/db.js?v=30"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=753"></script>
+<script src="src/app.js?v=754"></script>
 </body>
 </html>

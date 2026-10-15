@@ -6495,7 +6495,7 @@ function renderHarvestProgress() {
         const hdArrow = isDone ? `<span style="font-size:11px;color:${k.fg}">${_hvDoneGroupOpen ? '▾' : '▸'}</span> ` : '';
         const showList = !isDone || _hvDoneGroupOpen;
         return `<div>
-          <div${hdClick} style="${hdCss}font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${hdArrow}${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 수확 기록이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>${showList ? `
+          <div${hdClick} style="${hdCss}font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${hdArrow}${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 진행 중인 수확이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>${showList ? `
           <div style="display:flex;flex-direction:column;gap:6px">${_hvGroupByItemHtml(groups.filter(g => g.kind === kd).map(g => ({ rec: { item: g.item, farm: g.farm }, html: _hvProgCard(g) })), 'margin-top:2px')}</div>` : ''}
         </div>`;
       }).join('')}
@@ -6931,17 +6931,26 @@ async function _syncDispHarvestDate(farm, oldDate, newDate) {
 
 // ★auto* 셋(금일 수확일정의 배차에서만 온 줄)은 품목(item)이 있으면 같은 품목 수확만 찾는다(v755 — 같은 날 두 품목이면
 //   다른 품목 수확을 시작·수정·삭제하던 자리). item이 비면 예전대로 농가·날짜만.
+// 배차 줄에서 새 수확을 만들 때 넣을 차수(+밭) — v756. 예전엔 round 없이 넣어 DB 기본값 1이 들어갔다(이미 1차가 있으면 '1차' 중복).
+//   field = 그 농가·그 날(dispatches.harvest)·같은 품목(item 있으면) 배차의 밭. round = _hvNextRound(그 밭, 그 품목).
+//   ★field는 먼 밭 농가이고 배차에 밭이 있을 때만 넣는다 — 그 외엔 예전처럼 키 자체를 안 넣는다.
+function _hvAutoNewBase(farm, date, item) {
+  const d = dispatches.find(x => x.farm === farm && x.harvest === date && (!item || x.item === item) && x.field);
+  const field = d ? d.field : undefined;
+  return { round: _hvNextRound(farm, field, item), ...((field && _farmBranches(farm)) ? { field } : {}) };
+}
 async function autoSetHarvestStatus(farm, date, item, status) {
   if (!_hvCanWrite()) return;
   let h = harvests.find(x => x.farm === farm && x.date === date && (!item || x.item === item));
   if (!h) {
+    const base = _hvAutoNewBase(farm, date, item);
     try {
       // ★새 기록이 완료면 종료일 = 그 줄 날짜(오늘). 시작일이 오늘이라 어제 선택이 없어 확인창은 띄우지 않는다.
-      const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm), status, ...(status === '수확완료' ? { end_date: date } : {}) });   // 거래 방식 = 그 농가 최근값
+      const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm), ...base, status, ...(status === '수확완료' ? { end_date: date } : {}) });   // 거래 방식 = 그 농가 최근값
       harvests.push(row);
     } catch(e) {
       // status 컬럼 없으면 status 빼고 재시도
-      try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm) }); harvests.push(row); h = row; } catch(e2) {}
+      try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm), ...base }); harvests.push(row); h = row; } catch(e2) {}
       harvests[harvests.length - 1].status = status;
       renderCal(); return;
     }
@@ -6955,7 +6964,7 @@ async function autoOpenHarvestEdit(farm, date, item) {
   if (!_hvCanWrite()) return;
   let h = harvests.find(x => x.farm === farm && x.date === date && (!item || x.item === item));
   if (!h) {
-    try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm) }); harvests.push(row); h = row; }
+    try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm), ..._hvAutoNewBase(farm, date, item) }); harvests.push(row); h = row; }
     catch(e) { alert('오류: ' + e.message); return; }
   }
   openHarvestEdit(h.id);
