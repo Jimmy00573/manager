@@ -4758,6 +4758,51 @@ async function saveQuickReturnNhf(nhf, type) {
 }
 
 // ── [화면: 수확·수송 > 현황판] KPI + 🟡회수 필요(농가行·농협行·거래처行) + 🟢반납 필요. 농가 표는 renderFarmTbl.
+// ── [화면: 현황판 > 🏷 농협·거래처 용기 현황] 대상 × 종류 표(v764). renderDash가 nk(농협·거래처 × 종류 키)를 넘긴다.
+//   칸 = gNhfSt(nhf, type).left(우리가 갖고 있는 그 대상의 그 용기 = 반입 − 반납) — 새 계산 없음.
+//   행 = 대상(음수 있는 대상 먼저, 그다음 가나다). 열 = container_types owner 'nhf' 활성 종류 중 기록이 있는 것(sort_order 순).
+//     ★기록은 있는데 활성 목록에 없는 종류(비활성·마스터 밖)도 뒤에 붙인다 — 열에서 빠지면 그 잔액이 화면에서 사라진다.
+//   칸을 누르면 콘테이너 통합 이력이 그 대상·종류로 걸러진다(_nhfCtGoHistory).
+function _renderNhfCtTable(nk) {
+  const el = document.getElementById('nhf-ct-card'); if (!el) return;
+  const pairs = nk.map(k => k.split('||')).filter(([n, t]) => n && t);
+  if (!pairs.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const used = new Set(pairs.map(([, t]) => t));
+  const act = (containerTypes || []).filter(t => t && t.owner === 'nhf' && t.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(t => t.name);
+  const cols = [...new Set([...act.filter(t => used.has(t)), ...[...used].filter(t => !act.includes(t)).sort((a, b) => a.localeCompare(b, 'ko'))])];
+  const has = new Set(pairs.map(([n, t]) => n + '||' + t));
+  const rowsData = [...new Set(pairs.map(([n]) => n))].map(n => {
+    const v = {}; cols.forEach(t => { if (has.has(n + '||' + t)) v[t] = gNhfSt(n, t).left; });
+    return { n, v, neg: Object.values(v).filter(x => x < 0).length, owner: nhfOwner(n, Object.keys(v)[0]) };
+  }).sort((a, b) => (b.neg ? 1 : 0) - (a.neg ? 1 : 0) || a.n.localeCompare(b.n, 'ko'));
+  const negCells = rowsData.reduce((s, r) => s + r.neg, 0);
+  const q = v => esc(v).replace(/"/g, '&quot;');
+  const short = t => t.replace(/파렛트?$/, '') || t;   // 머리는 짧게(아이콘이 파렛임을 알려 준다) — 전체 이름은 title
+  const cell = (n, t, v) => v === undefined
+    ? '<td style="text-align:right;color:#9CA3AF">·</td>'
+    : `<td data-nhf="${q(n)}" data-type="${q(t)}" onclick="_nhfCtGoHistory(this.dataset.nhf, this.dataset.type)" title="${q(n + ' · ' + t + ' — 이력 보기')}" style="text-align:right;font-variant-numeric:tabular-nums;cursor:pointer;${v < 0 ? 'color:#DC2626;font-weight:700' : v === 0 ? 'color:#9CA3AF' : 'color:#374151'}">${v === 0 ? '·' : fmtN(v)}</td>`;
+  el.style.display = '';
+  el.innerHTML = `<div class="tbl-wrap">
+    <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #E5E7EB">
+      <span style="font-size:13px;font-weight:600;color:#374151">🏷 농협·거래처 용기 현황</span>
+      <span style="font-size:11px;color:#9CA3AF">우리가 갖고 있는 그 대상 용기(반입 − 반납) · 칸을 누르면 이력</span>
+      ${negCells ? `<span style="margin-left:auto;font-size:11px;font-weight:600;color:#DC2626">음수 ${negCells}칸</span>` : ''}
+    </div>
+    <table><thead><tr><th style="text-align:left">대상</th>${cols.map(t => `<th style="text-align:right;white-space:nowrap" title="${q(t)}">${_ctIcon(t)} ${esc(short(t))}</th>`).join('')}<th></th></tr></thead>
+    <tbody>${rowsData.map(r => `<tr><td class="nm" style="white-space:nowrap"><span class="badge ${r.owner === '거래처' ? 'b-info' : 'b-teal'}">${r.owner === '거래처' ? '거래처' : '농협'}</span> ${esc(r.n)}</td>${cols.map(t => cell(r.n, t, r.v[t])).join('')}<td>${r.neg ? '<span class="badge b-red" style="font-size:10px">확인 필요</span>' : ''}</td></tr>`).join('')}</tbody></table>
+  </div>`;
+}
+// 표 칸 → 콘테이너 통합 이력(chist)을 그 대상·종류로. 탭은 기존 transportSub로 연다(그 안에서 한 번 그린다).
+//   ★다른 필터는 비운다 — 남아 있으면 누적 잔여가 '—'가 되거나 칸 숫자와 다른 줄만 남는다.
+function _nhfCtGoHistory(nhf, type) {
+  transportSub('chist');
+  ['ch-tkind', 'ch-kind', 'ch-cont', 'ch-from', 'ch-to'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  const qEl = document.getElementById('ch-q'); if (qEl) qEl.value = nhf;
+  const cEl = document.getElementById('ch-cat'); if (cEl) cEl.value = type;
+  renderContainerHistory();
+  document.getElementById('ch-tb')?.scrollIntoView({ block: 'start' });
+}
 function renderDash() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const dw = dispatches.filter(d => d.status === '배차완료').length, dd = dispatches.filter(d => d.status === '배출완료').length;
@@ -4807,12 +4852,16 @@ function renderDash() {
     const ctHtml = ct ? _ctBadge(ct) : '<span class="ct">📦 미지정</span>';
     return st.left > 0 ? { name: farm, type: ct, kind: 'own', detail: `${ctHtml} ${st.left}개 반납필요`, total: st.left, bd: getOwnReturnBreakdown(farm, ct) } : null;
   }).filter(Boolean);
-  const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left > 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${_ctBadge(type)} ${st.left}개 반납필요`, total: st.left, bd: getNhfReturnBreakdown(nhf, type) } : null; }).filter(Boolean);
+  // ★left !== 0(v764) — 음수(반입보다 반납이 많음)도 넣는다. 농가·농협行·거래처行 목록과 같은 규칙(b71c704) —
+  //   예전엔 > 0만이라 안덕농협 콘테이너 −105가 현황판 어디에도 안 보였다. 음수 행은 반납 버튼 대신 '음수(확인필요)'.
+  const ri = nk.map(k => { const [nhf, type] = k.split('||'); const st = gNhfSt(nhf, type); return st.left !== 0 ? { name: nhf, type, kind: nhfOwner(nhf, type) === '거래처' ? 'partner' : 'nhf', detail: `${_ctBadge(type)} ${st.left}개${st.left > 0 ? ' 반납필요' : ''}`, total: st.left, bd: st.left > 0 ? getNhfReturnBreakdown(nhf, type) : null } : null; }).filter(Boolean);
   const allReturns = [...ownReturns, ...ri];
+  // ★건수·개수 합계는 양수만 — 음수는 반납할 게 아니라 기록이 틀렸다는 신호라 '반납 필요 N건 · M개'에 섞으면 숫자가 줄어 보인다.
+  const posReturns = allReturns.filter(i => i.total > 0);
   const tfTotal = fhi.reduce((s, i) => s + i.total, 0);
-  const trTotal = allReturns.reduce((s, i) => s + i.total, 0);
+  const trTotal = posReturns.reduce((s, i) => s + i.total, 0);
   document.getElementById('afc').textContent = (fhi.length + nhfHoldList.length + ptHoldList.length) + '곳 · ' + (tfTotal + nhfHoldTotal + ptHoldTotal) + '개';
-  document.getElementById('arc').textContent = allReturns.length + '건 · ' + trTotal + '개';
+  document.getElementById('arc').textContent = posReturns.length + '건 · ' + trTotal + '개';
   // 농협行 회수 항목(농협 배지로 구분) — 🧺 회수 버튼: openQuickRecovery 농협 확장(target_type='농협', C-2b-1). 관리자만.
   const nhfHoldHtml = nhfHoldList.map(x => {
     // ★회수 버튼은 실제로 나가 있을 때(양수)만. 음수는 회수할 게 아니라 기록이 틀린 것이라 확인 배지로 알린다(농가 목록과 동일 규칙).
@@ -4848,7 +4897,9 @@ function renderDash() {
       : i.kind === 'partner'
         ? `<span class="badge b-info">거래처</span>`
         : `<span class="badge b-teal">농협</span>`;
-    const retBtn = isAdm
+    // ★음수 행(v764)은 반납 버튼 대신 확인 배지 — 농협行 회수 목록 negTag와 같은 것.
+    const negTag = i.total < 0 ? `<span class="badge b-red" style="font-size:10px">음수(확인필요)</span>` : '';
+    const retBtn = (isAdm && i.total > 0)
       ? (i.kind === 'own'
           ? `<button class="btn" style="font-size:10px;padding:2px 8px;background:#6A1B9A;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnOwn('${i.name.replace(/'/g,"&#39;")}','${(i.type || '').replace(/'/g,"&#39;")}')">↩ 반납</button>`
           : `<button class="btn" style="font-size:10px;padding:2px 8px;background:#0F766E;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="openQuickReturnNhf('${i.name.replace(/'/g,"&#39;")}','${i.type.replace(/'/g,"&#39;")}')">↩ 반납</button>`)
@@ -4863,9 +4914,10 @@ function renderDash() {
         ].join('')}</div>` : '';
     // ★i.detail은 esc 없이 넣는다 — _ctBadge로 조립한 HTML이고, 사용자 입력(종류명)은 _ctBadge 내부에서 esc된다.
     //   detail에 새 값을 넣을 땐 반드시 esc를 거친 것만 넣을 것.
-    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${retBtn}</div></div><div style="font-size:12px;color:#888;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${i.detail}</div>${bdHtml}</div>`;
+    return `<div class="alert-item"><div class="alert-item-top"><div class="alert-item-name">${badge} ${esc(i.name)}</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="alert-cnt g">${i.total}개</span>${negTag}${retBtn}</div></div><div style="font-size:12px;color:#888;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${i.detail}</div>${bdHtml}</div>`;
   }).join('') : '<div class="alert-none">반납 필요 없음</div>';
-  document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 회수필요 ${fhi.length + nhfHoldList.length + ptHoldList.length}곳 · ${tfTotal + nhfHoldTotal + ptHoldTotal}개</span><span class="badge b-ok">🟢 반납필요 ${allReturns.length}건 · ${trTotal}개</span>`;
+  document.getElementById('alert-badges').innerHTML = `<span class="badge b-warn">🟡 회수필요 ${fhi.length + nhfHoldList.length + ptHoldList.length}곳 · ${tfTotal + nhfHoldTotal + ptHoldTotal}개</span><span class="badge b-ok">🟢 반납필요 ${posReturns.length}건 · ${trTotal}개</span>`;
+  _renderNhfCtTable(nk);   // 🏷 농협·거래처 용기 현황(대상 × 종류 표, v764)
   renderDDash(); renderFarmTbl(); _renderRecoveryWait();   // ♻️ 회수 대기 카드(맨 위 #d-recov)
   // 농가것도 농협(nr)과 같은 '이름 (종류)' 형식 — '농가||종류' 조합 기준(외부용기 탭 renderOwn과 동일). KPI 총량(to)은 농가 단위 그대로.
   const oCombos = _ownComboKeys().map(k => { const [farm, ct] = _splitOwnKey(k); return { farm, ct, left: gOwnSt(farm, ct).left }; })

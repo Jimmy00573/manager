@@ -348,6 +348,8 @@
     <div id="d-disp-tb"></div>
     <div class="pagination" id="disp-pg"></div>
   </div>
+  <!-- 🏷 농협·거래처 용기 현황(대상 × 종류 표) — _renderNhfCtTable이 채운다(대상 0곳이면 숨김, v764) -->
+  <div class="xd-hide" id="nhf-ct-card" style="display:none"></div>
   <div class="sec-hdr xd-hide"><div class="sec-title">⚠️ 처리 필요 알림</div><button class="sec-toggle" onclick="togS('alert')"><span id="alert-txt">간략히</span></button></div>
   <div class="xd-hide" id="alert-summary" style="display:none;margin-bottom:8px"><div class="sec-summary" id="alert-badges"></div></div>
   <div class="xd-hide" id="alert-detail"><div class="alert-cats"><div class="alert-cat"><div class="alert-cat-hdr fh">🟡 회수 필요 <span id="afc" class="alert-cnt w">0</span></div><div class="alert-cat-body" id="afb"></div></div><div class="alert-cat"><div class="alert-cat-hdr rh">🟢 반납 필요 <span id="arc" class="alert-cnt g">0</span></div><div class="alert-cat-body" id="arb"></div></div></div></div>
@@ -2081,6 +2083,6 @@
 <script src="src/supabase-client.js?v=33"></script>
 <script src="src/db.js?v=30"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=761"></script>
+<script src="src/app.js?v=762"></script>
 </body>
 </html>
