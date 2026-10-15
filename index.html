@@ -551,8 +551,9 @@
 
 <!-- 수확 캘린더 -->
 <div id="p-cal" class="panel">
-  <div id="cal-add-form" class="form-card" style="margin-bottom:12px">
-  <div class="form-title">📅 수확 일정 등록</div>
+  <div id="cal-add-form" class="form-card" style="margin-bottom:12px;display:none">
+  <!-- 기본 접힘(v760) — 요약 줄 '＋ 수확 등록'·대기 카드 '📅 수확일 지정'이 _hvGoHarvestAdd로 연다 -->
+  <div class="form-title" style="display:flex;align-items:center;gap:8px">📅 수확 일정 등록<button type="button" onclick="document.getElementById('cal-add-form').style.display='none'" style="margin-left:auto;font-size:11px;font-weight:400;padding:2px 8px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#6B7280;cursor:pointer;font-family:inherit">접기</button></div>
   <div class="form-grid">
     <div class="fg"><label>농가명 *</label><select id="cal-add-farm" onchange="_calAddFarmChanged(this.value)"><option value="">농가 선택</option></select></div>
     <div class="fg" id="cal-add-field-wrap" style="display:none"><label>밭 *</label><select id="cal-add-field" onchange="const f = gv('cal-add-farm'); if (f && _farmBranches(f)) sv('cal-add-round', _hvNextRound(f, this.value, gv('cal-add-item')))"></select></div>
@@ -565,7 +566,7 @@
   </div>
   <div class="form-actions"><button class="btn pri" onclick="addHarvest()">일정 등록</button></div>
 </div>
-  <div id="cal-stats-row" class="kpi-grid" style="margin-bottom:12px"></div>
+  <div id="cal-stats-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px"></div>
   <div id="cal-today-strip" style="display:none;background:#FFFDE7;border:1px solid #FFE082;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
   <div id="cal-today-trans" style="display:none;background:#fff;border:0.5px solid #e0e0e0;border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
   <div id="cal-alert-strip" style="display:none;padding:8px 12px;border-radius:8px;background:#FFEBEE;border:0.5px solid #FFCDD2;font-size:12px;color:#C62828;margin-bottom:12px;display:flex;align-items:center;gap:6px"></div>
@@ -2080,6 +2081,6 @@
 <script src="src/supabase-client.js?v=33"></script>
 <script src="src/db.js?v=30"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=757"></script>
+<script src="src/app.js?v=758"></script>
 </body>
 </html>
