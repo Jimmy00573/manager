@@ -4159,12 +4159,20 @@ function getNhfContainerHold(nhfName) { return getTargetContainerHold(nhfName, '
 //   noPlan : harvests 0건 — ★농가별 진행 현황 '⏳ 대기'(_hvProgGroups의 wait)를 그대로 쓴다(같은 판정을 두 번 만들지 않게).
 //            lastOut = 최근 배송일(배차 date·배출 pick 중 최신), days = 오늘 − lastOut.
 //   종료 전 농가는 어디에도 없다(진행 현황에서 본다). 둘 다 days 내림차순(같으면 농가명). 외부 기사는 _xdFarmOk(담당 농가만).
+//   ★v755: 진행 현황 그룹이 품목 단위라 done은 농가(+가지, g.brk) 단위로 한 번만 넣는다 — 그 농가(+가지)의 모든 품목 그룹이
+//     종료이고 대기(종료 뒤 새 배송 ⓑ 포함)가 아닐 때만. 한 품목이라도 진행 중이면 다음 품목용으로 콘테이너를 두는 중이다.
+//     endDate는 모든 품목 rounds를 합쳐 같은 식으로 센다.
 function _recoveryWaitList() {
   const gs = _hvProgGroups();
   const byDays = (a, b) => b.days - a.days || a.farm.localeCompare(b.farm, 'ko');
   const noPlan = gs.filter(g => g.kind === 'wait' && _xdFarmOk(g.farm))
-    .map(g => ({ farm: g.farm, field: g.field, hold: g.hold, lastOut: g.outDate, days: g.days })).sort(byDays);
-  const done = gs.filter(g => g.kind === 'done' && _xdFarmOk(g.farm))
+    .map(g => ({ farm: g.farm, field: g.field, hold: g.hold, lastOut: g.outDate, days: g.days, g })).sort(byDays);
+  const waitBrk = new Set(gs.filter(g => g.kind === 'wait').map(g => g.brk));
+  const byBrk = new Map();
+  gs.filter(g => g.kind !== 'wait').forEach(g => { if (!byBrk.has(g.brk)) byBrk.set(g.brk, []); byBrk.get(g.brk).push(g); });
+  const doneBr = [...byBrk.entries()].filter(([k, xs]) => xs.every(g => g.kind === 'done') && !waitBrk.has(k))
+    .map(([, xs]) => ({ ...xs[0], rounds: xs.flatMap(g => g.rounds) }));   // farm·field는 같은 가지라 첫 그룹 것, rounds만 합친다
+  const done = doneBr.filter(g => _xdFarmOk(g.farm))
     .map(g => ({ g, hold: (g.field ? getFCS(g.farm, g.field).hold : getFCS(g.farm).hold) || 0 })).filter(x => x.hold > 0)
     .map(({ g, hold }) => {
       const ds = [...g.rounds.filter(h => h.status === '수확완료').map(h => h.end_date || h.date),
@@ -4186,7 +4194,8 @@ function _renderRecoveryWait() {
   const sum = xs => xs.reduce((s, x) => s + x.hold, 0);
   // ★농가 이름은 onclick 문자열이 아니라 data-farm으로 넘긴다 — 이름에 ' 가 있어도 클릭이 깨지지 않게(esc + &quot;는 속성용 기존 방식).
   // field(선택) = 밭 가지 — 있을 때만 data-field를 붙인다(가지 없는 행은 예전 HTML 그대로).
-  const btn = (bg, on, txt, farm, field) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" data-farm="${esc(farm).replace(/"/g, '&quot;')}"${field ? ` data-field="${esc(field).replace(/"/g, '&quot;')}"` : ''} onclick="${on}">${txt}</button>`;
+  // attrs(선택) = data-* 묶음을 통째로 줄 때(＋ 수확 일정 — _hvAddPrefillAttrs). 안 주면 예전 data-farm·data-field 그대로.
+  const btn = (bg, on, txt, farm, field, attrs) => `<button class="btn" style="font-size:10px;padding:2px 8px;background:${bg};color:#fff;border:none;border-radius:6px;cursor:pointer" ${attrs || `data-farm="${esc(farm).replace(/"/g, '&quot;')}"${field ? ` data-field="${esc(field).replace(/"/g, '&quot;')}"` : ''}`} onclick="${on}">${txt}</button>`;
   const row = (x, dateTxt, color, extra) => {
     // 담당 = farms.staff 그대로(내부·외부 모두) — 회수하러 갈 사람. drivers에서 외부면 '(외부)'. ★이 카드만(_farmExtDrv는 그대로).
     const stf = (gf(x.farm).staff || '').trim();
@@ -4196,7 +4205,7 @@ function _renderRecoveryWait() {
       <span style="font-size:12px;color:#374151">보유 ${fmtN(x.hold)}개</span>${extra || ''}
       <span style="font-size:11px;color:${color};font-weight:500">${dateTxt}</span>
       ${drv ? `<span style="font-size:11px;color:#6B7280">👤 ${esc(drv)}</span>` : ''}
-      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? (x.field ? btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold}, '농가', { field: this.dataset.field })`, '🧺 회수', x.farm, x.field) : btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold})`, '🧺 회수', x.farm)) : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');_hvGoHarvestAdd(this.dataset.farm)`, '＋ 수확 일정', x.farm) : ''}</span>
+      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${canRec ? (x.field ? btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold}, '농가', { field: this.dataset.field })`, '🧺 회수', x.farm, x.field) : btn('#1565C0', `openQuickRecovery(this.dataset.farm, ${x.hold})`, '🧺 회수', x.farm)) : ''}${x.plan && canHv ? btn('#6B7280', `transportSub('cal');${_HV_ADD_PREFILL_CALL}`, '＋ 수확 일정', x.farm, null, _hvAddPrefillAttrs(x.g)) : ''}</span>
     </div>`;
   };
   const ago = (ds, d) => ds ? `${esc(calFmtShort(ds))} · ${d}일` : '-';
@@ -5350,8 +5359,8 @@ function harvestActBtns(h) {
   // ★차수를 움직이는 버튼(＋ 다음 차수·■ 전체 종료·↩ 되돌리기·↩ 종료 해제)은 그 농가의 최신 차수 줄에서만.
   //   예전엔 줄 자신의 status만 봤다 → 3차가 있는데 2차 줄에서 누르면 엉뚱한 차수가 생기거나
   //   한 달 전 차수가 수확중으로 되살아나 다가오는 수확 카드에 떴다(2026-09-20 사고).
-  //   ★최신 차수 판정식은 startNextRound의 nextRound 계산과 같은 기준(_hvMaxRound — 같은 농가·같은 밭 가지·round 최댓값)이다 — 다르게 만들지 말 것.
-  const maxRound = _hvMaxRound(h.farm, h.field);
+  //   ★최신 차수 판정식은 startNextRound의 nextRound 계산과 같은 기준(_hvMaxRound — 같은 농가·같은 밭 가지·같은 품목·round 최댓값)이다 — 다르게 만들지 말 것.
+  const maxRound = _hvMaxRound(h.farm, h.field, h.item);
   const isLatest = (h.round || 1) >= maxRound;
   const canNext = st === '수확완료' && !h.is_final && isLatest;   // 수확완료 & 전체종료 전 & 최신 차수 → 차수 이어가기 가능
   // 되돌리기(한 단계씩): 수확완료→수확중, 수확중→수확전. 수확전은 더 되돌릴 게 없고, 전체 종료 상태는 '종료 해제'가 대신.
@@ -5391,7 +5400,9 @@ function _hvItemOf(rec) {
 //   묶음 순서: 품목 표시 순서(_prodRank, 시즌 순) → 같으면 가나다순, '품목 미정'은 맨 뒤. 묶음 안은 들어온 순서 그대로.
 //   n곳 = 묶음 안 농가 수(같은 농가 두 건은 한 곳). headStyle은 머리 div 스타일 뒤에 덧붙는다(덮어쓰기용).
 //   품목이 하나뿐이어도 머리를 낸다(빈 목록이면 ''). 표시 전용(데이터·버튼 그대로).
-function _hvGroupByItemHtml(entries, headStyle) {
+//   opts.sum(v755, 선택) = (품목 머리 글자, 그 묶음 entries) → '· n곳' 뒤에 붙일 HTML(금일 수확일정의 완료·입고 합산).
+//   ★opts를 안 주면(4일 카드·진행 현황) 출력 HTML이 수정 전과 글자 하나 안 틀린다(붙일 글자를 변수로 두는 이유).
+function _hvGroupByItemHtml(entries, headStyle, opts) {
   const NONE = '품목 미정';
   const m = new Map();
   entries.forEach(x => { const k = _hvItemOf(x.rec) || NONE; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
@@ -5399,7 +5410,7 @@ function _hvGroupByItemHtml(entries, headStyle) {
   const gs = [...m.entries()].sort(([a, xa], [b, xb]) =>
     (a === NONE) - (b === NONE) || _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));
   return gs.map(([k, xs]) =>
-    `<div style="font-size:13px;font-weight:500;color:${k === NONE ? '#6B7280' : '#1E3A5F'};background:#F3F4F6;border-left:3px solid ${k === NONE ? '#9CA3AF' : '#1E3A5F'};border-radius:4px;padding:3px 8px;${headStyle || ''}">🍊 ${esc(k)}<span style="font-weight:400;color:#6B7280;margin-left:4px">· ${nFarm(xs)}곳</span></div>` +
+    `<div style="font-size:13px;font-weight:500;color:${k === NONE ? '#6B7280' : '#1E3A5F'};background:#F3F4F6;border-left:3px solid ${k === NONE ? '#9CA3AF' : '#1E3A5F'};border-radius:4px;padding:3px 8px;${headStyle || ''}">🍊 ${esc(k)}<span style="font-weight:400;color:#6B7280;margin-left:4px">· ${nFarm(xs)}곳${(opts && opts.sum) ? opts.sum(k, xs) : ''}</span></div>` +
     xs.map(x => x.html).join('')).join('');
 }
 // ── 수확 거래 방식(harvests.deal_type: '밭떼기'|'관떼기'|null=미지정) ─────────────
@@ -5498,12 +5509,17 @@ function renderCal() {
     _hvIsOngoing(h, todayStr) &&
     !calTodayEvents.find(e => e.farm === h.farm)
   );
-  // 농가 기준 중복 제거. 같은 농가에 배차+수확 이벤트가 둘 다면 수확 이벤트 우선(수확 관리 목적).
-  // 판정은 전역 _isHarvestEv (status 집합이 disjoint한 근거는 그 선언부 주석 참고).
-  const _byFarm = new Map();   // 농가별 대표 이벤트(먼저 나온 농가 순서 유지, 수확 이벤트가 배차보다 우선)
-  for (const e of [...calTodayEvents, ...ongoingHarvests]) {
-    const prev = _byFarm.get(e.farm);
-    if (!prev || (!_isHarvestEv(prev) && _isHarvestEv(e))) _byFarm.set(e.farm, e);
+  // 농가+품목 기준 중복 제거(v755 — 예전엔 농가 기준이라 같은 날 두 품목이면 하나가 사라졌다).
+  //   같은 농가·품목에 배차+수확 이벤트가 둘 다면 수확 이벤트 우선(수확 관리 목적). 판정은 전역 _isHarvestEv(status 집합이 disjoint한 근거는 그 선언부 주석).
+  //   ★품목이 빈 배차는 그 농가 수확 이벤트가 있으면 그 줄에 붙인다 — 품목만 비어서 배차 줄·수확 줄 두 줄로 갈라지지 않게(실데이터 배차 3건이 품목 빈칸).
+  const _byFarm = new Map();   // 농가+품목별 대표 이벤트(먼저 나온 순서 유지, 수확 이벤트가 배차보다 우선)
+  const _todayEvs = [...calTodayEvents, ...ongoingHarvests];
+  const _evKey = e => e.farm + '||' + (e.item || '');
+  for (const e of _todayEvs) {
+    let k = _evKey(e);
+    if (!_isHarvestEv(e) && !e.item) { const hv = _todayEvs.find(x => x.farm === e.farm && _isHarvestEv(x)); if (hv) k = _evKey(hv); }
+    const prev = _byFarm.get(k);
+    if (!prev || (!_isHarvestEv(prev) && _isHarvestEv(e))) _byFarm.set(k, e);
   }
   const allTodayItems = [..._byFarm.values()].filter(e => _xdFarmOk(e.farm));   // 외부 기사 기사 필터(관리자는 늘 통과)
 
@@ -5513,9 +5529,10 @@ function renderCal() {
       todayEl.style.display = '';
       const rowEntries = allTodayItems.map(e => {
         // 수확 이벤트면 그 harvest 레코드를 id로 정확히(상태 정확) — 배차 이벤트면 농가의 오늘/수확중 harvest 탐색
+        //   (배차에 품목이 있으면 같은 품목 수확만 — v755. 없으면 예전대로 농가 기준)
         const hEntry = _isHarvestEv(e)
           ? harvests.find(h => h.id === e.id)
-          : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중'));
+          : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중') && (!e.item || h.item === e.item));
         if (hEntry) return { rec: hEntry, html: harvestRow(hEntry, false, todayStr, { contact: true, staff: true }) };   // rec = 품목 묶음 기준(보이는 기록)
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
@@ -5526,7 +5543,7 @@ function renderCal() {
             <button class="btn" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확중')">▶ 시작</button>
             <button class="btn grn" style="font-size:11px;padding:3px 10px" onclick="autoSetHarvestStatus('${farmEsc}','${todayStr}','${itemEsc}','수확완료')">✅ 완료</button>
             <button class="btn edt" style="font-size:11px;padding:3px 8px" onclick="autoOpenHarvestEdit('${farmEsc}','${todayStr}','${itemEsc}')">✏️</button>
-            ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}')">삭제</button>` : ''}` : '';
+            ${sessionStorage.getItem('citrus_role') === 'admin' ? `<button class="btn del" style="font-size:11px;padding:3px 8px" onclick="autoDelHarvest('${farmEsc}','${todayStr}','${itemEsc}')">삭제</button>` : ''}` : '';
         return { rec: e, html: `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFF8F0;border-radius:8px;border:0.5px solid #FFE0B2;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700">${esc(e.farm)}</span>${_hvStaffBtn(e.farm)}
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
@@ -5534,7 +5551,16 @@ function renderCal() {
           <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${_hvContactLine(e.farm, _recAddr(e))}
         </div>` };
       });
-      const rows = _hvGroupByItemHtml(rowEntries, 'margin-top:4px');   // 품목별 묶음(품목 하나여도 머리 표시)
+      // 품목 머리 합산(v755, 금일만) — '· 완료 n곳'(묶음 중 수확완료 농가 수) · '· 입고 nCT'(오늘 그 품목 원물 입고 합).
+      //   ★inboundRecords는 재고 탭 진입 때 로드된다 — 비어 있으면 '0'으로 오해하지 않게 입고는 생략. 0이어도 생략.
+      const _ibToday = (inboundRecords || []).filter(r => !r.is_void && r.date === todayStr);
+      const _tnum = s => `<span style="font-variant-numeric:tabular-nums">${s}</span>`;
+      const _todaySum = (k, xs) => {
+        const nDone = new Set(xs.filter(x => x.rec && x.rec.status === '수확완료').map(x => x.rec.farm)).size;
+        const ibCt = (inboundRecords || []).length ? _ibToday.filter(r => r.product === k).reduce((s, r) => s + (Number(r.quantity) || 0), 0) : 0;
+        return ` · 완료 ${_tnum(nDone)}곳${ibCt ? ` · 입고 ${_tnum(fmtN(ibCt))}CT` : ''}`;
+      };
+      const rows = _hvGroupByItemHtml(rowEntries, 'margin-top:4px', { sum: _todaySum });   // 품목별 묶음(품목 하나여도 머리 표시)
       todayEl.innerHTML =
         `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)${_xdFilterTag()}</div>` +
         `<div style="display:flex;flex-direction:column;gap:5px">${rows}</div>`;
@@ -6070,10 +6096,10 @@ function _hvItemColor(item) {
 // 캘린더·이번달 목록은 전부 '날짜' 중심이라 "이 농가 몇 차까지 했나 / 끝났나 / 중간에 멈춘 건 아닌가"가 안 보인다.
 // 그걸 농가 단위로 모아 세 갈래로 나눠 보여주는 섹션. 표시 전용 — 액션은 기존 harvestRow/harvestActBtns 그대로 쓴다.
 //
-// ★그룹 단위 = farm(농가). 품목까지 쪼개지 않는 이유: 차수(round)와 전체 종료(is_final)가 이미 농가 단위로 돈다 —
-//   startNextRound는 `harvests.filter(x => x.farm === h.farm)`의 max round + 1을 쓰고, finishAllHarvest·
-//   renderHarvestActive도 농가로 판단한다. 품목으로 더 쪼개면 카드가 말하는 차수와 [＋다음 차수] 버튼이
-//   만드는 차수가 어긋난다. 품목은 카드에 함께 적어 구분한다(한 농가에 두 품목이면 둘 다 표시).
+// ★그룹 단위 = 농가(+밭 가지) + 품목(v755). 예전엔 농가 단위였다 — 차수·전체 종료가 농가 단위로 돌았기 때문인데,
+//   한 농가가 하우스감귤을 전체 종료하고 황금향을 시작하자 황금향까지 종료·회수 대기로 빠지고 차수가 4로 제안됐다.
+//   그래서 차수(_hvMaxRound의 item)·[＋다음 차수]·최신 차수 판정을 품목 단위로 같이 옮겼다 — 카드가 말하는 차수와 버튼이 만드는 차수가 같다.
+//   ★콘테이너 보유(getFCS)는 품목과 무관한 농가 공용 — 대기·회수 대기는 농가(+가지, g.brk) 단위로 본다.
 // ★한정효(의귀리230)/한정효(신풍리460)처럼 밭이 다르면 farm 값 자체가 달라 자동으로 별개 그룹이 된다. 억지로 안 묶는다.
 //
 // ★상태 판정 — 아래 순서대로 검사한다. 세 갈래가 서로 겹치지 않고 빠지는 농가도 없다.
@@ -6133,7 +6159,7 @@ function _hvProgSortAll(arr) {
     || (a.farm || '').localeCompare(b.farm || '', 'ko')   // 끝까지 같으면 농가명(순서가 흔들리지 않게)
     || (a.field || '').localeCompare(b.field || '', 'ko'));   // 같은 농가의 밭 가지끼리(가지 없는 농가는 둘 다 null)
 }
-const _hvProgOpen = {};   // 그룹 key(가지 없으면 farm, 먼 밭이면 'farm||밭') -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 기본값(전부 접힘).
+const _hvProgOpen = {};   // 그룹 key(v755: '농가(||밭)||품목', 대기는 '농가(||밭)||⏳') -> true/false. ★사용자가 직접 접거나 편 것만 담는다. 없으면 기본값(전부 접힘).
 // 🏁 종료 '그룹' 펼침 — 기본 접힘(제목 줄만). 종료 농가는 평소 볼 일이 없는데 목록 절반을 차지해서.
 //   _hvProgOpen(농가 단위)과 따로다. 메모리에만 있어 새로고침하면 다시 접힘(같은 규칙).
 let _hvDoneGroupOpen = false;
@@ -6141,13 +6167,17 @@ let _hvDoneGroupOpen = false;
 // 농가별로 차수를 모아 상태를 매긴다. 렌더와 토글이 같은 판정을 쓰도록 순수 함수로 분리.
 // ★먼 밭(가지)이 있는 농가는 '농가 › 밭'마다 따로 묶는다(차수·전체 종료가 밭마다 따로다 — _hvMaxRound와 같은 _brKey 기준).
 //   그룹의 field = 가지(없으면 null), key = 가지 없으면 farm 그대로, 있으면 'farm||밭'. 가지 없는 농가는 예전과 같다.
+// ★v755: 수확 단위 = 농가(+밭 가지) + 품목. 한 농가가 하우스감귤을 전체 종료하고 황금향을 시작하면 두 그룹이다
+//   (예전엔 농가 단위라 황금향까지 🏁 종료·회수 대기로 빠졌다). 차수도 품목마다(_hvMaxRound의 item).
+//   brk = 농가(+가지) 키(예전 key와 같은 값) — 대기 판정·회수 대기처럼 '농가 공용'인 것(콘테이너 보유 getFCS)은 이 단위로 본다.
+//   key = brk + '||' + 품목('' = 품목 없음). 대기 카드는 품목이 없어 brk + '||⏳'(같은 농가의 품목 없는 그룹과 안 겹치게).
 function _hvProgGroups() {
   const keyOf = (farm, field) => field ? farm + '||' + field : farm;
   const byKey = {};
-  harvests.forEach(h => { const k = keyOf(h.farm, _brKey(h, h.farm)); (byKey[k] = byKey[k] || []).push(h); });
+  harvests.forEach(h => { const k = keyOf(h.farm, _brKey(h, h.farm)) + '||' + (h.item || ''); (byKey[k] = byKey[k] || []).push(h); });
   const today = new Date(td() + 'T00:00:00');   // 로컬 자정 기준(td()=ymd) — toISOString 안 씀
   const withHarvest = Object.keys(byKey).map(key => {
-    const farm = byKey[key][0].farm, field = _brKey(byKey[key][0], farm);
+    const farm = byKey[key][0].farm, field = _brKey(byKey[key][0], farm), item = byKey[key][0].item || '';
     // 차수 오름차순(같으면 날짜순) → 마지막 원소가 '마지막 차수'. 1차가 없고 2차만 있어도 그대로 동작한다.
     const rounds = byKey[key].slice().sort((a, b) => (a.round || 1) - (b.round || 1) || (a.date || '').localeCompare(b.date || ''));
     const last = rounds[rounds.length - 1];
@@ -6162,7 +6192,7 @@ function _hvProgGroups() {
     //   ※로컬 자정끼리 빼므로 KST에서 하루 밀리지 않는다(toISOString 금지).
     const dday  = last.date ? Math.round((new Date(last.date + 'T00:00:00') - today) / 86400000) : 0;
     const onDay = last.date ? Math.max(1, Math.floor((today - new Date(last.date + 'T00:00:00')) / 86400000) + 1) : 1;
-    return { farm, field, key, rounds, last, days, dday, onDay, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
+    return { farm, field, key, brk: keyOf(farm, field), item, rounds, last, days, dday, onDay, kind, items: [...new Set(rounds.map(h => h.item).filter(Boolean))] };
   });   // 정렬은 아래 _hvProgSortAll에서 그룹별 기준으로 한 번에 한다
 
   // ★대기(⏳) — 콘테이너는 나갔는데 수확 기록이 아예 없는 농가. 지금까지 이 화면 어디에도 안 보였다.
@@ -6172,7 +6202,10 @@ function _hvProgGroups() {
   //   · 보유 0 + 기록 0인 농가는 어느 그룹에도 안 들어간다(농가 마스터 전체가 뜨면 안 된다).
   //   · 먼 밭(가지)이 있는 농가는 가지마다 판정한다 — 그 가지에 수확 0건 + 그 가지 보유(getFCS(farm, field)) > 0.
   //     보유·배송일·예정일도 그 가지 기록만(_brKey) 본다. 가지 없는 농가는 예전과 같다(field = null).
-  const mkWait = (farm, field) => {
+  // ★v755 대기 확장(ⓑ): 그 농가(+가지)의 품목 그룹이 전부 🏁 종료인데, 최근 배송일이 그 종료일(end_date || date)
+  //   최댓값보다 늦으면 다음 수확(다른 품목·다음 해)용으로 콘테이너가 다시 나간 것 → ⏳ 대기. 카드에 '이전 수확 M/D 종료'(prevEnd).
+  //   종료 그룹들은 종료에 그대로 둔다. 진행중·확인 필요 그룹이 하나라도 있으면 대기가 아니다(그 그룹이 맡는다).
+  const mkWait = (farm, field, prevEnd) => {
     const brOk = r => !field || _brKey(r, farm) === field;
     const hold = field ? getFCS(farm, field).hold : getFCS(farm).hold;
     // 최근 배송일 — 배차가 원칙이지만, 배차 없이 나간 배출 pick만 있는 농가도 있어 둘 중 최신을 쓴다.
@@ -6181,14 +6214,30 @@ function _hvProgGroups() {
     const outDate = [...dDates, ...pDates].sort().pop() || null;
     const days = outDate ? Math.floor((today - new Date(outDate + 'T00:00:00')) / 86400000) : 0;
     // 배차에 적어 둔 수확 예정일(dispatches.harvest)이 있으면 병기한다 — 아직 harvests 행이 없어도 계획은 있는 경우.
-    const planned = dispatches.filter(d => d.farm === farm && _isFarmTgt(d) && d.harvest && brOk(d)).map(d => d.harvest).sort().pop() || null;
-    return { farm, field, key: keyOf(farm, field), rounds: [], last: null, hold, outDate, planned, days, kind: 'wait', items: [] };
+    //   ⓑ(prevEnd)면 이전 수확 종료일보다 뒤의 예정일만 — 끝난 수확의 옛 예정일을 새 수확 예정으로 보이지 않게.
+    const planned = dispatches.filter(d => d.farm === farm && _isFarmTgt(d) && d.harvest && brOk(d) && (!prevEnd || d.harvest > prevEnd)).map(d => d.harvest).sort().pop() || null;
+    // 📅 수확일 지정에 넣을 품목 = 그 농가(+가지) 최근 배차(날짜 최신)의 품목. 없으면 ''(폼 품목은 그대로).
+    const lastD = dispatches.filter(d => d.farm === farm && _isFarmTgt(d) && brOk(d))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+    return { farm, field, key: keyOf(farm, field) + '||⏳', brk: keyOf(farm, field), item: '', rounds: [], last: null, hold, outDate, planned, days, kind: 'wait', items: [],
+      prevEnd: prevEnd || null, addItem: (lastD && lastD.item) || '' };
+  };
+  // 농가(+가지)별 품목 그룹 — ⓑ 판정용
+  const byBr = {};
+  withHarvest.forEach(g => { (byBr[g.brk] = byBr[g.brk] || []).push(g); });
+  const mkWaitIf = (farm, field) => {
+    const gs = byBr[keyOf(farm, field)];
+    if (!gs) return mkWait(farm, field);   // ⓐ 수확 0건 — 예전 그대로
+    if (!gs.every(g => g.kind === 'done')) return null;
+    const endMax = gs.flatMap(g => g.rounds).map(h => h.end_date || h.date).filter(Boolean).sort().pop() || null;
+    const w = mkWait(farm, field, endMax);
+    return (w.outDate && endMax && w.outDate > endMax) ? w : null;
   };
   const waits = [];
   farms.forEach(f => {
     const br = _farmBranches(f.name);
-    if (!br) { if (!byKey[f.name] && (getFCS(f.name).hold || 0) > 0) waits.push(mkWait(f.name, null)); return; }
-    br.forEach(b => { if (!byKey[keyOf(f.name, b)] && (getFCS(f.name, b).hold || 0) > 0) waits.push(mkWait(f.name, b)); });
+    if (!br) { if ((getFCS(f.name).hold || 0) > 0) { const w = mkWaitIf(f.name, null); if (w) waits.push(w); } return; }
+    br.forEach(b => { if ((getFCS(f.name, b).hold || 0) > 0) { const w = mkWaitIf(f.name, b); if (w) waits.push(w); } });
   });
 
   return _hvProgSortAll(waits.concat(withHarvest));
@@ -6320,7 +6369,9 @@ function _hvProgToggleAll() {
 // cal-add-farm은 검색형이라 fsPick으로 넣어야 표시까지 맞는다(_hvGoDispatch의 dp-farm과 같은 규칙).
 // ★date·item은 선택 인자 — 배차 등록 뒤 '수확 일정도 만들까요?' 제안에서 넘어온다.
 //   인자를 안 주면 예전 그대로 동작한다(대기 카드의 '＋ 수확 등록' 호출부 호환).
-function _hvGoHarvestAdd(farm, date, item) {
+// ★field(v755, 선택) = 밭 가지 — 먼 밭 농가면 밭 칸에 넣는다. 품목·밭을 넣은 뒤 차수를 그 기준(_hvNextRound 품목 포함)으로 다시 센다
+//   (fsPick이 부르는 _calAddFarmChanged는 품목·밭을 넣기 전 값으로 셌다). 인자가 없으면 지금 폼 값으로 세므로 예전과 같은 결과.
+function _hvGoHarvestAdd(farm, date, item, field) {
   const form = document.getElementById('cal-add-form');
   if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
   setTimeout(() => {
@@ -6331,15 +6382,27 @@ function _hvGoHarvestAdd(farm, date, item) {
     // ★품목 select는 마스터로 만들어진다 — 목록에 없는 값을 넣으면 조용히 ''이 되므로 있을 때만 넣는다.
     const it = document.getElementById('cal-add-item');
     if (it && item && [...it.options].some(o => o.value === item)) it.value = item;
+    const fd = document.getElementById('cal-add-field');
+    if (fd && field && _farmBranches(farm) && [...fd.options].some(o => o.value === field)) fd.value = field;
+    const r = document.getElementById('cal-add-round');
+    if (r && farm) r.value = _hvNextRound(farm, gv('cal-add-field'), gv('cal-add-item'));
     document.getElementById('cal-add-date')?.focus();
   }, 60);
 }
+// 대기 카드(접힌 머리 '📅 수확일 지정'·펼친 '＋ 수확 등록')와 현황판 '📅 일정 없음'의 '＋ 수확 일정' 공용 — 등록 폼에 넣을 값.
+//   날짜 = 배차의 수확 예정일(g.planned) || 오늘, 품목 = 그 농가(+가지) 최근 배차 품목(g.addItem), 밭 = 가지(g.field).
+//   ★값은 data-*로 넘긴다(이름·주소에 따옴표가 있어도 깨지지 않게 — 현황판 btn과 같은 esc + &quot; 방식).
+function _hvAddPrefillAttrs(g) {
+  const a = v => esc(v || '').replace(/"/g, '&quot;');
+  return `data-farm="${a(g.farm)}" data-date="${a(g.planned || td())}" data-item="${a(g.addItem)}"${g.field ? ` data-field="${a(g.field)}"` : ''}`;
+}
+const _HV_ADD_PREFILL_CALL = '_hvGoHarvestAdd(this.dataset.farm, this.dataset.date, this.dataset.item, this.dataset.field)';
 
 function _hvProgCard(g) {
   const k = _HV_PROG_KIND[g.kind];
   const open = _hvProgIsOpen(g);
-  // 펼침 토글 — 밭 가지 그룹은 key를 data-key로 넘긴다(주소에 따옴표가 있어도 안전). 가지 없는 농가는 예전 onclick 그대로.
-  const tgl = g.field ? `data-key="${esc(g.key).replace(/"/g, '&quot;')}" onclick="_hvProgToggle(this.dataset.key)"` : `onclick="_hvProgToggle('${_fsQ(g.farm)}')"`;
+  // 펼침 토글 — key를 data-key로 넘긴다(주소·품목에 따옴표가 있어도 안전). v755부터 key에 품목이 들어가 모든 카드가 이 방식.
+  const tgl = `data-key="${esc(g.key).replace(/"/g, '&quot;')}" onclick="_hvProgToggle(this.dataset.key)"`;
   // ★대기는 harvests가 0건이라 차수·상태가 없다 — 아래 기존 로직(g.last 참조)을 태우면 터진다.
   //   내용도 다르다: 차수 목록 대신 '보유 콘테이너 종류별 칩 + 수확 등록으로 가기'.
   if (g.kind === 'wait') {
@@ -6352,16 +6415,17 @@ function _hvProgCard(g) {
       <div ${tgl} style="cursor:pointer;padding:8px 12px;background:${k.bg};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:${k.fg}">${open ? '▾' : '▸'}</span>
         <span style="font-size:13px;font-weight:700">${esc(g.farm)}</span>${_hvAddrTag(g.farm, undefined, g.field)}${_hvStaffBtn(g.farm)}
-        ${g.planned ? `<span style="font-size:11px;color:#1565C0;font-weight:600">수확 ${esc(g.planned.slice(5).replace('-', '/'))} 예정</span>` : ''}
+        ${g.planned ? `<span style="font-size:11px;color:#1565C0;font-weight:600">수확 ${esc(g.planned.slice(5).replace('-', '/'))} 예정</span>` : ''}${g.prevEnd ? `<span style="font-size:11px;color:#9CA3AF">이전 수확 ${esc(g.prevEnd.slice(5).replace('-', '/'))} 종료</span>` : ''}
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          ${_hvCanWrite() ? `<button type="button" ${_hvAddPrefillAttrs(g)} onclick="event.stopPropagation();${_HV_ADD_PREFILL_CALL}" style="font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">📅 수확일 지정</button>` : ''}
           <span style="font-size:10px;font-weight:700;color:${t.fg};background:${t.bg};border:1px solid ${t.bd};border-radius:10px;padding:1px 7px;white-space:nowrap">${esc(dayTxt)}</span>
           <span style="font-size:11px;font-weight:600;color:${k.fg}">콘테이너 ${fmtN(g.hold)}개 · ${esc(dstr)} 배송</span>
         </span>
       </div>
       ${open ? `<div style="padding:8px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff">
         ${ct ? `<div style="display:flex;flex-wrap:wrap;gap:3px">${ct}</div>` : ''}
-        <span style="font-size:11px;color:#888">수확 기록이 없습니다.</span>
-        ${_hvCanWrite() ? `<button type="button" onclick="_hvGoHarvestAdd('${_fsQ(g.farm)}')" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>` : ''}
+        <span style="font-size:11px;color:#888">${g.prevEnd ? '새 수확 기록이 없습니다.' : '수확 기록이 없습니다.'}</span>
+        ${_hvCanWrite() ? `<button type="button" ${_hvAddPrefillAttrs(g)} onclick="${_HV_ADD_PREFILL_CALL}" style="margin-left:auto;font-size:11px;padding:3px 10px;background:#1565C0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 수확 등록</button>` : ''}
       </div>` : ''}
     </div>`;
   }
@@ -6432,7 +6496,7 @@ function renderHarvestProgress() {
         const showList = !isDone || _hvDoneGroupOpen;
         return `<div>
           <div${hdClick} style="${hdCss}font-size:11px;font-weight:600;color:${k.fg};margin:0 2px 5px">${hdArrow}${k.icon} ${k.label} (${cnt[kd]})${kd === 'stale' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">${HV_STALE_DAYS}일 넘게 다음 차수도 전체 종료도 없음</span>` : ''}${kd === 'wait' ? `<span style="font-weight:400;color:#aaa;margin-left:6px">콘테이너는 나갔는데 수확 기록이 없음 (${HV_WAIT_WARN_DAYS}일 넘으면 빨강)</span>` : ''}</div>${showList ? `
-          <div style="display:flex;flex-direction:column;gap:6px">${_hvGroupByItemHtml(groups.filter(g => g.kind === kd).map(g => ({ rec: { item: (g.last && g.last.item) || g.items[0] || '', farm: g.farm }, html: _hvProgCard(g) })), 'margin-top:2px')}</div>` : ''}
+          <div style="display:flex;flex-direction:column;gap:6px">${_hvGroupByItemHtml(groups.filter(g => g.kind === kd).map(g => ({ rec: { item: g.item, farm: g.farm }, html: _hvProgCard(g) })), 'margin-top:2px')}</div>` : ''}
         </div>`;
       }).join('')}
     </div>`;
@@ -6865,9 +6929,11 @@ async function _syncDispHarvestDate(farm, oldDate, newDate) {
   return true;
 }
 
+// ★auto* 셋(금일 수확일정의 배차에서만 온 줄)은 품목(item)이 있으면 같은 품목 수확만 찾는다(v755 — 같은 날 두 품목이면
+//   다른 품목 수확을 시작·수정·삭제하던 자리). item이 비면 예전대로 농가·날짜만.
 async function autoSetHarvestStatus(farm, date, item, status) {
   if (!_hvCanWrite()) return;
-  let h = harvests.find(x => x.farm === farm && x.date === date);
+  let h = harvests.find(x => x.farm === farm && x.date === date && (!item || x.item === item));
   if (!h) {
     try {
       // ★새 기록이 완료면 종료일 = 그 줄 날짜(오늘). 시작일이 오늘이라 어제 선택이 없어 확인창은 띄우지 않는다.
@@ -6887,7 +6953,7 @@ async function autoSetHarvestStatus(farm, date, item, status) {
 
 async function autoOpenHarvestEdit(farm, date, item) {
   if (!_hvCanWrite()) return;
-  let h = harvests.find(x => x.farm === farm && x.date === date);
+  let h = harvests.find(x => x.farm === farm && x.date === date && (!item || x.item === item));
   if (!h) {
     try { const row = await dbInsertHarvest({ date, farm, item: item || null, deal_type: _hvLastDeal(farm) }); harvests.push(row); h = row; }
     catch(e) { alert('오류: ' + e.message); return; }
@@ -6895,8 +6961,8 @@ async function autoOpenHarvestEdit(farm, date, item) {
   openHarvestEdit(h.id);
 }
 
-async function autoDelHarvest(farm, date) {
-  const h = harvests.find(x => x.farm === farm && x.date === date);
+async function autoDelHarvest(farm, date, item) {
+  const h = harvests.find(x => x.farm === farm && x.date === date && (!item || x.item === item));
   if (h) { delHarvest(h.id); } else { renderCal(); }
 }
 
@@ -6979,13 +7045,16 @@ async function setHarvestFinishToday(id, cancel = false) {
 }
 // 그 농가(먼 밭이 있으면 그 밭 가지)의 round 최댓값(기록 없으면 0). harvestActBtns의 최신 차수 판정과 _hvNextRound가 같이 쓴다.
 //   ★차수는 밭 가지마다 따로 센다(_brKey — field가 비었거나 목록 밖이면 대표 밭). 가지 없는 농가는 예전과 같다(같은 farm 완전일치).
-function _hvMaxRound(farm, field) {
+//   ★item(v755)을 넘기면 같은 품목만 센다 — 한 농가가 하우스감귤을 3차까지 끝내고 황금향을 시작하면 황금향은 1차부터.
+//     null·''은 같은 '품목 없음'으로 본다(진행 현황 그룹 키와 같은 규칙). item을 안 넘기면(undefined) 예전과 똑같다.
+function _hvMaxRound(farm, field, item) {
   const br = _farmBranches(farm), k = br ? _brKey({ field }, farm) : null;
-  return harvests.filter(x => x.farm === farm && (!br || _brKey(x, farm) === k)).reduce((m, x) => Math.max(m, x.round || 1), 0);
+  return harvests.filter(x => x.farm === farm && (!br || _brKey(x, farm) === k) && (item === undefined || (x.item || '') === (item || '')))
+    .reduce((m, x) => Math.max(m, x.round || 1), 0);
 }
 // 다음 차수 = _hvMaxRound + 1. ＋다음 차수(startNextRound)와 등록 폼이 같이 쓴다 — 최신 차수 판정(maxRound)과 같은 기준.
-function _hvNextRound(farm, field) {
-  return _hvMaxRound(farm, field) + 1;
+function _hvNextRound(farm, field, item) {
+  return _hvMaxRound(farm, field, item) + 1;
 }
 // 수확일정 등록 폼 농가 선택(onchange · fsPick) — 밭 칸 + 차수 칸을 그 농가 기준으로 채운다.
 //   ★차수는 늘 1로 시작해서, 이미 1·2차가 있는 농가를 그대로 저장하면 '1차'가 또 생겼다
@@ -6993,7 +7062,7 @@ function _hvNextRound(farm, field) {
 function _calAddFarmChanged(v) {
   _fillFieldSel('cal-add', v);
   const r = document.getElementById('cal-add-round');
-  if (r) r.value = v ? _hvNextRound(v, gv('cal-add-field')) : 1;   // 먼 밭 농가는 밭을 고르면 다시 계산(cal-add-field onchange)
+  if (r) r.value = v ? _hvNextRound(v, gv('cal-add-field'), gv('cal-add-item')) : 1;   // 먼 밭 농가는 밭을, 품목을 바꾸면 품목을 기준으로 다시 계산(cal-add-field·cal-add-item onchange)
   _hvAutoDeal('cal-add-deal', v);   // 거래 방식 — 그 농가 최근값(직접 고른 값은 그대로)
 }
 // 수확 차수 이어가기 — 수확일정 창을 '새 차수' 모드로 연다(바로 저장하지 않는다). 이력 보존.
@@ -7004,8 +7073,8 @@ function startNextRound(id) {
   if (!_hvCanWrite()) return alert('관리자만 가능합니다.');
   const h = harvests.find(x => x.id === id);
   if (!h) return;
-  // 같은 농가의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
-  const nextRound = _hvNextRound(h.farm, h.field);
+  // 같은 농가·같은 품목의 최대 round + 1 (안전 — 이미 더 높은 차수 있으면 그다음)
+  const nextRound = _hvNextRound(h.farm, h.field, h.item);
   _editHarvestId = null;
   _hvNewRoundFrom = id;
   _mhSetTitle(`＋ ${nextRound}차 수확 등록`);
@@ -26140,10 +26209,11 @@ async function renderDataCheck() {
   const c4 = [];
   const _hvSeen = {};
   // ★차수는 밭 가지마다 따로 센다(_hvMaxRound) — 키에 가지를 넣는다. 가지 없는 농가는 가지 ''라 예전과 같은 묶음·문구.
-  harvests.forEach(h => { const k = `${h.farm}||${_brKey(h, h.farm) || ''}||${h.round || 1}`; (_hvSeen[k] = _hvSeen[k] || []).push(h); });
+  //   ★v755: 차수는 품목마다 따로다 — 키에 품목도 넣는다(하우스감귤 1차·황금향 1차는 중복이 아니다). 문구는 예전 그대로.
+  harvests.forEach(h => { const k = `${h.farm}||${_brKey(h, h.farm) || ''}||${h.item || ''}||${h.round || 1}`; (_hvSeen[k] = _hvSeen[k] || []).push(h); });
   Object.entries(_hvSeen).forEach(([k, arr]) => {
     if (arr.length > 1) {
-      const [farm, br, rd] = k.split('||');
+      const [farm, br, , rd] = k.split('||');
       c4.push({ 유형: '차수 중복', 내용: `${farm}${br ? ' · ' + br : ''} ${rd}차 ${arr.length}건 (${arr.map(x => x.date).join(', ')})` });
     }
   });
@@ -26151,7 +26221,7 @@ async function renderDataCheck() {
   harvests.filter(h => h.status === '수확완료' && h.date > _dcToday)
     .forEach(h => c4.push({ 유형: '미래 날짜인데 완료', 내용: `${h.farm} ${h.round || 1}차 (${h.date})` }));
   harvests.filter(h => h.is_final).forEach(h => {
-    const later = harvests.filter(x => x.farm === h.farm && _brKey(x, x.farm) === _brKey(h, h.farm) && (x.round || 1) > (h.round || 1));   // 같은 밭 가지 안에서만(가지 없으면 둘 다 null)
+    const later = harvests.filter(x => x.farm === h.farm && _brKey(x, x.farm) === _brKey(h, h.farm) && (x.item || '') === (h.item || '') && (x.round || 1) > (h.round || 1));   // 같은 밭 가지·같은 품목 안에서만(가지 없으면 둘 다 null)
     if (later.length) c4.push({ 유형: '전체종료 뒤 차수 존재', 내용: `${h.farm} ${h.round || 1}차 종료 — 이후 ${later.map(x => (x.round || 1) + '차').join(', ')} 있음` });
   });
 
