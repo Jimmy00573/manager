@@ -23171,6 +23171,32 @@ async function buildInboundShareText(inboundId) {
   const drv = drivers.find(d => String(d.id) === String(base.driver_id));
   const drvLine = drv ? [drv.name, (drv.note || '').trim()].filter(Boolean).join(' ') : '';
   const addr = (gf(base.farm_name).addr || '').trim();
+  const L = [];
+  const add = (label, val) => { if (val !== '' && val != null) L.push(`${label}: ${val}`); };   // 값 없는 줄은 통째로 생략
+  add('기사', drvLine);
+  add('입고일자', _ibShareMD(base.date));
+  add('농가명', base.farm_name || '');
+  add('주소', addr);
+  add('품목', base.product || '');
+  // ★선과품 입고 — 정산 담당에게 보낼 사이즈별 내역(v759). 같은 차 묶음 없이 그 한 건만 쓴다.
+  //   사이즈 집계는 🔍 선과품 상세와 같은 _ibSortedSizeData(sorted_breakdown 우선, 없으면 살아 있는 재고).
+  if (base.inbound_category === '선과품') {
+    const ib = inboundRecords.find(r => String(r.id) === String(base.id)) || base;
+    const { sizeData, totalCt, grade } = _ibSortedSizeData(ib);
+    if (grade && grade !== '일반') add('등급', grade);
+    const rows = getSizeGroupsFor(ib.product).flatMap(g => g.sizes).filter(sz => sizeData[sz]?.ct > 0);
+    if (rows.length) {
+      const hasPrice = rows.some(sz => sizeData[sz].price);
+      L.push('', '선과품 내역');
+      rows.forEach(sz => { const d = sizeData[sz]; L.push(`${sz}\t${_srtShareCt(d.ct)}${hasPrice && d.price ? `\t${fmtN(d.price)}원` : ''}`); });
+      L.push(`총 ${_srtShareCt(totalCt)}CT`);
+      if (hasPrice) L.push(`총 매입액 ${fmtN(Math.round(Object.values(sizeData).reduce((t, v) => t + v.amount, 0)))}원`);   // 상세 창 '총 매입액'과 같은 합
+    } else {
+      add('수량', `선과품 ${fmtN(base.quantity)}ct`);   // 사이즈 기록이 없으면 예전 한 줄(빈 공유 방지)
+    }
+    add('특이사항', (base.note || '').trim());
+    return L.join('\n');
+  }
   // 중량: 저장은 총 중량(weight_kg) 하나뿐 → 공유엔 CT당으로 환산해 적는다(사무실이 CT당으로 말한다).
   const wKg = Number(pick('weight_kg')) || 0;
   const kgPerCt = (wKg > 0 && total > 0) ? wKg / total : 0;
@@ -23192,13 +23218,6 @@ async function buildInboundShareText(inboundId) {
   // 한 종류면 이름만(사무실에서 쓰던 형식), 여러 종류면 수량까지 나열해야 어느 게 몇 개인지 알 수 있다.
   const ctLine = ctNames.length === 1 ? ctNames[0] : ctNames.map(n => `${n} ${fmtN(ctMap[n])}`).join(', ');
 
-  const L = [];
-  const add = (label, val) => { if (val !== '' && val != null) L.push(`${label}: ${val}`); };   // 값 없는 줄은 통째로 생략
-  add('기사', drvLine);
-  add('입고일자', _ibShareMD(base.date));
-  add('농가명', base.farm_name || '');
-  add('주소', addr);
-  add('품목', base.product || '');
   // 수량 — 카테고리가 하나면 예전 그대로 '수량: 상품 58ct'(총 줄 생략 — 같은 값).
   //   ★둘 이상이면 현장이 쓰는 세로 형식: '수량' 머리 줄(콜론 없음) → 카테고리마다 한 줄 → '총 Nct'가 블록 끝.
   //     가로 나열('상품 58ct, 대과 6ct, …')은 읽기 어렵다는 현장 요청(2026-09-28). 순서는 grp(_ibCatRank 정렬) 그대로.
@@ -23232,6 +23251,8 @@ async function openInboundShareText(inboundId, mode) {
   const isBrix = mode === 'brix';
   try {
     const text = isBrix ? await buildInboundBrixShareText(inboundId) : await buildInboundShareText(inboundId);
+    // 선과품은 공유가 사이즈별 내역이라 안내 문구가 다르다(v759) — 판정은 buildInboundShareText와 같은 inbound_category.
+    const isSorted = !isBrix && (inboundRecords.find(r => String(r.id) === String(inboundId)) || {}).inbound_category === '선과품';
     if (isBrix && text == null) { showToast('이 입고에는 당도·평균당도 값이 없습니다 — 목록의 당도 줄을 눌러 먼저 입력하세요'); return; }
     // ★모달 셸을 매번 지우고 다시 만든다 — 한 번만 만드는 방식은 옛 레이아웃이 남는 사고가 있었다.
     document.getElementById('modal-ib-share')?.remove();
@@ -23246,7 +23267,7 @@ async function openInboundShareText(inboundId, mode) {
         </div>
         <div style="padding:14px 18px;flex:1;overflow:auto">
           <textarea id="ib-share-text" style="width:100%;box-sizing:border-box;height:${isBrix ? 90 : 320}px;max-height:50vh;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;font-family:inherit;line-height:1.5;resize:vertical"></textarea>
-          <div style="font-size:11px;color:#9CA3AF;margin-top:6px">${isBrix ? '당도만 뽑았습니다(값 없는 항목은 뺌). 보내기 전 여기서 고칠 수 있습니다.' : '같은 차로 들어온 카테고리를 한 장으로 묶었습니다. 보내기 전 여기서 고칠 수 있습니다.'}</div>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:6px">${isBrix ? '당도만 뽑았습니다(값 없는 항목은 뺌). 보내기 전 여기서 고칠 수 있습니다.' : isSorted ? '사이즈별 선과품 내역입니다. 보내기 전 여기서 고칠 수 있습니다.' : '같은 차로 들어온 카테고리를 한 장으로 묶었습니다. 보내기 전 여기서 고칠 수 있습니다.'}</div>
         </div>
         <div style="padding:12px 18px;border-top:1px solid #E5E7EB;display:flex;gap:8px;justify-content:flex-end">
           <button data-close class="btn cancel" style="font-size:13px;padding:7px 16px">닫기</button>
@@ -25786,19 +25807,14 @@ async function openSortingDetailModal(inboundId) {
 }
 
 // ── 선과품 입고 내역 모달 ─────────────────────────────────────────
-let _msibEscHandler = null;
-
-function openSortedInboundDetail(inboundId, showPrice = false) {
-  const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
-  if (!ib) return;
-
-  document.getElementById('modal-sorted-ib-detail')?.remove();
-  if (_msibEscHandler) { document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; }
-
+// 선과품 입고의 사이즈별 CT·중량·단가·금액 — 🔍 선과품 상세(openSortedInboundDetail)와 📋 공유(buildInboundShareText)가 같이 쓴다.
+// ★두 곳이 따로 세면 상세 창과 공유 텍스트의 CT가 어긋날 수 있다 — 집계 규칙은 여기 한 곳.
+// 반환 { sizeData: {사이즈: {ct, weight, price, amount}}, totalCt, grade }
+function _ibSortedSizeData(ib) {
   // 데이터 소스: sorted_breakdown(입고 이력, 출고돼도 보존) 우선, 없으면 재고(하위호환)
   const liveRecs = inventoryRecords.filter(r =>
     !r.is_void && r.source_type === 'inbound_sorted' &&
-    String(r.inbound_record_id) === String(inboundId)
+    String(r.inbound_record_id) === String(ib.id)
   );
   const bd = (ib.sorted_breakdown && Array.isArray(ib.sorted_breakdown.sizes)) ? ib.sorted_breakdown : null;
   const sizeData = {};
@@ -25826,12 +25842,25 @@ function openSortedInboundDetail(inboundId, showPrice = false) {
       if (r.unit_price) sizeData[r.size_code].price = Number(r.unit_price);
     });
   }
-  const hasSizeData = Object.keys(sizeData).length > 0;
   const totalCt  = (bd && bd.total_ct != null) ? Number(bd.total_ct) : Object.values(sizeData).reduce((s, v) => s + v.ct, 0);
-  const totalAmt = Object.values(sizeData).reduce((s, v) => s + v.amount, 0);
 
   // 당도(재고현황 체계 값 그대로) — breakdown.grade 우선, 없으면 재고 대표값, 없으면 일반
   const grade = (bd && bd.grade) || (liveRecs.find(r => r.quality_grade)?.quality_grade) || '일반';
+  return { sizeData, totalCt, grade };
+}
+
+let _msibEscHandler = null;
+
+function openSortedInboundDetail(inboundId, showPrice = false) {
+  const ib = inboundRecords.find(r => String(r.id) === String(inboundId));
+  if (!ib) return;
+
+  document.getElementById('modal-sorted-ib-detail')?.remove();
+  if (_msibEscHandler) { document.removeEventListener('keydown', _msibEscHandler); _msibEscHandler = null; }
+
+  const { sizeData, totalCt, grade } = _ibSortedSizeData(ib);
+  const hasSizeData = Object.keys(sizeData).length > 0;
+  const totalAmt = Object.values(sizeData).reduce((s, v) => s + v.amount, 0);
   const gradeIsNormal = grade === '일반';
 
   // 사이즈 div 행
