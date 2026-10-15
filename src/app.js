@@ -5051,11 +5051,9 @@ function renderDBoard() {
   el.innerHTML = html;
 }
 // ── 수확 캘린더
-const CAL_PER = 5;
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 let calSelectedDate = null;
-let calUpPage = 1;
 
 function calSortOrder(s) { return s === '배차없음' ? 0 : s === '배차완료' ? 1 : 2; }
 function calGoDisp(farm, harvestDate, item) {
@@ -5480,7 +5478,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
 }
 // ── [화면: 수확·수송 > 수확 캘린더] 월 그리드 + 금일 strip + 등록 폼.
 // 내부에서 renderUpcomingHarvest(4일 카드) · renderHarvestProgress(농가별 진행 현황) 호출.
-// ★renderCalUpcoming·renderHarvestActive 호출은 2026-08-21 제거(중복) — 함수는 남아 있다.
+// ★옛 '이번 달 수확 일정'·'진행중 농가'(renderCalUpcoming·renderHarvestActive)는 2026-08-21 호출 제거 → v757에서 삭제.
 function renderCal() {
   if (!document.getElementById('p-cal')?.classList.contains('active')) return;
   const todayStr = td();
@@ -5751,15 +5749,10 @@ function renderCal() {
       }
     }
   }
-  // ★2026-08-21 '이번 달 수확 일정'(renderCalUpcoming)·'진행중 농가'(renderHarvestActive) 호출 제거.
-  //   앞의 4일치 카드가 배차 정보까지 담아 ②를 대체하고, ⑤는 '농가별 진행 현황'의 진행중 그룹과 같은 목록이라
-  //   같은 농가가 한 화면에 세 번 나왔다.
-  //   ★함수와 DOM(#cal-upcoming-list · #cal-harvest-active · #cal-month-list-box)은 지우지 않았다 —
-  //   되돌리려면 아래 두 줄의 주석만 풀고 index.html의 #cal-month-list-box display:none만 빼면 된다.
-  // renderCalUpcoming();
+  // ★2026-08-21 '이번 달 수확 일정'·'진행중 농가' 호출 제거 — 앞의 4일치 카드가 배차 정보까지 담아 ②를 대체하고,
+  //   ⑤는 '농가별 진행 현황'의 진행중 그룹과 같은 목록이라 같은 농가가 한 화면에 세 번 나왔다(함수·DOM은 v757에서 삭제).
   renderUpcomingHarvest();
   renderHarvestProgress();
-  // renderHarvestActive();
   // ★열려 있는 날짜 상세 패널도 함께 갱신 — harvests를 바꾸는 함수는 전부 renderCal을 부르므로
   //   여기 한 곳에 두면 호출부를 빠뜨릴 일이 없다(삭제·수정·상태변경·차수이어가기 모두 커버).
   _refreshCalDetail();
@@ -5901,8 +5894,8 @@ function _hvTripLine(dStr, farm, boxStyle = 'padding-left:12px;margin-top:3px') 
 // ★2026-08-21 재구성(Jimmy 데모 확정): 날짜별 '세로 나열' → 4일치 '가로 카드'.
 //   "모레 뭐 있지"를 스크롤 없이 한눈에 보는 게 목적이라, 좁은 화면에서도 세로로 쌓지 않고 가로 스크롤한다
 //   (세로로 쌓으면 4일치를 한 화면에 못 봐서 이 개편의 이유가 사라진다).
-// ★같은 화면의 '이번 달 수확 일정'(renderCalUpcoming)·'진행중 농가'(renderHarvestActive)와 겹쳐
-//   같은 농가가 세 번 나오던 문제가 있었다 → renderCal에서 호출을 뺐다(함수·DOM은 되돌리기 쉽게 남겨 둠).
+// ★같은 화면의 '이번 달 수확 일정'·'진행중 농가'와 겹쳐
+//   같은 농가가 세 번 나오던 문제가 있었다 → renderCal에서 호출을 뺐다(두 화면은 v757에서 삭제).
 // ★날짜별 소계: 2026-08-20엔 "농가마다 콘테이너 놓인 위치가 달라 합이 뜻이 없다"고 뺐으나,
 //   카드가 좁아 농가별 숫자만으로는 그날 규모가 안 잡혀 2026-08-21 헤더 요약으로 되살렸다.
 //   ★단 농가 중복은 뺀다 — getFCS는 '농가 총 보유'라 같은 농가가 두 줄이면 두 번 더해진다.
@@ -6103,7 +6096,7 @@ function _hvItemColor(item) {
 // ★한정효(의귀리230)/한정효(신풍리460)처럼 밭이 다르면 farm 값 자체가 달라 자동으로 별개 그룹이 된다. 억지로 안 묶는다.
 //
 // ★상태 판정 — 아래 순서대로 검사한다. 세 갈래가 서로 겹치지 않고 빠지는 농가도 없다.
-//   1. 🏁 종료      : 차수 중 하나라도 is_final=true (renderHarvestActive의 '전체 종료 농가' 판정과 같은 규칙)
+//   1. 🏁 종료      : 차수 중 하나라도 is_final=true (옛 '진행중 농가' 목록의 '전체 종료 농가' 판정과 같은 규칙 — 그 목록은 v757에서 삭제)
 //   2. ⚠️ 확인 필요 : 마지막 차수가 '수확완료'인데 전체 종료가 아니고, 그 뒤로 HV_STALE_DAYS일이 지나도록
 //                     다음 차수도 전체 종료도 없음 → 잊고 넘어간 것으로 보고 확인 요청
 //   3. 🌱 진행중    : 나머지(수확전·수확중이거나, 완료했지만 아직 기준일이 안 지난 것)
@@ -6502,36 +6495,6 @@ function renderHarvestProgress() {
     </div>`;
 }
 
-// ── [화면: 수확·수송 > 수확 캘린더 > 진행중 농가] renderCal에서 호출. 예정 목록은 renderCalUpcoming.
-// 수확 진행중 농가 목록 — 전체 종료(is_final) 전이면서 수확 시작(수확중/완료 차수)한 농가.
-// 농가별 최신 차수(max round) harvest 대표 카드 + harvestActBtns(재사용). 매 렌더 계산.
-function renderHarvestActive() {
-  const el = document.getElementById('cal-harvest-active');
-  if (!el) return;
-  // ★먼 밭(가지)이 있는 농가는 가지마다 대표를 뽑는다(차수·전체 종료가 밭마다 따로 — _hvProgGroups와 같은 _brKey 묶음).
-  const byFarm = {};
-  harvests.forEach(h => { const b = _brKey(h, h.farm), k = b ? h.farm + '||' + b : h.farm; (byFarm[k] = byFarm[k] || []).push(h); });
-  const reps = [];
-  Object.keys(byFarm).forEach(farm => {
-    const list = byFarm[farm];
-    if (list.some(h => h.is_final)) return;                                   // 전체 종료 농가 제외
-    if (!list.some(h => h.status === '수확중' || h.status === '수확완료')) return;   // 수확전만 → 제외
-    const rep = list.reduce((a, b) => ((b.round || 1) >= (a.round || 1) ? b : a));   // 최신 차수 대표
-    reps.push(rep);
-  });
-  if (!reps.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  reps.sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko') || (_brKey(a, a.farm) || '').localeCompare(_brKey(b, b.farm) || '', 'ko'));
-  el.style.display = '';
-  el.innerHTML = `
-    <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🌾 수확 진행중</div>
-      <div style="font-size:11px;color:#aaa">${new Set(reps.map(h => h.farm)).size}개 농가</div>
-    </div>
-    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px">
-      ${reps.map(h => harvestRow(h, false)).join('')}
-    </div>`;
-}
-
 // 날짜 상세 패널(cal-detail-panel) 그리기 — ★단일 소스. renderCal 끝에서 부른다.
 // 예전엔 이 로직이 calSelectDay 안에만 있어서, 일정을 지우거나 상태를 바꿔도 renderCal은 달력·진행현황만
 // 다시 그리고 패널은 옛 내용을 그대로 물고 있었다(새로고침해야 사라짐). 그래서 렌더 경로로 옮겼다.
@@ -6620,51 +6583,6 @@ function itemColor(item) {
     '단호박': 'background:#EFEBE9;color:#5D4037',
   };
   return map[item] || 'background:#F5F5F5;color:#555';
-}
-
-// ── [화면: 수확·수송 > 수확 캘린더 > 예정 목록] renderCal에서 호출. 진행중은 renderHarvestActive.
-function renderCalUpcoming() {
-  const canEdit = sessionStorage.getItem('citrus_role') === 'admin';
-  const all = calGetAllItems();
-  const total = all.length;
-  document.getElementById('cal-up-count').textContent = `총 ${total}건`;
-  const el = document.getElementById('cal-upcoming-list');
-  if (!total) { el.innerHTML = `<div style="text-align:center;color:#aaa;font-size:13px;padding:16px">이번 달 수확 일정이 없습니다</div>`; document.getElementById('cal-pg-bar').style.display = 'none'; return; }
-  const pages = Math.ceil(total / CAL_PER);
-  if (calUpPage > pages) calUpPage = 1;
-  const page = all.slice((calUpPage - 1) * CAL_PER, calUpPage * CAL_PER);
-  el.innerHTML = page.map(e => {
-    const lColor = e.status === '배출완료' ? '#43A047' : e.status === '배차없음' ? '#EF5350' : '#F28C28';
-    const bdg = e.status === '배출완료' ? 'b-ok' : e.status === '배차없음' ? 'b-danger' : 'b-warn';
-    const dispBox = e.date
-      ? `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E8F5E9;color:#2E7D32;white-space:nowrap">${calFmtShort(e.date)}</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`
-      : `<div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#FFEBEE;color:#C62828;white-space:nowrap">미정</div><div style="font-size:9px;text-align:center;color:#aaa">배출일</div>`;
-    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;border-left:3px solid ${lColor}">
-      <div style="display:flex;flex-direction:column;gap:3px;min-width:46px">
-        <div style="font-size:10px;font-weight:500;text-align:center;border-radius:5px;padding:3px 4px;background:#E3F2FD;color:#1565C0;white-space:nowrap">${calFmtShort(e.harvest)}</div>
-        <div style="font-size:9px;text-align:center;color:#aaa">수확일</div>
-        ${dispBox}
-      </div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px;color:#222">${esc(e.farm)}${e.round?` <span style="font-weight:600;font-size:11px;color:#1565C0">${e.round}차</span>`:''} ${e.item ? `<span style="font-weight:500;font-size:11px;padding:2px 7px;border-radius:4px;margin-left:4px;${itemColor(e.item)}">${esc(e.item)}</span>` : ''}</div>
-        <div style="font-size:11px;color:#888;margin-top:3px">${e.driver?'👤 '+esc(e.driver)+' &nbsp;':''} ${e.ctype?ctB(e.ctype)+' <strong>'+e.qty+'개</strong>':''}</div>
-      </div>
-     <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-       ${(e.status === '수확전' || e.status === '수확중' || e.status === '수확완료')
-         ? `<span class="badge ${_hvStBadge[e.status]||'b-warn'}" style="white-space:nowrap;font-size:12px">${e.status}</span>${harvestActBtns(e)}`
-         : e.status === '배차없음' ? `<button class="btn pri" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="calGoDisp('${e.farm.replace(/'/g,"&#39;")}','${e.harvest||''}','${(e.item||'').replace(/'/g,"&#39;")}')">+ 배차 등록</button><button class="btn edt" style="font-size:11px;padding:4px 8px" onclick="openHarvestEdit(${e.id})">✏️</button>${canEdit ? `<button class="btn del" style="font-size:11px;padding:4px 8px" onclick="delHarvest(${e.id})">삭제</button>` : ''}` : `<span class="badge ${bdg}" style="white-space:nowrap;font-size:12px">${e.status}</span>`}
-     </div>
-    </div>`;
-  }).join('');
-
-  const pgBar = document.getElementById('cal-pg-bar');
-  if (pages <= 1) { pgBar.style.display = 'none'; return; }
-  pgBar.style.display = 'flex';
-  document.getElementById('cal-pg-info').textContent = `${total}건 · ${(calUpPage-1)*CAL_PER+1}~${Math.min(calUpPage*CAL_PER,total)}`;
-  let btns = `<button class="pg-btn" onclick="calGoPage(${calUpPage-1})" ${calUpPage===1?'disabled':''}>◀</button>`;
-  for (let i = 1; i <= pages; i++) btns += `<button class="pg-btn${i===calUpPage?' cur':''}" onclick="calGoPage(${i})">${i}</button>`;
-  btns += `<button class="pg-btn" onclick="calGoPage(${calUpPage+1})" ${calUpPage===pages?'disabled':''}>▶</button>`;
-  document.getElementById('cal-pg-btns').innerHTML = btns;
 }
 
 // ── 농가 이력
@@ -7190,9 +7108,8 @@ async function delHarvest(id) {
   } catch (e) { alert('오류: ' + e.message); }
 }
 
-function calGoPage(p) { calUpPage = p; renderCalUpcoming(); }
-function calPrevMonth() { if (calMonth === 0) { calYear--; calMonth = 11; } else calMonth--; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
-function calNextMonth() { if (calMonth === 11) { calYear++; calMonth = 0; } else calMonth++; calSelectedDate = null; calUpPage = 1; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
+function calPrevMonth() { if (calMonth === 0) { calYear--; calMonth = 11; } else calMonth--; calSelectedDate = null; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
+function calNextMonth() { if (calMonth === 11) { calYear++; calMonth = 0; } else calMonth++; calSelectedDate = null; document.getElementById('cal-detail-panel').style.display = 'none'; renderCal(); }
 
 // ═══════════════════ 공용 유틸 · 마스터 설정 (CSV·엑셀 · 위치 · 품질 · 크기 기준) ═══════════════════
 // ── CSV 공용 헬퍼
@@ -20207,27 +20124,6 @@ function _renderScProductOptions() {
   }
 }
 
-function _renderScDoingProductOptions() {
-  const sel = document.getElementById('sc-doing-product-sel');
-  if (!sel) return;
-  const pm = _ibProcessedMap();
-  const srtCntMap = {};
-  processingRecords.filter(p => p.process_type === '선과').forEach(p => {
-    srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
-  });
-  const prods = [...new Set(
-    inboundRecords.filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) >= 1)
-      .map(r => r.product).filter(Boolean)
-  )].sort((a, b) => _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));   // 품목 표시 순서(시즌 순, v748)
-  const cur = [...sel.options].slice(1).map(o => o.value);
-  if (JSON.stringify(cur) !== JSON.stringify(prods)) {
-    sel.innerHTML = '<option value="">전체 품목</option>' +
-      prods.map(p => `<option value="${esc(p)}"${_scDoingProduct === p ? ' selected' : ''}>${esc(p)}</option>`).join('');
-  } else {
-    sel.value = _scDoingProduct;
-  }
-}
-
 function _renderScDoneProductOptions() {
   const sel = document.getElementById('sc-done-product-sel');
   if (!sel) return;
@@ -21048,7 +20944,7 @@ async function _scApplyRecommend() {
 
 // ── [화면: 재고관리 > 선과 처리 센터 > 미선과(pending) 탭] 목록 테이블
 //    ※열 폭 colgroup은 이 함수 안 인라인(sc-table-wrap). 입고내역 목록은 renderInboundList — 혼동 주의.
-//    ※같은 센터의 다른 탭: 진행중 _renderScDoingTable, 완료 _renderScDoneTable.
+//    ※같은 센터의 다른 탭: 완료 _renderScDoneTable(옛 진행중 탭 표 _renderScDoingTable은 v757에서 삭제).
 // ====================================================================
 // _renderScTable 구획 안내 (바로 위 [화면:...] 주석과 함께 볼 것)
 // ====================================================================
@@ -21382,118 +21278,6 @@ function _renderScTable() {
                 <td class="stk-r" style="padding:4px;text-align:center">
                   ${_scAdm ? `<button onclick="openSortingModal('${r.id}')"
                     style="background:${isDoing ? '#C2410C' : '#1565C0'};color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
-                    ✂️ 입력
-                  </button>` : '<span style="color:#D1D5DB;font-size:11px">-</span>'}
-                </td>
-              </tr>`;
-            }).join('')}
-      </tbody>
-    </table>`;
-}
-
-function _renderScDoingTable() {
-  const wrap = document.getElementById('sc-doing-table-wrap');
-  if (!wrap) return;
-  const _scAdm = sessionStorage.getItem('citrus_role') === 'admin';   // ★_renderScTable과 같은 규칙(입력은 관리자만)
-
-  const pm = _ibProcessedMap();
-  const today = td();
-  const todayMs = new Date(today).getTime();
-
-  const urgency = date => {
-    const days = Math.floor((todayMs - new Date(date).getTime()) / 86400000);
-    if (days >= URGENCY_THRESHOLD_HIGH) return { icon: '🔴', label: `${days}일`, color: '#DC2626', level: 3 };
-    if (days >= URGENCY_THRESHOLD_MID)  return { icon: '🟡', label: `${days}일`, color: '#D97706', level: 2 };
-    return { icon: '🟢', label: `${days}일`, color: '#16A34A', level: 1 };
-  };
-
-  const srtCntMap = {};
-  processingRecords.filter(p => p.process_type === '선과').forEach(p => {
-    srtCntMap[p.inbound_id] = (srtCntMap[p.inbound_id] || 0) + 1;
-  });
-
-  let rows = inboundRecords
-    .filter(r => !r.is_void && (r.quantity - (pm[r.id] || 0)) > 0 && (srtCntMap[r.id] || 0) >= 1)
-    .map(r => ({ ...r, remaining: r.quantity - (pm[r.id] || 0) }));
-
-  if (_scDoingSearch) {
-    const q = _scDoingSearch.toLowerCase();
-    rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q));
-  }
-  if (_scDoingProduct) rows = rows.filter(r => r.product === _scDoingProduct);
-  if (_scDoingPriOnly) rows = rows.filter(r => r.is_priority || urgency(r.date).level >= 2);
-
-  const [sortCol, sortDir] = _scSort.split('-');
-  rows.sort((a, b) => {
-    let cmp;
-    if (sortCol === 'farm')         cmp = (a.farm_name || '').localeCompare(b.farm_name || '');
-    else if (sortCol === 'date')    cmp = a.date.localeCompare(b.date);
-    else if (sortCol === 'elapsed') cmp = b.date.localeCompare(a.date);
-    else if (sortCol === 'remaining') cmp = a.remaining - b.remaining;
-    else cmp = a.date.localeCompare(b.date);
-    return sortDir === 'asc' ? cmp : -cmp;
-  });
-
-  const countEl = document.getElementById('sc-doing-row-count');
-  if (countEl) countEl.textContent = rows.length + '건';
-
-  const thS = `padding:6px;background:#FFF7ED;border-bottom:2px solid #FED7AA;font-size:12px;font-weight:600;color:#374151;text-align:left`;
-  const thR = `padding:6px;background:#FFF7ED;border-bottom:2px solid #FED7AA;font-size:12px;font-weight:600;color:#374151;text-align:right`;
-  const thC = `padding:6px;background:#FFF7ED;border-bottom:2px solid #FED7AA;font-size:12px;font-weight:600;color:#374151;text-align:center`;
-
-  wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px">
-      <colgroup>
-        <col style="width:90px"><col style="width:80px"><col style="width:70px">
-        <col style="width:130px"><col style="width:70px"><col style="width:60px">
-        <col style="width:80px"><col style="width:100px"><col style="width:70px">
-      </colgroup>
-      <thead><tr>
-        <th style="${thS}">농가</th>
-        <th style="${thS}">품목</th>
-        <th style="${thR}">잔여CT</th>
-        <th style="${thC}">진행률</th>
-        <th style="${thC}">입고일</th>
-        <th style="${thC}">경과</th>
-        <th style="${thS}">위치</th>
-        <th style="${thS}">품질</th>
-        <th style="${thC}">액션</th>
-      </tr></thead>
-      <tbody>
-        ${rows.length === 0
-          ? `<tr><td colspan="9" style="text-align:center;padding:40px;color:#9CA3AF;font-size:13px">🔄 조건에 맞는 선과 중 항목이 없습니다</td></tr>`
-          : rows.map((r, i) => {
-              const u = urgency(r.date);
-              const srtCnt = srtCntMap[r.id] || 0;
-              const isPri = r.is_priority || u.level === 3;
-              const rowBg = isPri ? '#FFFDE7' : (u.level === 2 ? '#FFFBEB' : '#fff');
-              const qiHtml = qualityInline(r);
-              const sorted = r.quantity - r.remaining;
-              const pct = r.quantity > 0 ? Math.round(sorted / r.quantity * 100) : 0;
-              const progressBar = `
-                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                  <span style="font-size:11px;font-weight:600;color:#C2410C">${fmtN(sorted)} / ${fmtN(r.quantity)} CT</span>
-                  <div style="width:90px;height:6px;background:#FED7AA;border-radius:3px;overflow:hidden">
-                    <div style="width:${pct}%;height:100%;background:#C2410C;border-radius:3px"></div>
-                  </div>
-                  <span style="font-size:10px;color:#9CA3AF">${pct}%</span>
-                </div>`;
-              return `<tr onclick="openSortingDetailModal('${r.id}')" style="background:${rowBg};border-bottom:1px solid #F3F4F6;cursor:pointer" title="클릭하여 선과 결과 상세 보기">
-                <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
-                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}
-                </td>
-                <td style="padding:6px 4px">${productChip(r.product)}</td>
-                <td style="padding:6px 4px;text-align:right;font-weight:700;color:#C2410C">${fmtN(r.remaining)}</td>
-                <td style="padding:4px 2px">${progressBar}</td>
-                <td style="padding:6px 4px;text-align:center;color:#6B7280;font-size:12px">${r.date}</td>
-                <td style="padding:6px 4px;text-align:center;font-size:12px;font-weight:600;color:${u.color};white-space:nowrap">${u.icon} ${u.label}</td>
-                <td style="padding:6px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#374151" title="${esc(r.location || '')}">
-                  ${esc(r.location || '미지정')}
-                </td>
-                <td style="padding:4px">${qiHtml || '<span style="color:#D1D5DB;font-size:11px">-</span>'}</td>
-                <td style="padding:4px;text-align:center">
-                  ${_scAdm ? `<button onclick="event.stopPropagation(); openSortingModal('${r.id}')"
-                    style="background:#C2410C;color:#fff;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
                     ✂️ 입력
                   </button>` : '<span style="color:#D1D5DB;font-size:11px">-</span>'}
                 </td>
