@@ -5448,6 +5448,7 @@ function _hvAutoDeal(id, farm) {
 //   ★안 넘기면 출력 HTML이 수정 전과 글자 하나 안 틀린다(연락 줄을 변수로 붙이는 이유).
 // opts.fold(v760, 금일 수확일정만) = 계획·기사·연락 줄을 접힌 칸에 넣고 농가 이름 앞 ▸/▾로 편다(_hvFoldParts).
 //   ★안 넘기면(진행 현황·달력 상세) fd = null → 아래 ${fd ? … : ''} 자리가 전부 빈 문자열·tail 그대로라 출력이 수정 전과 같다.
+// opts.fold일 때 수확중이면 상태 배지 자리에 '▶ 진행 N일째'(+ '예정 M/D +N일')를 쓴다(v762, _hvStatusBadges — 4일 카드와 같은 계산). 다른 상태는 그대로.
 // opts.hold(v761, 금일 수확일정만) = 첫 줄 버튼 앞에 종류별 보유 칩·'콘테이너 없음'(_hvHoldTag). 안 넘기면 '' — 출력 무변경.
 function harvestRow(h, showDate, planDate, opts = {}) {
   const st = h.status || '수확전';
@@ -5464,7 +5465,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
         ? `<span class="badge b-neu" style="font-size:10px">🏁 수확 종료</span>`
         : (st === '수확완료'
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
-            : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}${_hvFinishBadge(h, td())}
+            : (opts.fold && st === '수확중' ? _hvStatusBadges(h, td()) : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`))}${_hvFinishBadge(h, td())}
       ${opts.hold ? _hvHoldTag(h.farm, h, h.date, st, h.is_final) : ''}<div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
       ${fd ? fd.body : tail}
     </div>`;
@@ -5474,8 +5475,11 @@ function harvestRow(h, showDate, planDate, opts = {}) {
 //   펼침 상태 = _hvTodayOpen[key](key = 수확 id 또는 'd:'+농가+품목). 메모리에만 있어 다시 그려도 유지되고, 새로고침하면 접힌다.
 //   ★펴고 접을 때 다시 그리지 않고 그 칸만 열고 닫는다(_hvTodayToggle) — 20초 동기화 재렌더도 이 맵을 읽어 같은 상태로 그린다.
 const _hvTodayOpen = {};
+// 지금 그린 금일 줄 중 ▸가 있는 키 — renderCal이 금일을 그리기 전에 비우고 _hvFoldParts가 채운다('모두 펼치기' 대상, v762).
+let _hvTodayKeys = [];
 function _hvFoldParts(key, inner) {
   if (!inner || !inner.trim()) return { arrow: '', tg: '', nameCss: '', body: '' };
+  _hvTodayKeys.push(key);
   const open = !!_hvTodayOpen[key];
   const k = esc(key).replace(/"/g, '&quot;');   // 이름에 따옴표가 있어도 안전하게 data-*로 넘긴다
   const tg = ` data-k="${k}" onclick="_hvTodayToggle(this.dataset.k)"`;
@@ -5490,6 +5494,18 @@ function _hvTodayToggle(key) {
   const q = CSS.escape(key);
   document.querySelectorAll(`[data-hv-fold="${q}"]`).forEach(b => { b.style.display = _hvTodayOpen[key] ? '' : 'none'; });
   document.querySelectorAll(`[data-hv-arrow="${q}"]`).forEach(a => { a.textContent = _hvTodayOpen[key] ? '▾' : '▸'; });
+  const ab = document.getElementById('hv-today-all'); if (ab) ab.textContent = _hvTodayAllOpen() ? '모두 접기' : '모두 펼치기';   // 개별 토글은 다시 안 그리므로 버튼 글자만 맞춘다
+}
+// 금일 '모두 펼치기/접기'(v762) — 전부 펼쳐져 있으면 '모두 접기'. 보이는 줄의 키(_hvTodayKeys)를 한 번에 바꾸고 다시 그린다.
+function _hvTodayAllOpen() { return _hvTodayKeys.length > 0 && _hvTodayKeys.every(k => _hvTodayOpen[k]); }
+function _hvTodayToggleAll() {
+  const open = !_hvTodayAllOpen();
+  _hvTodayKeys.forEach(k => { _hvTodayOpen[k] = open; });
+  renderCal();
+}
+// 수확 캘린더 '모두 펼치기/접기' 글자 버튼 — 진행 현황 머리·금일 수확일정·다가오는 수확 공용(v762). id는 선택(금일만 — 개별 토글 때 글자 갱신용).
+function _hvToggleAllBtn(label, onclick, id) {
+  return `<button type="button"${id ? ` id="${id}"` : ''} onclick="${onclick}" style="font-size:11px;color:#2563EB;background:none;border:none;cursor:pointer;padding:2px 4px;font-family:inherit;white-space:nowrap">${label}</button>`;
 }
 // ── [화면: 수확·수송 > 수확 캘린더] 월 그리드 + 금일 strip + 등록 폼.
 // 내부에서 renderUpcomingHarvest(4일 카드) · renderHarvestProgress(농가별 진행 현황) 호출.
@@ -5542,6 +5558,7 @@ function renderCal() {
   if (todayEl) {
     if (allTodayItems.length) {
       todayEl.style.display = '';
+      _hvTodayKeys = [];   // 아래 줄들을 그리며 _hvFoldParts가 채운다
       const rowEntries = allTodayItems.map(e => {
         // 수확 이벤트면 그 harvest 레코드를 id로 정확히(상태 정확) — 배차 이벤트면 농가의 오늘/수확중 harvest 탐색
         //   (배차에 품목이 있으면 같은 품목 수확만 — v755. 없으면 예전대로 농가 기준)
@@ -5578,7 +5595,8 @@ function renderCal() {
       };
       const rows = _hvGroupByItemHtml(rowEntries, 'margin-top:4px', { sum: _todaySum });   // 품목별 묶음(품목 하나여도 머리 표시)
       todayEl.innerHTML =
-        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px">📅 금일 수확 일정 (${allTodayItems.length}건)${_xdFilterTag()}</div>` +
+        `<div style="font-size:12px;font-weight:700;color:#C05800;margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>📅 금일 수확 일정 (${allTodayItems.length}건)${_xdFilterTag()}</span>`
+        + (_hvTodayKeys.length ? `<span style="margin-left:auto">${_hvToggleAllBtn(_hvTodayAllOpen() ? '모두 접기' : '모두 펼치기', '_hvTodayToggleAll()', 'hv-today-all')}</span>` : '') + `</div>` +
         `<div style="display:flex;flex-direction:column;gap:5px">${rows}</div>`;
     } else {
       todayEl.style.display = 'none';
@@ -5803,6 +5821,14 @@ function _hvUpToggle(dStr) {
   _hvUpOpen[dStr] = !_hvUpOpen[dStr];
   renderUpcomingHarvest();   // 이 섹션만 다시 그린다
 }
+// 다가오는 수확 '모두 펼치기/접기'(v762) — 대상 = 지금 보이는 날짜 중 수확이 있는 날(_hvUpKeys, renderUpcomingHarvest가 채움).
+let _hvUpKeys = [];
+function _hvUpAllOpen() { return _hvUpKeys.length > 0 && _hvUpKeys.every(k => _hvUpOpen[k]); }
+function _hvUpToggleAll() {
+  const open = !_hvUpAllOpen();
+  _hvUpKeys.forEach(k => { _hvUpOpen[k] = open; });
+  renderUpcomingHarvest();
+}
 
 function _upcomingHarvestsOn(dStr) {
   return harvests.filter(h =>
@@ -5842,6 +5868,23 @@ function _hvHoldTag(farm, rec, dStr, status, isFinal) {
   const hold = i.holdN !== 0 ? `<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:3px"><span style="font-size:11px;color:#9CA3AF">보유</span>${i.chips || `<strong style="font-size:11px;color:#374151">${fmtN(i.holdN)}</strong>`}</span>` : '';
   const warn = i.noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : '';
   return (hold || warn) ? `<span data-hv-hold style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px">${hold}${warn}</span>` : '';
+}
+// 수확 상태 배지 — 4일 카드(renderUpcomingHarvest)와 금일 수확일정(harvestRow opts.fold, 수확중일 때만)이 같이 쓴다(v762).
+//   수확중이면 '▶ 진행 N일째'(시작일 당일이 1일째, 로컬 자정 기준 — td/ymd와 같은 축), 아니면 상태 배지.
+//   종료 예정일이 지났는데 아직 수확중이면 '예정 M/D +N일'을 덧붙인다.
+//   ★표시만 한다. 종료일을 자동으로 늘리거나 상태를 바꾸지 않는다(완료 처리는 사람이).
+function _hvStatusBadges(h, dStr) {
+  const st = h.status || '수확전';
+  const dayNo = Math.floor((new Date(dStr + 'T00:00:00') - new Date(h.date + 'T00:00:00')) / 86400000) + 1;
+  const stBadge = st === '수확중'
+    ? `<span class="badge b-info" style="font-size:10px">▶ 진행 ${dayNo}일째</span>`
+    : `<span class="badge ${_hvStBadge[st] || 'b-warn'}" style="font-size:10px">${esc(st)}</span>`;
+  const overDays = (st === '수확중' && h.end_date && h.end_date < dStr)
+    ? Math.floor((new Date(dStr + 'T00:00:00') - new Date(h.end_date + 'T00:00:00')) / 86400000) : 0;
+  const overBadge = overDays > 0
+    ? `<span class="badge b-warn" style="font-size:10px" title="종료 예정일(${esc(h.end_date)})이 지났지만 아직 수확중입니다">예정 ${esc(calFmtShort(h.end_date))} +${overDays}일</span>`
+    : '';
+  return stBadge + overBadge;
 }
 function _dispForHarvest(farm, dStr) {
   const rows = dispatches.filter(d => d.harvest === dStr && d.farm === farm);
@@ -5991,6 +6034,7 @@ function renderUpcomingHarvest() {
   const totalCnt = days.reduce((a, x) => a + x.list.length, 0);
   if (!totalCnt) { el.style.display = 'none'; el.innerHTML = ''; return; }   // 숨김 판정은 오늘 포함 4일(배너가 오늘 건도 알린다)
   const upCnt = days.slice(1).reduce((a, x) => a + x.list.length, 0);   // 머리 'N건' = 보이는 줄(내일부터)
+  _hvUpKeys = days.slice(1).filter(x => x.list.length).map(x => x.dStr);   // '모두 펼치기' 대상(펼칠 행이 있는 날만)
 
   // ★v760 B안: 가로 4열 카드 → 날짜별 세로 한 줄(머리 줄만, 누르면 그날 행 펼침). 오늘(di 0)은 금일 수확일정이 맡아 안 그린다.
   //   펼친 내용 = 예전 카드 안 rows 그대로(_hvGroupByItemHtml 같은 인자) — 정보는 빠지지 않고 접혀만 있다.
@@ -6018,18 +6062,7 @@ function renderUpcomingHarvest() {
 
     const rows = day.list.length ? _hvGroupByItemHtml(day.list.map(x => ({ rec: x, html: (() => {   // 품목별 묶음(품목 하나여도 머리 표시)
       const st = x.status || '수확전';
-      // 진행일수 — 시작일 당일이 1일째. 날짜 계산은 로컬 자정 기준(td/ymd와 같은 축).
-      const dayNo = Math.floor((new Date(day.dStr + 'T00:00:00') - new Date(x.date + 'T00:00:00')) / 86400000) + 1;
-      const stBadge = st === '수확중'
-        ? `<span class="badge b-info" style="font-size:10px">▶ 진행 ${dayNo}일째</span>`
-        : `<span class="badge ${_hvStBadge[st] || 'b-warn'}" style="font-size:10px">${esc(st)}</span>`;
-      // 종료 예정일이 지났는데 아직 수확중 — '예정 9/12 +1일'. 시작일은 옆 '진행 N일째'가 보여 준다.
-      //   ★표시만 한다. 종료일을 자동으로 늘리거나 상태를 바꾸지 않는다(완료 처리는 사람이).
-      const overDays = (st === '수확중' && x.end_date && x.end_date < day.dStr)
-        ? Math.floor((new Date(day.dStr + 'T00:00:00') - new Date(x.end_date + 'T00:00:00')) / 86400000) : 0;
-      const overBadge = overDays > 0
-        ? `<span class="badge b-warn" style="font-size:10px" title="종료 예정일(${esc(x.end_date)})이 지났지만 아직 수확중입니다">예정 ${esc(calFmtShort(x.end_date))} +${overDays}일</span>`
-        : '';
+      const stBadges = _hvStatusBadges(x, day.dStr);   // '▶ 진행 N일째'·상태 배지 + '예정 M/D +N일' — 금일 수확일정과 공용(v762)
       // 보유·'콘테이너 없음'·'보유분으로 진행' 판정 — 금일 수확일정과 같은 _hvHoldInfo(v761). 4일 카드는 농가 전체 보유(field 없음)·신규 배송은 x.date 기준(예전 그대로).
       const { holdN, chips: holdChips, noContainer, carryOver } = _hvHoldInfo(x.farm, undefined, x.date, st);
       return `<div style="padding:6px 8px;border-top:1px solid #F3F4F6">
@@ -6042,7 +6075,7 @@ function renderUpcomingHarvest() {
           const c = _hvContactLine(x.farm, _recAddr(x));
           return c ? `<div style="padding-left:12px;margin:0 0 3px">${c}</div>` : '';
         })()}
-        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadge}${overBadge}${_hvFinishBadge(x, day.dStr)}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding-left:12px">${stBadges}${_hvFinishBadge(x, day.dStr)}${noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : ''}${carryOver ? '<span class="badge b-neu" style="font-size:10px">보유분으로 진행</span>' : ''}</div>
         ${holdN !== 0 ? `<div style="padding-left:12px;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:3px">
           <span style="font-size:11px;color:#9CA3AF">보유</span>${holdChips || `<strong style="font-size:11px;color:#374151">${fmtN(holdN)}</strong>`}
         </div>` : ''}
@@ -6089,7 +6122,7 @@ function renderUpcomingHarvest() {
   el.innerHTML = `
     <div style="padding:10px 14px;background:#f8f8f8;border-bottom:0.5px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
       <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🔭 다가오는 수확 (내일부터 ${UPCOMING_DAYS - 1}일)${_xdFilterTag()}</div>
-      <div style="font-size:11px;color:#aaa">${upCnt}건${nd.length ? ' · <span style="color:#C62828;font-weight:600">콘테이너 없음 ' + nd.length + '건</span>' : ''}</div>
+      <div style="font-size:11px;color:#aaa">${upCnt}건${nd.length ? ' · <span style="color:#C62828;font-weight:600">콘테이너 없음 ' + nd.length + '건</span>' : ''}${_hvUpKeys.length ? ' ' + _hvToggleAllBtn(_hvUpAllOpen() ? '모두 접기' : '모두 펼치기', '_hvUpToggleAll()') : ''}</div>
     </div>
     ${banner}
     <div style="display:flex;flex-direction:column;margin-top:6px">${cards}</div>`;
@@ -6541,7 +6574,7 @@ function renderHarvestProgress() {
       <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.3px">🗂 농가별 진행 현황${_xdFilterTag()}</div>
       <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
         ${_HV_PROG_ORDER.filter(kd => cnt[kd]).map(kd => _hvProgCntChip(kd, cnt[kd])).join('')}
-        <button type="button" onclick="_hvProgToggleAll()" style="font-size:11px;color:#2563EB;background:none;border:none;cursor:pointer;padding:2px 4px;font-family:inherit;white-space:nowrap">${_hvProgAllOpen() ? '모두 접기' : '모두 펼치기'}</button>
+        ${_hvToggleAllBtn(_hvProgAllOpen() ? '모두 접기' : '모두 펼치기', '_hvProgToggleAll()')}
       </div>
     </div>
     <div style="padding:8px 10px;display:flex;flex-direction:column;gap:10px">
