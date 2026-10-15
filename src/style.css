@@ -242,6 +242,7 @@ textarea {
   min-height: 42px; padding: 8px 12px; font-size: 14px; cursor: pointer; border-bottom: 1px solid #F3F4F6; }
 .fs-list .fs-row:last-child { border-bottom: none; }
 .fs-list .fs-row:active { background: #EFF6FF; }
+.fs-list .fs-row.fs-hi { background: #EFF6FF; }   /* 엔터로 확정될 줄(v754, _fsKey) — :active와 같은 색 */
 .fs-list .fs-blank { color: var(--text-tertiary); }
 .fs-list .fs-new { color: #1565C0; font-weight: 600; }
 .fs-list .fs-tag { font-size: 10px; color: #1565C0; background: #E3F2FD; padding: 1px 6px; border-radius: 8px; flex-shrink: 0; }

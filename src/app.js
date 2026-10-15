@@ -8472,6 +8472,7 @@ function attachFarmSearch(selectId, opts = {}) {
   inp.addEventListener('focus', () => fsOpen(selectId));
   inp.addEventListener('input', () => fsRender(selectId));
   inp.addEventListener('blur',  () => fsBlur(selectId));
+  inp.addEventListener('keydown', e => _fsKey(selectId, e));   // 엔터·방향키로 고르기(v754)
   const box = document.createElement('div');
   box.id = selectId + '-fs-list'; box.className = 'fs-list'; box.style.display = 'none';
   sel.after(inp); inp.after(box);
@@ -8503,8 +8504,11 @@ function fsRender(selectId) {
   const all = _fsItems(sel);
   const hit = q ? all.filter(x => x.name.includes(q)) : all;
   const blank = [...sel.options].find(o => o.value === '');   // '선택'·'(미지정)' — 선택 해제용으로 맨 위에
+  // ★엔터로 확정될 줄 강조(v754, _fsKey) — 검색어가 있을 때만. 똑같은 이름이 있으면 그 줄, 없으면 첫 줄.
+  //   (목록은 최근 입고 순이라 '김형'을 정확히 쳐도 '김형석'이 첫 줄일 수 있다 — 첫 줄만 보면 다른 농가가 확정된다)
+  const hiAt = q ? Math.max(0, hit.findIndex(x => x.name === q)) : -1;
   let html = (!q && blank) ? `<div class="fs-row fs-blank" onclick="fsPick('${selectId}','')">${esc(blank.textContent)}</div>` : '';
-  html += hit.map(x => `<div class="fs-row" onclick="fsPick('${selectId}','${_fsQ(x.name)}')">
+  html += hit.map((x, n) => `<div class="fs-row${n === hiAt ? ' fs-hi' : ''}" onclick="fsPick('${selectId}','${_fsQ(x.name)}')">
       <span>${esc(x.name)}</span>${x.group && x.group !== '농가' ? `<span class="fs-tag">${esc(x.group)}</span>` : ''}
     </div>`).join('');
   // 즉석 등록은 allowNew를 준 화면에서만, 그리고 똑같은 이름이 없을 때만(부분일치가 있어도 새 이름일 수 있음)
@@ -8527,7 +8531,62 @@ function fsOpen(selectId) {
 }
 function fsClose(selectId) { const box = document.getElementById(selectId + '-fs-list'); if (box) box.style.display = 'none'; }
 // 목록 클릭이 blur보다 늦게 잡히므로 조금 기다렸다 닫는다. 고르지 않고 나갔으면 입력칸을 선택값으로 되돌린다.
-function fsBlur(selectId) { setTimeout(() => { fsSync(selectId); fsClose(selectId); }, 200); }
+// ★단, 목록에 있는 이름을 정확히 쳐 놓고 나갔으면 그 이름으로 확정한다(v754) — 예전엔 이전 값으로 되돌아가
+//   화면엔 친 이름이 보였다가 다른 농가로 저장되는 사고가 났다(현장 보고). 판정은 기다린 뒤에 한다(그사이 목록 클릭이 먼저 반영되게).
+function fsBlur(selectId) {
+  setTimeout(() => {
+    const sel = document.getElementById(selectId), inp = document.getElementById(selectId + '-fs');
+    const name = (sel && inp) ? _fsExactName(sel, inp.value) : '';
+    if (name && name !== sel.value) return fsPick(selectId, name);   // fsPick이 fsSync·fsClose까지 한다
+    fsSync(selectId); fsClose(selectId);
+  }, 200);
+}
+// 입력값(앞뒤 공백 제외)과 정확히 같은 옵션 이름 — 없거나 빈칸이면 ''. ('선택' 같은 빈 값 옵션은 고르지 않는다)
+function _fsExactName(sel, v) {
+  const t = String(v || '').trim();
+  return t && [...sel.options].some(o => o.value === t) ? t : '';
+}
+
+// ── 키보드로 고르기(v754): ↑↓ = 강조 이동(끝에서 멈춤) · 엔터 = 강조 줄 확정(없으면 정확히 같은 이름) · Esc = 되돌리고 닫기.
+// ★강조 대상은 실제 농가·대상 줄만(.fs-blank·.fs-new 제외) — '새 농가로 등록' 줄은 엔터로 실행되지 않는다(클릭으로만).
+// ★확정 뒤 blur 하지 않는다(모바일 키보드 유지는 기존 흐름대로).
+// ★한글 조합 중(isComposing, 윈도우 크롬은 key가 'Process')에 누른 키는 조합이 끝나 목록이 다시 그려진 뒤 처리한다.
+//   브라우저에 따라 같은 키가 조합이 끝난 뒤 한 번 더 오기도 해서(맥 크롬 등) 기다리던 키와 같은 키가 오면 그때 한 번만 처리한다.
+const _fsKeyWait = {};   // selectId -> { key, t } 조합 중에 눌려 기다리는 키
+function _fsKey(selectId, e) {
+  const k = e.key === 'Process' ? (e.code === 'NumpadEnter' ? 'Enter' : e.code) : e.key;
+  if (k !== 'Enter' && k !== 'ArrowDown' && k !== 'ArrowUp' && k !== 'Escape') return;
+  const box = document.getElementById(selectId + '-fs-list');
+  if (k !== 'Enter' && !(box && box.style.display !== 'none')) return;   // 목록이 닫혀 있으면 방향키·Esc는 원래 동작
+  const w = _fsKeyWait[selectId];
+  if (e.isComposing || e.keyCode === 229) {
+    if (w) clearTimeout(w.t);
+    _fsKeyWait[selectId] = { key: k, t: setTimeout(() => { delete _fsKeyWait[selectId]; _fsKeyRun(selectId, k); }, 60) };
+    return;
+  }
+  e.preventDefault();
+  if (w) { clearTimeout(w.t); delete _fsKeyWait[selectId]; if (w.key !== k) _fsKeyRun(selectId, w.key); }
+  _fsKeyRun(selectId, k);
+}
+function _fsKeyRun(selectId, k) {
+  const sel = document.getElementById(selectId), inp = document.getElementById(selectId + '-fs');
+  const box = document.getElementById(selectId + '-fs-list');
+  if (!sel || !inp || !box) return;
+  const open = box.style.display !== 'none';
+  const rows = open ? [...box.querySelectorAll('.fs-row:not(.fs-blank):not(.fs-new)')] : [];
+  const i = rows.findIndex(r => r.classList.contains('fs-hi'));
+  if (k === 'Escape') { if (open) { fsSync(selectId); fsClose(selectId); } return; }
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    if (!rows.length) return;
+    const j = k === 'ArrowDown' ? Math.min(i + 1, rows.length - 1) : Math.max(i - 1, 0);
+    rows.forEach((r, n) => r.classList.toggle('fs-hi', n === j));
+    rows[j].scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  if (i >= 0) { rows[i].click(); return; }   // 줄의 onclick = fsPick(selectId, 이름) 그대로
+  const name = _fsExactName(sel, inp.value);
+  if (name && name !== sel.value) fsPick(selectId, name);   // 결과 없음·이미 고른 이름이면 아무것도 안 한다
+}
 
 // 숨긴 select의 값을 입력칸에 반영. 값을 코드로 바꾸는 곳(모달 열기 등)에서 반드시 불러야 표시가 맞는다.
 function fsSync(selectId) {
