@@ -5102,18 +5102,6 @@ function calGetEvents(dStr) {
   // 배차(배출)와 수확은 별개 단계 → 같은 농가여도 둘 다 표시(배차가 수확 안 덮음)
   return [...fromDisp, ...fromHarvest];
 }
-function calGetAllItems() {
-  const mStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
-  const mStart = mStr + '-01';
-  const mEnd = mStr + '-31';
-  const fromDisp = dispatches.filter(d => d.harvest && d.harvest.startsWith(mStr));
-  const fromHarvest = harvests.filter(h =>
-    (h.date && h.date.startsWith(mStr)) ||
-    (h.date && h.end_date && h.date <= mEnd && h.end_date >= mStart)
-  ).map(h => ({ ...h, harvest: h.date, driver: null, qty: null, ctype: null, status: h.status || '배차없음' }));
-  // 배차·수확 둘 다 표시(별개 단계) — 정렬 유지
-  return calSortItems([...fromDisp, ...fromHarvest]);
-}
 // 수확 일정 관리 버튼(시작/완료/수정/삭제) — 금일 strip·달력 상세·월간 목록 공통 재사용
 const _hvStBadge = { 수확전: 'b-warn', 수확중: 'b-info', 수확완료: 'b-ok' };
 // ── 달력 이벤트가 '수확'인가 '배송(배차)'인가 ─────────────────────────
@@ -17451,9 +17439,6 @@ let _scDoneProduct = '';
 // '오늘 선과' 블록이 보고 있는 날짜(◀▶로만 바뀐다). 완료 탭 진입·선과 저장 때 td()로 되돌린다.
 let _scDayDate = td();
 let _scDayShareTxt = '';   // 그 블록의 공유 텍스트 — 렌더할 때 같이 만들어 둔다(copyMsg의 _msgTxt와 같은 방식)
-let _scDoingSearch = '';
-let _scDoingProduct = '';
-let _scDoingPriOnly = false;
 
 const IB_CATS = [
   { key: '상품',  color: '#1565C0', bg: '#E3F2FD', border: '#90CAF9' },

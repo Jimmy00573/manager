@@ -216,6 +216,15 @@ tr.ddiv td { background: #f5f5f5; font-size: 11px; color: var(--text-tertiary); 
 .fg label { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
 .fg input, .fg select, .fg textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 13px; font-family: inherit; width: 100%; min-width: 0; box-sizing: border-box; }
 .fg input[type="date"] { -webkit-appearance: none; appearance: none; min-height: 38px; line-height: normal; background: #fff; }
+/* ★아이폰·아이패드 전용 — -webkit-touch-callout은 iOS 사파리만 지원하므로 이 블록은 iOS에서만 적용된다(데스크톱·안드로이드 크롬 무변경).
+     iOS 날짜·시간칸은 값이 비면 칸 높이가 줄고 날짜 글자가 가운데 정렬돼 옆 입력칸·select와 안 맞았다.
+     · 빈 값 높이 붕괴 → 값 영역 min-height 1.2em이 막는다(한 줄 높이 = 옆 text input과 같다).
+     · 가운데 정렬 → text-align: left가 막는다.
+     · 날짜칸마다 인라인으로 준 background·padding·border는 인라인이 이긴다(개별 칸은 그대로). */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; background-color: #fff; }
+  input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
+}
 .fg input:focus, .fg select:focus, .fg textarea:focus { outline: none; border-color: var(--orange-light); box-shadow: 0 0 0 2px rgba(242,140,40,.12); }
 .fg input[type="checkbox"] { width: auto !important; min-width: auto !important; padding: 0; border: 1px solid var(--border); background: #fff; box-shadow: none; border-radius: 4px; flex-shrink: 0; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; }
