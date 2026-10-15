@@ -5448,6 +5448,7 @@ function _hvAutoDeal(id, farm) {
 //   ★안 넘기면 출력 HTML이 수정 전과 글자 하나 안 틀린다(연락 줄을 변수로 붙이는 이유).
 // opts.fold(v760, 금일 수확일정만) = 계획·기사·연락 줄을 접힌 칸에 넣고 농가 이름 앞 ▸/▾로 편다(_hvFoldParts).
 //   ★안 넘기면(진행 현황·달력 상세) fd = null → 아래 ${fd ? … : ''} 자리가 전부 빈 문자열·tail 그대로라 출력이 수정 전과 같다.
+// opts.hold(v761, 금일 수확일정만) = 첫 줄 버튼 앞에 종류별 보유 칩·'콘테이너 없음'(_hvHoldTag). 안 넘기면 '' — 출력 무변경.
 function harvestRow(h, showDate, planDate, opts = {}) {
   const st = h.status || '수확전';
   const contact = (opts.contact && !h.is_final) ? _hvContactLine(h.farm, _recAddr(h)) : '';
@@ -5464,7 +5465,7 @@ function harvestRow(h, showDate, planDate, opts = {}) {
         : (st === '수확완료'
             ? `<span class="badge" style="font-size:10px;background:#1565C0;color:#fff">${h.round||1}차 완료</span>`
             : `<span class="badge ${_hvStBadge[st]||'b-warn'}" style="font-size:10px">${st}</span>`)}${_hvFinishBadge(h, td())}
-      <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
+      ${opts.hold ? _hvHoldTag(h.farm, h, h.date, st, h.is_final) : ''}<div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">${_hvPlanCheckBtn(h, planDate)}${harvestActBtns(h)}</div>
       ${fd ? fd.body : tail}
     </div>`;
 }
@@ -5547,7 +5548,7 @@ function renderCal() {
         const hEntry = _isHarvestEv(e)
           ? harvests.find(h => h.id === e.id)
           : harvests.find(h => h.farm === e.farm && (h.date === todayStr || h.status === '수확중') && (!e.item || h.item === e.item));
-        if (hEntry) return { rec: hEntry, html: harvestRow(hEntry, false, todayStr, { contact: true, staff: true, fold: true }) };   // rec = 품목 묶음 기준(보이는 기록)
+        if (hEntry) return { rec: hEntry, html: harvestRow(hEntry, false, todayStr, { contact: true, staff: true, fold: true, hold: true }) };   // rec = 품목 묶음 기준(보이는 기록)
         // 배차에서만 온 항목 — auto-create 버튼 포함
         const st = e.status || '수확전';
         const item = e.item || '';
@@ -5563,7 +5564,7 @@ function renderCal() {
           ${fd.arrow}<span${fd.tg} style="${fd.nameCss}font-size:13px;font-weight:700">${esc(e.farm)}</span>${_hvStaffBtn(e.farm)}
           ${item ? `<span style="font-size:11px;color:#888">${esc(item)}</span>` : ''}
           <span class="badge b-warn" style="font-size:10px">수확전</span>
-          <div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${fd.body}
+          ${_hvHoldTag(e.farm, e, todayStr, '수확전', false)}<div style="margin-left:auto;display:flex;gap:4px">${autoActBtns}</div>${fd.body}
         </div>` };
       });
       // 품목 머리 합산(v755, 금일만) — '· 완료 n곳'(묶음 중 수확완료 농가 수) · '· 입고 nCT'(오늘 그 품목 원물 입고 합).
@@ -5811,6 +5812,37 @@ function _upcomingHarvestsOn(dStr) {
   );
 }
 // 그 수확(농가+수확일)에 잡힌 배차 — 종류별로 합친다. 한 농가에 여러 배차가 있을 수 있다.
+// 농가 보유 콘테이너 판정 — 4일 카드(renderUpcomingHarvest)와 금일 수확일정(renderCal, _hvHoldTag)이 같이 쓴다(v761).
+//   field = 밭 가지(_brKey 결과). 없으면(undefined·null) 농가 전체 보유 = 현황판 농가표와 같은 숫자.
+//   dStr = 신규 배송을 찾을 수확일(dispatches.harvest와 맞춘다 — 수확 기록이면 그 시작일 h.date).
+// ★세 갈래로 나눈다:
+//   신규 배송 있음        → 보유만 담담히
+//   신규 없음 + 보유 있음  → '보유 N개로 진행'(carryOver — 경고 아님, 이전 차수 잔량으로 하는 정상 운영)
+//   신규 없음 + 보유 0     → '콘테이너 없음'(noContainer, danger) — 안 보내면 수확 자체를 못 한다
+// ★종류별 보유 — getFCtypes를 그대로 쓴다(현황판 '처리필요' 칩과 같은 소스·같은 HTML).
+//   직접 계산하지 않는 이유: 숫자가 현황판과 어긋나면 안 되고, 옛 이름 흡수(ctNorm)·과회수 음수 표시까지
+//   그 함수가 이미 처리한다. 칩이 비면(종류 정보 없음) 호출부가 총합(holdN)으로 폴백.
+// ★판정(noContainer·carryOver)은 총합(holdN) 기준 — 종류별로 쪼개면
+//   "시트리앙은 있는데 바구니는 없음" 같은 애매한 상태가 생겨 경고 기준이 흐려진다.
+function _hvHoldInfo(farm, field, dStr, status) {
+  const st = status || '수확전';
+  const dp = _dispForHarvest(farm, dStr);
+  const holdN = (field ? getFCS(farm, field) : getFCS(farm)).hold || 0;
+  const noContainer = st !== '수확완료' && dp.total <= 0 && holdN <= 0;
+  const carryOver   = st !== '수확완료' && dp.total <= 0 && holdN > 0;
+  const chips = field ? getFCtypes(farm, '농가', field) : getFCtypes(farm);
+  return { holdN, chips, noContainer, carryOver };
+}
+// 금일 수확일정 첫 줄(접지 않는 칸)의 '보유 [종류별 칩]' + '콘테이너 없음' — 수확 줄(harvestRow opts.hold)·배차에서만 온 줄 공용(v761).
+//   칩·배지 HTML은 4일 카드와 같은 모양. 전체 종료(🏁)면 ''. 보유 0이면 칩 없음(수확완료면 배지도 없어 '').
+//   ★먼 밭 가지 농가는 그 줄의 밭(_brKey) 기준 — 현황판 농가표는 농가 전체라 가지 농가만 숫자가 다를 수 있다(의도).
+function _hvHoldTag(farm, rec, dStr, status, isFinal) {
+  if (isFinal) return '';
+  const i = _hvHoldInfo(farm, _brKey(rec, farm), dStr, status);
+  const hold = i.holdN !== 0 ? `<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:3px"><span style="font-size:11px;color:#9CA3AF">보유</span>${i.chips || `<strong style="font-size:11px;color:#374151">${fmtN(i.holdN)}</strong>`}</span>` : '';
+  const warn = i.noContainer ? '<span class="badge b-red" style="font-size:10px">콘테이너 없음</span>' : '';
+  return (hold || warn) ? `<span data-hv-hold style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px">${hold}${warn}</span>` : '';
+}
 function _dispForHarvest(farm, dStr) {
   const rows = dispatches.filter(d => d.harvest === dStr && d.farm === farm);
   const byType = {};
@@ -5986,7 +6018,6 @@ function renderUpcomingHarvest() {
 
     const rows = day.list.length ? _hvGroupByItemHtml(day.list.map(x => ({ rec: x, html: (() => {   // 품목별 묶음(품목 하나여도 머리 표시)
       const st = x.status || '수확전';
-      const dp = _dispForHarvest(x.farm, x.date);
       // 진행일수 — 시작일 당일이 1일째. 날짜 계산은 로컬 자정 기준(td/ymd와 같은 축).
       const dayNo = Math.floor((new Date(day.dStr + 'T00:00:00') - new Date(x.date + 'T00:00:00')) / 86400000) + 1;
       const stBadge = st === '수확중'
@@ -5999,19 +6030,8 @@ function renderUpcomingHarvest() {
       const overBadge = overDays > 0
         ? `<span class="badge b-warn" style="font-size:10px" title="종료 예정일(${esc(x.end_date)})이 지났지만 아직 수확중입니다">예정 ${esc(calFmtShort(x.end_date))} +${overDays}일</span>`
         : '';
-      const holdN = getFCS(x.farm).hold || 0;
-      // ★세 갈래로 나눈다:
-      //   신규 배송 있음        → 보유만 담담히
-      //   신규 없음 + 보유 있음  → '보유 N개로 진행'(경고 아님 — 이전 차수 잔량으로 하는 정상 운영)
-      //   신규 없음 + 보유 0     → '콘테이너 없음'(danger) — 안 보내면 수확 자체를 못 한다
-      const noContainer = st !== '수확완료' && dp.total <= 0 && holdN <= 0;
-      const carryOver   = st !== '수확완료' && dp.total <= 0 && holdN > 0;
-      // ★종류별 보유 — getFCtypes를 그대로 쓴다(현황판 '처리필요' 칩과 같은 소스·같은 HTML).
-      //   직접 계산하지 않는 이유: 숫자가 현황판과 어긋나면 안 되고, 옛 이름 흡수(ctNorm)·과회수 음수 표시까지
-      //   그 함수가 이미 처리한다. 칩이 비면(종류 정보 없음) 총합으로 폴백.
-      // ★판정(noContainer·carryOver)은 위 총합(holdN) 기준 그대로 — 종류별로 쪼개면
-      //   "시트리앙은 있는데 바구니는 없음" 같은 애매한 상태가 생겨 경고 기준이 흐려진다.
-      const holdChips = getFCtypes(x.farm);
+      // 보유·'콘테이너 없음'·'보유분으로 진행' 판정 — 금일 수확일정과 같은 _hvHoldInfo(v761). 4일 카드는 농가 전체 보유(field 없음)·신규 배송은 x.date 기준(예전 그대로).
+      const { holdN, chips: holdChips, noContainer, carryOver } = _hvHoldInfo(x.farm, undefined, x.date, st);
       return `<div style="padding:6px 8px;border-top:1px solid #F3F4F6">
         <div style="display:flex;align-items:center;gap:5px;min-width:0">
           <span style="width:7px;height:7px;border-radius:50%;background:${_hvItemColor(x.item)};flex-shrink:0"></span>
