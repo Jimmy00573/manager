@@ -5445,15 +5445,21 @@ function _hvItemOf(rec) {
 //   품목이 하나뿐이어도 머리를 낸다(빈 목록이면 ''). 표시 전용(데이터·버튼 그대로).
 //   opts.sum(v755, 선택) = (품목 머리 글자, 그 묶음 entries) → '· n곳' 뒤에 붙일 HTML(금일 수확일정의 완료·입고 합산).
 //   ★opts를 안 주면(4일 카드·진행 현황) 출력 HTML이 수정 전과 글자 하나 안 틀린다(붙일 글자를 변수로 두는 이유).
-function _hvGroupByItemHtml(entries, headStyle, opts) {
-  const NONE = '품목 미정';
+// 품목별 묶음 — [{ k: 품목, xs: 그 품목 entries, n: 농가 수 }]. 묶음 기준·순서는 위 주석 그대로(_hvItemOf · _prodRank → 가나다, '품목 미정' 맨 뒤).
+//   ★_hvGroupByItemHtml(머리 + 행 HTML)과 다가오는 수확 접힌 품목 줄(v765)이 같이 쓴다 — 두 곳의 품목 순서·N곳이 어긋나지 않게.
+//   n = 같은 농가 두 건은 한 곳(농가 이름 기준).
+const _HV_ITEM_NONE = '품목 미정';
+function _hvItemGroups(entries) {
   const m = new Map();
-  entries.forEach(x => { const k = _hvItemOf(x.rec) || NONE; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
-  const nFarm = xs => new Set(xs.map(x => x.rec && x.rec.farm)).size;
-  const gs = [...m.entries()].sort(([a, xa], [b, xb]) =>
-    (a === NONE) - (b === NONE) || _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'));
-  return gs.map(([k, xs]) =>
-    `<div style="font-size:13px;font-weight:500;color:${k === NONE ? '#6B7280' : '#1E3A5F'};background:#F3F4F6;border-left:3px solid ${k === NONE ? '#9CA3AF' : '#1E3A5F'};border-radius:4px;padding:3px 8px;${headStyle || ''}">🍊 ${esc(k)}<span style="font-weight:400;color:#6B7280;margin-left:4px">· ${nFarm(xs)}곳${(opts && opts.sum) ? opts.sum(k, xs) : ''}</span></div>` +
+  entries.forEach(x => { const k = _hvItemOf(x.rec) || _HV_ITEM_NONE; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
+  return [...m.entries()].sort(([a], [b]) =>
+    (a === _HV_ITEM_NONE) - (b === _HV_ITEM_NONE) || _prodRank(a) - _prodRank(b) || a.localeCompare(b, 'ko'))
+    .map(([k, xs]) => ({ k, xs, n: new Set(xs.map(x => x.rec && x.rec.farm)).size }));
+}
+function _hvGroupByItemHtml(entries, headStyle, opts) {
+  const NONE = _HV_ITEM_NONE;
+  return _hvItemGroups(entries).map(({ k, xs, n }) =>
+    `<div style="font-size:13px;font-weight:500;color:${k === NONE ? '#6B7280' : '#1E3A5F'};background:#F3F4F6;border-left:3px solid ${k === NONE ? '#9CA3AF' : '#1E3A5F'};border-radius:4px;padding:3px 8px;${headStyle || ''}">🍊 ${esc(k)}<span style="font-weight:400;color:#6B7280;margin-left:4px">· ${n}곳${(opts && opts.sum) ? opts.sum(k, xs) : ''}</span></div>` +
     xs.map(x => x.html).join('')).join('');
 }
 // ── 수확 거래 방식(harvests.deal_type: '밭떼기'|'관떼기'|null=미지정) ─────────────
@@ -6144,18 +6150,29 @@ function renderUpcomingHarvest() {
       </div>`;
     })() })), 'margin:6px 6px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis') : '<div style="padding:18px 8px;text-align:center;font-size:11px;color:#C7CBD1">수확 예정 없음</div>';
 
-    // 머리 줄: '{내일} M/D (요일) · N곳 · 🚚 계획 합계 · 🧑 외근' + 농가 이름(', ', 넘치면 말줄임). 0건인 날은 회색 한 줄.
-    //   ★날짜·곳 칸은 고정 폭 그리드 — 세 줄의 숫자가 같은 열에 오게(CLAUDE.md 7장, 숫자 오른쪽 정렬 + tabular-nums).
+    // 머리 줄: '▸ {내일} M/D (요일)  🚚 계획 합계 · 🧑 외근' 왼쪽, 'N곳' 오른쪽. 0건인 날은 회색 한 줄.
+    // 품목 줄(v765, 접혀 있어도 늘 보임): 점 · 품목 · N곳 · 농가 이름(', ', 넘치면 말줄임) — 묶음·순서는 펼친 상세와 같은 _hvItemGroups.
+    //   ★품목·N곳 칸은 고정 폭 그리드 — 줄마다 같은 열에 오게(CLAUDE.md 7장, 숫자 오른쪽 정렬 + tabular-nums). 품목 줄을 눌러도 같은 토글.
     if (!day.list.length) return `<div style="padding:7px 12px;border-top:1px solid #F3F4F6;font-size:12px;color:#9CA3AF">${esc(head)} · ${esc(sum)}</div>`;
     const open = !!_hvUpOpen[day.dStr];
-    const tailTxt = [planSum ? `🚚 ${planSum}` : '', tripTxt ? `🧑 ${tripTxt}` : '', [...new Set(day.list.map(x => x.farm))].join(', ')].filter(Boolean).join(' · ');
-    return `<div style="border-top:1px solid #F3F4F6">
-      <div onclick="_hvUpToggle('${day.dStr}')" style="cursor:pointer;padding:7px 12px;display:grid;grid-template-columns:12px 104px 36px minmax(0,1fr);gap:6px;align-items:center;font-size:12px">
+    const tailTxt = [planSum ? `🚚 ${planSum}` : '', tripTxt ? `🧑 ${tripTxt}` : ''].filter(Boolean).join(' · ');
+    const tg = `onclick="_hvUpToggle('${day.dStr}')"`;
+    const itemLines = _hvItemGroups(day.list.map(x => ({ rec: x }))).map(({ k, xs, n }) => {
+      const names = [...new Set(xs.map(x => x.rec.farm))].join(', ');
+      return `<div ${tg} style="cursor:pointer;padding:1px 12px;display:grid;grid-template-columns:12px 7px 84px 36px minmax(0,1fr);gap:6px;align-items:center;font-size:12px">
+        <span></span><span style="width:7px;height:7px;border-radius:50%;background:${_hvItemColor(k === _HV_ITEM_NONE ? '' : k)}"></span>
+        <span style="color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(k)}">${esc(k)}</span>
+        <span style="text-align:right;font-variant-numeric:tabular-nums;color:#374151">${n}곳</span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#6B7280" title="${esc(names)}">${esc(names)}</span>
+      </div>`;
+    }).join('');
+    return `<div style="border-top:1px solid #F3F4F6;padding-bottom:${open ? 0 : 6}px">
+      <div ${tg} style="cursor:pointer;padding:7px 12px 3px;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:6px;align-items:center;font-size:12px">
         <span style="font-size:11px;color:#6B7280">${open ? '▾' : '▸'}</span>
-        <span style="font-weight:600;color:#374151;white-space:nowrap">${esc(head)}</span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#374151">${esc(head)}</span>${tailTxt ? `<span style="color:#6B7280;margin-left:8px" title="${esc(tailTxt)}">${esc(tailTxt)}</span>` : ''}</span>
         <span style="text-align:right;font-variant-numeric:tabular-nums;color:#374151">${esc(sum)}</span>
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#6B7280" title="${esc(tailTxt)}">${esc(tailTxt)}</span>
       </div>
+      ${itemLines}
       ${open ? `<div style="padding:0 6px 6px">${rows}</div>` : ''}
     </div>`;
   }).join('');
