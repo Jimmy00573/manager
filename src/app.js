@@ -2728,6 +2728,10 @@ function _dpSyncSaveLabel() {
   btn.textContent = document.getElementById('dp-reserve')?.checked === true ? '📅 예약으로 등록' : '✅ 배출완료로 등록';
 }
 async function addDisp() {
+  // ★연타·중복 등록 방지 — 저장이 끝날 때까지 버튼을 잠근다. alert로 돌아가는 경로까지 finally에서 풀고 글자는 _dpSyncSaveLabel로 되돌린다.
+  const _dpBtn = document.getElementById('dp-save-btn');
+  if (_dpBtn) { _dpBtn.disabled = true; _dpBtn.textContent = '등록 중…'; }
+  try {
   const _dpRole = sessionStorage.getItem('citrus_role');
   if (!DISP_ROLES.includes(_dpRole)) return;
   const _dpXd = _dpRole === 'ext_driver';
@@ -2753,6 +2757,16 @@ async function addDisp() {
   const dpField = gv('dp-field') || null;
   const totalQty = ctList.reduce((a, x) => a + x.qty, 0);
   const d = gd(drv);
+  // ★중복 등록 확인 — 같은 날·같은 대상에 같은 종류·같은 수량·같은 밭 배송이 이미 있으면 묻는다.
+  //   막지는 않는다(같은 날 여러 차가 오는 게 정상). 로컬 dispatches가 아니라 DB를 봐서 다른 기기 입력까지 잡는다
+  //   (10/19 이봉주 150·10/18 오봉순 100·10/8 조도진 56이 두 번씩 등록됐다).
+  //   ★조회가 실패하면 확인 없이 예전대로 등록한다 — 조회 실패로 등록을 막지 않는다.
+  try {
+    const ex = await sbGet('dispatches', `date=eq.${date}&farm=eq.${encodeURIComponent(farm)}&select=id,qty,ctype,field,driver,created_at,status`);
+    const dups = (Array.isArray(ex) ? ex : []).filter(r => ctList.some(c => r.ctype === c.ct && Number(r.qty) === c.qty && (r.field || '') === (dpField || '')));
+    if (dups.length && !(await showConfirmEdit('중복 확인',
+        `이미 같은 배송이 있습니다:\n${dups.map(r => `· ${r.ctype} ${fmtN(Number(r.qty) || 0)}개 — ${r.driver || '-'}, ${ftm(r.created_at)} 등록`).join('\n')}\n그래도 등록할까요?`))) return;
+  } catch (e) { console.warn('[addDisp] 중복 확인 조회 실패 — 확인 없이 진행:', e && e.message); }
   try {
     // ★기본 상태 '배출완료'(2026-08-18) — 내부 직원이 갔다 온 뒤 기록하므로 '배차완료 → 배출완료' 2단계를 타지 않는다.
     //   (기존 배차 16건 전부 배출완료였음.)
@@ -2798,6 +2812,9 @@ async function addDisp() {
       _hvGoHarvestAdd(farm, hvDate, hvItem);    // 농가·날짜·품목까지 채운다
     }
   } catch (e) { alert('오류: ' + e.message); }
+  } finally {
+    if (_dpBtn) { _dpBtn.disabled = false; _dpSyncSaveLabel(); }
+  }
 }
 
 // ── 배차 완료 처리에 딸리는 것들 (배출 pick + 작업 보고) ─────────────────────────
@@ -23674,19 +23691,23 @@ function relativeTime(isoStr) {
   return `${mins}분 전 (${ampm} ${h12}:${String(mm).padStart(2, '0')})`;
 }
 
-function _showDupWarnModal(dup, farm_name, product, qty, driver_id) {
-  const drvName = driver_id
-    ? (drivers.find(d => d.id === driver_id)?.name || '기사')
+// more = 첫 건 말고 더 걸린 건수('외 N건').
+// ★기사는 '이미 있는 입고'의 기사다 — v766부터 기사가 달라도 걸리므로 지금 입력한 기사를 보이면 틀린다.
+function _showDupWarnModal(dup, farm_name, product, qty, driver_id, more = 0) {
+  const drvName = dup.driver_id
+    ? (drivers.find(d => d.id === dup.driver_id)?.name || '기사')
     : '—';
+  const cat = dup.inbound_category && dup.inbound_category !== '상품' ? ` (${esc(dup.inbound_category)})` : '';
   const body = document.getElementById('dup-warn-body');
   if (body) body.innerHTML = `
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px;margin-bottom:14px">
-      <div style="font-weight:600;color:#991B1B;margin-bottom:6px">직전 5분 내 동일한 입고가 있습니다</div>
+      <div style="font-weight:600;color:#991B1B;margin-bottom:6px">같은 날 같은 수량의 입고가 이미 있습니다</div>
       <div>농가: <strong>${esc(dup.farm_name)}</strong></div>
       <div>품목: <strong>${esc(dup.product)}</strong></div>
       <div>기사: <strong>${esc(drvName)}</strong></div>
-      <div>수량: <strong>${fmtN(dup.quantity)} CT</strong></div>
-      <div style="color:#6B7280;font-size:12px;margin-top:6px">${relativeTime(dup.created_at)}</div>
+      <div>수량: <strong>${fmtN(dup.quantity)} CT${cat}</strong></div>
+      <div>위치: <strong>${esc(dup.location || '-')}</strong></div>
+      <div style="color:#6B7280;font-size:12px;margin-top:6px">${ftm(dup.created_at)} 등록${more ? ` · 외 ${more}건` : ''}</div>
     </div>
     <div style="color:#374151">정말 이 입고를 추가로 등록하시겠습니까?</div>
   `;
@@ -23954,7 +23975,10 @@ async function saveInboundSorted(keepOpen) {
 async function _addInboundCore(keepOpen) {
   const _ibBtn = document.getElementById(keepOpen ? 'ib-save-cont-btn' : 'ib-save-btn');
   const _ibBtnOrig = _ibBtn ? _ibBtn.textContent : '';
-  if (_ibBtn) { _ibBtn.disabled = true; _ibBtn.textContent = '등록 중...'; }
+  // ★'등록'·'등록하고 계속' 둘 다 잠근다 — 누른 것만 잠그면 다른 버튼으로 같은 입고가 한 번 더 들어간다. 글자는 누른 것만 바꾼다.
+  const _ibBtns = ['ib-save-btn', 'ib-save-cont-btn'].map(id => document.getElementById(id)).filter(Boolean);
+  _ibBtns.forEach(b => { b.disabled = true; });
+  if (_ibBtn) _ibBtn.textContent = '등록 중...';
   try {
   if (_ibKind === 'sorted') return await saveInboundSorted(keepOpen);   // 선과품은 그 안에서 관리자만 통과
   const _role = sessionStorage.getItem('citrus_role');
@@ -24181,27 +24205,35 @@ async function _addInboundCore(keepOpen) {
     } catch(e) { alert('등록 오류: ' + e.message); }
   };
 
-  // 5분 이내 중복 체크 (단일 저장 + 카테고리 1개일 때만)
-  // ★카테고리를 여러 개 넣은 등록은 비교할 '한 건의 수량'이 없어 건너뛴다 — 같은 조합을 실수로 두 번 넣기는 어렵다.
-  if (!isDistributed && catQtys.length === 1) {
-    const qty1 = catQtys[0].qty;
-    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
-    const dups = inboundRecords.filter(r => {
-      if (!r.created_at || new Date(r.created_at).getTime() < fiveMinAgo) return false;
-      if (r.farm_name !== farm_name || r.product !== product || r.quantity !== qty1) return false;
-      if (driver_id) return r.driver_id === driver_id;
-      return !r.driver_id;
-    });
-    if (dups.length) {
-      _pendingInboundInsert = doInsert;
-      _showDupWarnModal(dups[0], farm_name, product, qty1, driver_id);
-      return;
+  // 중복 확인 — 같은 날·같은 농가·같은 품목에 같은 수량 입고가 이미 있으면 묻는다(막지는 않는다).
+  // ★예전엔 '5분 이내 + 같은 기사 + 로컬 inboundRecords'만 봐서 다음 날·다른 기기 입력을 못 잡았다
+  //   (10/17 최병철 110CT가 이튿날 다시 등록됨). 이제 DB에서 그날 전체를 본다. 기사는 따지지 않는다.
+  //   비교: 카테고리 1개 = 수량만 / 여러 개 = (카테고리, 수량) 짝 중 하나라도 / 분산 저장 = 그날 기존 행 수량 합 = 이번 총량.
+  // ★조회가 실패하면 확인 없이 예전대로 등록한다 — 조회 실패로 등록을 막지 않는다.
+  let dups = [];
+  try {
+    const ex = await sbGet('inbound_records', `date=eq.${date}&farm_name=eq.${encodeURIComponent(farm_name)}&product=eq.${encodeURIComponent(product)}&or=(is_void.eq.false,is_void.is.null)&select=id,quantity,inbound_category,location,driver_id,created_at,farm_name,product`);
+    const rows = Array.isArray(ex) ? ex : [];
+    if (isDistributed) {
+      const total = locs.reduce((s, l) => s + l.qty, 0);
+      if (rows.length && rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0) === total) dups = rows;
+    } else if (catQtys.length === 1) {
+      dups = rows.filter(r => Number(r.quantity) === catQtys[0].qty);
+    } else {
+      dups = rows.filter(r => catQtys.some(c => (r.inbound_category || '상품') === c.cat && Number(r.quantity) === c.qty));
     }
+    dups.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));   // 가장 최근 것을 보여 준다
+  } catch (e) { console.warn('[입고] 중복 확인 조회 실패 — 확인 없이 진행:', e && e.message); }
+  if (dups.length) {
+    _pendingInboundInsert = doInsert;
+    _showDupWarnModal(dups[0], farm_name, product, qty, driver_id, dups.length - 1);
+    return;
   }
 
   await doInsert();
   } finally {
-    if (_ibBtn) { _ibBtn.disabled = false; _ibBtn.textContent = _ibBtnOrig; }
+    _ibBtns.forEach(b => { b.disabled = false; });
+    if (_ibBtn) _ibBtn.textContent = _ibBtnOrig;
   }
 }
 
