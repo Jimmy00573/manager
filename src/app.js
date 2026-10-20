@@ -21646,6 +21646,22 @@ async function closeEditInboundModal() {
   _editInboundId = null;
 }
 
+// 입고에 딸린 콘테이너 기록(picks 원물수거 · own_ins 남의 용기 반납대기 · nhf_ins 농협 용기 — 모두 inbound_id 연결)의
+//   날짜를 입고 날짜로 맞춘다(v772). 입고 날짜만 고치면 콘테이너 이력·기사 실적·일자별 집계가 하루씩 어긋났다(10/20 대조 6건).
+// ★날짜만 — 수량·종류·밭·기사는 안 건드린다. inbound_id 없는 기록(수동 회수·배출)은 대상이 아니다. 이미 같은 날짜면 건너뛴다.
+// ★성공한 행만 로컬 값도 바꾼다. 반환 = 실패한 행 수(0이면 다 됨) — 다시 부르면 남은 행만 다시 시도한다.
+async function _syncInboundLinkedDate(inboundId, date) {
+  const sets = [[picks, dbUpdatePick], [ownIns, dbUpdateOwnIn], [nhfIns, dbUpdateNhfIn]];
+  let fail = 0;
+  for (const [arr, upd] of sets) {
+    for (const x of (arr || []).filter(x => x.inbound_id && String(x.inbound_id) === String(inboundId) && x.date !== date)) {
+      try { await upd(x.id, { date }); x.date = date; }
+      catch (e) { fail++; }
+    }
+  }
+  return fail;
+}
+
 async function saveInboundModal() {
   // ★입고 수정이 DB에 실제로 쓰이는 지점 — 모달을 막아도 여기가 열려 있으면 뚫린다
   //   (index.html의 '저장' 버튼이 이 함수를 직접 부른다). saveSortingResult와 같은 규칙.
@@ -21847,6 +21863,18 @@ async function saveInboundModal() {
           alert(`회수 기록 ${remain.length}건은 담당 기사가 예전 값으로 남았습니다.\n콘테이너 이력의 담당자가 입고 기사와 다를 수 있습니다.`);
           break;
         }
+      }
+    }
+    // ── 연결된 콘테이너 기록(원물수거·반납대기·농협 용기)의 날짜 동기화 ─────────────
+    // ★입고 날짜가 바뀌었을 때만. 위 기사 동기화와 같은 원칙 — 입고 본체·감사로그는 이미 끝났으니 실패해도 되돌리지 않고 다시 시도를 묻는다.
+    if (date !== (prev.date || '')) {
+      let left = await _syncInboundLinkedDate(id, date);
+      while (left) {
+        if (!(await showConfirmEdit('회수 기록 날짜 변경 실패', `입고는 저장됐지만 연결된 회수 기록 ${left}건의 날짜를 못 바꿨습니다. 다시 시도할까요?`))) {
+          alert(`회수 기록 ${left}건은 날짜가 예전 값으로 남았습니다.\n콘테이너 이력 날짜가 입고 날짜와 다를 수 있습니다.`);
+          break;
+        }
+        left = await _syncInboundLinkedDate(id, date);
       }
     }
     document.getElementById('modal-edit-inbound').style.display = 'none';
