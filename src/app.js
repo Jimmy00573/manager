@@ -1644,7 +1644,7 @@ function _fieldRequiredMiss(prefix) {
 }
 // 입고 '밭 (선택)' 자유 입력칸(prefix-field-txt) — 값은 inbound_records.field에만 남는다(v769). 미선과 농가 카드의 밭 구분용.
 // ★콘테이너 가지와 무관하다 — picks로 가지 않는다(가지는 먼 밭만, 위 2026-10-13 규칙 그대로).
-// ★등록 폼('ib'): 먼 밭 농가는 기존 select(ib-field, 필수)가 맡고, 농가가 아닌 공급처(농협·거래처)는 칸을 숨긴다. 농가가 바뀌면 값을 비운다.
+// ★등록 폼('ib'): 먼 밭 농가는 기존 select(ib-field, 필수)가 맡고, 농가가 아닌 공급처(농협·거래처)는 칸을 숨긴다. 농가가 바뀌면 값을 비우고, 밭 1곳 농가는 그 밭을 채운다.
 //   수정 모달('eib'): 늘 보이고 값은 여는 쪽(editInboundRow)이 채운다.
 // datalist = 그 농가 입고에 적힌 밭 + farms.fields(두 화면 같은 목록).
 function _fillIbFieldTxt(farm, prefix = 'ib') {
@@ -1655,6 +1655,8 @@ function _fillIbFieldTxt(farm, prefix = 'ib') {
   if (prefix === 'ib') {
     inp.value = '';
     if (_farmBranches(farm) || !farms.some(f => f.name === farm)) { wrap.style.display = 'none'; if (dl) dl.innerHTML = ''; return; }
+    const one = _farmFields(farm);
+    if (one.length === 1) inp.value = one[0];   // 밭 1곳 농가는 그 밭을 미리 채운다(v773). 0곳이면 빈칸.
   }
   wrap.style.display = '';
   if (dl) {
@@ -2060,13 +2062,17 @@ function copyMsg() {
     .catch(() => prompt('아래 내용을 복사하세요:', _msgTxt));
 }
 
+// 밭 주소 칸(한 줄에 하나) → farms.fields 배열: 줄 단위 trim·빈 줄 제거·중복 제거. 농가 등록(f-fields)·수정(mf-fields) 공용.
+function _farmFieldsFromText(s) {
+  return [...new Set(String(s || '').split('\n').map(x => x.trim()).filter(Boolean))];
+}
 // ── 모달: 농가 수정
 function openFarmEdit(id) {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
   const f = farms.find(x => x.id === id); if (!f) return;
   _editFarmId = id;
   popFarmFormSelects();   // 품종·담당직원 옵션 먼저 채움(select라 값 설정 전 필요)
-  ['name', 'tel', 'addr', 'contract', 'memo'].forEach(k => {
+  ['name', 'tel', 'contract', 'memo'].forEach(k => {   // ★'주소' 칸 없음 — 밭 주소(mf-fields)로 일원화(v773)
     const el = document.getElementById('mf-' + k); if (el) el.value = f[k] || '';
   });
   // select: 기존값이 목록에 없어도 옵션 추가해 selected(유실 방지)
@@ -2083,10 +2089,10 @@ async function saveFarmEdit() {
   // ★다른 농가와 같은 이름이면 cascade 확인창을 띄우기 '전에' 막는다 — 통과하면 두 농가 기록이 한 이름으로 합쳐진다.
   if (_farmNameTaken(name, _editFarmId)) { alert(FARM_NAME_DUP_MSG); return; }
   const oldName = farms.find(f => f.id === _editFarmId)?.name;
-  // 밭 목록 — 줄 단위 trim·빈 줄 제거·중복 제거. 비어 두면 빈 배열(밭 1곳 농가 = 기존과 동일).
-  const fields = [...new Set(String(gv('mf-fields') || '').split('\n').map(x => x.trim()).filter(Boolean))];
-  // 대표 주소가 비어 있으면 첫 밭을 넣는다 — addr을 보는 화면·문자가 아직 있다(field 없는 옛 기록 폴백).
-  const mfAddr = document.getElementById('mf-addr').value.trim() || fields[0] || '';
+  // 밭 목록 — 줄 단위 trim·빈 줄 제거·중복 제거. 비어 두면 빈 배열.
+  const fields = _farmFieldsFromText(gv('mf-fields'));
+  // ★농가 주소 = 첫 밭(v773 일원화) — addr 컬럼은 남겨 두고 늘 fields[0]으로 맞춘다(addr을 보는 화면·문자·field 없는 옛 기록 폴백).
+  const mfAddr = fields[0] || '';
   const data = {
     name, tel: document.getElementById('mf-tel').value, addr: mfAddr, fields,
     variety: document.getElementById('mf-variety').value, contract: parseInt(document.getElementById('mf-contract').value) || 0,
@@ -2336,9 +2342,11 @@ async function addFarm() {
   if (_nameHasBadChar(name)) { alert(NAME_BAD_CHARS_MSG); return; }
   if (_farmNameTaken(name)) { alert(FARM_NAME_DUP_MSG); return; }
   try {
-    const row = await dbInsertFarm({ name, tel: gv('f-tel'), addr: gv('f-addr'), variety: gv('f-variety'), contract: n('f-contract'), staff: gv('f-staff'), memo: gv('f-memo') });
+    // 밭 주소(한 줄에 하나) → fields, 농가 주소 = 첫 밭(saveFarmEdit와 같은 규칙, v773)
+    const fields = _farmFieldsFromText(gv('f-fields'));
+    const row = await dbInsertFarm({ name, tel: gv('f-tel'), addr: fields[0] || '', fields, variety: gv('f-variety'), contract: n('f-contract'), staff: gv('f-staff'), memo: gv('f-memo') });
     farms.push(row);
-    clr('f-name', 'f-tel', 'f-addr', 'f-variety', 'f-contract', 'f-staff', 'f-memo');
+    clr('f-name', 'f-tel', 'f-fields', 'f-variety', 'f-contract', 'f-staff', 'f-memo');
     popSels(); renderFarm();
   } catch (e) { alert(_isUniqueViolation(e) ? FARM_NAME_DUP_MSG : '오류: ' + e.message); }
 }

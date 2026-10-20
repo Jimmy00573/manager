@@ -95,9 +95,9 @@
     <div class="modal-grid">
       <div class="fg"><label>농가명 *</label><input id="mf-name"></div>
       <div class="fg"><label>연락처</label><input id="mf-tel"></div>
-      <div class="fg full"><label>주소</label><input id="mf-addr"></div>
-      <!-- 밭이 여러 곳인 농가만 쓴다. 한 줄에 하나 → farms.fields 배열. 비어 두면 배차·수확 폼에 밭 칸이 안 나온다. -->
-      <div class="fg full"><label>밭 주소 <span style="font-size:10px;color:#aaa">(2곳 이상일 때만 · 한 줄에 하나)</span></label><textarea id="mf-fields" rows="3" placeholder="태흥리 820-9&#10;태흥리 850-6"></textarea></div>
+      <!-- 농가 주소 = 밭 주소(2026-10-20 일원화). 한 줄에 하나 → farms.fields 배열, 첫 줄 = 대표(addr에 자동 저장).
+           가까운 밭도 따로 등록하고 이동을 기록한다(2026-10-20). -->
+      <div class="fg full"><label>밭 주소 <span style="font-size:10px;color:#aaa">(한 줄에 하나 · 첫 줄 = 대표)</span></label><textarea id="mf-fields" rows="3" placeholder="태흥리 820-9&#10;태흥리 850-6"></textarea></div>
       <div class="fg"><label>품종</label><select id="mf-variety"></select></div>
       <div class="fg"><label>계약 콘테이너(개)</label><input id="mf-contract" type="number"></div>
       <div class="fg"><label>담당직원</label><select id="mf-staff"></select></div>
@@ -507,7 +507,7 @@
 <!-- 농가 관리 -->
 <div id="p-farm" class="panel">
   <div class="form-card"><div class="form-title">농가 등록</div>
-    <div class="form-grid"><div class="fg"><label>농가명 *</label><input id="f-name" placeholder="예) 김개똥"></div><div class="fg"><label>연락처</label><input id="f-tel" placeholder="010-0000-0000"></div><div class="fg"><label>주소</label><input id="f-addr" placeholder="예) 서귀포시 ..."></div><div class="fg"><label>품종</label><select id="f-variety"></select></div><div class="fg"><label>계약 콘테이너(개)</label><input id="f-contract" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><select id="f-staff"></select></div><div class="fg"><label>비고</label><input id="f-memo" placeholder="메모"></div></div>
+    <div class="form-grid"><div class="fg"><label>농가명 *</label><input id="f-name" placeholder="예) 김개똥"></div><div class="fg"><label>연락처</label><input id="f-tel" placeholder="010-0000-0000"></div><div class="fg"><label>밭 주소</label><textarea id="f-fields" rows="2" placeholder="한 줄에 하나 · 예) 도평동 229"></textarea></div><div class="fg"><label>품종</label><select id="f-variety"></select></div><div class="fg"><label>계약 콘테이너(개)</label><input id="f-contract" type="number" placeholder="0"></div><div class="fg"><label>담당직원</label><select id="f-staff"></select></div><div class="fg"><label>비고</label><input id="f-memo" placeholder="메모"></div></div>
     <div class="form-actions"><button class="btn pri" onclick="addFarm()">등록</button></div>
   </div>
   <div style="font-size:12px;color:#888;margin:8px 0;display:flex;align-items:center;gap:8px">등록된 농가 <span id="farm-cnt" class="badge b-neu">0</span>
@@ -2085,6 +2085,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=31"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=770"></script>
+<script src="src/app.js?v=771"></script>
 </body>
 </html>
