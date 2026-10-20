@@ -1642,6 +1642,29 @@ function _fieldRequiredMiss(prefix) {
   const wrap = document.getElementById(prefix + '-field-wrap');
   return !!wrap && wrap.style.display !== 'none' && !gv(prefix + '-field');
 }
+// 입고 '밭 (선택)' 자유 입력칸(prefix-field-txt) — 값은 inbound_records.field에만 남는다(v769). 미선과 농가 카드의 밭 구분용.
+// ★콘테이너 가지와 무관하다 — picks로 가지 않는다(가지는 먼 밭만, 위 2026-10-13 규칙 그대로).
+// ★등록 폼('ib'): 먼 밭 농가는 기존 select(ib-field, 필수)가 맡고, 농가가 아닌 공급처(농협·거래처)는 칸을 숨긴다. 농가가 바뀌면 값을 비운다.
+//   수정 모달('eib'): 늘 보이고 값은 여는 쪽(editInboundRow)이 채운다.
+// datalist = 그 농가 입고에 적힌 밭 + farms.fields(두 화면 같은 목록).
+function _fillIbFieldTxt(farm, prefix = 'ib') {
+  const wrap = document.getElementById(prefix + '-field-txt-wrap');
+  const inp  = document.getElementById(prefix + '-field-txt');
+  const dl   = document.getElementById(prefix + '-field-dl');
+  if (!wrap || !inp) return;
+  if (prefix === 'ib') {
+    inp.value = '';
+    if (_farmBranches(farm) || !farms.some(f => f.name === farm)) { wrap.style.display = 'none'; if (dl) dl.innerHTML = ''; return; }
+  }
+  wrap.style.display = '';
+  if (dl) {
+    const vals = [...new Set([
+      ...inboundRecords.filter(r => r.farm_name === farm && r.field).map(r => String(r.field).trim()),
+      ..._farmFields(farm)
+    ].filter(Boolean))];
+    dl.innerHTML = vals.map(v => `<option value="${esc(v)}">`).join('');
+  }
+}
 
 // 배차 대상 종류(농가/농협/거래처)별 대상명 <option> HTML — 농가면 farms, 농협이면 _nhfOptHtml(category='농협'),
 // 거래처면 _extNameOptHtml(PARTNER_CATS의 extName 유형 = 거래처·공판장·마트).
@@ -18245,12 +18268,14 @@ function renderIbFarmView() {
     const rem = r.quantity - (pm[r.id] || 0);
     if (!farmMap[r.farm_name]) farmMap[r.farm_name] = {
       remaining: 0, cats: {}, rows: [], hasPriority: false, latestDate: '',
-      appearG: emptyGrades()
+      appearG: emptyGrades(), fields: {}
     };
     const f = farmMap[r.farm_name];
     const cat = r.inbound_category || '상품';
     f.cats[cat] = (f.cats[cat] || 0) + rem;
     f.remaining += rem;
+    // 밭별 잔량(잔량 있는 행만, 빈 밭 = '' = 밭 미지정) — 2종 이상일 때만 카드에 줄이 생긴다(v769)
+    if (rem > 0) { const fk = String(r.field || '').trim(); f.fields[fk] = (f.fields[fk] || 0) + rem; }
     if (r.is_priority) f.hasPriority = true;
     if (r.date > f.latestDate) f.latestDate = r.date;
     // ★당도·산도 등급은 집계하지 않음(입력·표시 제거됨). 외관만.
@@ -18328,9 +18353,16 @@ function renderIbFarmView() {
 
   let cardsHtml = '';
   farms.forEach((farm, idx) => {
-    const { remaining, cats, rows, hasPriority, appearG } = farmMap[farm];
+    const { remaining, cats, rows, hasPriority, appearG, fields } = farmMap[farm];
     const isExpanded = _farmExpanded.has(farm);
     const borderColor = remaining >= 200 ? '#2E7D32' : remaining >= 50 ? '#F57F17' : remaining > 0 ? '#C62828' : '#BDBDBD';
+
+    // ★밭이 1종 이하면 '' — 카드 모양이 예전과 같다. 잔량 많은 순.
+    const fieldKeys = Object.keys(fields).sort((a, b) => fields[b] - fields[a]);
+    const fieldRow = fieldKeys.length >= 2
+      ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 14px 4px 36px;font-size:12px">${fieldKeys.map(k =>
+          `<span style="color:#6B7280">${k ? `🌱 ${esc(k)}` : '밭 미지정'} <strong style="color:#374151">${fmtN(fields[k])} CT</strong></span>`).join('<span style="color:#D1D5DB">·</span>')}</div>`
+      : '';
 
     const catRows = IB_CATS
       .filter(c => (cats[c.key] || 0) > 0)
@@ -18370,6 +18402,7 @@ function renderIbFarmView() {
             <span style="font-size:12px;color:#555">${r.date}</span>
             ${productChip(r.product)}
             <span style="font-weight:700;color:${remColor};font-size:13px">${r.rem > 0 ? r.rem + ' CT' : '완료'}</span>
+            ${r.field ? `<span style="font-size:11px;color:#6B7280">🌱 ${esc(r.field)}</span>` : ''}
             ${r.location ? `<span style="font-size:11px;color:#888">(${esc(r.location)})</span>` : ''}
             ${r.is_priority ? '<span style="font-size:11px">⭐</span>' : ''}
             ${compactGrade}
@@ -18408,7 +18441,7 @@ function renderIbFarmView() {
         </div>` : ''}
         ${!isExpanded || (_farmSubTab[farm]||'inbound') === 'inbound' ? `
           ${gradeRow}
-          ${catRows ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${catRows}</div>` : ''}
+          ${(fieldRow || catRows) ? `<div style="border-top:1px solid #f0f0f0;padding:6px 0 4px">${fieldRow}${catRows}</div>` : ''}
           <div style="border-top:1px solid #f0f0f0">${detailRows}</div>
         ` : `<div id="farm-sort-${idx}" style="min-height:60px"><div style="padding:20px;text-align:center;color:#9CA3AF;font-size:13px">⏳ 불러오는 중...</div></div>`}
       </div>
@@ -20005,7 +20038,7 @@ function renderInboundList() {
     const dealChip = _hvDealChip(_hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
@@ -21481,6 +21514,9 @@ function editInboundRow(id) {
   document.getElementById('eib-m-date').value = r.date || '';
   document.getElementById('eib-m-product').value = r.product || '';
   document.getElementById('eib-m-farm').value = r.farm_name || '';
+  // 밭(표시용) — ★바꿔도 이미 만들어진 콘테이너 기록(picks.field)은 건드리지 않는다.
+  _fillIbFieldTxt(r.farm_name, 'eib');
+  document.getElementById('eib-field-txt').value = r.field || '';
   setLocValue('eib', r.location || '');
   document.getElementById('eib-m-qty').value = r.quantity || '';
   document.getElementById('eib-m-qty').min = processed || 1;
@@ -21546,6 +21582,7 @@ async function closeEditInboundModal() {
       document.getElementById('eib-m-date').value !== (r.date || '') ||
       document.getElementById('eib-m-qty').value !== String(r.quantity) ||
       getLocValue('eib') !== (r.location || null) ||
+      ((document.getElementById('eib-field-txt')?.value || '').trim() || null) !== (r.field || null) ||
       document.getElementById('eib-m-note').value !== (r.note || '') ||
       document.getElementById('eib-m-cat').value !== (r.inbound_category || '상품') ||
       getGradeVal('eib-m-appearance-grade') !== (r.appearance_grade || null) ||
@@ -21576,6 +21613,7 @@ async function saveInboundModal() {
   const date = document.getElementById('eib-m-date').value;
   const qty = parseInt(document.getElementById('eib-m-qty').value) || 0;
   const location = getLocValue('eib') || null;
+  const field = (document.getElementById('eib-field-txt')?.value || '').trim() || null;   // 표시용 — picks.field는 안 바꾼다
   const note = document.getElementById('eib-m-note').value.trim() || null;
   const inbound_category = document.getElementById('eib-m-cat').value || '상품';
   // ★당도·산도 등급은 입력 UI 제거 — updatePayload에서도 빼서 PATCH가 그 컬럼을 건드리지 않게 한다.
@@ -21624,6 +21662,7 @@ async function saveInboundModal() {
     date !== (prev.date || '') ||
     qty !== prev.quantity ||
     location !== (prev.location || null) ||
+    field !== (prev.field || null) ||
     note !== (prev.note || null) ||
     inbound_category !== (prev.inbound_category || '상품') ||
     appearance_grade !== (prev.appearance_grade || null) ||
@@ -21683,7 +21722,7 @@ async function saveInboundModal() {
   }
 
   const updatePayload = {
-    date, quantity: qty, location, note, inbound_category, is_priority,
+    date, quantity: qty, location, field, note, inbound_category, is_priority,
     appearance_grade, defect_tags,
     brix_range, brix_avg, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
@@ -21724,13 +21763,13 @@ async function saveInboundModal() {
     if (changed) {
       await dbInsertAuditLog({
         target_table: 'inbound_records', target_id: id,
-        before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, note: prev.note,
+        before_val: { date: prev.date, quantity: prev.quantity, location: prev.location, field: prev.field ?? null, note: prev.note,
           inbound_category: prev.inbound_category, is_priority: prev.is_priority,
           appearance_grade: prev.appearance_grade, defect_tags: prev.defect_tags,
           brix_range: prev.brix_range, brix_avg: prev.brix_avg ?? null, acidity_range: prev.acidity_range, size_distribution: prev.size_distribution,
           reclassification_source: prev.reclassification_source, reclassification_reason: prev.reclassification_reason, original_work_date: prev.original_work_date,
           driver_id: prev.driver_id },
-        after_val: { date, quantity: qty, location, note, inbound_category, is_priority,
+        after_val: { date, quantity: qty, location, field, note, inbound_category, is_priority,
           appearance_grade, defect_tags,
           brix_range, brix_avg, acidity_range, size_distribution,
           reclassification_source, reclassification_reason, original_work_date,
@@ -21740,7 +21779,7 @@ async function saveInboundModal() {
     }
     const idx = inboundRecords.findIndex(r => r.id === id);
     if (idx !== -1) inboundRecords[idx] = { ...inboundRecords[idx],
-      date, quantity: qty, location, note, inbound_category, is_priority,
+      date, quantity: qty, location, field, note, inbound_category, is_priority,
       appearance_grade, defect_tags,   // ★brix_grade·acidity_grade는 안 건드림 — 기존 값 보존
       brix_range, brix_avg, acidity_range, size_distribution,
       reclassification_source, reclassification_reason, original_work_date,
@@ -24056,6 +24095,8 @@ async function _addInboundCore(keepOpen) {
     note, staff: sessionStorage.getItem('citrus_adm_user') || 'admin',   // 등록 계정(관리자 'admin' · 외부 기사 'gisa')
     is_priority,
     driver_id,
+    // 밭 — 먼 밭 농가는 select(ibField), 그 밖의 농가는 자유 입력(ib-field-txt). ★콘테이너(_saveInboundContainers)에는 ibField만 간다.
+    field: ibField || ((document.getElementById('ib-field-txt')?.value || '').trim() || null),
   };
   // ★총 중량·매입액은 '그 차 전체'의 값이라 카테고리마다 복사하면 안 된다.
   //   예전엔 commonData에 있어 상품146+대과4+소과2를 함께 등록하면 3행 모두 같은 총 중량이 들어갔고,
