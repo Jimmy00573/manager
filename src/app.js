@@ -12426,7 +12426,7 @@ async function deleteUncheckedPachiAudit() {
 // 실사 미확인 = 나간 것(출고). 파치 미확인 행을 출고로 처리한다.
 // ★★행 종류로 처리 방식이 갈린다 — 이 화면의 행은 두 테이블에서 오고, 줄이는 방법이 서로 다르다:
 //    Source 1 inventory_records 파치 … 선과품 실사와 같은 '실사출고'(출고 기록 + 재고 void).
-//                                       식은 _auditOutboundInvRec 한 곳에 있고 선과품 실사와 공유한다.
+//                                       식은 _auditOutboundItem·_auditOutboundInvBatch 한 곳에 있고 선과품 실사와 공유한다.
 //    Source 3 inbound_records 파치    … void가 통하지 않는다. 줄이는 유일한 길이 processing_records
 //                                       '출고'이고, 그 저장은 _addProcessingOut(aa42351)이 맡는다.
 //   ★두 경로 모두 '기록 먼저 → 차감'이라는 기존 순서를 그대로 따른다. 식을 이 함수 안에 복제하지 말 것
@@ -12471,11 +12471,14 @@ async function outboundUncheckedPachiAudit() {
   const date = td();   // 로컬 오늘
   const adm  = res.worker || sessionStorage.getItem('citrus_adm_user') || 'admin';
   let okCount = 0, failMsg = '';
+  // ★재고 파치 = outbound_batch 1회(전부 되거나 전부 취소, v768). 실패하면 입고 파치도 손대지 않는다(예전에도 첫 실패에서 멈췄다).
   try {
-    for (const r of recs) {
-      await _auditOutboundInvRec(r, { kind: 'pachi', date, worker: adm, reason: `파치 실사 출고(실사출고): ${res.reason}` });
-      okCount++;
-    }
+    await _auditOutboundInvBatch(recs, { kind: 'pachi', date, worker: adm, reason: `파치 실사 출고(실사출고): ${res.reason}` });
+    okCount = recs.length;
+  } catch (e) {
+    failMsg = `출고가 저장되지 않았습니다(전부 취소됨): ${e.message}`;
+  }
+  if (!failMsg) try {
     for (const row of ibRows) {
       // ★processing_records.quantity는 정수 컬럼이다. 잔여가 소수면 DB가 반올림해 잔여가 조금 남고
       //   그 행이 목록에 그대로 보인다(조용히 사라지지 않으니 눈으로 잡힌다). 실데이터는 전부 정수.
@@ -12636,8 +12639,8 @@ async function applyPachiBulk() {
 // ===== 파치 일괄 출고 (일괄 지정 체크 행 전량 → 고른 출고처) — 2026-09-11 =====
 // 배경: 공판장 출고를 파치 실사 '미확인 삭제'로 처리해(2026-07~08, 25건 91.4CT) 출고 기록이 안 남았다.
 //   삭제는 void만 하므로 매출·거래처 실적에서 통째로 빠진다. 선택한 행을 실제 출고처로 내보내는 길을 연다.
-// ★건별 저장은 _auditOutboundInvRec(실사 출고와 공용) 한 곳 — 출고 생성 로직을 여기 복제하지 않는다.
-//   순서도 그 함수 그대로: 출고 기록 → 재고 void → 감사로그. ref_detail이 붙어 출고 목록에서 취소 가능.
+// ★저장은 _auditOutboundInvBatch(실사 출고와 공용) 한 곳 — 출고 생성 로직을 여기 복제하지 않는다.
+//   outbound_batch 1회로 재고 void·출고 기록·감사로그가 전부 되거나 전부 취소된다. ref_detail이 붙어 출고 목록에서 취소 가능.
 // ★출고 기록 단위 = 재고 기록(inventory_records) 1건당 1건(Jimmy 결정). 화면 한 행이 여러 건의 묶음일 수 있다.
 // ★대상은 일괄 지정과 같은 기준(체크된 행 중 레거시·입고 파치 제외) — 입고 파치는 체크박스 자체가 없다.
 // ★전량 출고만. 부분 수량은 행 ⋮ → 출고(savePachiOutbound).
@@ -12714,39 +12717,12 @@ async function savePachiBulkOutbound() {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
   const worker = sessionStorage.getItem('citrus_adm_user') || 'admin';
   const reason = `파치 일괄 출고 → ${partner}${note ? ': ' + note : ''}`;
-  const traces = [];   // 건별 진행 { ob, voided } — _auditOutboundInvRec가 채운다
-  let failErr = null, failRec = null;
-  for (const r of recs) {
-    const trace = {};
-    traces.push(trace);
-    try {
-      await _auditOutboundInvRec(r, { kind: 'pachi', date, worker, reason, partner, note: note || '일괄 출고', trace });
-    } catch (e) { failErr = e; failRec = r; break; }
-  }
-
-  if (failErr) {
-    // ★부분 저장 방지 — 하나라도 실패하면 이번에 만든 출고를 전부 되돌린다.
-    //   · 재고까지 빠진 건(voided) → 기존 cancelOutbound(ref_detail로 재고 복구 + 출고 void + 감사로그).
-    //   · 기록만 생기고 재고 차감 전에 멈춘 건 → cancelOutbound를 쓰면 재고가 부푼다. 출고 기록만 void.
-    //   cancelOutbound는 오류를 스스로 삼키므로(알림만) 성공 여부는 invOutbounds에서 빠졌는지로 본다.
-    const undoFail = [];
-    for (const t of traces) {
-      if (!t.ob) continue;
-      try {
-        if (t.voided) {
-          await cancelOutbound(t.ob.id);
-          if (invOutbounds.some(x => String(x.id) === String(t.ob.id))) undoFail.push(t.ob.id);
-        } else {
-          await sbUpdate('outbound_records', t.ob.id, { is_void: true });
-          const i = invOutbounds.findIndex(x => String(x.id) === String(t.ob.id));
-          if (i >= 0) invOutbounds.splice(i, 1);
-        }
-      } catch (e2) { undoFail.push(t.ob.id); }
-    }
-    renderInvSummary(); renderPachiSection();
+  // ★outbound_batch 1회 — 전부 되거나 전부 취소(v768). 예전의 '중간 실패 시 cancelOutbound로 되돌리기'(되돌리기 실패분이 남을 수 있었다)는 필요 없어 뺐다.
+  try {
+    await _auditOutboundInvBatch(recs, { kind: 'pachi', date, worker, reason, partner, note: note || '일괄 출고' });
+  } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = `📤 ${recs.length}건 출고`; }
-    alert(`출고 중 오류가 나서 이번 출고를 모두 되돌렸습니다.${failRec ? `\n(${failRec.farm_name || ''} · ${failRec.product || ''})` : ''}\n\n${failErr.message}`
-      + (undoFail.length ? `\n\n⚠ 되돌리기 실패 ${undoFail.length}건 — 출고 목록에서 확인 후 취소해주세요.` : ''));
+    alert('출고가 저장되지 않았습니다(전부 취소됨).\n\n' + e.message);
     return;
   }
 
@@ -19576,25 +19552,22 @@ async function deleteUncheckedInvAudit() {
   else showToast(`✅ 미확인 ${successCount}건 삭제 완료`);
 }
 
-// ── 재고 1건 전량 출고 (공용) — 원래 '실사 미확인 출고'용 ─────────────────
-// ★쓰는 곳 3곳: 선과품 실사(outboundUncheckedInvAudit) · 파치 실사(outboundUncheckedPachiAudit)
+// ── 재고 1건 전량 출고 항목 만들기 (공용) — 원래 '실사 미확인 출고'용 ─────────────────
+// ★쓰는 곳 3곳(모두 _auditOutboundInvBatch를 거친다): 선과품 실사(outboundUncheckedInvAudit) · 파치 실사(outboundUncheckedPachiAudit)
 //                · 파치 일괄 출고(savePachiBulkOutbound, 2026-09-11 — 출고처를 골라 넘긴다).
 //   partner·note를 안 넘기면 예전과 똑같이 '실사출고'·'실사 출고'가 들어간다(실사 두 곳은 인자 안 바꿈).
-// ★trace(선택): 넘기면 진행 단계를 적어 둔다 — trace.ob(출고 기록이 생김) · trace.voided(재고까지 빠짐).
-//   일괄 출고가 중간 실패 시 되돌릴 때 '어디까지 됐는지'를 알아야 해서 둔 것. 동작은 바꾸지 않는다.
-// ★순서 고정: 출고 기록 → 원본 재고 void → 감사로그.
-//   기록이 먼저여야 삽입 실패 시 재고가 그대로 남아 '아무 일도 안 일어난 것'이 된다
-//   (savePachiOutbound·부분출고와 같은 원칙). 반대 순서는 재고만 사라지고 단서가 0이 된다.
+// ★순수 함수 — DB 호출·로컬 변경 없음. 서버 함수 outbound_batch의 항목 { ob, deduct, audit } 하나를 돌려준다(v768).
+//   서버가 한 트랜잭션으로 원본 재고 void(화면에서 본 수량과 DB가 같을 때만) → 출고 기록 → 감사로그를 넣는다.
+//   예전 건별 await(기록 → void → 감사로그)와 넣는 값은 같고, 하나라도 실패하면 전부 취소된다.
 // ★화면별로 다른 건 출고 기록에 남기는 값뿐이라 kind 하나로만 가른다:
 //     'sorting' … source_type='sorting' + size_code + quality_grade (선과품 출고와 같은 짝)
 //     'pachi'   … source_type='pachi'   + size_code 없음           (savePachiOutbound와 같은 짝)
 //   나머지(ref_detail·kg 환산·void·감사로그)는 한 벌뿐이다 — 복제하면 한쪽만 고쳐져 조용히 어긋난다.
-// ★실패는 삼키지 않는다 — 그대로 던져서 호출부가 루프를 멈추고 몇 건까지 됐는지 알리게 한다.
-async function _auditOutboundInvRec(r, { kind, date, worker, reason, partner = '실사출고', note = '실사 출고', trace = null }) {
+function _auditOutboundItem(r, { kind, date, worker, reason, partner = '실사출고', note = '실사 출고' }) {
   const qty      = Number(r.quantity) || 0;
   const kgPer    = (productWeights && r.product && productWeights[r.product] != null) ? Number(productWeights[r.product]) : 17;
   const isSorted = kind === 'sorting';
-  // 1) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
+  // 출고 기록
   const payload = {
     date, product: r.product, size_code: isSorted ? r.size_code : null, quantity: qty, unit: 'CT',
     partner_name: partner, source_type: isSorted ? 'sorting' : 'pachi',
@@ -19604,27 +19577,36 @@ async function _auditOutboundInvRec(r, { kind, date, worker, reason, partner = '
     weight_kg: qty * kgPer
   };
   if (isSorted) payload.quality_grade = r.quality_grade || '일반';
-  const ob = await dbInsertOutboundRecord(payload);
-  if (ob) invOutbounds.unshift(ob);
-  if (trace) trace.ob = ob;
-  // 2) 원본 재고 차감(미확인=전량 나감 → void)
-  await sbUpdate('inventory_records', r.id, { quantity: 0, is_void: true });
-  r.quantity = 0; r.is_void = true;
-  const inv = inventoryRecords.find(x => x.id === r.id);
-  if (inv) { inv.quantity = 0; inv.is_void = true; }
-  if (trace) trace.voided = true;
-  // 3) 감사로그(되돌릴 수 있게)
-  await dbInsertAuditLog({
-    target_table: 'inventory_records', target_id: r.id,
-    before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
-    after_val: { outbound: partner, quantity: 0, is_void: true },
-    reason, staff: worker
-  });
+  return {
+    ob: payload,
+    // 원본 재고 차감(미확인=전량 나감 → void)
+    deduct: [{ id: r.id, qty_before: qty, new_qty: 0, void: true }],
+    // 감사로그(되돌릴 수 있게)
+    audit: {
+      target_table: 'inventory_records', target_id: r.id,
+      before_val: { product: r.product, farm_name: r.farm_name, size_code: r.size_code, quality_grade: r.quality_grade || '일반', quantity: qty },
+      after_val: { outbound: partner, quantity: 0, is_void: true },
+      reason, staff: worker
+    }
+  };
+}
+// 재고 여러 건 전량 출고 = outbound_batch 1회(한 트랜잭션 — 전부 되거나 전부 취소, v768). 위 3곳 공용.
+// ★로컬(invOutbounds·재고 수량)은 성공한 뒤에만 바꾼다. 실패는 그대로 던진다(호출부가 안내). 빈 목록이면 아무것도 안 한다.
+async function _auditOutboundInvBatch(recs, opts) {
+  if (!recs.length) return;
+  if (recs.length > 500) throw new Error('한 번에 500건까지 출고할 수 있습니다. 나눠서 처리해 주세요.');
+  const rows = await dbOutboundBatch(recs.map(r => _auditOutboundItem(r, opts)));
+  (Array.isArray(rows) ? rows : []).forEach(ob => { if (ob) invOutbounds.unshift(ob); });   // recs 순서대로(예전과 같은 순서)
+  for (const r of recs) {
+    r.quantity = 0; r.is_void = true;
+    const inv = inventoryRecords.find(x => x.id === r.id);
+    if (inv) { inv.quantity = 0; inv.is_void = true; }
+  }
 }
 
 // 실사 미확인 = 나간 것(출고). 미확인 재고를 '실사출고'로 처리(출고 기록 생성 + 원본 재고 void).
 // deleteUncheckedInvAudit 패턴 복제 + 출고 기록. 선과품(source_type='sorting') 대상. 되돌릴 수 있게 감사로그.
-// ★건별 처리는 _auditOutboundInvRec 공용 헬퍼가 한다(파치 실사와 같은 식·같은 순서).
+// ★처리는 _auditOutboundInvBatch 공용 헬퍼가 한다(파치 실사와 같은 식, outbound_batch 1회 — 전부 되거나 전부 취소).
 async function outboundUncheckedInvAudit() {
   if (!_invAuditMode) return;
   const unchecked = _invAuditVisible.filter(r => !r.audit_checked_at);   // DB 기준(미확인=나간 것)
@@ -19651,14 +19633,11 @@ async function outboundUncheckedInvAudit() {
   const adm  = res.worker || sessionStorage.getItem('citrus_adm_user') || 'admin';
   let successCount = 0;
   let failMsg = '';
-  for (const r of unchecked) {
-    try {
-      await _auditOutboundInvRec(r, { kind: 'sorting', date, worker: adm, reason: `선과품 재고 실사 출고(실사출고): ${res.reason}` });
-      successCount++;
-    } catch(e) {
-      failMsg = `${successCount}건 출고 후 오류: ${r.farm_name || ''} · ${r.product || ''} — ${e.message}`;
-      break;
-    }
+  try {
+    await _auditOutboundInvBatch(unchecked, { kind: 'sorting', date, worker: adm, reason: `선과품 재고 실사 출고(실사출고): ${res.reason}` });
+    successCount = unchecked.length;
+  } catch(e) {
+    failMsg = `출고가 저장되지 않았습니다(전부 취소됨): ${e.message}`;
   }
   await loadAndRenderInv();
   if (failMsg) alert(failMsg);
