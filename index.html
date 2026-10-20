@@ -998,7 +998,7 @@
           </div>
           <div class="fg"><label>날짜 *</label><input id="ib-date" type="date"></div>
           <div class="fg"><label>품목 *</label>
-            <select id="ib-product" onchange="if(_ibKind==='sorted')renderIbSortedSizes();renderSizeDistInputs('ib', this.value, null)">
+            <select id="ib-product" onchange="_ibProdAuto=false;if(_ibKind==='sorted')renderIbSortedSizes();renderSizeDistInputs('ib', this.value, null)">
               <option value="">선택</option>
               <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option>
               <option>황금향</option><option>수라향</option><option>노지감귤</option>
@@ -1007,7 +1007,7 @@
           </div>
           <!-- 공급처: attachFarmSearch('ib-farm')가 이 select를 숨기고 검색 입력칸·목록을 붙인다(_fsAttachAll 참고).
                select는 그대로 값의 주인이라 gv('ib-farm')·popSels()·저장 로직은 손댈 게 없다. -->
-          <div class="fg"><label>공급처 *</label><select id="ib-farm" onchange="_autoPickStaffDrv('ib-farm','inv-driver-select');_fillFieldSel('ib', this.value, _farmBranches(this.value) ? _brDefault(this.value) : '');_fillIbFieldTxt(this.value)"><option value="">선택</option></select></div>
+          <div class="fg"><label>공급처 *</label><select id="ib-farm" onchange="_autoPickStaffDrv('ib-farm','inv-driver-select');_fillFieldSel('ib', this.value, _farmBranches(this.value) ? _brDefault(this.value) : '');_fillIbFieldTxt(this.value);_ibApplyDefaultProduct(this.value)"><option value="">선택</option></select></div>
           <div class="fg" id="ib-field-wrap" style="display:none"><label>밭 *</label><select id="ib-field"></select></div>
           <div class="fg" id="ib-field-txt-wrap" style="display:none"><label>밭 (선택)</label><input id="ib-field-txt" list="ib-field-dl" placeholder="예) 도평동 200 · 하우스2동"><datalist id="ib-field-dl"></datalist></div>
           <div class="fg">
@@ -2085,6 +2085,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=31"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=771"></script>
+<script src="src/app.js?v=772"></script>
 </body>
 </html>

@@ -1583,8 +1583,8 @@ function afD(p) { const d = gd(gv(p + '-drv')); sv(p + '-dtel', d.tel || ''); sv
 //   (farms.fields · dispatches.field · harvests.field).
 // ★콘테이너 보유·정산의 합계는 농가(사람) 단위 그대로다. 밭별은 _brKey로 '추가로' 나눠 볼 뿐이다
 //   (getFCS·getFCtypeMap·getFCtypes의 field 인자 — 없으면 예전과 똑같다).
-//   가지는 farms.fields 2곳 이상(먼 밭)일 때만 생긴다. 인근 밭은 fields에 따로 넣지 않는다(2026-10-13 운영 규칙)
-//   — 인근 밭끼리 옮겨 쓰면 가지 보유가 +222/−41처럼 갈린다(문기덕 사고).
+//   밭은 가까워도 전부 farms.fields에 따로 등록하고, 밭 사이 콘테이너 이동은 빠른 회수 '이동'으로 기록한다(2026-10-20).
+//   2곳 이상이면 가지가 생긴다. ★이동을 기록하지 않고 옮겨 쓰면 가지 보유가 +222/−41처럼 갈린다(문기덕 사례).
 function _farmFields(farm) {
   return (gf(farm).fields || []).map(s => String(s).trim()).filter(Boolean);
 }
@@ -1666,6 +1666,25 @@ function _fillIbFieldTxt(farm, prefix = 'ib') {
     ].filter(Boolean))];
     dl.innerHTML = vals.map(v => `<option value="${esc(v)}">`).join('');
   }
+}
+// 입고 기본 품목(v774) — 농가 품종(farms.variety, 입고 품목명과 같은 값) → 없으면 그 농가 가장 최근 입고 품목 → ''.
+function _ibDefaultProduct(farm) {
+  const v = String(gf(farm).variety || '').trim();
+  if (v) return v;
+  const last = (inboundRecords || []).filter(r => r.farm_name === farm && r.product)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+  return last ? last.product : '';
+}
+// 공급처를 고르면 기본 품목을 먼저 잡아 준다. ★품목 칸이 비었거나 직전에 자동으로 넣은 값일 때만 — 직접 고른 품목은 절대 안 바꾼다.
+//   목록에 있는 값만 넣고, 품목을 바꿀 때의 기존 동작(선과품 사이즈 칸·크기분포)은 change 이벤트로 태운다(렌더 코드 복제 없음).
+let _ibProdAuto = false;   // ib-product 값이 여기서 넣은 것인지 — 사람이 바꾸면 ib-product onchange가 false로 돌린다
+function _ibApplyDefaultProduct(farm) {
+  const sel = document.getElementById('ib-product');
+  if (!sel || (sel.value && !_ibProdAuto)) return;
+  const p = _ibDefaultProduct(farm);
+  if (!p || ![...sel.options].some(o => o.value === p)) return;
+  if (sel.value !== p) { sel.value = p; sel.dispatchEvent(new Event('change')); }
+  _ibProdAuto = true;   // ★change 뒤에 세운다 — onchange가 먼저 false로 돌려놓기 때문
 }
 // 배송 등록 폼(dp) 전용 '밭' 칸 — 대상이 농가면 고르는 즉시 보인다(v771). ★공용 _fillFieldSel은 다른 폼이 쓰므로 안 고친다.
 //   · 먼 밭 농가(_farmBranches) → 기존 _fillFieldSel 그대로 + '밭 *'(필수, addDisp가 검사).
@@ -23498,7 +23517,7 @@ async function buildInboundShareText(inboundId) {
   const total = grp.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   const drv = drivers.find(d => String(d.id) === String(base.driver_id));
   const drvLine = drv ? [drv.name, (drv.note || '').trim()].filter(Boolean).join(' ') : '';
-  const addr = (gf(base.farm_name).addr || '').trim();
+  const addr = (base.field || gf(base.farm_name).addr || '').trim();   // 그 입고의 밭 우선(v774), 없으면 농가 첫 밭
   const L = [];
   const add = (label, val) => { if (val !== '' && val != null) L.push(`${label}: ${val}`); };   // 값 없는 줄은 통째로 생략
   add('기사', drvLine);
@@ -24219,6 +24238,7 @@ async function _addInboundCore(keepOpen) {
     const ibpBody = document.getElementById('ibp-body'); if (ibpBody) ibpBody.style.display = 'none';
     const ibpTog = document.getElementById('ibp-toggle'); if (ibpTog) ibpTog.textContent = '▸ 매입 단가 (선택)';
     syncReclassList('ib');
+    _ibApplyDefaultProduct(gv('ib-farm'));   // 농가는 그대로 남으므로 같은 기본 품목을 다시 잡는다(v774)
   };
 
   const doInsert = async () => {
