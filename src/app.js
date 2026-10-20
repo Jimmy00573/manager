@@ -21254,7 +21254,7 @@ function _renderScTable() {
 
   if (_scSearch) {
     const q = _scSearch.toLowerCase();
-    rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q));
+    rows = rows.filter(r => (r.farm_name || '').toLowerCase().includes(q) || (r.field || '').toLowerCase().includes(q));   // 밭 주소로도 찾는다(v770)
   }
   if (_scProduct)  rows = rows.filter(r => r.product === _scProduct);
   if (_scCategory) rows = rows.filter(r => (r.inbound_category || '상품') === _scCategory);
@@ -21472,8 +21472,8 @@ function _renderScTable() {
               return (_scGrpHead[i] || '') + `<tr style="background:${rowBg}${_stkBgVar('background:' + rowBg)}border-bottom:1px solid #F3F4F6">
                 <td style="padding:2px 0;text-align:center">${_scPlanCell(r, planNo, planSkipped, _scAdm)}</td>
                 <td style="padding:6px 4px;color:#6B7280;font-size:12px">${r.date}</td>
-                <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}">
-                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}${fcLine}
+                <td style="padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.farm_name)}${r.field ? ` · ${esc(r.field)}` : ''}">
+                  ${isPri ? '⭐ ' : ''}${esc(r.farm_name)}${doingBadge}${(sortingResults||[]).some(sr=>{const ib=(inboundRecords||[]).find(x=>x.id===sr.inbound_record_id);return ib&&ib.farm_name===r.farm_name&&ib.product===r.product;})?` <span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')">비율 ▸</span>`:''}${r.field ? `<div style="font-size:11px;font-weight:400;color:#6B7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.field)}">🌱 ${esc(r.field)}</div>` : ''}${fcLine}
                 </td>
                 <td style="padding:6px 4px">${productChip(r.product)}</td>
                 <td style="padding:6px 4px">${catBadge}</td>
