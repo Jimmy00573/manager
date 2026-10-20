@@ -260,6 +260,25 @@ async function sbDeleteStrict(table, filter) {
   return json.length;
 }
 
+// 쓰기용 RPC(서버 함수) — 여러 쓰기를 한 트랜잭션으로 보낼 때(outbound_batch 등). 실패하면 서버 예외의 message를 던진다.
+// ★app.js fetch 래퍼의 _RPC_WRITES에 경로를 넣어야 처리 중 바·버튼 잠금이 켜진다(/rpc/는 기본이 조회 취급).
+async function sbRpcWrite(fn, args) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: SB_HEADERS,
+    body: JSON.stringify(args)
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try { const j = JSON.parse(text); if (j && j.message) msg = j.message; } catch (e) {}
+    throw new Error(msg);
+  }
+  const json = await res.json();
+  _sbNotifyWrite();
+  return json;
+}
+
 // 연결 확인
 async function testConnection() {
   try {

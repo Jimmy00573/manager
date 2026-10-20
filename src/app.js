@@ -346,11 +346,12 @@ function _netEnd() {
 }
 (function () {
   const f0 = window.fetch.bind(window);
+  const _RPC_WRITES = ['/rpc/outbound_batch'];   // /rpc/ 중 쓰기인 서버 함수 — 이것만 저장처럼 바·버튼 잠금을 켠다(sbRpcWrite)
   window.fetch = function (input, init) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
     const m = String((init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
     if (!url.startsWith(SUPABASE_URL)) return f0(input, init);
-    if (m === 'GET' || m === 'HEAD' || url.includes('/rpc/')) {
+    if (m === 'GET' || m === 'HEAD' || (url.includes('/rpc/') && !_RPC_WRITES.some(s => url.includes(s)))) {
       // 조회는 바를 켜지 않는다. 단 바가 이미 켜져 있으면(저장 도중 '쓰기 → 다시 읽기 → 쓰기') 그 조회도 같은 처리로 세어
       //   중간에 바가 꺼졌다 켜지며 깜빡이지 않게 한다. 버튼 잠금은 하지 않는다.
       if (!_netShown) return f0(input, init);
@@ -13703,13 +13704,13 @@ async function saveOutbound(regId) {
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
 
   try {
+    // ★저장 = 서버 함수 outbound_batch 1회(v767). 사이즈마다 '재고 차감 + 출고 기록 1건'을 한 트랜잭션으로 보낸다.
+    //   예전엔 기록 1건·차감 1행씩 await로 따로 보내 왕복이 사이즈×행 수만큼 쌓였고, 도중에 끊기면 일부만 저장됐다.
+    //   ★전부 되거나 전부 취소 — 예전의 '차감 중단 시 ref_detail 정정' 분기는 필요 없어 뺐다.
+    //   ★차감은 화면에서 본 수량(qty_before)이 DB와 같을 때만 된다(다른 기기가 먼저 출고했으면 전체 취소).
+    //   ★로컬(invOutbounds·재고 수량)은 성공한 뒤에만 바꾼다. 아래 출고 기록 내용은 예전과 한 글자도 같다.
+    const items = [], plans = [];
     for (const sz of outSizes) {
-      // ★★저장 순서 = 출고 기록 먼저 → 재고 차감 (2026-08-20, feea016(부분출고)과 같은 패턴).
-      //   옛 순서(차감 → 삽입)는 삽입이 실패하면 재고만 사라지고 기록이 없어 복구 단서가 0이었다.
-      //   ★실패 방향 기준: 삽입 실패 → 재고 그대로, 기록 없음(아무 일도 안 일어난 것과 같다).
-      //                    차감 실패 → 기록만 남지만 재고가 화면에 그대로 보이고, ref_detail이 있어
-      //                                취소 버튼으로 되돌릴 수 있다. → "기록이 먼저"가 항상 덜 위험하다.
-
       // 1) 차감 "계획"만 계산 — DB 접근 없는 순수 계산이다.
       //    ★FIFO 순서와 차감 규칙(newQty 계산)은 그대로다. 계산 시점만 앞당겨 ref_detail을
       //      삽입 시점에 바로 넣을 수 있게 했다(삽입 후 갱신하면 그 갱신 실패 시 ref_detail 없는 출고가 생긴다).
@@ -13731,36 +13732,31 @@ async function saveOutbound(regId) {
       const w   = parseFloat(document.getElementById(`mob-w-${sz}`)?.value) || null;
       const p   = parseFloat(document.getElementById(`mob-p-${sz}`)?.value) || null;
       const amt = (w && p) ? w * p : null;
-      // 2) 출고 기록 먼저(기록이 우선 — 실패 시 재고는 그대로라 안전)
-      const ob = await dbInsertOutboundRecord({
-        date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
-        partner_name: partner, source_type: 'sorting',
-        farm_name: info.farm, note, is_void: false,
-        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
-        ref_detail: detail,
-        weight_kg: w, unit_price: p, amount: amt,
-        quality_grade: grade || '일반'
+      // 2) 출고 기록 + 3) 계획대로 재고 차감(남은 수량 0이 되는 행은 소진 is_void) — 한 항목으로 묶어 둔다.
+      plans.push(plan);
+      items.push({
+        ob: {
+          date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
+          partner_name: partner, source_type: 'sorting',
+          farm_name: info.farm, note, is_void: false,
+          created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+          ref_detail: detail,
+          weight_kg: w, unit_price: p, amount: amt,
+          quality_grade: grade || '일반'
+        },
+        deduct: plan.map(x => ({ id: x.rec.id, qty_before: Number(x.rec.quantity) || 0, new_qty: x.newQty, void: x.voided }))
       });
-      if (ob) invOutbounds.unshift(ob);
+    }
 
-      // 3) 계획대로 재고 차감. 남은 수량 0이 되는 행은 소진(is_void).
-      let done = 0;
-      try {
-        for (const pl of plan) {
-          await sbUpdate('inventory_records', pl.rec.id, pl.voided ? { quantity: 0, is_void: true } : { quantity: pl.newQty });
-          pl.rec.quantity = pl.newQty;
-          const inv = inventoryRecords.find(r => r.id === pl.rec.id);
-          if (inv) { inv.quantity = pl.newQty; if (pl.voided) inv.is_void = true; }
-          done++;
-        }
-      } catch (e) {
-        // ★차감이 중간에 끊기면 ref_detail이 실제 차감분보다 많아진다 → 그대로 두면 취소 시 재고가 부풀려진다.
-        //   실제로 적용된 앞쪽 done건만 남기도록 정정한다(plan과 detail은 같은 순서라 slice로 맞는다).
-        const applied = detail.slice(0, done);
-        try { if (ob) { await sbUpdate('outbound_records', ob.id, { ref_detail: applied }); ob.ref_detail = applied; } } catch (e2) {}
-        renderInventoryStatus(); renderInvSummary();
-        throw new Error(`${sz} 재고 차감이 ${done}/${plan.length}건에서 중단됐습니다.\n출고 기록은 저장됐으니 재고 수량을 확인해주세요.\n\n${e.message}`);
-      }
+    let rows;
+    try { rows = await dbOutboundBatch(items); }
+    catch (e) { alert('출고 오류(저장 안 됨, 전부 취소): ' + e.message); return; }
+    // 성공 — 예전 루프와 같은 로컬 반영(출고 행은 사이즈 순서대로 unshift).
+    (Array.isArray(rows) ? rows : []).forEach(ob => { if (ob) invOutbounds.unshift(ob); });
+    for (const pl of plans.flat()) {
+      pl.rec.quantity = pl.newQty;
+      const inv = inventoryRecords.find(r => r.id === pl.rec.id);
+      if (inv) { inv.quantity = pl.newQty; if (pl.voided) inv.is_void = true; }
     }
 
     document.getElementById('modal-outbound').style.display = 'none';
@@ -19171,15 +19167,20 @@ function _openInvBulkOutbound(title, subLabel, cells, itemMode) {
   m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });   // ✕·취소만 닫힘
   document.body.appendChild(m);
 }
+let _invBulkBusy = false;   // 전량출고 이중 실행 방지(저장 중 다시 누름)
 async function _execInvBulkOutbound() {
   if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  if (_invBulkBusy) return;
   const cells = window._invBulkCells || [];
   const date = document.getElementById('io2-date')?.value || td();
   const partner = document.getElementById('io2-partner')?.value || '';
   if (!partner) return alert('출고처를 선택하세요.');
   if (!cells.length) return;
+  _invBulkBusy = true;
   try {
-    for (const c of cells) {
+    // ★저장 = 서버 함수 outbound_batch 1회(v767) — 셀마다 '재고 전량 소진 + 출고 기록 1건'을 한 트랜잭션으로.
+    //   전부 되거나 전부 취소. 로컬(invOutbounds·rec)은 성공한 뒤에만 바꾼다. 출고 기록 내용은 예전과 같다.
+    const items = cells.map(c => {
       const kgPerCt = productWeights[c.product] != null ? productWeights[c.product] : 17;
       // ★취소(cancelOutbound) 복구용 차감 내역 — 셀 단위 부분출고(saveInvOutbound)와 같은 형태.
       //   이게 비어 있으면 거래내역에 취소 버튼 자체가 안 뜬다(renderOutboundHistory의 cancelable 판정).
@@ -19189,23 +19190,30 @@ async function _execInvBulkOutbound() {
       const detail = c.recs
         .map(rec => ({ table: 'inventory_records', id: rec.id, amount: Number(rec.quantity) || 0, voided: true }))
         .filter(d => d.amount > 0);
-      const ob = await dbInsertOutboundRecord({
-        date, product: c.product, size_code: c.sz, quantity: c.qty, unit: 'CT',
-        partner_name: partner, source_type: 'inventory_partial',
-        farm_name: c.farm, quality_grade: c.grade,
-        weight_kg: Math.round(c.qty * kgPerCt * 10) / 10,
-        note: '전량 출고(행/열)', is_void: false,
-        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
-        ref_detail: detail
-      });
-      if (ob) invOutbounds.unshift(ob);
-      for (const rec of c.recs) { await sbUpdate('inventory_records', rec.id, { is_void: true, quantity: 0 }); rec.is_void = true; rec.quantity = 0; }
-    }
+      return {
+        ob: {
+          date, product: c.product, size_code: c.sz, quantity: c.qty, unit: 'CT',
+          partner_name: partner, source_type: 'inventory_partial',
+          farm_name: c.farm, quality_grade: c.grade,
+          weight_kg: Math.round(c.qty * kgPerCt * 10) / 10,
+          note: '전량 출고(행/열)', is_void: false,
+          created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+          ref_detail: detail
+        },
+        deduct: c.recs.map(rec => ({ id: rec.id, qty_before: Number(rec.quantity) || 0, new_qty: 0, void: true }))
+      };
+    });
+    let rows;
+    try { rows = await dbOutboundBatch(items); }
+    catch (e) { alert('출고가 저장되지 않았습니다(전부 취소됨).\n\n' + e.message); return; }
+    (Array.isArray(rows) ? rows : []).forEach(ob => { if (ob) invOutbounds.unshift(ob); });   // 셀 순서대로(예전과 같은 순서)
+    cells.forEach(c => c.recs.forEach(rec => { rec.is_void = true; rec.quantity = 0; }));
     document.getElementById('modal-inv-bulk-outbound')?.remove();
     window._invBulkCells = null;
     renderInventoryStatus();
     showToast(`${cells.length}건 전량 출고(${partner})`);
   } catch (e) { alert('출고 오류: ' + e.message); }
+  finally { _invBulkBusy = false; }
 }
 async function toggleInvAuditCheck(key) {
   const rec = inventoryRecords.find(r => String(r.id) === key);

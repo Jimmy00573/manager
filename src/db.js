@@ -362,6 +362,8 @@ async function dbGetInventoryRecords() {
 }
 async function dbInsertInventoryRecord(data) { const r = await sbInsert('inventory_records', data); return r[0]; }
 async function dbInsertOutboundRecord(data) { const r = await sbInsert('outbound_records', data); return r[0]; }
+// 출고 여러 건 = 서버 함수 1회(한 트랜잭션, 전부 되거나 전부 취소). items: [{ ob, deduct: [{id, qty_before, new_qty, void}], audit? }] → 넣은 출고 행 배열(항목 순서)
+async function dbOutboundBatch(items) { return await sbRpcWrite('outbound_batch', { p_items: items }); }
 async function dbUpdateInventoryRecord(id, data) { const r = await sbUpdate('inventory_records', id, data); return r[0]; }
 async function dbDeleteInventoryRecord(id) { return sbDelete('inventory_records', id); }
 
