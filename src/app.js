@@ -20316,16 +20316,21 @@ async function openTodaySortingModal() {
   });
 
   const todayTotal = todayRecs.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
-  const entries = Object.values(byInbound).sort((a, b) => a.ib.date.localeCompare(b.ib.date));
+  // 품목 순서 = 오늘 선과량 많은 순(품목별 요약과 같은 순서). 목록도 이 순서로 품목끼리 모으고, 같은 품목 안은 입고일 순(v775).
+  const prodOrder = Object.entries(byProduct).sort((a, b) => b[1] - a[1]).map(([p]) => p);
+  const prodKey = ib => ib.product || '미지정';
+  const entries = Object.values(byInbound).sort((a, b) =>
+    (prodOrder.indexOf(prodKey(a.ib)) - prodOrder.indexOf(prodKey(b.ib))) || a.ib.date.localeCompare(b.ib.date));
 
-  const prodSummary = Object.entries(byProduct)
-    .sort((a, b) => b[1] - a[1])
-    .map(([p, ct]) => `${esc(p)} ${fmtCT(ct)} CT`)
+  const prodSummary = prodOrder
+    .map(p => `<span style="display:inline-flex;align-items:center;gap:4px">${productChip(p)} ${fmtCT(byProduct[p])} CT</span>`)
     .join(' · ');
 
   const cardHtml = entries.length === 0
     ? '<div style="text-align:center;color:#9CA3AF;padding:24px">오늘 선과 내역 없음</div>'
-    : entries.map(({ ib, todayCt }) => {
+    : entries.map(({ ib, todayCt }, i) => {
+        // 품목이 바뀌는 첫 행 위에 얇은 구분선(헤더 행은 따로 만들지 않는다)
+        const sep = i > 0 && prodKey(entries[i - 1].ib) !== prodKey(ib) ? '<div style="border-top:1px solid #E5E7EB;margin:12px 0 10px"></div>' : '';
         const remaining = ib.quantity - (pm[ib.id] || 0);
         const done = remaining <= 0;
         const statusHtml = done
@@ -20333,12 +20338,12 @@ async function openTodaySortingModal() {
           : `<span style="color:#9CA3AF;font-size:12px">잔여 ${fmtCT(remaining)} CT</span>`;
         const operators = operatorMap[ib.id] ? [...operatorMap[ib.id]].join(', ') : '';
         const operatorHtml = operators ? ` <span style="font-size:11px;color:#6B7280;font-weight:400">· ${esc(operators)}</span>` : '';
-        return `
+        return `${sep}
           <div style="border:1px solid #E5E7EB;border-radius:8px;padding:12px 14px;margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
               <div>
                 <div style="font-size:13px;font-weight:700;color:#1F2937">${esc(ib.farm_name)}${operatorHtml}</div>
-                <div style="font-size:12px;color:#6B7280;margin-top:2px">${esc(ib.product || '')} · 입고 ${ib.date}</div>
+                <div style="font-size:12px;color:#6B7280;margin-top:2px;display:flex;align-items:center;gap:4px">${ib.product ? productChip(ib.product) : ''} 입고 ${ib.date}</div>
               </div>
               ${statusHtml}
             </div>
@@ -20517,7 +20522,7 @@ function _renderScDayBlock() {
   const leftHtml = left.length ? `
     <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:7px 10px;border-top:1px solid #E5E7EB;font-size:12px;color:#6B7280">
       <span style="font-weight:600;color:#374151;white-space:nowrap">남은 계획</span>
-      <span>${left.map(r => `<b style="color:#1565C0;font-weight:600">${_scPlanNo(r)}</b> ${esc(r.farm_name || '-')} ${esc(r.product || '')} ${fmtN(r.quantity - (pm[r.id] || 0))}CT`).join(' · ')}</span>
+      <span>${left.map(r => `<b style="color:#1565C0;font-weight:600">${_scPlanNo(r)}</b> ${esc(r.farm_name || '-')} ${r.product ? productChip(r.product) : ''} ${fmtN(r.quantity - (pm[r.id] || 0))}CT`).join(' · ')}</span>
     </div>` : '';
 
   // ── 공유 텍스트 — ★표를 만든 rows·left를 그대로 쓴다(같은 계산을 두 번 하지 않는다).
