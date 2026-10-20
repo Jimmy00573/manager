@@ -379,7 +379,7 @@
         <div class="fg"><label>날짜 *</label><input id="dp-date" type="date"></div>
         <div class="fg xd-hide"><label>대상 종류</label><select id="dp-target-type" onchange="refreshDpFarmOpts()"><option value="농가">농가</option><option value="농협">농협</option><option value="거래처">거래처</option></select></div>
         <div class="fg"><label>대상명 *</label><select id="dp-farm" onchange="afF('dp')"><option value="">선택</option></select></div>
-        <div class="fg" id="dp-field-wrap" style="display:none"><label>밭 *</label><select id="dp-field"></select></div>
+        <div class="fg" id="dp-field-wrap" style="display:none"><label id="dp-field-lbl">밭</label><select id="dp-field" onchange="_dpFieldCustomToggle()"></select><input id="dp-field-txt" placeholder="밭 주소 직접 입력" style="display:none;margin-top:4px"></div>
         <!-- ★내부 운영 단순화(2026-08-18): 아래 자동 채움 필드는 화면에서만 숨김. DOM은 그대로 둔다 —
              afF/afD가 값을 채우고 addDisp가 그 값을 저장하며 문자 발송이 참조하므로, 지우면 오류가 난다.
              외부 기사 도입 시 style="display:none"만 떼면 원복. -->
@@ -2085,6 +2085,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=31"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=768"></script>
+<script src="src/app.js?v=769"></script>
 </body>
 </html>

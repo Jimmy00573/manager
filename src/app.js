@@ -1558,7 +1558,7 @@ function afF(p) {
   const f = gf(gv(p + '-farm'));
   sv(p + '-tel', f.tel || ''); sv(p + '-ftel', f.tel || ''); sv(p + '-addr', f.addr || '');
   if (p === 'dp' && f.variety) sv('dp-item', f.variety);
-  if (p === 'dp') _fillFieldSel('dp', gv('dp-farm'));   // 밭이 여러 곳인 농가면 '밭' 칸이 나온다(그 외엔 숨김)
+  if (p === 'dp') _fillDpFieldSel(gv('dp-farm'));   // 농가면 '밭' 칸이 나온다(먼 밭은 필수 목록, 그 외는 대표 주소 미리 선택) — 농협·거래처는 숨김
   if (p === 'dp') _autoPickStaffDrv('dp-farm', 'dp-drv');   // 농가 담당 기사 자동 선택
 }
 // 농가를 고르면 그 농가 담당(farms.staff)을 기사 칸에 채운다 — 배차(dp-drv, 값=이름)·입고(inv-driver-select, 값=id).
@@ -1665,6 +1665,44 @@ function _fillIbFieldTxt(farm, prefix = 'ib') {
     dl.innerHTML = vals.map(v => `<option value="${esc(v)}">`).join('');
   }
 }
+// 배송 등록 폼(dp) 전용 '밭' 칸 — 대상이 농가면 고르는 즉시 보인다(v771). ★공용 _fillFieldSel은 다른 폼이 쓰므로 안 고친다.
+//   · 먼 밭 농가(_farmBranches) → 기존 _fillFieldSel 그대로 + '밭 *'(필수, addDisp가 검사).
+//   · 밭 0~1곳 농가 → 후보(farms.fields·농가 주소·그 농가 지난 배송의 밭) + '✏️ 직접 입력', 기본 = 첫 후보(대표 주소).
+//     이 field는 _brKey가 무시하므로(가지 없음) 콘테이너 계산엔 안 들어가고 배송 목록·문자 주소(_recAddr)로만 쓰인다.
+//   · 농협·거래처·빈 대상 → 숨김.
+function _fillDpFieldSel(farm, cur) {
+  const sel = document.getElementById('dp-field');
+  const wrap = document.getElementById('dp-field-wrap');
+  const lbl = document.getElementById('dp-field-lbl');
+  const txt = document.getElementById('dp-field-txt');
+  if (!sel || !wrap) return;
+  if (txt) { txt.value = ''; txt.style.display = 'none'; }
+  if ((gv('dp-target-type') || '농가') !== '농가' || !farm) { sel.innerHTML = ''; sel.value = ''; wrap.style.display = 'none'; return; }
+  if (_farmBranches(farm)) { _fillFieldSel('dp', farm, cur); if (lbl) lbl.textContent = '밭 *'; return; }
+  const cands = [...new Set([..._farmFields(farm), gf(farm).addr, ...dispatches.filter(d => d.farm === farm).map(d => d.field)]
+    .map(v => String(v || '').trim()).filter(Boolean))];
+  sel.innerHTML = cands.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('') + '<option value="__custom">✏️ 직접 입력</option>';
+  const keep = String(cur || '').trim();
+  if (keep && !cands.includes(keep)) { sel.value = '__custom'; if (txt) txt.value = keep; }
+  else sel.value = keep || cands[0] || '__custom';
+  if (lbl) lbl.textContent = '밭';
+  wrap.style.display = '';
+  _dpFieldCustomToggle();
+}
+// '✏️ 직접 입력'을 고르면 텍스트칸이 보인다. 다른 걸 고르면 숨기고 비운다.
+function _dpFieldCustomToggle() {
+  const txt = document.getElementById('dp-field-txt');
+  if (!txt) return;
+  const on = gv('dp-field') === '__custom';
+  txt.style.display = on ? '' : 'none';
+  if (!on) txt.value = '';
+}
+// 배송 폼 밭 값 — 직접 입력이면 텍스트칸, 아니면 select 값(빈값 → null).
+function _dpFieldVal() {
+  const v = gv('dp-field');
+  if (v === '__custom') return (document.getElementById('dp-field-txt')?.value || '').trim() || null;
+  return v || null;
+}
 
 // 배차 대상 종류(농가/농협/거래처)별 대상명 <option> HTML — 농가면 farms, 농협이면 _nhfOptHtml(category='농협'),
 // 거래처면 _extNameOptHtml(PARTNER_CATS의 extName 유형 = 거래처·공판장·마트).
@@ -1681,6 +1719,7 @@ function refreshDpFarmOpts() {
   el.innerHTML = _dispTargetOptHtml(gv('dp-target-type') || '농가');
   el.value = prev;
   if (el.value !== prev) { el.value = ''; afF('dp'); }   // 종류 전환으로 기존 선택이 없으면 초기화(자동값도 비움)
+  else _fillDpFieldSel(el.value);   // 값이 남아도 대상 종류가 바뀌었을 수 있다 — 밭 칸 숨김/표시를 다시 맞춘다
   fsSync('dp-farm');   // 검색형 입력칸 표시 — 옵션을 갈아끼웠으니(값이 비워졌을 수도) 여기서 한 번에 맞춘다
 }
 // 수정 모달(ed-target-type → ed-farm) — 등록 폼과 같은 소스, 다른 select.
@@ -2777,8 +2816,9 @@ async function addDisp() {
   //   '유령 배차'가 된다. _dpCtypeList가 0을 이미 걸러내므로 비었으면 여기서 막는다(수정은 saveDispEdit에서 동일).
   if (!ctList.length) { alert('콘테이너 종류별 수량을 입력하세요'); return; }
   // ★밭이 여러 곳인 농가는 어느 밭인지를 반드시 고른다 — 기사가 갈 곳을 모르면 안 된다.
-  if (_fieldRequiredMiss('dp')) { alert('밭을 선택하세요'); return; }
-  const dpField = gv('dp-field') || null;
+  //   ★필수는 먼 밭 농가만 — 밭 1곳 이하 농가의 칸은 대표 주소가 미리 골라진 표시용이다(v771).
+  if (_farmBranches(farm) && _fieldRequiredMiss('dp')) { alert('밭을 선택하세요'); return; }
+  const dpField = _dpFieldVal();
   const totalQty = ctList.reduce((a, x) => a + x.qty, 0);
   const d = gd(drv);
   // ★중복 등록 확인 — 같은 날·같은 대상에 같은 종류·같은 수량·같은 밭 배송이 이미 있으면 묻는다.
@@ -2787,7 +2827,9 @@ async function addDisp() {
   //   ★조회가 실패하면 확인 없이 예전대로 등록한다 — 조회 실패로 등록을 막지 않는다.
   try {
     const ex = await sbGet('dispatches', `date=eq.${date}&farm=eq.${encodeURIComponent(farm)}&select=id,qty,ctype,field,driver,created_at,status`);
-    const dups = (Array.isArray(ex) ? ex : []).filter(r => ctList.some(c => r.ctype === c.ct && Number(r.qty) === c.qty && (r.field || '') === (dpField || '')));
+    // ★밭은 '비었으면 농가 주소'로 맞춰 비교한다 — 예전 배송은 field가 비어 있고 지금은 대표 주소가 자동으로 들어가므로(v771).
+    const fNorm = x => String(x || gf(farm).addr || '').trim();
+    const dups = (Array.isArray(ex) ? ex : []).filter(r => ctList.some(c => r.ctype === c.ct && Number(r.qty) === c.qty && fNorm(r.field) === fNorm(dpField)));
     if (dups.length && !(await showConfirmEdit('중복 확인',
         `이미 같은 배송이 있습니다:\n${dups.map(r => `· ${r.ctype} ${fmtN(Number(r.qty) || 0)}개 — ${r.driver || '-'}, ${ftm(r.created_at)} 등록`).join('\n')}\n그래도 등록할까요?`))) return;
   } catch (e) { console.warn('[addDisp] 중복 확인 조회 실패 — 확인 없이 진행:', e && e.message); }
@@ -6262,8 +6304,8 @@ function _hvGoDispatch(farm, harvestDate, field) {
     if (tt) { tt.value = '농가'; refreshDpFarmOpts(); }
     const f = document.getElementById('dp-farm');
     if (f) { f.value = farm; fsSync('dp-farm'); f.dispatchEvent(new Event('change')); }
-    // ★change가 afF('dp') → _fillFieldSel('dp', farm)을 먼저 태우므로, 값은 그 뒤에 골라야 남는다(순서 중요).
-    if (field) _fillFieldSel('dp', farm, field);
+    // ★change가 afF('dp') → _fillDpFieldSel(farm)을 먼저 태우므로, 값은 그 뒤에 골라야 남는다(순서 중요).
+    if (field) _fillDpFieldSel(farm, field);
     // ★dp-date는 setDates()가 이미 오늘로 채워 두므로 '비었을 때만'으로는 예약 날짜가 안 들어간다 — 계산값이 있으면 덮어쓴다.
     const dt = document.getElementById('dp-date');
     if (dt) { if (dpDate) dt.value = dpDate; else if (!dt.value) dt.value = t; }
