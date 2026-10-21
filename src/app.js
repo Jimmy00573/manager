@@ -4402,6 +4402,11 @@ function buildContainerHistory() {
   nhfOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.nhf, targetKind: o.owner_type === '거래처' ? '거래처' : '농협', category: o.type || '', qty: o.qty || 0, staff: o.staff || '', src: 'nhf_out' }));
   return rows;
 }
+// 콘테이너 이력 페이지 넘김(v777) — renderPick과 같은 모양. 필터 칸은 chFilterChanged로 1쪽 복귀.
+let _chPage = 1, _chPageSize = 25;
+function goChPage(p) { _chPage = p; renderContainerHistory(); document.getElementById('ch-tb')?.closest('.tbl-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+function setChPageSize(n) { _chPageSize = _pgSizeVal(n); _chPage = 1; renderContainerHistory(); }
+function chFilterChanged() { _chPage = 1; renderContainerHistory(); }
 // ── [화면: 수확·수송 > 콘테이너 통합 이력(chist 탭)] 4소스 통합 조회 전용. 계산·저장 없음.
 function renderContainerHistory() {
   const tb = document.getElementById('ch-tb'); if (!tb) return;
@@ -4512,9 +4517,16 @@ function renderContainerHistory() {
         }).join(' / ')}</td><td>—</td></tr>`
     : '';
 
-  tb.innerHTML = list.length ? list.map((r, i) =>
-    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.content ? categoryBadge(r.content) : '<span style="color:#ccc">—</span>'}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[i])}</td><td>${esc(r.staff || '—')}</td></tr>`
-  ).join('') + carryRow : emr(8, '이력 없음');
+  // 페이지 넘김(v777) — ★자르는 건 그릴 줄만. 합계·누적(cells)은 위에서 필터된 전체 list로 이미 계산했다.
+  //   cells는 전체 번호(start + i)로 찾는다. 이월 행은 가장 오래된 위치라 마지막 쪽 맨 아래에만 붙인다.
+  _chPage = _pgFit(list.length, _chPage, _chPageSize);
+  mkPg('ch-pg', list.length, _chPage, 'goChPage', _chPageSize, { sizes: true, onSize: 'setChPageSize' });
+  const start = _chPageSize === Infinity ? 0 : (_chPage - 1) * _chPageSize;
+  const pageList = _chPageSize === Infinity ? list : list.slice(start, start + _chPageSize);
+  const isLastPage = start + pageList.length >= list.length;
+  tb.innerHTML = list.length ? pageList.map((r, i) =>
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.content ? categoryBadge(r.content) : '<span style="color:#ccc">—</span>'}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[start + i])}</td><td>${esc(r.staff || '—')}</td></tr>`
+  ).join('') + (isLastPage ? carryRow : '') : emr(8, '이력 없음');
 }
 
 // 담당자(직원·기사) select 옵션 — 이름 값(picks.driver / own_out·nhf_out.staff 모두 이름 저장). 선택사항.
@@ -4943,6 +4955,7 @@ function _nhfCtGoHistory(nhf, type) {
   ['ch-tkind', 'ch-kind', 'ch-cont', 'ch-from', 'ch-to'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
   const qEl = document.getElementById('ch-q'); if (qEl) qEl.value = nhf;
   const cEl = document.getElementById('ch-cat'); if (cEl) cEl.value = type;
+  _chPage = 1;   // 필터를 새로 걸었으니 1쪽부터(v777)
   renderContainerHistory();
   document.getElementById('ch-tb')?.scrollIntoView({ block: 'start' });
 }
