@@ -4464,6 +4464,15 @@ function renderContainerHistory() {
   const _CH_SIGN = { 배출: 1, 회수: -1, 반입: 1, 반납: -1 };
   const _chAxisLabel = { ours: '우리것', theirs: '남의것' };
   const targets = [...new Set(list.map(r => r.target))];
+  // 🌱 밭별 현재 보유(v779) — 밭 여러 곳 농가 1곳만 걸렸을 때 합계 배지 아래 한 줄.
+  //   ★숫자는 현황판 밭 줄(renderFarmTbl brRows)과 같은 getFCS(농가, 밭).hold — 기간·유형 필터와 무관한 '지금' 보유라 라벨에 '현재'.
+  const brFarm = (targets.length === 1 && list.every(r => r.targetKind === '농가')) ? targets[0] : null;
+  const brList = brFarm ? _farmBranches(brFarm) : null;
+  if (sum && brList) {
+    sum.innerHTML += `<div style="margin-top:6px;font-size:12px;color:#374151;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center"><span style="font-weight:500">🌱 밭별 현재 보유</span>`
+      + brList.map(b => { const h = getFCS(brFarm, b).hold; return `<span style="white-space:nowrap">${esc(b)} <span style="font-weight:500;font-variant-numeric:tabular-nums;color:${h < 0 ? '#DC2626' : h > 0 ? '#C05800' : '#6B7280'}">${fmtN(h)}</span></span>`; }).join('<span style="color:#9CA3AF">·</span>')
+      + '</div>';
+  }
   // ★v763: 잔액 단위 = 대상 × 축 × 종류(키 _chKey). 예전엔 대상 1곳일 때만, 축 안의 종류를 합친 총합을 크게 보였다 —
   //   '남원농협' 검색이 '남원농협(정익수)'까지 걸리면 전부 '—'였고, 콘테이너와 파렛을 더한 총합은 뜻 없는 숫자였다.
   //   이제 행마다 '그 대상의 그 종류가 이 기록 직후 남은 수' 한 숫자. 대상이 여러 곳이어도 키가 갈라 주므로 계산한다.
