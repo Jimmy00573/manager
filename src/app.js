@@ -1514,20 +1514,41 @@ function selCt(v) {
   if (el) { el.focus(); el.select(); }
 }
 
-// per: 한 쪽에 몇 줄인지. 안 넘기면 기존처럼 PER(7) — 기존 호출부(disp-pg·disp2-pg·rep-pg) 동작은 그대로다.
-function mkPg(cid, total, cur, fn, per = PER) {
-  const pages = Math.ceil(total / per) || 1;
+// ★페이지 넘김 공용 헬퍼 — 모든 목록이 이것 하나로 그린다(v776). 새 목록도 여기에 붙일 것.
+// per: 한 쪽에 몇 줄인지. 안 넘기면 기존처럼 PER(7). Infinity = 전체(줄 수 선택 '전체').
+// opts.sizes: 줄 수 선택(10/25/50/100/전체)을 보여 준다. opts.onSize: 고르면 부를 함수 이름 — 값은 '10'…'100' 또는 'all'.
+// 한 쪽뿐이면 아무것도 안 그린다. 단 sizes가 켜져 있고 전체가 10건을 넘으면 줄 수 선택은 남긴다.
+// 자르기는 호출부 몫이다 — 그 전에 _pgFit으로 현재 쪽을 맞출 것.
+function mkPg(cid, total, cur, fn, per = PER, opts = {}) {
   const el = document.getElementById(cid);
-  if (pages <= 1) { el.innerHTML = ''; return; }
-  let h = `<span>${total}건 · ${Math.min((cur - 1) * per + 1, total)}~${Math.min(cur * per, total)}</span><div class="pg-btns">`;
-  h += `<button class="pg-btn" onclick="${fn}(${cur - 1})" ${cur === 1 ? 'disabled' : ''}>◀</button>`;
-  for (let i = 1; i <= pages; i++) {
-    if (i === 1 || i === pages || Math.abs(i - cur) <= 1) h += `<button class="pg-btn ${i === cur ? 'cur' : ''}" onclick="${fn}(${i})">${i}</button>`;
-    else if (Math.abs(i - cur) === 2) h += `<span style="padding:0 4px">…</span>`;
+  if (!el) return;
+  const pp = per === Infinity ? Math.max(total, 1) : per;
+  const pages = Math.ceil(total / pp) || 1;
+  const showSize = !!opts.sizes && total > 10;
+  if (pages <= 1 && !showSize) { el.innerHTML = ''; return; }
+  let h = `<span class="pg-info">총 ${total}건 · ${Math.min((cur - 1) * pp + 1, total)}–${Math.min(cur * pp, total)}</span>`;
+  if (pages > 1) {
+    h += `<div class="pg-btns"><button class="pg-btn" onclick="${fn}(${cur - 1})" ${cur === 1 ? 'disabled' : ''}>◀</button>`;
+    for (let i = 1; i <= pages; i++) {
+      if (i === 1 || i === pages || Math.abs(i - cur) <= 1) h += `<button class="pg-btn${i === cur ? ' active' : ''}" onclick="${fn}(${i})">${i}</button>`;
+      else if (Math.abs(i - cur) === 2) h += `<span class="pg-gap">…</span>`;
+    }
+    h += `<button class="pg-btn" onclick="${fn}(${cur + 1})" ${cur === pages ? 'disabled' : ''}>▶</button></div>`;
   }
-  h += `<button class="pg-btn" onclick="${fn}(${cur + 1})" ${cur === pages ? 'disabled' : ''}>▶</button></div>`;
+  if (showSize) {
+    const o = [10, 25, 50, 100].map(n => `<option value="${n}"${per === n ? ' selected' : ''}>${n}</option>`).join('')
+      + `<option value="all"${per === Infinity ? ' selected' : ''}>전체</option>`;
+    h += `<label class="pg-size">줄 수 <select onchange="${opts.onSize}(this.value)">${o}</select></label>`;
+  }
   el.innerHTML = h;
 }
+// 현재 쪽을 1 ~ 마지막 쪽 안으로 맞춘다(목록이 줄었을 때 빈 쪽 방지). per = Infinity면 늘 1.
+function _pgFit(total, cur, per) {
+  const pages = per === Infinity ? 1 : (Math.ceil(total / per) || 1);
+  return Math.min(Math.max(1, cur || 1), pages);
+}
+// 줄 수 선택 값('10'…'100' | 'all') → 숫자(Infinity = 전체).
+function _pgSizeVal(n) { return n === 'all' ? Infinity : parseInt(n); }
 function goObHistPage(p) { _obHistPage = p; renderOutboundHistory(); }
 function goDP(p) { _dp = p; renderDDash(); }
 function goD2P(p) { _d2p = p; renderDisp(); }
@@ -3335,13 +3356,22 @@ function _pickTransferLabel(p) {
 function _pickTransferBadge(label) {
   return label ? ` <span class="badge b-info" title="공장을 거치지 않은 이동">↔ 이동</span> <small style="color:#1565C0;white-space:nowrap">${esc(label)}</small>` : '';
 }
+// 콘테이너 기록·빈콘 회수 목록 페이지 넘김(v776). 필터가 없는 목록이라 1쪽 복귀는 줄 수를 바꿀 때만.
+let _pickPage = 1, _pickPageSize = 25, _bkPage = 1, _bkPageSize = 25;
+function goPickPage(p) { _pickPage = p; renderPick(); document.getElementById('pick-tb')?.closest('.tbl-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+function setPickPageSize(n) { _pickPageSize = _pgSizeVal(n); _pickPage = 1; renderPick(); }
+function goBkPage(p) { _bkPage = p; renderBkCol(); document.getElementById('bk-tb')?.closest('.tbl-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+function setBkPageSize(n) { _bkPageSize = _pgSizeVal(n); _bkPage = 1; renderBkCol(); }
 function renderPick() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const tb = document.getElementById('pick-tb');
   const list = picks.filter(p => !p.auto);
+  _pickPage = _pgFit(list.length, _pickPage, _pickPageSize);
+  mkPg('pick-pg', list.length, _pickPage, 'goPickPage', _pickPageSize, { sizes: true, onSize: 'setPickPageSize' });
   if (!list.length) { tb.innerHTML = emr(10, '수거·회수 기록이 없습니다'); return; }
   const cls = { 원물수거: 'b-ok', 빈콘회수: 'b-teal' };
-  tb.innerHTML = list.map(p => `<tr>
+  const pageList = _pickPageSize === Infinity ? list : list.slice((_pickPage - 1) * _pickPageSize, _pickPage * _pickPageSize);
+  tb.innerHTML = pageList.map(p => `<tr>
     <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}</td>
     <td><span class="badge ${cls[p.type] || 'b-neu'}">${esc(p.type)}</span>${_pickTransferBadge(_pickTransferLabel(p))}</td>
     <td>${p.ctype ? ctB(p.ctype) : '-'}</td>
@@ -3506,8 +3536,11 @@ function renderBkCol() {
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const list = picks.filter(p => p.type === '빈콘회수');
   const tb = document.getElementById('bk-tb'); if (!tb) return;
+  _bkPage = _pgFit(list.length, _bkPage, _bkPageSize);
+  mkPg('bk-pg', list.length, _bkPage, 'goBkPage', _bkPageSize, { sizes: true, onSize: 'setBkPageSize' });
+  const pageList = _bkPageSize === Infinity ? list : list.slice((_bkPage - 1) * _bkPageSize, _bkPage * _bkPageSize);
   // ★이동(transfer_id) 행도 목록엔 남긴다(여기서도 짝째 삭제 가능) — 배지로 구분하고 📱 빈콘 회수 문자는 숨긴다(농가에 보낼 회수 안내가 아니다).
-  tb.innerHTML = list.length ? list.map(p => `<tr>
+  tb.innerHTML = list.length ? pageList.map(p => `<tr>
     <td>${p.date}</td><td class="nm">${_pkTkBadge(p)}${esc(p.farm)}${_pickTransferBadge(_pickTransferLabel(p))}</td>
     <td>${p.qty > 0 ? p.qty+'개' : '-'}</td><td>${esc(p.driver || '-')}</td>
     <td>${esc(p.note || '-')}</td>
@@ -17425,48 +17458,19 @@ function renderAuditLogs(resetPage = false) {
     </div>`;
   }).join('');
 
-  // pagination controls
+  // 페이지 넘김 — 공용 mkPg(v776). 칸은 처음 한 번 목록 바로 아래에 만든다.
   let pgEl = document.getElementById('al-pagination');
   if (!pgEl) {
     pgEl = document.createElement('div');
     pgEl.id = 'al-pagination';
+    pgEl.className = 'pagination';
     el.parentNode.insertBefore(pgEl, el.nextSibling);
   }
-  pgEl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 0 8px;font-size:13px';
-  const prevDis = auditLogPage <= 1;
-  const nextDis = auditLogPage >= totalPages;
-  pgEl.innerHTML = `
-    <button class="btn sm" onclick="auditLogPrev()" ${prevDis ? 'disabled' : ''} style="min-width:64px">◀ 이전</button>
-    <span style="color:#555;font-weight:600">${auditLogPage} / ${totalPages}</span>
-    <button class="btn sm" onclick="auditLogNext()" ${nextDis ? 'disabled' : ''} style="min-width:64px">다음 ▶</button>
-  `;
+  mkPg('al-pagination', total, auditLogPage, 'auditLogGo', AUDIT_PER_PAGE);
 }
 
-function auditLogPrev() { if (auditLogPage > 1) { auditLogPage--; renderAuditLogs(); } }
-function auditLogNext() {
-  const total = _auditFilteredCount();
-  if (auditLogPage < Math.ceil(total / AUDIT_PER_PAGE)) { auditLogPage++; renderAuditLogs(); }
-}
-
-function _auditFilteredCount() {
-  const fromDate   = document.getElementById('al-date-from')?.value || '';
-  const toDate     = document.getElementById('al-date-to')?.value   || '';
-  const actionFilt = document.getElementById('al-action')?.value    || '';
-  const tableFilt  = document.getElementById('al-table')?.value     || '';
-  const search     = (document.getElementById('al-search')?.value   || '').toLowerCase().trim();
-  let list = auditLogs;
-  if (fromDate) list = list.filter(l => l.created_at >= fromDate);
-  if (toDate)   list = list.filter(l => l.created_at <= toDate + 'T23:59:59');
-  if (tableFilt) list = list.filter(l => l.target_table === tableFilt);
-  if (actionFilt) list = list.filter(l => getAuditActionType(l) === actionFilt);
-  if (search) list = list.filter(l => {
-    const ctx = getAuditContext(l);
-    return (l.reason || '').toLowerCase().includes(search) ||
-           ctx.farm.toLowerCase().includes(search) ||
-           ctx.product.toLowerCase().includes(search);
-  });
-  return list.length;
-}
+// mkPg의 ◀·번호·▶ — 범위 밖 값은 렌더에서 마지막 쪽으로 맞춘다(위 totalPages 처리).
+function auditLogGo(p) { if (p >= 1) { auditLogPage = p; renderAuditLogs(); } }
 
 // ── 선과 처리 상수
 // ── 품목 유형(감귤류/만감류) 판정표 ──────────────────────────────────
@@ -17704,6 +17708,7 @@ let _scCategory = '';
 let _scTab = 'pending'; // 'pending' | 'doing' | 'done'
 let _scDoneSearch = '';
 let _scDoneProduct = '';
+let _scDonePage = 1, _scDonePageSize = 25;   // 완료 표 페이지 넘김(v776) — 검색·품목이 바뀌면 1쪽
 // '오늘 선과' 블록이 보고 있는 날짜(◀▶로만 바뀐다). 완료 탭 진입·선과 저장 때 td()로 되돌린다.
 let _scDayDate = td();
 let _scDayShareTxt = '';   // 그 블록의 공유 텍스트 — 렌더할 때 같이 만들어 둔다(copyMsg의 _msgTxt와 같은 방식)
@@ -18058,7 +18063,7 @@ function _renderIbFilterChips() {
 }
 
 function ibSetPageSize(n) {
-  ibPageSize = n === 'all' ? Infinity : parseInt(n);
+  ibPageSize = _pgSizeVal(n);
   ibPage = 1;
   renderInboundList();
 }
@@ -18069,40 +18074,9 @@ function ibGoPage(p) {
   document.getElementById('ib-view-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// 표시는 공용 mkPg(v776). 자르기·쪽 맞추기는 renderInboundList 7단계가 한다.
 function _renderIbPagination(total) {
-  const el = document.getElementById('ib-pagination');
-  if (!el) return;
-  const pageSize = ibPageSize === Infinity ? total : ibPageSize;
-  const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 1;
-  if (total === 0 || totalPages <= 1) { el.innerHTML = ''; return; }
-  const start = (ibPage - 1) * pageSize + 1;
-  const end = Math.min(ibPage * pageSize, total);
-  let pages = [];
-  if (totalPages <= 7) {
-    for (let i = 1; i <= totalPages; i++) pages.push(i);
-  } else {
-    pages = [1];
-    if (ibPage > 3) pages.push('...');
-    for (let i = Math.max(2, ibPage - 1); i <= Math.min(totalPages - 1, ibPage + 1); i++) pages.push(i);
-    if (ibPage < totalPages - 2) pages.push('...');
-    pages.push(totalPages);
-  }
-  const pageBtns = pages.map(p =>
-    p === '...'
-      ? `<span style="padding:0 4px;color:#bbb;font-size:12px">…</span>`
-      : `<button class="pg-btn${p === ibPage ? ' active' : ''}" onclick="ibGoPage(${p})">${p}</button>`
-  ).join('');
-  const sizeOpts = [10, 25, 50, 100].map(n =>
-    `<option value="${n}"${ibPageSize === n ? ' selected' : ''}>${n}</option>`
-  ).join('') + `<option value="all"${ibPageSize === Infinity ? ' selected' : ''}>전체</option>`;
-  el.innerHTML = `
-    <span style="font-size:12px;color:var(--text-secondary);white-space:nowrap">${start}–${end} / 총 ${total}건</span>
-    <button class="pg-btn" onclick="ibGoPage(${ibPage - 1})" ${ibPage === 1 ? 'disabled' : ''}>이전</button>
-    ${pageBtns}
-    <button class="pg-btn" onclick="ibGoPage(${ibPage + 1})" ${ibPage === totalPages ? 'disabled' : ''}>다음</button>
-    <label style="font-size:12px;color:var(--text-secondary);margin-left:8px;display:flex;align-items:center;gap:4px;white-space:nowrap">페이지당
-      <select onchange="ibSetPageSize(this.value)" style="font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit">${sizeOpts}</select>
-    </label>`;
+  mkPg('ib-pagination', total, ibPage, 'ibGoPage', ibPageSize, { sizes: true, onSize: 'ibSetPageSize' });
 }
 
 function _updateIbSortIcons() {
@@ -18616,7 +18590,16 @@ function ibCatToggleAll(keys, allExpanded) {
 // ── 선과 완료 필터 상태
 let _doneFilter = { farm:'', product:'', cat:'', dateFrom:'', dateTo:'', sort:'date-desc', view:'list' };
 
-function setDoneFilter(key, val) { _doneFilter[key] = val; renderIbDoneView(); }
+// 페이지 넘김(v776) — 목록 보기는 행, 농가별 보기는 농가 카드 단위. 필터·정렬·보기가 바뀌면 1쪽.
+let _donePage = 1, _donePageSize = 25;
+
+function setDoneFilter(key, val) { _doneFilter[key] = val; _donePage = 1; renderIbDoneView(); }
+function goDonePage(p) {
+  _donePage = p;
+  renderIbDoneView();
+  document.getElementById('ib-view-done')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function setDonePageSize(n) { _donePageSize = _pgSizeVal(n); _donePage = 1; renderIbDoneView(); }
 
 // ── [화면: 재고관리 > 입고내역 > 선과완료 보기] 뷰 모드. 기본 목록은 renderInboundList.
 function renderIbDoneView() {
@@ -18673,7 +18656,7 @@ function renderIbDoneView() {
         <option value="qty-desc"  ${_doneFilter.sort==='qty-desc' ?'selected':''}>수량 많은순</option>
       </select>
       ${(_doneFilter.farm||_doneFilter.product||_doneFilter.cat||_doneFilter.dateFrom||_doneFilter.dateTo)
-        ? `<button class="btn" onclick="_doneFilter={..._doneFilter,farm:'',product:'',cat:'',dateFrom:'',dateTo:''};renderIbDoneView()" style="font-size:11px;padding:3px 8px">✕ 초기화</button>` : ''}
+        ? `<button class="btn" onclick="_doneFilter={..._doneFilter,farm:'',product:'',cat:'',dateFrom:'',dateTo:''};_donePage=1;renderIbDoneView()" style="font-size:11px;padding:3px 8px">✕ 초기화</button>` : ''}
       <div style="margin-left:auto;display:flex;gap:4px">
         <button class="btn${_doneFilter.view==='list'?' pri':''}" onclick="setDoneFilter('view','list')" style="font-size:11px;padding:3px 10px">📋 목록</button>
         <button class="btn${_doneFilter.view==='farm'?' pri':''}" onclick="setDoneFilter('view','farm')" style="font-size:11px;padding:3px 10px">👨‍🌾 농가별</button>
@@ -18693,7 +18676,14 @@ function renderIbDoneView() {
     </div>`;
 
   // 콘텐츠: 목록 또는 농가별
+  // ★페이지로 자르는 건 그릴 줄(카드)만 — 위 요약 카드는 필터된 전체 기준 그대로.
   let content = '';
+  let pgTotal = 0;
+  const pgSlice = arr => {
+    pgTotal = arr.length;
+    _donePage = _pgFit(pgTotal, _donePage, _donePageSize);
+    return _donePageSize === Infinity ? arr : arr.slice((_donePage - 1) * _donePageSize, _donePage * _donePageSize);
+  };
   if (!filtered.length) {
     content = '<div style="padding:30px;text-align:center;color:#bbb">선과 완료 데이터 없음</div>';
   } else if (_doneFilter.view === 'farm') {
@@ -18706,7 +18696,7 @@ function renderIbDoneView() {
       f.totalCT += r.quantity;
       if (r.product && !f.products.includes(r.product)) f.products.push(r.product);
     });
-    content = Object.entries(farmMap).sort((a,b)=>b[1].totalCT-a[1].totalCT).map(([farm,{rows,totalCT,products}])=>{
+    content = pgSlice(Object.entries(farmMap).sort((a,b)=>b[1].totalCT-a[1].totalCT)).map(([farm,{rows,totalCT,products}])=>{
       const rowsHtml = [...rows].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
         const qInline = qualityInline(r)||'';
         const loc = r.location?`<span style="font-size:11px;color:#888">📍${esc(r.location)}</span>`:'';
@@ -18732,7 +18722,7 @@ function renderIbDoneView() {
     // 목록 테이블
     const TH = 'background:#f5f5f5;padding:7px 10px;font-size:11px;font-weight:700;color:var(--text-secondary);white-space:nowrap;text-align:left';
     const TD = 'padding:7px 10px;font-size:13px;border-bottom:1px solid #f5f5f5;vertical-align:middle';
-    const rows = filtered.map(r=>{
+    const rows = pgSlice(filtered).map(r=>{
       const qInline = qualityInline(r)||'<span style="color:#e0e0e0;font-size:12px">—</span>';
       const loc = r.location ? esc(r.location) : '<span style="color:#ccc">-</span>';
       return `<tr>
@@ -18755,7 +18745,8 @@ function renderIbDoneView() {
     </table></div>`;
   }
 
-  el.innerHTML = filterBar + summaryCard + content;
+  el.innerHTML = filterBar + summaryCard + content + '<div class="pagination" id="ib-done-pg"></div>';
+  mkPg('ib-done-pg', pgTotal, _donePage, 'goDonePage', _donePageSize, { sizes: true, onSize: 'setDonePageSize' });
 }
 
 function renderIbCatSummary() {
@@ -20206,10 +20197,12 @@ function renderProcessingTab() {
 
       document.getElementById('sc-done-search-farm').addEventListener('input', e => {
         _scDoneSearch = e.target.value;
+        _scDonePage = 1;
         _renderScDoneTable();
       });
       document.getElementById('sc-done-product-sel').addEventListener('change', e => {
         _scDoneProduct = e.target.value;
+        _scDonePage = 1;
         _renderScDoneTable();
       });
     }
@@ -20615,6 +20608,10 @@ function _renderScDoneTable() {
     wrap.innerHTML = `<div style="padding:40px;text-align:center;color:#9CA3AF;font-size:13px">✅ 조건에 맞는 완료 항목 없음</div>`;
     return;
   }
+  // 페이지로 자르는 건 그릴 줄만 — 위 건수(sc-done-row-count)는 필터된 전체.
+  _scDonePage = _pgFit(rows.length, _scDonePage, _scDonePageSize);
+  const pageRows = _scDonePageSize === Infinity ? rows
+    : rows.slice((_scDonePage - 1) * _scDonePageSize, _scDonePage * _scDonePageSize);
 
   const thS = `padding:8px 10px;text-align:left;font-weight:600;color:#374151;font-size:12px;background:#F9FAFB;border-bottom:2px solid #E5E7EB`;
   const thR = `padding:8px 8px;text-align:right;font-weight:600;color:#374151;font-size:12px;background:#F9FAFB;border-bottom:2px solid #E5E7EB`;
@@ -20631,7 +20628,7 @@ function _renderScDoneTable() {
         <th style="${thC}">선과회수</th>
       </tr></thead>
       <tbody>
-        ${rows.map((r, i) => {
+        ${pageRows.map((r, i) => {
           const completedDate = procDateMap[r.id] || '-';
           const sortCount = procCountMap[r.id] || 0;
           return `<tr onclick="openSortingDetailModal('${r.id}')" style="border-bottom:1px solid #F3F4F6;background:${i % 2 === 1 ? '#FAFAFA' : '#fff'};cursor:pointer" title="클릭하여 선과 결과 상세 보기">
@@ -20648,8 +20645,16 @@ function _renderScDoneTable() {
           </tr>`;
         }).join('')}
       </tbody>
-    </table>`;
+    </table>
+    <div class="pagination" id="sc-done-pg"></div>`;
+  mkPg('sc-done-pg', rows.length, _scDonePage, 'goScDonePage', _scDonePageSize, { sizes: true, onSize: 'setScDonePageSize' });
 }
+function goScDonePage(p) {
+  _scDonePage = p;
+  _renderScDoneTable();
+  document.getElementById('sc-done-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function setScDonePageSize(n) { _scDonePageSize = _pgSizeVal(n); _scDonePage = 1; _renderScDoneTable(); }
 
 // ── 선과 대기 '오늘 작업 순서' ─────────────────────────────────────────────
 // ★선과기 세팅 때문에 한 품목을 몰아서 하므로, 아침에 '오늘 할 것과 순서'를 정하는 게 실제 작업 계획이다.
