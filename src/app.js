@@ -4383,20 +4383,24 @@ function renderFarmTbl() {
 // ── 콘테이너 통합 이력(조회 전용) — 6소스 표준화. 계산·저장 로직과 무관, 읽기만.
 function buildContainerHistory() {
   const rows = [];
+  // ★field = 밭 가지(v778) — 농가 대상만 _brKey(가지 없으면 null, 밭이 비었거나 목록에 없으면 대표 밭). 보유 칩(getFCS(name, field))과 같은 규칙.
   // 배차 → 배출 (picks의 type='배출'은 배차 자동생성 중복이라 제외)
-  dispatches.forEach(d => rows.push({ date: d.date, kind: '배출', target: d.farm, targetKind: (d.target_type === '농협' || d.target_type === '거래처') ? d.target_type : '농가', category: d.ctype || '', qty: d.qty || 0, staff: d.driver || '', src: 'dispatch' }));
+  dispatches.forEach(d => rows.push({ date: d.date, kind: '배출', target: d.farm, targetKind: (d.target_type === '농협' || d.target_type === '거래처') ? d.target_type : '농가', category: d.ctype || '', qty: d.qty || 0, staff: d.driver || '', src: 'dispatch',
+    field: (d.target_type === '농협' || d.target_type === '거래처') ? null : _brKey(d, d.farm) }));
   // 납품 콘테이너(D-1 출고 / D-1b 수동거래) → 배출 (outbound_id·manual_tx_id 연동 pick만. 배차 자동생성 픽은 dispatch_id라 위 dispatches에서 이미 집계)
   // ★이동(transfer_id) B 배출도 여기서 — 배차 행이 없어 안 넣으면 B만 걸러 볼 때 누적 잔여가 보유(getFCS)와 어긋난다. xfer = 이동 표시용.
-  picks.filter(p => p.type === '배출' && (p.outbound_id || p.manual_tx_id || p.transfer_id)).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p) }));
+  picks.filter(p => p.type === '배출' && (p.outbound_id || p.manual_tx_id || p.transfer_id)).forEach(p => rows.push({ date: p.date, kind: '배출', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p),
+    field: (p.target_type === '농협' || p.target_type === '거래처') ? null : _brKey(p, p.farm) }));
   // 회수(원물수거/빈콘회수) — 이동 A행 포함(원래부터 들어옴, 표시만 붙인다)
   // content = 무엇을 담아 돌아왔나: 빈콘회수 '빈콘', 원물수거는 이어진 입고(inbound_id)의 카테고리(빈 값 = '상품', categoryBadge와 같은 규칙).
   //   ★입고를 더 조회하지 않는다 — 지금 불러온 inboundRecords에 없으면(무효·미로드) '원물'.
   const ibCat = new Map((inboundRecords || []).map(r => [r.id, r.inbound_category || '상품']));
   picks.filter(p => p.type === '원물수거' || p.type === '빈콘회수').forEach(p => rows.push({ date: p.date, kind: '회수', target: p.farm, targetKind: (p.target_type === '농협' || p.target_type === '거래처') ? p.target_type : '농가', category: p.ctype || '', qty: p.qty || 0, staff: p.driver || '', src: 'pick', xfer: _pickTransferLabel(p),
-    content: p.type === '빈콘회수' ? '빈콘' : (ibCat.get(p.inbound_id) || '원물') }));
+    content: p.type === '빈콘회수' ? '빈콘' : (ibCat.get(p.inbound_id) || '원물'),
+    field: (p.target_type === '농협' || p.target_type === '거래처') ? null : _brKey(p, p.farm) }));
   // 농가것 반입/반납
-  ownIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_in' }));
-  ownOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_out' }));
+  ownIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_in', field: _brKey(o, o.farm) }));
+  ownOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.farm, targetKind: '농가', category: o.ctype || '', qty: o.qty || 0, staff: o.staff || '', src: 'own_out', field: _brKey(o, o.farm) }));
   // 농협/거래처 반입/반납 (owner_type 없으면 농협 — nhfOwner 기본과 동일)
   nhfIns.forEach(o => rows.push({ date: o.date, kind: '반입', target: o.nhf, targetKind: o.owner_type === '거래처' ? '거래처' : '농협', category: o.type || '', qty: o.qty || 0, staff: o.staff || '', src: 'nhf_in' }));
   nhfOuts.forEach(o => rows.push({ date: o.date, kind: '반납', target: o.nhf, targetKind: o.owner_type === '거래처' ? '거래처' : '농협', category: o.type || '', qty: o.qty || 0, staff: o.staff || '', src: 'nhf_out' }));
@@ -4435,7 +4439,7 @@ function renderContainerHistory() {
   const tk = gv('ch-tkind'), kd = gv('ch-kind'), ct = gv('ch-cat'), cn = gv('ch-cont'), q = gv('ch-q'), from = gv('ch-from'), to = gv('ch-to');
   const list = all.filter(r =>
     (!tk || r.targetKind === tk) && (!kd || r.kind === kd) && (!ct || r.category === ct) && (!cn || r.content === cn) &&
-    (!q || (r.target || '').includes(q)) && (!from || (r.date || '') >= from) && (!to || (r.date || '') <= to)
+    (!q || (r.target || '').includes(q) || (r.field || '').includes(q)) && (!from || (r.date || '') >= from) && (!to || (r.date || '') <= to)
   ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const totQty = list.reduce((s, r) => s + r.qty, 0);
   const kColor = { 배출: '#DC2626', 회수: '#2E7D32', 반입: '#1565C0', 반납: '#C05800' };
@@ -4467,7 +4471,8 @@ function renderContainerHistory() {
   //   · 유형(kd) 필터 없음 — '회수'만 걸러 보면 잔액이 아니라 회수 누계가 된다(종류·분류 필터는 그 종류의 잔액이라 괜찮다)
   //   · 회수 내용(cn) 필터 없음 — 회수 행만 남아 유형 필터와 같은 이유로 잔액이 아니다
   const runOK = !kd && !cn;
-  const _chKey = r => `${r.target || ''}\u0001${_CH_AXIS[r.kind]}\u0001${r.category || ''}`;
+  // ★v778: 밭(field, _brKey)도 키에 — 밭이 여러 곳인 농가는 밭마다 따로(보유 칩 getFCS(name, field)와 같은 단위). 가지 없으면 ''라 예전과 같다.
+  const _chKey = r => `${r.target || ''}\u0001${r.field || ''}\u0001${_CH_AXIS[r.kind]}\u0001${r.category || ''}`;
 
   // ★기간을 좁히면 그 이전 기록이 빠져 누적이 틀어진다 → 이전 잔액을 '이월'로 키별로 먼저 계산해 얹는다.
   //   누적 열을 숨기는 쪽이 더 쉽지만, '최근 한 달만 보기'가 이 기능을 제일 많이 쓸 상황이라
@@ -4476,7 +4481,7 @@ function renderContainerHistory() {
   if (runOK && from) {
     all.filter(r =>
       (!tk || r.targetKind === tk) && (!ct || r.category === ct) &&
-      (!q || (r.target || '').includes(q)) && (r.date || '') < from
+      (!q || (r.target || '').includes(q) || (r.field || '').includes(q)) && (r.date || '') < from
     ).forEach(r => {
       if (!_CH_AXIS[r.kind]) return;
       const k = _chKey(r); runBal[k] = (runBal[k] || 0) + _CH_SIGN[r.kind] * (r.qty || 0);
@@ -4512,8 +4517,8 @@ function renderContainerHistory() {
   const carryRow = (runOK && from && targets.length === 1 && carriedKeys.length)
     ? `<tr style="background:#FAFAFA;color:#888"><td colspan="6" style="text-align:right;font-size:11px">${esc(from)} 이전 이월</td>`
       + `<td style="font-weight:700;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums">${carriedKeys.map(k => {
-          const [, ax, cat] = k.split('\u0001');
-          return `${new Set(carriedKeys.map(x => x.split('\u0001')[1])).size > 1 ? _chAxisLabel[ax] + ' ' : ''}${cat ? _ctIcon(cat) + ' ' : ''}${fmtN(carried[k])}`;
+          const [, fld, ax, cat] = k.split('\u0001');
+          return `${fld && carriedKeys.length > 1 ? '🌱 ' + esc(fld) + ' ' : ''}${new Set(carriedKeys.map(x => x.split('\u0001')[2])).size > 1 ? _chAxisLabel[ax] + ' ' : ''}${cat ? _ctIcon(cat) + ' ' : ''}${fmtN(carried[k])}`;
         }).join(' / ')}</td><td>—</td></tr>`
     : '';
 
@@ -4525,7 +4530,7 @@ function renderContainerHistory() {
   const pageList = _chPageSize === Infinity ? list : list.slice(start, start + _chPageSize);
   const isLastPage = start + pageList.length >= list.length;
   tb.innerHTML = list.length ? pageList.map((r, i) =>
-    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}</td><td>${_ctBadge(r.category)}</td><td>${r.content ? categoryBadge(r.content) : '<span style="color:#ccc">—</span>'}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[start + i])}</td><td>${esc(r.staff || '—')}</td></tr>`
+    `<tr><td>${esc(r.date || '')}</td><td><span style="color:${kColor[r.kind] || '#333'};font-weight:700">${esc(r.kind)}</span>${_pickTransferBadge(r.xfer)}</td><td class="nm">${tkBadge(r.targetKind)} ${esc(r.target || '')}${r.field ? `<div style="font-size:11px;font-weight:400;color:#6B7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.field)}">🌱 ${esc(r.field)}</div>` : ''}</td><td>${_ctBadge(r.category)}</td><td>${r.content ? categoryBadge(r.content) : '<span style="color:#ccc">—</span>'}</td><td>${r.qty}</td><td style="text-align:right;white-space:nowrap">${chCell(cells[start + i])}</td><td>${esc(r.staff || '—')}</td></tr>`
   ).join('') + (isLastPage ? carryRow : '') : emr(8, '이력 없음');
 }
 
