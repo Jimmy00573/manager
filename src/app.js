@@ -4799,8 +4799,8 @@ async function _qrSaveTransfer(farm, targetType) {
     // 종류마다 A행 → B행 순서. ★한 번의 배열 POST(_extCtInsert와 같은 방식) — DB가 전부 저장하거나 전부 실패하므로
     //   한쪽만 남는 일이 없다(롤백 코드가 필요 없다).
     const payload = list.flatMap(c => [
-      { ...common, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, target_type: targetType, note: `→ ${to} 이동`, ...(fromField ? { field: fromField } : {}) },
-      { ...common, farm: to, type: '배출', qty: c.qty, ctype: c.ct, target_type: toTT, note: `${farm} → 이동`, ...(toField ? { field: toField } : {}) },
+      { ...common, farm, type: '빈콘회수', qty: c.qty, ctype: c.ct, target_type: targetType, note: `→ ${to} 이동`, field: fromField || null },
+      { ...common, farm: to, type: '배출', qty: c.qty, ctype: c.ct, target_type: toTT, note: `${farm} → 이동`, field: toField || null },
     ]);
     const rows = await sbInsert('picks', payload);
     picks.unshift(...(Array.isArray(rows) ? rows : []));
