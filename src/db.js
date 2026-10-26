@@ -57,12 +57,12 @@ async function dbUpdateDriver(id, data) { const r = await sbUpdate('drivers', id
 async function dbDeleteDriver(id) { return sbDelete('drivers', id); }
 
 async function dbGetDispatches() { return sbGet('dispatches', 'order=date.desc,created_at.desc'); }
-// 등록 계정 기록 — dispatches·picks·harvests insert에 created_by(로그인 계정 citrus_adm_user, 없으면 'admin')를 붙인다.
+// 등록 계정 기록 — dispatches·picks·harvests insert에 created_by(작업자 이름(_actor) — 관리자·직원이 고른 이름, 없으면 로그인 계정·'admin')를 붙인다.
 //   ★insert 경로가 12곳이라 여기 한 곳에서 붙인다(새 경로도 자동). 호출부가 직접 넣은 값이 있으면 그대로 둔다.
 //   외부 기사 당일 되돌리기(app.js _xdMine)가 이 값과 created_at으로 '내가 오늘 넣은 기록'을 가린다.
 function _withCreatedBy(d) {
   return (d && typeof d === 'object' && !Array.isArray(d) && !('created_by' in d))
-    ? { ...d, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin' } : d;
+    ? { ...d, created_by: (typeof _actor === 'function' ? _actor() : (sessionStorage.getItem('citrus_adm_user') || 'admin')) } : d;
 }
 async function dbInsertDispatch(data) { const r = await sbInsert('dispatches', _withCreatedBy(data)); return r[0]; }
 async function dbUpdateDispatch(id, data) { const r = await sbUpdate('dispatches', id, data); return r[0]; }

@@ -1030,6 +1030,7 @@ function doLogout() {
   document.getElementById('dnav').style.display = 'none';
   document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = ''; });
   document.getElementById('pin-screen').style.display = 'flex';
+  _renderWorkerBtn();   // 역할이 지워졌으니 작업자 버튼을 숨긴다(citrus_worker는 지우지 않는다 — 같은 기기는 보통 같은 사람)
   setPinMode('staff');
 }
 
@@ -1054,6 +1055,7 @@ function adminLogout() {
   const _ab = document.getElementById('rbtn-adm');
   _ab.className = 'rbtn active';
   _ab.style.display = '';   // 공항·직원 로그인 때 숨겼던 것을 되돌린다(다음 로그인에서 setRole이 다시 정한다)
+  _renderWorkerBtn();   // 작업자 버튼 숨김(citrus_worker는 지우지 않는다)
   setPinMode('staff');
 }
 
@@ -1246,7 +1248,7 @@ async function saveStock(t) {
       target_table: 'settings', target_id: t,
       before_val: { init: before }, after_val: { init: v },
       reason: `콘테이너 초기재고 변경 [${t}]`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
   } catch (e) { console.warn('초기재고 변경 이력 기록 실패:', e.message); }
 
@@ -1295,6 +1297,82 @@ const HV_ROLES = ['admin', 'ext_driver'];
 function _hvCanWrite() { return HV_ROLES.includes(sessionStorage.getItem('citrus_role')); }
 // 관리자 판정(범용). 2026-10-14 신규 — 지금은 농가 담당 지정(_hvStaffBtn·_hvOpenFarmStaff·_hvSaveFarmStaff)만 쓴다(기존 인라인 판정은 그대로).
 function _isAdmin() { return sessionStorage.getItem('citrus_role') === 'admin'; }
+// ── 기록용 작업자 이름 — 공용 계정(admin)을 여러 명이 같이 쓰므로 기기마다 이름을 한 번 골라 둔다(localStorage, 로그아웃해도 유지).
+//   ★권한과 무관 — 권한은 citrus_role, 계정 비교(_xdMine·_xdCanDelete·비밀번호 변경)는 citrus_adm_user 그대로.
+function _workerName() { try { return localStorage.getItem('citrus_worker') || ''; } catch (e) { return ''; } }
+// 기록(staff·created_by)에 남길 이름. 관리자·직원 기기에서 작업자를 골랐으면 그 이름, 아니면 예전처럼 로그인 계정.
+//   외부 기사·공항·기사는 늘 계정명 — 외부 기사 본인 기록 판정(_xdMine 등)이 기록값을 계정명과 비교한다.
+function _actor() {
+  const r = sessionStorage.getItem('citrus_role');
+  const w = (r === 'admin' || r === 'staff') ? _workerName() : '';
+  return w || sessionStorage.getItem('citrus_adm_user') || 'admin';
+}
+// 헤더 '👤 이름' 버튼 — 관리자·직원만. 이름을 안 골랐으면 빨간 배경으로 눈에 띄게.
+function _renderWorkerBtn() {
+  const b = document.getElementById('rbtn-worker');
+  if (!b) return;
+  const r = sessionStorage.getItem('citrus_role');
+  if (r !== 'admin' && r !== 'staff') { b.style.display = 'none'; return; }
+  const w = _workerName();
+  b.textContent = w ? `👤 ${w}` : '👤 작업자 선택';
+  b.style.background = w ? '' : 'rgba(220,38,38,.85)';
+  b.style.display = '';
+}
+// 작업자 고르기 창 — 이름 목록은 위험 삭제 확인창(showConfirmDanger) 작업자 목록과 같은 출처(내부 직원·기사).
+//   ★매번 지우고 새로 만든다(옛 레이아웃이 남지 않게).
+function openWorkerPicker() {
+  document.getElementById('modal-worker-picker')?.remove();
+  const cur = _workerName();
+  const names = _activeDrivers().filter(d => d.type === '내부').map(d => d.name);
+  const overlay = document.createElement('div');
+  overlay.id = 'modal-worker-picker';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  const btnCss = on => `padding:7px 12px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid ${on ? '#1E3A5F' : '#E5E7EB'};background:${on ? '#1E3A5F' : '#fff'};color:${on ? '#fff' : '#374151'}`;
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;width:100%;max-width:380px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="padding:18px 20px 12px;border-bottom:1px solid #E5E7EB">
+        <div style="font-weight:500;font-size:15px;color:#1E3A5F">👤 작업자 선택</div>
+        <div style="font-size:12px;color:#6B7280;margin-top:4px;line-height:1.5">이 기기에서 저장하는 기록에 이 이름이 남습니다. 권한과는 관계없습니다.</div>
+      </div>
+      <div style="padding:14px 20px 18px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${names.length ? names.map(n => `<button type="button" class="wp-name" data-name="${esc(n)}" style="${btnCss(n === cur)}">${esc(n)}</button>`).join('')
+            : '<div style="font-size:12px;color:#9CA3AF">등록된 내부 직원이 없습니다 — 아래에 직접 입력하세요.</div>'}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <input id="wp-input" placeholder="직접 입력" value="${names.includes(cur) ? '' : esc(cur)}" style="flex:1;min-width:0;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
+          <button type="button" id="wp-input-ok" style="${btnCss(true)}">확인</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px">
+          <button type="button" id="wp-later" style="padding:8px 18px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;cursor:pointer">나중에</button>
+        </div>
+      </div>
+    </div>`;
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  const pick = name => {
+    name = String(name || '').trim();
+    if (!name) { alert('이름을 고르거나 입력하세요.'); return; }
+    if (_nameHasBadChar(name)) { alert('이름에 따옴표(\' ")나 \\ 는 쓸 수 없습니다.'); return; }
+    try { localStorage.setItem('citrus_worker', name); } catch (e) { alert('이 기기에 이름을 저장하지 못했습니다.'); return; }
+    _renderWorkerBtn();
+    close();
+    showToast(`작업자: ${name}`);
+  };
+  overlay.querySelectorAll('.wp-name').forEach(b => b.addEventListener('click', () => pick(b.dataset.name)));
+  overlay.querySelector('#wp-input-ok').addEventListener('click', () => pick(overlay.querySelector('#wp-input').value));
+  overlay.querySelector('#wp-input').addEventListener('keydown', e => { if (e.key === 'Enter') pick(e.target.value); });
+  overlay.querySelector('#wp-later').addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+}
+// 처음 한 번 자동으로 묻기 — 관리자·직원 + 이름 미선택일 때 페이지당 1회(로그인 복원·새 로그인 모두 setRole에서).
+let _wpAutoAsked = false;
+function _askWorkerOnce(r) {
+  if (_wpAutoAsked || (r !== 'admin' && r !== 'staff') || _workerName()) return;
+  _wpAutoAsked = true;
+  openWorkerPicker();
+}
 // 배차(콘테이너 배송) 등록을 쓸 수 있는 역할. 외부 기사는 대상 '농가'만. ★수정·삭제·되돌리기는 관리자 전용 그대로.
 const DISP_ROLES = ['admin', 'ext_driver'];
 const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
@@ -1346,6 +1424,8 @@ function setRole(r) {
     //   (입고가 도착하면 _invFetchStart가 열린 캘린더를 한 번 다시 그린다). transportSub가 'dash'→'cal'로 교정한다.
     if (r === 'ext_driver') T('transport');
   }
+  _renderWorkerBtn();
+  _askWorkerOnce(r);
 }
 
 function _applyEditRestrictions(r) {
@@ -3586,7 +3666,7 @@ function showConfirmDanger({ title, subtitle = '복구할 수 없는 작업입�
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px">작업자 *</label>
         <select id="cdg-worker" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
           <option value="">작업자 선택</option>
-          ${(workerNames || _activeDrivers().filter(d=>d.type==='내부').map(d=>d.name)).map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}
+          ${(workerNames || _activeDrivers().filter(d=>d.type==='내부').map(d=>d.name)).map(n=>`<option value="${esc(n)}"${n === _workerName() ? ' selected' : ''}>${esc(n)}</option>`).join('')}
         </select>
         <label style="font-size:12px;color:#6B7280;display:block;margin-bottom:4px;margin-top:8px">사유 *</label>
         <input id="cdg-reason" placeholder="사유 입력 (필수)" value="${esc(defaultReason)}" style="width:100%;padding:7px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;box-sizing:border-box">
@@ -4002,7 +4082,7 @@ function _xdUndoConfirm(title, items) {
 async function _xdUndoLog(table, id, before, res, what) {
   try {
     await dbInsertAuditLog({ target_table: table, target_id: String(id), before_val: before, after_val: null,
-      reason: `${res.reason} (외부 기사 ${res.worker} · 당일 ${what})`, staff: sessionStorage.getItem('citrus_adm_user') });
+      reason: `${res.reason} (외부 기사 ${res.worker} · 당일 ${what})`, staff: _actor() });
   } catch (e) { console.warn('외부 기사 되돌리기 이력 기록 실패:', e.message); }
 }
 let _xdUndoBusy = false;
@@ -4795,7 +4875,7 @@ async function _qrSaveTransfer(farm, targetType) {
     if (!(await showConfirmEdit('콘테이너 이동 등록', `${route} 이동: ${summary} — 공장 재고는 변하지 않습니다`))) return;
     if (btn) btn.disabled = true;
     const car = drivers.find(d => d.name === driver)?.car || null;
-    const common = { date, driver, car, auto: false, transfer_id: generateUUID(), created_by: sessionStorage.getItem('citrus_adm_user') || 'admin' };   // 등록 계정(db.js _withCreatedBy와 같은 값 — 배열 insert라 여기서 직접)
+    const common = { date, driver, car, auto: false, transfer_id: generateUUID(), created_by: _actor() };   // 등록 계정(db.js _withCreatedBy와 같은 값 — 배열 insert라 여기서 직접)
     // 종류마다 A행 → B행 순서. ★한 번의 배열 POST(_extCtInsert와 같은 방식) — DB가 전부 저장하거나 전부 실패하므로
     //   한쪽만 남는 일이 없다(롤백 코드가 필요 없다).
     const payload = list.flatMap(c => [
@@ -6642,7 +6722,7 @@ async function _hvSaveFarmStaff(farm) {
         target_table: 'farms', target_id: String(f.id),
         before_val: { staff: f.staff || '' }, after_val: { staff },
         reason: '농가 담당 변경(수확 화면)',
-        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        staff: _actor()
       });
     } catch (e2) { console.warn('농가 담당 변경 이력 기록 실패:', e2.message); }
     document.getElementById('modal-hv-farm-staff')?.remove();
@@ -7881,7 +7961,7 @@ async function saveMoveLocation() {
       before_val: { location: r.location || null },
       after_val: _pachiRecs ? { location: newLoc, linked_pachi: _pachiRecs.length } : { location: newLoc },   // 파치·청과만 같이 옮긴 행 수
       reason: '위치 이동',
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
     Object.assign(r, updated);
     renderInvSummary(); renderInboundList();
@@ -9902,7 +9982,7 @@ async function _saveInboundContainers(date, farm, inboundId, opts = {}) {
   // 담당자 — 입고 폼의 수송기사 이름(opts.staff)을 쓴다. 없으면 지금 로그인한 계정, 그리고 마지막이 'admin'.
   //   ★이전엔 'admin' 하드코딩이라 누가 받았는지 알 수 없었다(2026-08-20 기준 nhf_ins 46건·own_ins 1건이 전부 admin).
   //   ★수동거래(mtx) 경로엔 기사 필드가 없어 opts.staff가 비어 있다 → 로그인 계정으로 떨어진다.
-  const staff = opts.staff || sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const staff = opts.staff || _actor();
   // 우리 콘테이너 회수 pick의 기사·차량 — 입고 수송기사(opts.staff)만 쓴다. ★로그인 계정 폴백은 넣지 않는다:
   //   picks.driver는 '누가 실어 왔나'라 사무실 계정 이름이 들어가면 틀린 기록이 된다. 없으면 예전처럼 비워 둔다
   //   (기사 없는 옛 입고·수동거래 mtx 경로). 2026-09-14 전엔 아예 안 넘겨 입고 회수 64건이 담당자 빈칸이었다.
@@ -11825,7 +11905,7 @@ async function deleteMatrixBatch(regId) {
       target_table: 'inventory_records', target_id: toDelete[0]?.id,
       before_val: { farm: info.farm, product: info.product, grade: gradeLabel, count: toDelete.length },
       after_val: null, reason: `재고 삭제 [${gradeLabel}]`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
     renderInvSummary();
     renderInventoryStatus();
@@ -12060,7 +12140,7 @@ async function savePachiOutbound(regId) {
       date, product: row.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'pachi',
       farm_name: row.farm || null, note, is_void: false,
-      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      created_by: _actor(),
       ref_detail: detail,
       weight_kg: weight, unit_price: price, amount
     });
@@ -12141,7 +12221,7 @@ async function _addProcessingOut({ inboundId, date, qty, note }) {
   const procRow = await dbInsertProcessing({
     inbound_id: inboundId, date, process_type: '출고',
     quantity: qty, note: note || null,
-    staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+    staff: _actor()
   });
   processingRecords.push(procRow);
   return procRow;
@@ -12178,7 +12258,7 @@ async function saveUnsortedOutbound(inboundId) {
       date, product: r.product, size_code: null, quantity: qty, unit: 'CT',
       partner_name: partner, source_type: 'unsorted',
       farm_name: r.farm_name || null, note, is_void: false,
-      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      created_by: _actor(),
       ref_detail: procId ? [{ table: 'processing_records', id: procId }] : [],
       weight_kg: weight, unit_price: price, amount
     });
@@ -12356,7 +12436,7 @@ async function savePachiEdit() {
         target_table: 'inventory_records', target_id: row.ids[0],
         before_val: before, after_val: after,
         reason: `파치 수정: ${summary}${row.ids.length > 1 ? ` (${row.ids.length}건)` : ''}`,
-        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        staff: _actor()
       }).catch(e => console.warn('파치 수정 이력 기록 실패:', e.message));
     }
     document.getElementById('modal-pachi-edit').style.display = 'none';
@@ -12621,7 +12701,7 @@ async function outboundUncheckedPachiAudit() {
   });
   if (!res || !res.ok) return;
   const date = td();   // 로컬 오늘
-  const adm  = res.worker || sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const adm  = res.worker || _actor();
   let okCount = 0, failMsg = '';
   // ★재고 파치 = outbound_batch 1회(전부 되거나 전부 취소, v768). 실패하면 입고 파치도 손대지 않는다(예전에도 첫 실패에서 멈췄다).
   try {
@@ -12762,7 +12842,7 @@ async function applyPachiBulk() {
       before_val: { count: _pbDone.length, items: _pbDone.map(id => ({ id, ..._pbBefore.get(String(id)) })) },
       after_val: { count: _pbDone.length, ...patch },
       reason: `파치 일괄지정 ${_pbDone.length}건: ${_pbKeys.map(k => `${lbl[k]}→${patch[k] ?? '비움'}`).join(' · ')}${_pbDone.length < ids.length ? ` (${ids.length}건 중 ${_pbDone.length}건만 처리)` : ''}`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     }).catch(e => console.warn('파치 일괄지정 이력 기록 실패:', e.message));   // 기록 실패가 저장 결과를 바꾸지 않게
   };
   try {
@@ -12867,7 +12947,7 @@ async function savePachiBulkOutbound() {
 
   const btn = document.getElementById('pbo-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '출고 중...'; }
-  const worker = sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const worker = _actor();
   const reason = `파치 일괄 출고 → ${partner}${note ? ': ' + note : ''}`;
   // ★outbound_batch 1회 — 전부 되거나 전부 취소(v768). 예전의 '중간 실패 시 cancelOutbound로 되돌리기'(되돌리기 실패분이 남을 수 있었다)는 필요 없어 뺐다.
   try {
@@ -13068,7 +13148,7 @@ async function deleteJuiceBatch(id) {
       target_table: 'juice_batches', target_id: id,
       before_val: b ? { product_name: b.product_name, remaining_bottles: b.remaining_bottles, inbound_date: b.inbound_date } : {},
       after_val: null, reason: '주스 배치 삭제',
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
     showToast('삭제 완료');
     renderJuiceSection(); renderInvSummary();
@@ -13176,7 +13256,7 @@ async function saveJuiceOutbound(id) {
   const box     = parseFloat(document.getElementById('job-box')?.value) || 0;
   const single  = parseFloat(document.getElementById('job-single')?.value) || 0;
   const qty     = box * (b.per_box || 0) + single;
-  const adm     = sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const adm     = _actor();
 
   if (!date)                     return alert('출고일을 입력해주세요.');
   if (date > td())               return alert('출고일은 오늘 이후로 지정할 수 없습니다.');
@@ -13466,7 +13546,7 @@ async function saveInvEdit() {
           sorting_result_id: ref.sorting_result_id || null,
           quality_grade: _invEditGrade,
           note: `재고 수정 [${_invEditGrade}] (${sz}: ${oldQty[sz]} → ${newQty[sz]})`,
-          is_void: false, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin'
+          is_void: false, created_by: _actor()
         };
         const r = await dbInsertInventoryRecord(data);
         inventoryRecords.unshift(r);
@@ -13476,7 +13556,7 @@ async function saveInvEdit() {
       target_table: 'inventory_records', target_id: ref?.id,
       before_val: oldQty, after_val: newQty,
       reason: `선과품 재고 [수정] 버튼 [${_invEditGrade}]`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
     document.getElementById('modal-inv-edit').style.display = 'none';
     renderInvSummary();
@@ -13871,7 +13951,7 @@ async function saveOutbound(regId) {
           date, product: info.product, size_code: sz, quantity: outQty[sz], unit: 'CT',
           partner_name: partner, source_type: 'sorting',
           farm_name: info.farm, note, is_void: false,
-          created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+          created_by: _actor(),
           ref_detail: detail,
           weight_kg: w, unit_price: p, amount: amt,
           quality_grade: grade || '일반'
@@ -15108,7 +15188,7 @@ async function saveManualTx(editId = null) {
       const i = manualTransactions.findIndex(r => String(r.id) === String(editId));
       if (i >= 0) manualTransactions[i] = updated || { ...manualTransactions[i], ...rec };
     } else {
-      rec.created_by = sessionStorage.getItem('citrus_adm_user') || 'admin';
+      rec.created_by = _actor();
       const saved = await dbInsertManualTransaction(rec);
       if (saved) { manualTransactions.unshift(saved); txId = saved.id; }
     }
@@ -15224,7 +15304,7 @@ async function cancelOutbound(id) {
       target_table: 'outbound_records', target_id: id,
       before_val: { product: r.product, partner_name: r.partner_name, quantity: r.quantity, unit: r.unit, amount: r.amount || null },
       after_val: null, reason: '출고 취소(재고 복구)',
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
     const i = invOutbounds.findIndex(x => String(x.id) === String(id));
     if (i >= 0) invOutbounds.splice(i, 1);
@@ -15316,7 +15396,7 @@ async function saveOutboundEdit() {
         before_val: { product: _obPrev?.product ?? null, farm_name: _obPrev?.farm_name ?? null, quantity: _obPrev?.quantity ?? null, ...(_obBefore || {}) },
         after_val: { product: _obPrev?.product ?? null, farm_name: _obPrev?.farm_name ?? null, quantity: _obPrev?.quantity ?? null, ..._obAfter },
         reason: `출고 수정${parts.length ? ': ' + parts.join(' · ') : ''}`,
-        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        staff: _actor()
       }).catch(e => console.warn('출고 수정 이력 기록 실패:', e.message));
     }
     const r = invOutbounds.find(x => String(x.id) === String(_obEditId));
@@ -17203,7 +17283,7 @@ function startIbBrixEdit(id) {
       target_table: 'inbound_records', target_id: r.id,
       before_val: { brix_range: pr, brix_avg: pa }, after_val: { brix_range: nr, brix_avg: na },
       reason: `당도 입력(입고 목록): ${r.farm_name || ''} ${_ibShareMD(r.date)} ${r.product || ''}`.trim(),
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     }).catch(err => console.warn('당도 입력 이력 기록 실패:', err.message));
     renderInboundList();
     showToast('🍊 당도 저장 — ⋮ 메뉴 [당도 공유]로 복사할 수 있습니다');
@@ -19166,7 +19246,7 @@ async function saveInvOutbound(regId, sz) {
       farm_name: info.farm || null, quality_grade: grade,
       weight_kg: Math.round(qty * kgPerCt * 10) / 10,
       note: '부분 출고', is_void: false,
-      created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+      created_by: _actor(),
       ref_detail: detail
     });
     if (ob) invOutbounds.unshift(ob);
@@ -19297,7 +19377,7 @@ async function _execInvBulkOutbound() {
           farm_name: c.farm, quality_grade: c.grade,
           weight_kg: Math.round(c.qty * kgPerCt * 10) / 10,
           note: '전량 출고(행/열)', is_void: false,
-          created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+          created_by: _actor(),
           ref_detail: detail
         },
         deduct: c.recs.map(rec => ({ id: rec.id, qty_before: Number(rec.quantity) || 0, new_qty: 0, void: true }))
@@ -19482,7 +19562,7 @@ async function openInvAuditAddCell(regId, sz) {
         quantity: qty,
         is_void: false,
         audit_checked_at: new Date().toISOString(),   // 실물 확인한 것이므로 자동 확인
-        created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+        created_by: _actor(),
         note: '실사 누락 추가',
       });
       inventoryRecords = await dbGetInventoryRecords();
@@ -19578,7 +19658,7 @@ async function commitChipEdit(key, rawVal, confirmCell = false) {
         target_table: 'inventory_records', target_id: rec.id,
         before_val: { quantity: oldQty }, after_val: null,
         reason: '재고 실사 삭제(0 입력)',
-        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        staff: _actor()
       });
       renderInventoryStatus();
       showToast(`🗑️ ${rec.size_code} 삭제`);
@@ -19598,7 +19678,7 @@ async function commitChipEdit(key, rawVal, confirmCell = false) {
       target_table: 'inventory_records', target_id: rec.id,
       before_val: { quantity: oldQty }, after_val: { quantity: newVal },
       reason: `재고 실사 수정 ${fmtN(oldQty)}→${fmtN(newVal)}`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     });
     renderInventoryStatus();
     showToast(`✏️ ${rec.size_code} ${fmtN(oldQty)}→${fmtN(newVal)} 수정`);
@@ -19754,7 +19834,7 @@ async function outboundUncheckedInvAudit() {
   });
   if (!res || !res.ok) return;
   const date = td();   // 로컬 오늘
-  const adm  = res.worker || sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const adm  = res.worker || _actor();
   let successCount = 0;
   let failMsg = '';
   try {
@@ -20800,7 +20880,7 @@ async function toggleScPlan(id) {
       target_table: 'srt_plan', target_id: String(r.id),
       before_val: { srt_plan_no: prevNo }, after_val: { srt_plan_no: data.srt_plan_no },
       reason: `선과 순서 ${prevNo ? `${prevNo}번 해제` : `${data.srt_plan_no}번 지정`}${who ? ` — ${who}` : ''}`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     }).catch(e => console.warn('선과 순서 이력 기록 실패:', e.message));
   } catch (e) {
     alert('작업 순서 저장에 실패했습니다. 화면은 저장 전 그대로입니다.\n\n' + e.message);
@@ -20845,7 +20925,7 @@ async function clearScPlanAll() {
       target_table: 'srt_plan', target_id: String(out[0].id),
       before_val: { count: out.length }, after_val: { count: 0 },
       reason: `선과 순서 전체 해제 ${out.length}건`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     }).catch(e => console.warn('선과 순서 이력 기록 실패:', e.message));
   } catch (e) {
     alert('순서 해제에 실패했습니다.\n\n' + e.message);
@@ -21249,7 +21329,7 @@ async function _scApplyRecommend() {
         target_table: 'srt_plan', target_id: String(applied[0].id),
         before_val: {}, after_val: { applied: applied.length, from },
         reason: `선과 순서 추천 적용 ${applied.length}건 (${from}~${from + applied.length - 1}번)`,
-        staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+        staff: _actor()
       }).catch(e => console.warn('선과 순서 이력 기록 실패:', e.message));
       if (!failMsg) showToast(`추천 ${applied.length}건 순서 적용`);
     }
@@ -23723,7 +23803,7 @@ async function cancelSortingResult(srId, inboundId, seq, worker, reason) {
       before_val: { inbound_record_id: inboundId, sequence_number: seq },
       after_val: null,
       reason: reason || `${seq}차 선과 취소`,
-      staff: worker || sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: worker || _actor()
     }).catch(() => {});
 
     await loadAndRenderInv();
@@ -23752,7 +23832,7 @@ async function toggleInboundSortExclude(id) {
       before_val: { exclude_from_unsorted: !!r.exclude_from_unsorted },
       after_val:  { exclude_from_unsorted: next },
       reason: next ? '선과 안 함 (미선과 목록 제외)' : '선과 대상으로 되돌림',
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     }).catch(() => {});
     Object.assign(r, updated || { exclude_from_unsorted: next });
     renderInvSummary(); renderInboundList(); renderProcessingTab();
@@ -24230,7 +24310,7 @@ async function _addInboundCore(keepOpen) {
   //   ★중량·매입(weightFields)도 마찬가지로 한 행에만 붙인다 — 아래 weightFields 주석 참고.
   const commonData = {
     date, product, farm_name,
-    note, staff: sessionStorage.getItem('citrus_adm_user') || 'admin',   // 등록 계정(관리자 'admin' · 외부 기사 'gisa')
+    note, staff: _actor(),   // 등록 계정(관리자 'admin' · 외부 기사 'gisa')
     is_priority,
     driver_id,
     // 밭 — 먼 밭 농가는 select(ibField), 그 밖의 농가는 자유 입력(ib-field-txt). ★콘테이너(_saveInboundContainers)에는 ibField만 간다.
@@ -24340,7 +24420,7 @@ async function _addInboundCore(keepOpen) {
                 date, farm_name, product, size_code: null,
                 quantity: row.quantity, location: row.location || null,
                 source_type: _pachiSrcType, inbound_record_id: row.id,
-                usage: _pUsage, is_void: false, note: row.note || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+                usage: _pUsage, is_void: false, note: row.note || null, created_by: _actor(),
                 ...(_pSize ? { pachi_size_group: _pSize } : {})
               });
               if (pr && pr[0]) inventoryRecords.push(pr[0]);
@@ -25414,7 +25494,7 @@ async function deleteManualPachi(idsStr, label) {
       before_val: { product: r0.product ?? null, farm_name: r0.farm_name ?? null, date: r0.date ?? null, quantity: qty, count: done.length, ids: done },
       after_val: null,
       reason: `파치 삭제${label ? `: ${label}` : ''}${done.length < ids.length ? ` (${ids.length}건 중 ${done.length}건만 처리)` : ''}`,
-      staff: sessionStorage.getItem('citrus_adm_user') || 'admin'
+      staff: _actor()
     }).catch(err => console.warn('파치 삭제 이력 기록 실패:', err.message));
   }
 }
@@ -25748,7 +25828,7 @@ async function addJuiceBatch() {
   const total = box * perBox + single;
   const expiry = gv('ju-expiry') || null;
   const note = gv('ju-note') || null;
-  const adm = sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const adm = _actor();
 
   if (!product || product === '__new__') return alert('품명을 선택해주세요.');
   if (!inbound_date) return alert('입고일을 입력해주세요.');
@@ -28180,7 +28260,7 @@ async function saveSpec() {
     kind, channel_type: gv2('spm-ctype') || null, channel, business: gv2('spm-business') || null, product, pack, box: gv2('spm-box') || null,
     valid_from, valid_to, weight_min, weight_max, sizes,
     layout: (kind === '기준' && !ovrOn) ? [] : (layout.length ? layout : null), ...(kind === '기준' ? { layout_override: ovrOn } : {}), brix, note: gv2('spm-note') || null,
-    author: gv2('spm-author') || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+    author: gv2('spm-author') || null, created_by: _actor(),
   };
   // 같은 키·같은 시작일의 기준이 이미 있으면 한 번 묻는다(나중에 넣은 것이 현재 기준이 된다)
   const editId = _specEditId;
@@ -28197,7 +28277,7 @@ async function saveSpec() {
       _specRows = _specRows.map(r => r.id === editId ? { ...r, ...(rows[0] || payload), id: r.id } : r);
       try {
         await dbInsertAuditLog({ target_table: 'work_specs', target_id: String(editId), before_val: _specAuditVal(prev), after_val: _specAuditVal(payload),
-          reason: '작업 기준 수정', staff: sessionStorage.getItem('citrus_adm_user') || 'admin' });
+          reason: '작업 기준 수정', staff: _actor() });
       } catch (le) { console.warn('작업 기준 수정 이력 기록 실패:', le.message); }
       _specEditId = null;
       document.getElementById('modal-spec')?.remove();
@@ -28231,7 +28311,7 @@ async function _specSaveLayout() {
   if (!layout.length) return alert('구성을 하나 이상 넣으세요.');
   const editId = _specLayoutEditId;
   if (_specLayouts.some(r => r.id !== editId && r.product === product && r.pack === pack && r.valid_from === valid_from)) return alert('같은 시작일 기준이 이미 있습니다.');
-  const staff = sessionStorage.getItem('citrus_adm_user') || 'admin';
+  const staff = _actor();
   _specBusy = true;
   try {
     if (editId != null) {
