@@ -23073,7 +23073,7 @@ async function _srtWriteOne(r, seq, p, opts = {}) {
         size_code: null, quantity: item.value, location: null,
         source_type: item.sourceType, sorting_result_id: headerId,
         pachi_size_group: item.sizeGroup, pachi_condition: item.condition,
-        is_void: false, note: null, created_by: 'admin'
+        is_void: false, note: note || null, created_by: 'admin'
       });
       console.log(`[8단계] ${item.sourceType} 등록 완료:`, item.value, 'CT');
     } catch(pachiErr) {
@@ -24336,7 +24336,7 @@ async function _addInboundCore(keepOpen) {
                 date, farm_name, product, size_code: null,
                 quantity: row.quantity, location: row.location || null,
                 source_type: _pachiSrcType, inbound_record_id: row.id,
-                usage: _pUsage, is_void: false, note: null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
+                usage: _pUsage, is_void: false, note: row.note || null, created_by: sessionStorage.getItem('citrus_adm_user') || 'admin',
                 ...(_pSize ? { pachi_size_group: _pSize } : {})
               });
               if (pr && pr[0]) inventoryRecords.push(pr[0]);
