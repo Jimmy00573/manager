@@ -13598,6 +13598,10 @@ function calcIbWeightFromCt() {
   _ibWeightHint();
 }
 
+// 총 중량(계근값)을 직접 고치면 CT당 칸을 비운다 — 그래야 뒤에 콘테이너 개수를 바꿔도
+// calcIbWeightFromCt가 CT당×수량으로 계근값을 덮어쓰지 않는다(CT당이 비면 총 중량을 건드리지 않음).
+function _ibWeightTyped() { const k = document.getElementById('ibp-kgct'); if (k) k.value = ''; calcIbAmount(); _ibWeightHint(); }
+
 // 총 중량 ↔ CT당 kg 되짚어 보여 주는 한 줄. 저장은 총 중량(weight_kg) 하나뿐이라
 // 계근값을 그대로 적었을 때 CT당이 얼마인지 눈으로 확인할 자리가 필요하다(반대로 CT당을 적었을 때는 총 중량 확인).
 // ★표시 전용 — 값을 고치지 않는다. 수량이 0이면(콘테이너 미입력) 나눗셈이 무의미하므로 총 중량만 보여 준다.
