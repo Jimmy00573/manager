@@ -28830,12 +28830,16 @@ function _shipSizeRe(map, flags) {
   return new RegExp(`(?:^|[^0-9A-Za-z가-힣])(${alts})\\s*\\.?\\s*(\\d+)\\s*(?:박스|box)`, flags);
 }
 // 거래처 첫 토큰 → partners 정식 이름(같으면 그대로, 포함 관계로 하나만 맞으면 그 이름, 아니면 입력 그대로)
+//   포함 비교는 공백·'공판장'·'청과'를 뺀 글자로(v783) — '부산엄궁' ↔ '부산 엄궁 공판장'. 빼고 나서 빈 글자는 안 맞춘다.
 function _shipPartnerName(tok) {
   const t = String(tok || '').trim();
   if (!t) return '';
   const names = (partners || []).map(p => p && p.name).filter(Boolean);
   if (names.includes(t)) return t;
-  const hit = names.filter(n => n.includes(t) || t.includes(n));
+  const norm = s => String(s || '').replace(/\s|공판장|청과/g, '');
+  const nt = norm(t);
+  if (!nt) return t;
+  const hit = names.filter(n => { const nn = norm(n); return nn && (nn.includes(nt) || nt.includes(nn)); });
   return hit.length === 1 ? hit[0] : t;
 }
 // (거래처, 사이즈별 박스) 서명 — 답장 인용 중복 제거·이미 기록됨 경고 공용
