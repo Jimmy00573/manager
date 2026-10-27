@@ -1456,11 +1456,12 @@ function T(id) {
   if (_stEl) _stEl.style.display = 'none';
   document.querySelectorAll('#anav .nbtn').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
-  ['dash', 'disp', 'ext', 'cal', 'dboard', 'chist', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set', 'spec'].forEach(p => {
+  ['dash', 'disp', 'ext', 'cal', 'dboard', 'chist', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set', 'spec', 'ship'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const el = document.getElementById('p-' + id); if (el) el.classList.add('active');
   if (id === 'spec') openSpecTab();   // 📋 작업 기준표 — 열 때마다 새로 읽는다
+  if (id === 'ship') openShipTab();   // 🚚 출고 기록 — 열 때마다 목록을 새로 읽는다
   if (id === 'dash') renderDash();
   if (id === 'cal') renderCal();
   if (id === 'vehicle') renderVehicles();
@@ -1497,7 +1498,7 @@ function transportSub(sub) {
     });
   }
   // 전체 패널 먼저 끄고, 해당 sub만 켜기
-  ['dash','disp','ext','cal','dboard','chist','farm','drv','vehicle','stats','export','inv','set','spec'].forEach(p => {
+  ['dash','disp','ext','cal','dboard','chist','farm','drv','vehicle','stats','export','inv','set','spec','ship'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
   const cur = document.getElementById('p-' + sub); if (cur) cur.classList.add('active');
@@ -28780,4 +28781,450 @@ function _specGuideForm() {
     ? _specCombos(_specEffLayout({ kind: '기준', layout_override: false, product, pack: wv('spm-pack'), valid_from: wv('spm-from') || td() })) : _specReadCombos();
   el.innerHTML = _specBandHtml(product, sizesStr, bandCs)
     + (tbl && tbl.length ? `<div style="margin-top:6px;padding:6px 8px;background:#F9FAFB;border-radius:6px"><div style="font-size:11px;color:#6B7280;margin-bottom:2px">과수별 표 — ✓ 전부 기준 안 · △ 일부 겹침 · ★ 평균이 기준 중앙에 가장 가까움</div>${_specCountTableHtml(tbl)}</div>` : '');
+}
+
+// ═══════════════════ 🚚 출고 기록(shipments, v782) ═══════════════════
+// 공판장·원협 파렛 출고 장부 — 단톡 메시지를 붙여 넣어 읽고(_shipParse) '나간 기록'으로 남긴다. 지난 내역·전표 작성 체크.
+//   ★재고와 무관: 재고·출고 표는 읽지도 쓰지도 않는다(재고 차감은 밤 실사 그대로). 이 기능은 shipments 표만 쓴다.
+//   메시지 1개 = group_id 하나, 사이즈마다 1줄. pallets·raw_msg는 그 묶음 첫 줄에만. admin 전용(ROLE_NAV_TABS 밖 = 작업 기준표와 같음).
+// 단톡 글자 → 정식 품목 이름. 같은 자리에서 겹치면 긴 글자가 이긴다('노지귤' > '노지').
+const SHIP_PRODUCT_WORDS = [['노지감귤', '노지감귤'], ['노지귤', '노지감귤'], ['노지', '노지감귤'], ['하우스감귤', '하우스감귤'], ['하우스', '하우스감귤'],
+  ['비가림', '비가림'], ['타이벡', '타이벡'], ['황금향', '황금향'], ['한라봉', '한라봉'], ['천혜향', '천혜향'], ['레드향', '레드향'], ['카라향', '카라향']];
+const SHIP_SOURCES = ['선과 직출', '재고'];   // 빈값 = 모름
+const SHIP_PAL_RE = /(\d+(?:\.\d+)?)\s*(?:[pP]|파렛트?|파레트|팔레트)(?![A-Za-z])/;
+const SHIP_IN = 'padding:5px 7px;border:1px solid #E5E7EB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;background:#fff';
+const SHIP_NUM = 'text-align:right;font-variant-numeric:tabular-nums';
+let _shipDrafts = [];   // 미리보기 카드(저장 전) — { uid, date, partner, pallets, box_type, box_kg, product, source, grade, note, raw, total, lines:[{size, boxes, id}], gid·ids(수정 중인 묶음) }
+let _shipUid = 0;
+let _shipRows = [];     // 목록 기간의 유효 shipments
+let _shipUi = { from: '', to: '', partner: '', unslip: false };
+let _shipExist = {};    // 중복 경고용 — 날짜별 { p: 조회 Promise, rows }
+let _shipBusy = false;
+
+function _shipNum(v) { const n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isFinite(n) ? n : null; }
+function _shipD(uid) { return _shipDrafts.find(d => d.uid === uid); }
+function _shipKg(n) { return n == null ? '' : fmtN(Math.round(n * 10) / 10); }
+// 'M/D (요일)'
+function _shipDayLabel(ds) { return `${calFmtShort(ds)} (${'일월화수목금토'[new Date(ds + 'T00:00:00').getDay()]})`; }
+
+// ── 읽기 ──────────────────────────────────────────────
+// 글에서 가장 앞에 나온 품목 글자 { i, w, p } | null
+function _shipFindProduct(text) {
+  let best = null;
+  SHIP_PRODUCT_WORDS.forEach(([w, p]) => {
+    const i = text.indexOf(w);
+    if (i >= 0 && (!best || i < best.i || (i === best.i && w.length > best.w.length))) best = { i, w, p };
+  });
+  return best;
+}
+// 사이즈 토큰 표 — 품목을 알면 sizesForProduct(품목), 모르면 감귤류+만감류 전부. 만감 'N수'는 'N과'도 받는다. 키 = 대문자.
+function _shipSizeMap(product) {
+  const list = product ? sizesForProduct(product) : SIZES_감귤류.concat(SIZES_만감류);
+  const map = {};
+  list.forEach(sz => { map[sz.toUpperCase()] = sz; if (/^\d+수$/.test(sz)) map[sz.replace(/수$/, '과')] = sz; });
+  return map;
+}
+// '사이즈 [.] 숫자 박스' — 긴 토큰부터(2L이 L보다 먼저), 앞은 글자 경계.
+function _shipSizeRe(map, flags) {
+  const alts = Object.keys(map).sort((a, b) => b.length - a.length).map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return new RegExp(`(?:^|[^0-9A-Za-z가-힣])(${alts})\\s*\\.?\\s*(\\d+)\\s*(?:박스|box)`, flags);
+}
+// 거래처 첫 토큰 → partners 정식 이름(같으면 그대로, 포함 관계로 하나만 맞으면 그 이름, 아니면 입력 그대로)
+function _shipPartnerName(tok) {
+  const t = String(tok || '').trim();
+  if (!t) return '';
+  const names = (partners || []).map(p => p && p.name).filter(Boolean);
+  if (names.includes(t)) return t;
+  const hit = names.filter(n => n.includes(t) || t.includes(n));
+  return hit.length === 1 ? hit[0] : t;
+}
+// (거래처, 사이즈별 박스) 서명 — 답장 인용 중복 제거·이미 기록됨 경고 공용
+function _shipSig(partner, lines) {
+  return String(partner || '').trim() + '|' + lines.filter(l => l.size && l.boxes > 0).map(l => `${String(l.size).toUpperCase()}:${l.boxes}`).sort().join(',');
+}
+// 붙여 넣은 글 → 묶음 배열. '총 N박스'·'작업 됐습니다'에서 끊고, 사이즈가 하나도 없는 조각(인사·답장 머리)은 버린다.
+function _shipParse(text) {
+  const src = String(text || '').replace(/\r/g, '');
+  const re = /총\s*(\d+)\s*박스|작업\s*(?:됐|되었)습니다/g;
+  const segs = [];
+  let last = 0, m;
+  while ((m = re.exec(src))) { segs.push({ body: src.slice(last, m.index), total: m[1] ? +m[1] : null, tail: m[1] ? m[0] : '' }); last = re.lastIndex; }
+  segs.push({ body: src.slice(last), total: null, tail: '' });
+  const out = [], seen = new Set();
+  segs.forEach(s => {
+    const d = _shipParseOne(s.body, s.total, s.tail);
+    if (!d) return;
+    const k = _shipSig(d.partner, d.lines);
+    if (seen.has(k)) return;   // ★답장 인용(원문을 한 줄로 다시 담음) — 같은 내용은 한 번만
+    seen.add(k); out.push(d);
+  });
+  return out;
+}
+function _shipParseOne(body, total, tail) {
+  // 줄 앞 '[이름] [오후 3:12]'·'○○에게 답장' 머리는 걷어 낸다
+  const lines = body.split('\n').map(l => l.replace(/^(\s*\[[^\]]*\]\s*)+/, '').replace(/^.*에게\s*답장\s*/, '').trim());
+  const anyMap = _shipSizeMap('');
+  const anyRe = _shipSizeRe(anyMap, 'i');
+  const start = lines.findIndex(l => l && (SHIP_PAL_RE.test(l) || _shipFindProduct(l) || anyRe.test(l)));
+  if (start < 0) return null;
+  const kept = lines.slice(start).filter(Boolean);
+  const content = kept.join(' ');
+  // 거래처 = 첫 토큰('청주원협1p'처럼 붙었으면 파렛 떼기). 첫 줄이 파렛·품목으로 시작하면 바로 윗줄 첫 토큰.
+  const tok0 = content.split(/\s+/)[0] || '';
+  let pTok = tok0.replace(/\d+(?:\.\d+)?\s*[pP]$/, '');
+  if (!pTok || /^\d/.test(pTok) || _shipFindProduct(pTok)) {
+    const prev = lines.slice(0, start).filter(Boolean).pop();
+    pTok = prev ? prev.split(/\s+/)[0] : '';
+  }
+  const pm = content.match(SHIP_PAL_RE);
+  const pf = _shipFindProduct(content);
+  const product = pf ? pf.p : '';
+  const map = _shipSizeMap(product);
+  const sre = _shipSizeRe(map, 'gi');
+  // 박스 종류 = 파렛 뒤 ~ 품목 앞(파렛이 없으면 거래처 뒤부터)
+  const bxFrom = pm ? pm.index + pm[0].length : (content.indexOf(tok0) + tok0.length);
+  const bxTo = pf ? pf.i : bxFrom;
+  const box_type = bxTo > bxFrom ? content.slice(bxFrom, bxTo).trim() : '';
+  const km = box_type.match(/(\d+(?:\.\d+)?)\s*kg/i);
+  // 사이즈 줄 — 품목 뒤부터(박스 종류 안 글자를 사이즈로 읽지 않게). 같은 사이즈가 두 번 나오면 더한다.
+  const sizeText = content.slice(pf ? pf.i + pf.w.length : bxFrom);
+  const acc = {}, order = [];
+  let sm;
+  while ((sm = sre.exec(sizeText))) {
+    const sz = map[sm[1].toUpperCase()] || sm[1];
+    if (!(sz in acc)) { acc[sz] = 0; order.push(sz); }
+    acc[sz] += +sm[2];
+  }
+  if (!order.length) return null;
+  return {
+    uid: ++_shipUid, date: td(), partner: _shipPartnerName(pTok), pallets: pm ? +pm[1] : null,
+    box_type, box_kg: km ? +km[1] : null, product, source: '', grade: /고당/.test(content) ? '고당' : '',
+    note: '', raw: kept.join('\n') + (tail ? ' ' + tail : ''), total,
+    lines: order.map(sz => ({ size: sz, boxes: acc[sz] })),
+  };
+}
+
+// ── 탭 ──────────────────────────────────────────────
+async function openShipTab() {
+  const root = document.getElementById('ship-root'); if (!root) return;
+  if (!_isAdmin()) { root.innerHTML = '<div class="note">관리자만 볼 수 있습니다.</div>'; return; }
+  if (!_shipUi.from) { const d = new Date(td() + 'T00:00:00'); d.setDate(d.getDate() - 13); _shipUi.from = ymd(d); _shipUi.to = td(); }
+  const keep = document.getElementById('ship-paste');   // 다른 탭에 다녀와도 붙여 둔 글은 남긴다
+  const pasted = keep ? keep.value : '';
+  root.innerHTML = `
+    <div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:500;color:#374151;margin-bottom:4px">🚚 출고 기록 — 단톡 붙여넣기</div>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:8px">공판장·원협 파렛 출고 메시지를 그대로 붙여 넣고 [읽기]. 여러 개를 한 번에 붙여도 되고, 답장 인용은 한 번만 읽습니다. 재고는 바뀌지 않습니다.</div>
+      <textarea id="ship-paste" rows="6" style="${SHIP_IN};width:100%;resize:vertical" placeholder="예) 청주원협 1p 탐라왕5kg 만감박스&#10;노지귤&#10;L. 90박스&#10;2L 42박스 총 132박스"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm" onclick="_shipRead()">읽기</button><button class="btn sm cancel" onclick="document.getElementById('ship-paste').value=''">글 지우기</button></div>
+    </div>
+    <datalist id="ship-partner-dl">${(partners || []).map(p => p && p.name ? `<option value="${esc(p.name)}">` : '').join('')}</datalist>
+    <div id="ship-drafts"></div>
+    <div id="ship-list-bar"></div>
+    <div id="ship-list"><div class="note">불러오는 중…</div></div>`;
+  document.getElementById('ship-paste').value = pasted;
+  _shipRenderDrafts();
+  _shipRenderBar();
+  await _shipReloadList();
+}
+async function _shipReloadList() {
+  try {
+    _shipRows = await sbGetAll('shipments', `is_void=eq.false&date=gte.${_shipUi.from}&date=lte.${_shipUi.to}&order=date.desc,created_at.asc`) || [];
+  } catch (e) {
+    const el = document.getElementById('ship-list');
+    if (el) el.innerHTML = `<div class="note" style="color:#DC2626">출고 기록을 못 불러왔습니다: ${esc(e.message || e)}</div>`;
+    return;
+  }
+  _shipRenderBar();
+  _shipRenderList();
+}
+function _shipRead() {
+  const ta = document.getElementById('ship-paste'); if (!ta) return;
+  const ds = _shipParse(ta.value);
+  if (!ds.length) { showToast('읽을 묶음이 없습니다 — "사이즈 숫자박스" 줄이 있는지 확인하세요'); return; }
+  _shipDrafts = _shipDrafts.filter(d => d.gid).concat(ds);   // 새로 읽으면 저장 안 한 읽기 결과는 바꾼다(수정 중 카드는 남김)
+  _shipRenderDrafts();
+  showToast(`${ds.length}건 읽음 — 확인 후 저장하세요`);
+}
+
+// ── 미리보기 카드 ──────────────────────────────────────
+function _shipRenderDrafts() {
+  const el = document.getElementById('ship-drafts'); if (!el) return;
+  if (!_shipDrafts.length) { el.innerHTML = ''; return; }
+  const n = _shipDrafts.filter(d => !d.gid).length;
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:500;color:#374151">미리보기 ${_shipDrafts.length}건</div>
+      <div style="flex:1"></div>
+      ${n > 1 ? `<button class="btn sm pri" onclick="_shipSaveAll()">전부 저장</button>` : ''}
+      <button class="btn sm cancel" onclick="_shipDrafts=[];_shipRenderDrafts()">모두 비우기</button>
+    </div>${_shipDrafts.map(_shipCardHtml).join('')}`;
+  _shipDrafts.forEach(d => _shipCheckDup(d.uid));
+}
+function _shipCardHtml(d) {
+  const u = d.uid;
+  const lab = t => `<div style="font-size:11px;color:#6B7280;margin-bottom:2px">${t}</div>`;
+  const fld = (t, html) => `<div>${lab(t)}${html}</div>`;
+  const inp = (k, v, st, type) => `<input ${type ? `type="${type}"` : ''} value="${esc(v == null ? '' : v)}" oninput="_shipSet(${u},'${k}',this.value)" style="${SHIP_IN};${st}">`;
+  const szOpts = Object.values(_shipSizeMap(d.product)).filter((v, i, a) => a.indexOf(v) === i).map(s => `<option value="${esc(s)}">`).join('');
+  const rows = d.lines.map((l, j) => `<tr>
+      <td style="padding:3px 6px"><input value="${esc(l.size)}" list="ship-sz-dl-${u}" oninput="_shipSetLine(${u},${j},'size',this.value)" style="${SHIP_IN};width:70px"></td>
+      <td style="padding:3px 6px"><input value="${l.boxes == null ? '' : l.boxes}" inputmode="numeric" oninput="_shipSetLine(${u},${j},'boxes',this.value)" style="${SHIP_IN};width:70px;${SHIP_NUM}"></td>
+      <td id="ship-kg-${u}-${j}" style="padding:3px 6px;${SHIP_NUM};color:#374151"></td>
+      <td style="padding:3px 6px"><button class="btn del" onclick="_shipDelLine(${u},${j})" title="줄 삭제">✕</button></td></tr>`).join('');
+  return `<div style="background:#fff;border:1px solid ${d.gid ? '#1E3A5F' : '#E5E7EB'};border-radius:10px;padding:10px 12px;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:500;color:#374151">${d.gid ? '✏️ 수정 중' : '새 기록'}</div>
+      <div id="ship-dup-${u}" style="font-size:12px;color:#DC2626"></div>
+      <div style="flex:1"></div>
+      <button class="btn del" onclick="_shipDropDraft(${u})">빼기</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+      ${fld('날짜', `<input type="date" value="${esc(d.date)}" onchange="_shipSet(${u},'date',this.value);_shipCheckDup(${u})" style="${SHIP_IN};width:140px">`)}
+      ${fld('거래처', `<input value="${esc(d.partner)}" list="ship-partner-dl" oninput="_shipSet(${u},'partner',this.value)" onchange="_shipCheckDup(${u})" style="${SHIP_IN};width:150px">`)}
+      ${fld('파렛', inp('pallets', d.pallets, `width:60px;${SHIP_NUM}`))}
+      ${fld('박스 종류', inp('box_type', d.box_type, 'width:170px'))}
+      ${fld('박스 kg', inp('box_kg', d.box_kg, `width:70px;${SHIP_NUM}`))}
+      ${fld('품목', `<select onchange="_shipSet(${u},'product',this.value);_shipRenderDrafts()" style="${SHIP_IN};width:130px">${buildProductOptgroupHTML(false, { selected: d.product })}</select>`)}
+      ${fld('구분', `<select onchange="_shipSet(${u},'source',this.value)" style="${SHIP_IN};width:100px"><option value="">모름</option>${SHIP_SOURCES.map(s => `<option${d.source === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`)}
+      ${fld('등급', `<select onchange="_shipSet(${u},'grade',this.value)" style="${SHIP_IN};width:80px"><option value="">일반</option><option${d.grade === '고당' ? ' selected' : ''}>고당</option></select>`)}
+    </div>
+    <datalist id="ship-sz-dl-${u}">${szOpts}</datalist>
+    <div style="overflow-x:auto;margin-top:8px"><table style="min-width:0;width:auto;border-collapse:collapse;font-size:13px">
+      <thead><tr style="color:#6B7280;font-size:11px"><th style="padding:3px 6px;text-align:left;font-weight:400">사이즈</th><th style="padding:3px 6px;text-align:right;font-weight:400">박스</th><th style="padding:3px 6px;text-align:right;font-weight:400">kg</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="border-top:1px solid #E5E7EB"><td style="padding:4px 6px;color:#6B7280">합계</td><td id="ship-tb-${u}" style="padding:4px 6px;${SHIP_NUM};font-weight:500"></td><td id="ship-tk-${u}" style="padding:4px 6px;${SHIP_NUM};font-weight:500"></td><td></td></tr></tfoot>
+    </table></div>
+    <div id="ship-tw-${u}" style="font-size:12px;color:#DC2626;margin-top:2px"></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">
+      <button class="btn sm" onclick="_shipAddLine(${u})">＋ 줄 추가</button>
+      <input value="${esc(d.note)}" placeholder="메모" oninput="_shipSet(${u},'note',this.value)" style="${SHIP_IN};flex:1;min-width:160px">
+      <button class="btn sm pri" onclick="_shipSaveOne(${u})">${d.gid ? '수정 저장' : '이 묶음 저장'}</button>
+    </div>
+  </div>`;
+}
+// 입력 중엔 카드를 다시 그리지 않는다 — 계산 칸(kg·합계·총 불일치)만 제자리 갱신(커서 보호)
+function _shipSet(uid, k, v) { const d = _shipD(uid); if (!d) return; d[k] = v; _shipRecalc(uid); }
+function _shipSetLine(uid, j, k, v) {
+  const d = _shipD(uid); if (!d || !d.lines[j]) return;
+  d.lines[j][k] = k === 'boxes' ? _shipNum(v) : v;
+  _shipRecalc(uid);
+}
+function _shipAddLine(uid) { const d = _shipD(uid); if (!d) return; d.lines.push({ size: '', boxes: null }); _shipRenderDrafts(); }
+function _shipDelLine(uid, j) { const d = _shipD(uid); if (!d) return; d.lines.splice(j, 1); _shipRenderDrafts(); }
+function _shipDropDraft(uid) { _shipDrafts = _shipDrafts.filter(d => d.uid !== uid); _shipRenderDrafts(); }
+function _shipRecalc(uid) {
+  const d = _shipD(uid); if (!d) return;
+  const bk = _shipNum(d.box_kg);
+  let tb = 0;
+  d.lines.forEach((l, j) => {
+    const b = _shipNum(l.boxes) || 0; tb += b;
+    const c = document.getElementById(`ship-kg-${uid}-${j}`);
+    if (c) c.textContent = bk != null && b ? _shipKg(b * bk) : '';
+  });
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set(`ship-tb-${uid}`, fmtN(tb));
+  set(`ship-tk-${uid}`, bk != null ? _shipKg(tb * bk) : '');
+  set(`ship-tw-${uid}`, d.total != null && d.total !== tb ? `⚠ 메시지의 총 ${fmtN(d.total)}박스와 사이즈 합 ${fmtN(tb)}박스가 다릅니다` : '');
+}
+// 같은 날짜·같은 거래처·같은 사이즈별 박스 묶음이 이미 있으면 경고(막지는 않음). 날짜별로 한 번만 조회한다.
+function _shipLoadExist(date) {
+  if (!_shipExist[date]) {
+    const ent = _shipExist[date] = { rows: null };
+    ent.p = sbGet('shipments', `is_void=eq.false&date=eq.${date}&select=id,group_id,partner_name,size_code,boxes,created_at,created_by`)
+      .then(r => { ent.rows = r || []; return ent.rows; })
+      .catch(() => { delete _shipExist[date]; return []; });
+  }
+  return _shipExist[date].p;
+}
+async function _shipCheckDup(uid) {
+  _shipRecalc(uid);
+  const d = _shipD(uid); if (!d || !d.date) return;
+  const rows = await _shipLoadExist(d.date);
+  const cur = _shipD(uid); if (!cur || cur.date !== d.date) return;
+  const el = document.getElementById(`ship-dup-${uid}`); if (!el) return;
+  const sig = _shipSig(cur.partner, cur.lines.map(l => ({ size: l.size, boxes: _shipNum(l.boxes) })));
+  const byG = {};
+  rows.forEach(r => { if (r.group_id !== cur.gid) (byG[r.group_id] = byG[r.group_id] || []).push(r); });
+  const hit = Object.values(byG).find(g => _shipSig(g[0].partner_name, g.map(r => ({ size: r.size_code, boxes: r.boxes }))) === sig);
+  if (!hit) { el.textContent = ''; return; }
+  const f = hit[0], t = f.created_at ? new Date(f.created_at) : null;
+  const info = [t ? `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '', f.created_by || ''].filter(Boolean).join(' · ');
+  el.textContent = `⚠ 이미 기록됨${info ? ` (${info})` : ''}`;
+}
+
+// ── 저장 ──────────────────────────────────────────────
+// 묶음 공통 값 + 사이즈 한 줄. first = 묶음 첫 줄(파렛·원문은 여기에만).
+function _shipRowData(d, l, first) {
+  const bk = _shipNum(d.box_kg), bx = Math.round(_shipNum(l.boxes) || 0);
+  return {
+    date: d.date, partner_name: String(d.partner).trim(), product: d.product || null, size_code: String(l.size).trim() || null,
+    quality_grade: d.grade || null, boxes: bx, box_type: String(d.box_type || '').trim() || null, box_kg: bk,
+    weight_kg: bk != null ? Math.round(bx * bk * 100) / 100 : null, pallets: first ? _shipNum(d.pallets) : null,
+    source: d.source || null, note: String(d.note || '').trim() || null, raw_msg: first ? (d.raw || null) : null,
+  };
+}
+async function _shipSaveDraft(d) {
+  const lines = d.lines.filter(l => String(l.size || '').trim() && (_shipNum(l.boxes) || 0) > 0);
+  if (!d.date) throw new Error('날짜를 넣으세요');
+  if (!String(d.partner || '').trim()) throw new Error('거래처를 넣으세요');
+  if (!lines.length) throw new Error('사이즈·박스 줄이 없습니다');
+  const who = _actor();
+  if (!d.gid) {
+    // 묶음 하나를 한 번에 넣는다(배열 insert = 한 요청) — 사이즈 몇 줄만 들어가고 끊기는 일이 없게.
+    const gid = generateUUID();
+    await sbInsert('shipments', lines.map((l, j) => ({ ...(_shipRowData(d, l, j === 0)), group_id: gid, created_by: who })));
+    return;
+  }
+  // 수정 — 남은 줄은 update, 새 줄은 insert(전표 상태는 묶음 것을 따름), 빠진 줄은 void(물리 삭제 금지)
+  const now = new Date().toISOString();
+  const keepIds = new Set(lines.filter(l => l.id).map(l => l.id));
+  for (let j = 0; j < lines.length; j++) {
+    const l = lines[j], data = _shipRowData(d, l, j === 0);
+    if (l.id) await sbUpdate('shipments', l.id, { ...data, updated_at: now });
+    else await sbInsert('shipments', { ...data, group_id: d.gid, created_by: who, slip_done: !!d.slip.done, slip_by: d.slip.by, slip_at: d.slip.at });
+  }
+  for (const id of d.ids) if (!keepIds.has(id)) await sbUpdate('shipments', id, { is_void: true, void_reason: '수정에서 줄 삭제', void_by: who, updated_at: now });
+}
+async function _shipSaveList(list) {
+  if (!_isAdmin() || _shipBusy || !list.length) return;
+  _shipBusy = true;
+  let ok = 0, err = '';
+  try {
+    for (const d of list) {
+      try { await _shipSaveDraft(d); } catch (e) { err = `${d.partner || '(거래처 없음)'}: ${e.message || e}`; break; }
+      ok++;
+      _shipDrafts = _shipDrafts.filter(x => x !== d);
+      delete _shipExist[d.date]; if (d.date0) delete _shipExist[d.date0];
+    }
+  } finally { _shipBusy = false; }
+  if (!_shipDrafts.some(d => !d.gid)) { const ta = document.getElementById('ship-paste'); if (ta && ok) ta.value = ''; }
+  _shipRenderDrafts();
+  if (ok) await _shipReloadList();
+  if (err) alert(`저장 실패 — ${err}${ok ? `\n(앞의 ${ok}건은 저장됨)` : ''}`);
+  else showToast(`🚚 출고 기록 ${ok}건 저장`);
+}
+function _shipSaveOne(uid) { const d = _shipD(uid); if (d) _shipSaveList([d]); }
+function _shipSaveAll() { _shipSaveList(_shipDrafts.filter(d => !d.gid)); }
+
+// ── 목록(지난 내역) ──────────────────────────────────────
+// 묶음(group_id)별로 모은다. 줄 순서 = id 순(id는 bigint).
+function _shipGroups() {
+  const m = new Map();
+  _shipRows.slice().sort((a, b) => Number(a.id) - Number(b.id)).forEach(r => {
+    let g = m.get(r.group_id);
+    if (!g) { g = { gid: r.group_id, rows: [] }; m.set(r.group_id, g); }
+    g.rows.push(r);
+  });
+  return [...m.values()].map(g => {
+    const f = g.rows[0];
+    const kgs = g.rows.map(r => r.weight_kg).filter(v => v != null);
+    return { ...g, date: f.date, partner: f.partner_name, product: f.product, grade: f.quality_grade, box_type: f.box_type,
+      pallets: _shipNum(f.pallets), boxes: g.rows.reduce((s, r) => s + (Number(r.boxes) || 0), 0),
+      kg: kgs.length ? kgs.reduce((s, v) => s + Number(v), 0) : null, slip: g.rows.every(r => r.slip_done),
+      slip_by: f.slip_by, slip_at: f.slip_at, created_at: f.created_at };
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.created_at).localeCompare(String(b.created_at)));
+}
+function _shipRenderBar() {
+  const el = document.getElementById('ship-list-bar'); if (!el) return;
+  const names = [...new Set(_shipRows.map(r => r.partner_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  if (_shipUi.partner && !names.includes(_shipUi.partner)) names.unshift(_shipUi.partner);
+  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 10px">
+    <div style="font-size:14px;font-weight:500;color:#374151;margin-right:4px">지난 내역</div>
+    <input type="date" value="${esc(_shipUi.from)}" onchange="_shipUi.from=this.value;_shipReloadList()" style="${SHIP_IN};width:140px">
+    <span style="color:#9CA3AF">~</span>
+    <input type="date" value="${esc(_shipUi.to)}" onchange="_shipUi.to=this.value;_shipReloadList()" style="${SHIP_IN};width:140px">
+    <select onchange="_shipUi.partner=this.value;_shipRenderList()" style="${SHIP_IN};width:150px"><option value="">거래처 전체</option>${names.map(n => `<option value="${esc(n)}"${n === _shipUi.partner ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+    <label style="font-size:13px;color:#374151;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox"${_shipUi.unslip ? ' checked' : ''} onchange="_shipUi.unslip=this.checked;_shipRenderList()">전표 미작성만</label>
+  </div>`;
+}
+function _shipRenderList() {
+  const el = document.getElementById('ship-list'); if (!el) return;
+  const gs = _shipGroups().filter(g => (!_shipUi.partner || g.partner === _shipUi.partner) && (!_shipUi.unslip || !g.slip));
+  if (!gs.length) { el.innerHTML = '<div class="note">이 기간에 출고 기록이 없습니다.</div>'; return; }
+  const byDate = new Map();
+  gs.forEach(g => { if (!byDate.has(g.date)) byDate.set(g.date, []); byDate.get(g.date).push(g); });
+  const TD = 'padding:6px 8px;border-bottom:1px solid #F3F4F6;white-space:nowrap;vertical-align:middle';
+  const hm = s => { const t = new Date(s); const day = ymd(t) === td() ? '' : `${t.getMonth() + 1}/${t.getDate()} `; return `${day}${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+  const rowHtml = g => {
+    const sizes = g.rows.map(r => `<span style="display:inline-flex;gap:4px;min-width:58px"><span style="color:#6B7280">${esc(r.size_code || '-')}</span><span style="${SHIP_NUM};margin-left:auto">${fmtN(r.boxes)}</span></span>`).join('<span style="color:#D1D5DB;margin:0 4px">·</span>');
+    const slip = g.slip
+      ? `<button class="btn sm" onclick="_shipToggleSlip('${g.gid}')" style="color:#059669;border-color:#A7F3D0;background:#ECFDF5">✓ 전표</button><span style="font-size:11px;color:#6B7280;margin-left:6px">작성 ${esc(g.slip_by || '')}${g.slip_at ? ' ' + hm(g.slip_at) : ''}</span>`
+      : `<button class="btn sm" onclick="_shipToggleSlip('${g.gid}')" style="color:#6B7280">☐ 전표</button>`;
+    const mid = 'ship-' + g.gid;
+    return `<tr>
+      <td style="${TD};color:#6B7280">${calFmtShort(g.date)}</td>
+      <td style="${TD};color:#374151">${esc(g.partner)}</td>
+      <td style="${TD};${SHIP_NUM}">${g.pallets != null ? fmtN(g.pallets) + 'P' : ''}</td>
+      <td style="${TD};color:#6B7280">${esc(g.box_type || '')}</td>
+      <td style="${TD}">${g.product ? productChip(g.product) : ''}${g.grade === '고당' ? ' <span style="color:#1565C0;font-size:12px">고당</span>' : ''}</td>
+      <td style="${TD}">${sizes}</td>
+      <td style="${TD};${SHIP_NUM};font-weight:500">${fmtN(g.boxes)}박스</td>
+      <td style="${TD};${SHIP_NUM}">${g.kg != null ? _shipKg(g.kg) + 'kg' : ''}</td>
+      <td style="${TD}">${slip}</td>
+      <td style="${TD};text-align:right"><div style="position:relative;display:inline-block">
+        <button class="menu-trigger" onclick="toggleRowMenu('${mid}',event,this)" style="font-size:13px;width:24px;height:24px">⋮</button>
+        <div id="row-menu-${mid}" class="row-menu" style="display:none">
+          <button onclick="toggleRowMenu('${mid}');_shipEdit('${g.gid}')">✏️ 수정</button>
+          <div class="menu-divider"></div>
+          <button class="menu-danger" onclick="toggleRowMenu('${mid}');_shipDelete('${g.gid}')">🗑️ 삭제</button>
+        </div></div></td>
+    </tr>`;
+  };
+  el.innerHTML = [...byDate.entries()].map(([date, list]) => {
+    const bx = list.reduce((s, g) => s + g.boxes, 0), pl = list.reduce((s, g) => s + (g.pallets || 0), 0);
+    const kg = list.reduce((s, g) => s + (g.kg || 0), 0);
+    return `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;margin-bottom:10px;overflow:hidden">
+      <div style="padding:8px 12px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;font-size:13px;color:#374151;display:flex;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
+        <span style="font-weight:500">${_shipDayLabel(date)}</span><span>${list.length}건</span><span>${fmtN(bx)}박스</span>${pl ? `<span>${fmtN(pl)}P</span>` : ''}${kg ? `<span>${_shipKg(kg)}kg</span>` : ''}
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${list.map(rowHtml).join('')}</tbody></table></div>
+    </div>`;
+  }).join('');
+}
+async function _shipToggleSlip(gid) {
+  if (!_isAdmin() || _shipBusy) return;
+  const rows = _shipRows.filter(r => r.group_id === gid); if (!rows.length) return;
+  const on = !rows.every(r => r.slip_done);
+  const data = on ? { slip_done: true, slip_by: _actor(), slip_at: new Date().toISOString() } : { slip_done: false, slip_by: null, slip_at: null };
+  _shipBusy = true;
+  try {
+    for (const r of rows) { await sbUpdate('shipments', r.id, data); Object.assign(r, data); }   // 저장 성공한 줄만 화면에 반영
+  } catch (e) { alert('전표 표시 저장 실패: ' + (e.message || e)); }
+  finally { _shipBusy = false; }
+  _shipRenderList();
+}
+function _shipEdit(gid) {
+  if (!_isAdmin()) return;
+  const g = _shipGroups().find(x => x.gid === gid); if (!g) return;
+  const f = g.rows[0];
+  _shipDrafts = _shipDrafts.filter(d => d.gid !== gid);
+  _shipDrafts.unshift({
+    uid: ++_shipUid, gid, ids: g.rows.map(r => r.id), date: f.date, date0: f.date, partner: f.partner_name || '', pallets: f.pallets,
+    box_type: f.box_type || '', box_kg: f.box_kg, product: f.product || '', source: f.source || '', grade: f.quality_grade || '',
+    note: f.note || '', raw: f.raw_msg || '', total: null, slip: { done: g.slip, by: f.slip_by, at: f.slip_at },
+    lines: g.rows.map(r => ({ id: r.id, size: r.size_code || '', boxes: r.boxes })),
+  });
+  _shipRenderDrafts();
+  document.getElementById('ship-drafts')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function _shipDelete(gid) {
+  if (!_isAdmin() || _shipBusy) return;
+  const g = _shipGroups().find(x => x.gid === gid); if (!g) return;
+  const res = await showConfirmDanger({
+    title: '출고 기록 삭제', subtitle: '목록에서 빠집니다(기록은 삭제 표시로 남음)',
+    items: [`${calFmtShort(g.date)} · ${g.partner} · ${g.rows.map(r => `${r.size_code || '-'} ${r.boxes}`).join(' · ')} = ${g.boxes}박스`],
+    needWorker: true, confirmText: '삭제',
+  });
+  if (!res || !res.ok) return;
+  _shipBusy = true;
+  try {
+    const now = new Date().toISOString();
+    for (const r of g.rows) await sbUpdate('shipments', r.id, { is_void: true, void_reason: res.reason, void_by: res.worker, updated_at: now });
+    showToast('출고 기록 삭제됨');
+  } catch (e) { alert('삭제 실패: ' + (e.message || e)); }
+  finally { _shipBusy = false; }
+  delete _shipExist[g.date];
+  _shipDrafts = _shipDrafts.filter(d => d.gid !== gid);
+  _shipRenderDrafts();
+  await _shipReloadList();
 }

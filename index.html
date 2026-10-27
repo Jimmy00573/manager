@@ -295,6 +295,7 @@
   <button class="nbtn active" onclick="T('inv')" data-tab="inv">📦 재고관리</button>
   <button class="nbtn" onclick="T('transport')" data-tab="transport">🚜 수확 및 수송 관리</button>
   <button class="nbtn" onclick="T('spec')" data-tab="spec">📋 작업 기준표</button>
+  <button class="nbtn" onclick="T('ship')" data-tab="ship">🚚 출고 기록</button>
   <div style="flex:1"></div>
   <button class="nbtn" onclick="T('set')" data-tab="set" style="border-left:1px solid var(--border)">⚙ 설정</button>
 </div>
@@ -333,6 +334,9 @@
   <div id="spec-gram"></div>
   <div id="spec-masters"></div>
 </div>
+
+<!-- 🚚 출고 기록 — 공판장·원협 파렛 출고 장부(단톡 붙여넣기 → shipments). 재고와 무관. 내용은 app.js openShipTab이 그린다. admin만. -->
+<div id="p-ship" class="panel"><div id="ship-root"></div></div>
 
 <!-- 현황판 -->
 <div id="p-dash" class="panel active">
@@ -2086,6 +2090,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=32"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=781"></script>
+<script src="src/app.js?v=782"></script>
 </body>
 </html>
