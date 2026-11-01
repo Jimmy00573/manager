@@ -22026,9 +22026,62 @@ async function saveInboundModal() {
         left = await _syncInboundLinkedDate(id, date);
       }
     }
+    // ── 연결된 회수 콘테이너 수량 맞추기(v785) ─────────────────────────
+    // ★입고 수량이 바뀌었을 때만. 콘테이너 수는 귤 수량과 원래 다를 수 있으므로 자동으로 바꾸지 않고 물어본다.
+    //   콘테이너 기록은 같은 차 묶음의 대표 입고 한 곳에만 붙을 수 있어 묶음(_ibShareGroup) id 전체로 DB에서 찾는다.
+    //   우리것 원물수거 pick 1건 + 농가것·농협것 0건일 때만 제안하고, 그 외는 안내만 한다.
+    if (qty !== prev.quantity) {
+      const dq = qty - (Number(prev.quantity) || 0);
+      const dqTxt = `${dq > 0 ? '+' : ''}${fmtN(dq)}`;
+      let pk = null, others = 0;
+      try {
+        const ids = (await _ibShareGroup(id)).grp.map(r => r.id);
+        if (!ids.some(x => String(x) === String(id))) ids.push(id);
+        const idQ = ids.join(',');
+        const [pa, oi, ni] = await Promise.all([
+          sbGet('picks',   `inbound_id=in.(${idQ})&select=id,type,ctype,qty`),
+          sbGet('own_ins', `inbound_id=in.(${idQ})&select=id`),
+          sbGet('nhf_ins', `inbound_id=in.(${idQ})&select=id`),
+        ]);
+        const raw = (pa || []).filter(p => p.type === '원물수거');
+        // 원물수거가 아닌 pick이 입고에 붙어 있으면 '섞임'으로 보고 손대지 않는다.
+        others = (pa || []).length - raw.length + (oi || []).length + (ni || []).length;
+        pk = raw.length === 1 && !others ? raw[0] : null;
+        if (!raw.length && !others) others = -1;   // 연결 기록 없음
+      } catch (ce) { others = -2; console.warn('입고 수정 — 연결 콘테이너 조회 실패:', ce.message); }
+      const oldQ = pk ? (Number(pk.qty) || 0) : 0;
+      const newQ = oldQ + dq;
+      if (pk && newQ > 0) {
+        if (await showConfirmEdit('콘테이너 회수 수량', `입고 수량이 ${dqTxt} 바뀌었습니다.\n연결된 회수 콘테이너(${pk.ctype}) ${fmtN(oldQ)} → ${fmtN(newQ)}개로 같이 바꿀까요?`)) {
+          while (true) {
+            try {
+              await dbUpdatePick(pk.id, { qty: newQ });
+              const lp = (picks || []).find(p => String(p.id) === String(pk.id));
+              if (lp) lp.qty = newQ;
+              try {
+                await dbInsertAuditLog({ target_table: 'picks', target_id: pk.id,
+                  before_val: { qty: oldQ }, after_val: { qty: newQ }, reason: '입고 수량 수정 연동', staff: _actor() });
+              } catch (ae) { console.warn('회수 수량 감사로그 실패:', ae.message); }
+              break;
+            } catch (pe) {
+              if (!(await showConfirmEdit('회수 수량 변경 실패', `입고는 저장됐지만 연결된 회수 기록의 수량을 못 바꿨습니다. 다시 시도할까요?`))) {
+                alert(`회수 기록 수량은 ${fmtN(oldQ)}개 그대로입니다.\n콘테이너 화면에서 확인해 주세요.`);
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        const why = others === -1 ? '연결된 회수 콘테이너가 없어'
+          : others === -2 ? '연결된 콘테이너를 불러오지 못해'
+          : pk ? `회수 수량이 0개 이하(${fmtN(newQ)})가 되어`
+          : '연결된 콘테이너가 여러 건이라';
+        alert(`입고 수량이 ${dqTxt} 바뀌었습니다. ${why} 자동으로 맞추지 않았습니다. 콘테이너 화면에서 확인해 주세요.`);
+      }
+    }
     document.getElementById('modal-edit-inbound').style.display = 'none';
     _editInboundId = null;
-    renderInvSummary(); renderInboundList();
+    renderInvSummary(); renderInboundList(); renderPick(); renderDash();
     showToast('입고 기록이 수정되었습니다.');
   } catch(e) { alert('수정 오류: ' + e.message); }
 }
