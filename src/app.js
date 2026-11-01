@@ -28790,6 +28790,7 @@ function _specGuideForm() {
 // 단톡 글자 → 정식 품목 이름. 같은 자리에서 겹치면 긴 글자가 이긴다('노지귤' > '노지').
 const SHIP_PRODUCT_WORDS = [['노지감귤', '노지감귤'], ['노지귤', '노지감귤'], ['노지', '노지감귤'], ['하우스감귤', '하우스감귤'], ['하우스', '하우스감귤'],
   ['비가림', '비가림'], ['타이벡', '타이벡'], ['황금향', '황금향'], ['한라봉', '한라봉'], ['천혜향', '천혜향'], ['레드향', '레드향'], ['카라향', '카라향']];
+const SHIP_COARSE = ['2S', 'S', 'M'];
 const SHIP_SOURCES = ['선과 직출', '재고'];   // 빈값 = 모름
 const SHIP_PAL_RE = /(\d+(?:\.\d+)?)\s*(?:[pP]|파렛트?|파레트|팔레트)(?![A-Za-z])/;
 const SHIP_IN = 'padding:5px 7px;border:1px solid #E5E7EB;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;background:#fff';
@@ -28822,12 +28823,13 @@ function _shipSizeMap(product) {
   const list = product ? sizesForProduct(product) : SIZES_감귤류.concat(SIZES_만감류);
   const map = {};
   list.forEach(sz => { map[sz.toUpperCase()] = sz; if (/^\d+수$/.test(sz)) map[sz.replace(/수$/, '과')] = sz; });
+  if (list.includes('2S1')) SHIP_COARSE.forEach(sz => { map[sz] = sz; });   // 공판장 큰 묶음(2S·S·M) — 적힌 그대로 기록
   return map;
 }
 // '사이즈 [.] 숫자 박스' — 긴 토큰부터(2L이 L보다 먼저), 앞은 글자 경계.
 function _shipSizeRe(map, flags) {
   const alts = Object.keys(map).sort((a, b) => b.length - a.length).map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  return new RegExp(`(?:^|[^0-9A-Za-z가-힣])(${alts})\\s*\\.?\\s*(\\d+)\\s*(?:박스|box)`, flags);
+  return new RegExp(`(?:^|[^0-9A-Za-z가-힣])(${alts})\\s*[.:]?\\s*(\\d+)(?![0-9.])(?:\\s*(?:박스|box))?`, flags);
 }
 // 거래처 첫 토큰 → partners 정식 이름(같으면 그대로, 포함 관계로 하나만 맞으면 그 이름, 아니면 입력 그대로)
 //   포함 비교는 공백·'공판장'·'청과'를 뺀 글자로(v783) — '부산엄궁' ↔ '부산 엄궁 공판장'. 빼고 나서 빈 글자는 안 맞춘다.
@@ -28849,7 +28851,7 @@ function _shipSig(partner, lines) {
 // 붙여 넣은 글 → 묶음 배열. '총 N박스'·'작업 됐습니다'에서 끊고, 사이즈가 하나도 없는 조각(인사·답장 머리)은 버린다.
 function _shipParse(text) {
   const src = String(text || '').replace(/\r/g, '');
-  const re = /총\s*(\d+)\s*박스|작업\s*(?:됐|되었)습니다/g;
+  const re = /총\s*(\d+)\s*(?:박스|box)|작업\s*(?:됐|되었)습니다/gi;
   const segs = [];
   let last = 0, m;
   while ((m = re.exec(src))) { segs.push({ body: src.slice(last, m.index), total: m[1] ? +m[1] : null, tail: m[1] ? m[0] : '' }); last = re.lastIndex; }
@@ -28876,7 +28878,8 @@ function _shipParseOne(body, total, tail) {
   // 거래처 = 첫 토큰('청주원협1p'처럼 붙었으면 파렛 떼기). 첫 줄이 파렛·품목으로 시작하면 바로 윗줄 첫 토큰.
   const tok0 = content.split(/\s+/)[0] || '';
   let pTok = tok0.replace(/\d+(?:\.\d+)?\s*[pP]$/, '');
-  if (!pTok || /^\d/.test(pTok) || _shipFindProduct(pTok)) {
+  const pPrev = !pTok || /^\d/.test(pTok) || !!_shipFindProduct(pTok) || anyRe.test(' ' + tok0 + ' 1');   // 첫 토큰이 거래처가 아님(사이즈·품목·파렛)
+  if (pPrev) {
     const prev = lines.slice(0, start).filter(Boolean).pop();
     pTok = prev ? prev.split(/\s+/)[0] : '';
   }
@@ -28886,7 +28889,7 @@ function _shipParseOne(body, total, tail) {
   const map = _shipSizeMap(product);
   const sre = _shipSizeRe(map, 'gi');
   // 박스 종류 = 파렛 뒤 ~ 품목 앞(파렛이 없으면 거래처 뒤부터)
-  const bxFrom = pm ? pm.index + pm[0].length : (content.indexOf(tok0) + tok0.length);
+  const bxFrom = pm ? pm.index + pm[0].length : (pPrev ? 0 : content.indexOf(tok0) + tok0.length);
   const bxTo = pf ? pf.i : bxFrom;
   const box_type = bxTo > bxFrom ? content.slice(bxFrom, bxTo).trim() : '';
   const km = box_type.match(/(\d+(?:\.\d+)?)\s*kg/i);
