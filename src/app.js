@@ -18546,8 +18546,8 @@ function renderIbFarmView() {
              <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
           : `<button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>`;
         const farmMenu = `<div style="position:relative;display:inline-block">
-          <button class="menu-trigger" data-menu-id="${r.id}" onclick="toggleRowMenu('${r.id}',event,this)" style="font-size:13px;width:24px;height:24px">⋮</button>
-          <div id="row-menu-${r.id}" class="row-menu" style="display:none">${farmMenuItems}</div>
+          <button class="menu-trigger" data-menu-id="f-${r.id}" onclick="toggleRowMenu('f-${r.id}',event,this)" style="font-size:13px;width:24px;height:24px">⋮</button>
+          <div id="row-menu-f-${r.id}" class="row-menu" style="display:none">${farmMenuItems}</div>
         </div>`;
         const memoDiv = r.note
           ? `<div id="farm-memo-${r.id}" class="memo-expanded" style="display:none;margin:4px 0 0 20px">${esc(r.note).replace(/\n/g, '<br>')}</div>` : '';
