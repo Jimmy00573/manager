@@ -27168,6 +27168,15 @@ document.addEventListener('click', e => {
     return;
   }
 
+  // 메뉴 항목을 누르면(항목 onclick이 먼저 실행된 뒤) 그 메뉴를 닫는다 — 모달이 떠도 메뉴가 뒤에 남지 않게(v787)
+  const menuItem = e.target.closest('.row-menu button');
+  if (menuItem) {
+    const m = menuItem.closest('.row-menu');
+    if (m) { m.style.display = 'none'; _rowMenuLift(m, false); }
+    _openMenuId = null;
+    return;
+  }
+
   if (_openMenuId && !e.target.closest('.row-menu') && !e.target.classList.contains('menu-trigger')) {
     const menu = document.getElementById(`row-menu-${_openMenuId}`);
     if (menu) { menu.style.display = 'none'; _rowMenuLift(menu, false); }
