@@ -9292,6 +9292,10 @@ function _extNameSync(pre) {
 //                 ★어느 마스터에도 없는 이름도 '마스터 없음'으로 반드시 내보낸다 — 옵션이 빠지면 그 품목을 못 거른다.
 //   extraGroups : [{label, names[]}] — items 밖에서 관리되는 품목군(주스·청·가공품 = juice_product_master).
 //                 items 그룹 다음, '마스터 없음' 앞에 붙는다. items에 중복 등록하지 않으려고 여기서 합친다.
+// 품목 고르는 칸(입고·수확·배차) 안의 순서 — 적힌 것이 먼저, 나머지는 가나다순. (2026-11-09 Jimmy 결정)
+//   ★고르는 칸에만 쓴다. 목록·묶음 표시 순서는 PRODUCT_ORDER(시즌 순) 그대로.
+const ITEM_SELECT_ORDER = ['노지감귤', '극조생', '조생', '타이벡', '하우스감귤', '비가림'];
+const _itemSelIdx = n => { const i = ITEM_SELECT_ORDER.indexOf(n); return i < 0 ? ITEM_SELECT_ORDER.length : i; };
 function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
   const { firstOption, selected, only, extraGroups } = opts;
   let html = firstOption !== undefined ? firstOption : '<option value="">선택</option>';
@@ -9307,7 +9311,7 @@ function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
       if (!includeEtc && NON_SORTING_CATEGORIES.includes(cat.name)) return;
       const catItems = itemDefs
         .filter(i => i.category_id === cat.id && keep(i.name))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => _itemSelIdx(a.name) - _itemSelIdx(b.name) || a.name.localeCompare(b.name));
       if (!catItems.length) return;
       html += `<optgroup label="${esc(cat.name)}">`;
       catItems.forEach(i => { html += optOf(i.name); });
