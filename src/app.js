@@ -23305,12 +23305,15 @@ async function _srtWriteOne(r, seq, p, opts = {}) {
   if (tiny     > 0) parts.push(`극소과 ${fmtN(tiny)}CT`);
   if (green    > 0) parts.push(`청과 ${fmtN(green)}CT`);
   if (loss     > 0) parts.push(`손실 ${fmtN(loss)}CT`);
-  await dbInsertAuditLog({
-    target_table: 'inbound_records', target_id: r.id,
-    before_val: { remaining: fmtN(remaining) }, after_val: { processed: fmtN(inputCt), seq },
-    reason: `선과 처리 ${seq}차: ${r.farm_name} ${r.product} ${fmtN(inputCt)}CT → ${parts.join(' + ')}${p.auditExtra || ''}`,
-    staff: operator || 'admin'
-  });
+  // ★이력(로그)은 실패해도 저장을 되돌리지 않는다 — 재고·차감까지 다 들어간 뒤라 기록 한 줄 때문에 통째로 지우면 손해(v791)
+  try {
+    await dbInsertAuditLog({
+      target_table: 'inbound_records', target_id: r.id,
+      before_val: { remaining: fmtN(remaining) }, after_val: { processed: fmtN(inputCt), seq },
+      reason: `선과 처리 ${seq}차: ${r.farm_name} ${r.product} ${fmtN(inputCt)}CT → ${parts.join(' + ')}${p.auditExtra || ''}`,
+      staff: operator || 'admin'
+    });
+  } catch (e) { console.warn('[선과] 이력 기록 실패(저장은 유지):', e.message); }
 
   return ret;
 }
@@ -23448,7 +23451,9 @@ async function saveSortingResult() {
         sizeDetails: p.sizes, abn: p.abn,
         normalTotal: p.normalTotal, outputTotal: p.outputTotal,
         auditExtra: merged ? ` [합산 선과 ${sel.length}매지 중 ${p.pct.toFixed(1)}%]` : ''
-      }, { strict: merged, track: done });   // ★done 등록은 _srtWriteOne이 헤더 직후에 한다
+      }, { strict: true, track: done });   // ★done 등록은 _srtWriteOne이 헤더 직후에 한다
+      // ★v791: 단일 저장도 strict — 재고·파치 등록이 하나라도 실패하면 throw → 아래 catch가 통째로 되돌린다.
+      //   (2026-11-12 강동찬 황금향: DB 시간초과로 재고 일부·미선과 차감이 빠진 채 반쪽 저장됐다)
     }
     _sortingSeq = done[done.length - 1].seq;
 
@@ -23464,14 +23469,13 @@ async function saveSortingResult() {
       else                          { _renderScDoneProductOptions();   _scDayDate = td(); _renderScDayBlock(); _renderScDoneTable(); }
     }
   } catch (e) {
-    // ★부분 생성 방지 — 합산 저장 중간에 실패했으면 이번에 만든 것을 전부 되돌린다.
-    //   단일 저장은 되돌릴 앞 매지가 없으므로 예전처럼 오류만 알린다.
+    // ★부분 생성 방지 — 저장 중간에 실패했으면 이번에 만든 것을 전부 되돌린다(v791부터 단일 저장도).
     let rbMsg = '';
-    if (merged && done.length) {
+    if (done.length) {
       const failed = await _srtRollback(done);
       rbMsg = failed.length
         ? `\n\n⚠ 되돌리기에 실패한 기록이 있습니다: ${failed.join(', ')}\n선과 이력에서 직접 취소해 주세요.`
-        : `\n\n앞서 저장된 ${done.length}건은 되돌렸습니다. 아무것도 저장되지 않았습니다.`;
+        : `\n\n저장하던 ${done.length}건을 되돌렸습니다. 아무것도 저장되지 않았습니다 — 잠시 뒤 다시 저장해 주세요.`;
       await loadAndRenderInv();
       renderInboundList();
     }
