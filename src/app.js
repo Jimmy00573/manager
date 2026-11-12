@@ -1769,6 +1769,24 @@ function _fillIbFieldTxt(farm, prefix = 'ib') {
     dl.innerHTML = vals.map(v => `<option value="${esc(v)}">`).join('');
   }
 }
+// 입고 수정 모달 '밭' 드롭다운(v790) — 고를 목록은 위 datalist(그 농가 입고에 적힌 밭 + farms.fields)와 같다.
+//   ★저장 값은 그대로 eib-field-txt가 들고 있다(saveInboundModal·변경 확인 코드는 안 바꿈). 드롭다운은 그 칸을 채우기만 한다.
+//   목록에 없는 새 밭은 '직접 입력…'을 고르면 입력칸이 열린다.
+function _eibFieldSelSync() {
+  const sel = document.getElementById('eib-field-sel'), inp = document.getElementById('eib-field-txt'), dl = document.getElementById('eib-field-dl');
+  if (!sel || !inp) return;
+  const cur = (inp.value || '').trim();
+  const vals = dl ? [...dl.options].map(o => o.value).filter(Boolean) : [];
+  if (cur && !vals.includes(cur)) vals.unshift(cur);
+  sel.innerHTML = '<option value="">선택 안 함</option>' + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('') + '<option value="__direct">직접 입력…</option>';
+  sel.value = cur; inp.style.display = 'none';
+}
+function _eibFieldSel() {
+  const sel = document.getElementById('eib-field-sel'), inp = document.getElementById('eib-field-txt');
+  if (!sel || !inp) return;
+  if (sel.value === '__direct') { inp.value = ''; inp.style.display = ''; inp.focus(); }
+  else { inp.value = sel.value; inp.style.display = 'none'; }
+}
 // 입고 기본 품목(v774) — 농가 품종(farms.variety, 입고 품목명과 같은 값) → 없으면 그 농가 가장 최근 입고 품목 → ''.
 function _ibDefaultProduct(farm) {
   const v = String(gf(farm).variety || '').trim();
@@ -5729,6 +5747,12 @@ function _hvLastDeal(farm) {
   hs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.round || 1) - (a.round || 1) || (Number(b.id) || 0) - (Number(a.id) || 0));
   return hs.length ? hs[0].deal_type : null;
 }
+// 입고 거래 방식 자동값(v791) — 그 농가 가장 최근 입고(inbound_records.deal_type) → 없으면 수확 일정(_hvLastDeal).
+function _ibLastDeal(farm) {
+  const r = (inboundRecords || []).filter(x => x.farm_name === farm && !x.is_void && HV_DEAL_COLOR[x.deal_type])
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+  return r ? r.deal_type : _hvLastDeal(farm);
+}
 // 입고 한 건이 속한 수확 | null — 입고 내역의 거래 방식 칩(_hvDealChip)용. 배차의 _dispForHarvest와 반대 방향.
 //   같은 농가 중 입고일이 시작일 ~ (종료일 || 오늘) 안에 드는 것(여럿이면 시작일 늦은 것) → 없으면 입고일 이전 가장 늦은 수확.
 //   field(선택) = 그 입고의 밭 — 먼 밭 농가면 같은 밭 가지(_brKey) 수확을 먼저 본다(없으면 전체). 모르면 날짜 기준만.
@@ -5748,10 +5772,10 @@ function _hvForInbound(farm, date, field) {
 const _autoDealVal = {};   // select id → 마지막 자동값('' 포함) | _HV_DEAL_MANUAL(사람이 고름 — '미지정'을 고른 것도 지킨다)
 const _HV_DEAL_MANUAL = {};
 function _hvDealTouched(id) { _autoDealVal[id] = _HV_DEAL_MANUAL; }
-function _hvAutoDeal(id, farm) {
+function _hvAutoDeal(id, farm, getter = _hvLastDeal) {
   const sel = document.getElementById(id); if (!sel) return;
   if (_autoDealVal[id] === _HV_DEAL_MANUAL || (sel.value && sel.value !== _autoDealVal[id])) return;   // 직접 고른 값 — 그대로
-  const v = (farm && _hvLastDeal(farm)) || '';
+  const v = (farm && getter(farm)) || '';
   sel.value = v; _autoDealVal[id] = v;
 }
 // planDate = 이 행이 놓인 카드의 날짜(금일 strip=오늘, 달력 상세=고른 날). 주면 그날 계획 줄·확인 버튼이 붙는다.
@@ -20217,7 +20241,8 @@ function renderInboundList() {
     // 거래 방식(밭떼기/관떼기) 칩 — 그 입고의 수확(_hvForInbound)에 deal_type이 있을 때만. 없으면 예전 HTML 그대로.
     //   먼 밭 농가만 그 입고의 원물수거 pick에서 밭을 찾아 넘긴다(입고 자체엔 밭 칸이 없다).
     const _ibField = _farmBranches(r.farm_name) ? (picks.find(p => p.inbound_id === r.id && p.field) || {}).field : undefined;
-    const dealChip = _hvDealChip(_hvForInbound(r.farm_name, r.date, _ibField));
+    //   v791: 입고에 직접 적은 거래 방식(r.deal_type)이 있으면 그것이 먼저.
+    const dealChip = _hvDealChip(HV_DEAL_COLOR[r.deal_type] ? r : _hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
@@ -21698,6 +21723,7 @@ function _renderScTable() {
 }
 
 let _editInboundId = null;
+let _eibDealInit = '';   // 수정 창을 열 때 거래 방식 칸에 넣은 값 — 안 바꿨으면 '변경 없음'으로 본다(v791)
 
 function editInboundRow(id) {
   // ★버튼을 가려도 콘솔에서 부를 수 있다 — 열기 자체를 막는다(db36345와 같은 이중 방식).
@@ -21718,6 +21744,12 @@ function editInboundRow(id) {
   // 밭(표시용) — ★바꿔도 이미 만들어진 콘테이너 기록(picks.field)은 건드리지 않는다.
   _fillIbFieldTxt(r.farm_name, 'eib');
   document.getElementById('eib-field-txt').value = r.field || '';
+  _eibFieldSelSync();   // 밭 드롭다운(v790)
+  { // 거래 방식(v791) — 입고에 적힌 값, 없으면 입고 내역 칩과 같은 값(그 입고의 수확 일정)으로 채워 보여 준다
+    const h = HV_DEAL_COLOR[r.deal_type] ? r : _hvForInbound(r.farm_name, r.date, _farmBranches(r.farm_name) ? (picks.find(p => p.inbound_id === r.id && p.field) || {}).field : undefined);
+    _eibDealInit = (h && HV_DEAL_COLOR[h.deal_type]) ? h.deal_type : '';
+    const dl = document.getElementById('eib-deal'); if (dl) dl.value = _eibDealInit;
+  }
   setLocValue('eib', r.location || '');
   document.getElementById('eib-m-qty').value = r.quantity || '';
   document.getElementById('eib-m-qty').min = processed || 1;
@@ -21784,6 +21816,7 @@ async function closeEditInboundModal() {
       document.getElementById('eib-m-qty').value !== String(r.quantity) ||
       getLocValue('eib') !== (r.location || null) ||
       ((document.getElementById('eib-field-txt')?.value || '').trim() || null) !== (r.field || null) ||
+      (gv('eib-deal') || '') !== _eibDealInit ||
       document.getElementById('eib-m-note').value !== (r.note || '') ||
       document.getElementById('eib-m-cat').value !== (r.inbound_category || '상품') ||
       getGradeVal('eib-m-appearance-grade') !== (r.appearance_grade || null) ||
@@ -21940,6 +21973,7 @@ async function saveInboundModal() {
 
   const updatePayload = {
     date, quantity: qty, location, field, note, inbound_category, is_priority,
+    deal_type: HV_DEAL_COLOR[gv('eib-deal')] ? gv('eib-deal') : null,   // 거래 방식(v791)
     appearance_grade, defect_tags,
     brix_range, brix_avg, acidity_range, size_distribution,
     reclassification_source, reclassification_reason, original_work_date,
@@ -24379,6 +24413,7 @@ async function _addInboundCore(keepOpen) {
     driver_id,
     // 밭 — 먼 밭 농가는 select(ibField), 그 밖의 농가는 자유 입력(ib-field-txt). ★콘테이너(_saveInboundContainers)에는 ibField만 간다.
     field: ibField || ((document.getElementById('ib-field-txt')?.value || '').trim() || null),
+    deal_type: (HV_DEAL_COLOR[gv('ib-deal')] ? gv('ib-deal') : null),   // 거래 방식(v791) — 밭떼기/관떼기, 미지정 null
   };
   // ★총 중량·매입액은 '그 차 전체'의 값이라 카테고리마다 복사하면 안 된다.
   //   예전엔 commonData에 있어 상품146+대과4+소과2를 함께 등록하면 3행 모두 같은 총 중량이 들어갔고,
