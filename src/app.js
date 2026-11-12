@@ -4535,9 +4535,18 @@ function renderContainerHistory() {
     contEl.value = cur;
     if (contEl.value !== cur) contEl.value = '';
   }
-  const tk = gv('ch-tkind'), kd = gv('ch-kind'), ct = gv('ch-cat'), cn = gv('ch-cont'), q = gv('ch-q'), from = gv('ch-from'), to = gv('ch-to');
+  // 담당 기사 select(v792) — 이력에 찍힌 담당자 이름으로 채움(등록 기사 먼저, 그 밖 가나다). 선택값 유지.
+  const staffEl = document.getElementById('ch-staff');
+  if (staffEl) {
+    const cur = staffEl.value, dn = new Set((drivers || []).map(d => d.name));
+    const names = [...new Set(all.map(r => r.staff).filter(Boolean))].sort((a, b) => (dn.has(b) - dn.has(a)) || a.localeCompare(b, 'ko'));
+    staffEl.innerHTML = '<option value="">전체</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}${dn.has(n) ? '' : ' (기사 아님)'}</option>`).join('');
+    staffEl.value = cur;
+    if (staffEl.value !== cur) staffEl.value = '';
+  }
+  const tk = gv('ch-tkind'), kd = gv('ch-kind'), ct = gv('ch-cat'), cn = gv('ch-cont'), q = gv('ch-q'), from = gv('ch-from'), to = gv('ch-to'), sf = gv('ch-staff');
   const list = all.filter(r =>
-    (!tk || r.targetKind === tk) && (!kd || r.kind === kd) && (!ct || r.category === ct) && (!cn || r.content === cn) &&
+    (!tk || r.targetKind === tk) && (!kd || r.kind === kd) && (!ct || r.category === ct) && (!cn || r.content === cn) && (!sf || r.staff === sf) &&
     (!q || (r.target || '').includes(q) || (r.field || '').includes(q)) && (!from || (r.date || '') >= from) && (!to || (r.date || '') <= to)
   ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const totQty = list.reduce((s, r) => s + r.qty, 0);
@@ -4552,6 +4561,19 @@ function renderContainerHistory() {
       + (k === '회수' && contTxt ? ` <span style="font-size:12px;color:#6B7280">(${contTxt})</span>` : '')).join(' ');
   const sum = document.getElementById('ch-sum');
   if (sum) sum.innerHTML = `<span class="badge b-info">${list.length}건</span> <span class="badge b-warn">합계 ${totQty}개</span>${kindHtml ? ' ' + kindHtml : ''}`;
+  // 담당 기사를 고르면 일자별 합계(v792) — 날짜(최신 먼저)마다 유형별 개수, 회수는 내용별로 괄호. 한 줄에 하루.
+  if (sum && sf && list.length) {
+    const byD = {};
+    list.forEach(r => { const d = byD[r.date || ''] || (byD[r.date || ''] = { k: {}, c: {} }); d.k[r.kind] = (d.k[r.kind] || 0) + r.qty; if (r.kind === '회수' && r.content) d.c[r.content] = (d.c[r.content] || 0) + r.qty; });
+    const days = Object.keys(byD).sort((a, b) => b.localeCompare(a));
+    sum.innerHTML += `<div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;font-size:12.5px;color:#374151"><div style="font-weight:500;margin-bottom:4px">📅 ${esc(sf)} 일자별 (${days.length}일)</div>`
+      + days.map(dt => { const d = byD[dt];
+        const ks = ['배출', '회수', '반입', '반납'].filter(k => d.k[k]).map(k => {
+          const ct = k === '회수' ? Object.keys(d.c).sort(_chContSort).map(c => `${esc(c)} ${fmtN(d.c[c])}`).join(' · ') : '';
+          return `<span style="color:${kColor[k]}">${k} ${fmtN(d.k[k])}</span>${ct ? ` <span style="color:#6B7280">(${ct})</span>` : ''}`; }).join(' &nbsp;');
+        return `<div style="display:flex;gap:10px;padding:2px 0"><span style="min-width:72px;font-variant-numeric:tabular-nums;color:#6B7280">${esc((dt || '').slice(5).replace('-', '/'))} ${dt ? '일월화수목금토'[new Date(dt + 'T00:00:00').getDay()] : ''}</span><span>${ks}</span></div>`; }).join('')
+      + '</div>';
+  }
   const tkBadge = _tkBadge;   // 모듈 레벨로 옮김(수거·회수 목록과 공용) — 사용부는 그대로.
 
   // ── 누적 잔여 ────────────────────────────────────────────────────────────
@@ -4578,7 +4600,7 @@ function renderContainerHistory() {
   // ★표시 조건
   //   · 유형(kd) 필터 없음 — '회수'만 걸러 보면 잔액이 아니라 회수 누계가 된다(종류·분류 필터는 그 종류의 잔액이라 괜찮다)
   //   · 회수 내용(cn) 필터 없음 — 회수 행만 남아 유형 필터와 같은 이유로 잔액이 아니다
-  const runOK = !kd && !cn;
+  const runOK = !kd && !cn && !sf;   // 담당 기사로 거르면 다른 기사 줄이 빠져 잔액이 아니게 된다(v792)
   // ★v778: 밭(field, _brKey)도 키에 — 밭이 여러 곳인 농가는 밭마다 따로(보유 칩 getFCS(name, field)와 같은 단위). 가지 없으면 ''라 예전과 같다.
   const _chKey = r => `${r.target || ''}\u0001${r.field || ''}\u0001${_CH_AXIS[r.kind]}\u0001${r.category || ''}`;
 
@@ -5065,7 +5087,7 @@ function _renderNhfCtTable(nk) {
 //   ★다른 필터는 비운다 — 남아 있으면 누적 잔여가 '—'가 되거나 칸 숫자와 다른 줄만 남는다.
 function _nhfCtGoHistory(nhf, type) {
   transportSub('chist');
-  ['ch-tkind', 'ch-kind', 'ch-cont', 'ch-from', 'ch-to'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  ['ch-tkind', 'ch-kind', 'ch-cont', 'ch-from', 'ch-to', 'ch-staff'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
   const qEl = document.getElementById('ch-q'); if (qEl) qEl.value = nhf;
   const cEl = document.getElementById('ch-cat'); if (cEl) cEl.value = type;
   _chPage = 1;   // 필터를 새로 걸었으니 1쪽부터(v777)
