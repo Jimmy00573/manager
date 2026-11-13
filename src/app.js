@@ -24039,7 +24039,7 @@ function cancelIbForm() {
   if (arrow) arrow.style.transform = 'rotate(0deg)';
   if (btn) btn.style.borderBottomColor = 'transparent';
   sv('ib-qty', ''); sv('ib-note', ''); resetLocForm('ib'); clearGrades('ib');
-  ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max',
+  ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-brix-avg', 'ib-acidity-min', 'ib-acidity-max',
    'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderSizeDistInputs('ib', document.getElementById('ib-product')?.value || '', null);   // 크기분포 그룹칸 초기화
@@ -24378,6 +24378,7 @@ async function _addInboundCore(keepOpen) {
   const defect_tags = getDefectTags('ib-defect-wrap');
   const brix_range = _rangeComposeBrix('ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos');
   const acidity_range = _rangeComposeAcid('ib-acidity-min', 'ib-acidity-max');
+  const brix_avg = (document.getElementById('ib-brix-avg')?.value || '').trim() || null;   // 서술형 평균당도(수정 모달 eib-m-brix-avg·목록 당도 입력과 같은 컬럼)
   const size_distribution = _composeSizeDist('ib');
   const is_priority = document.getElementById('ib-priority')?.checked || false;
   // 재선별 부가정보 — ★'재선별' 행에만 붙인다(다른 카테고리 행에 새어 들어가지 않게).
@@ -24459,6 +24460,7 @@ async function _addInboundCore(keepOpen) {
     ...(appearance_grade && { appearance_grade }),
     ...(defect_tags && { defect_tags }),
     ...(brix_range && { brix_range }),
+    ...(brix_avg && { brix_avg }),
     ...(acidity_range && { acidity_range }),
     ...(size_distribution && { size_distribution }),
   };
@@ -24471,7 +24473,7 @@ async function _addInboundCore(keepOpen) {
     _ibClearCatNotes();   // ★카테고리 메모를 먼저 비운다 — 뒤에 두면 _ibClearCatQty가 다시 그린 칸에 옛 값이 남는다
     _ibClearCatQty();   // 카테고리별 수량칸도 비움(상품 자동값·힌트까지 재계산)
     resetLocForm('ib'); clearGrades('ib');
-    ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-acidity-min', 'ib-acidity-max',
+    ['ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos', 'ib-brix-avg', 'ib-acidity-min', 'ib-acidity-max',
      'ib-reclass-src', 'ib-reclass-reason', 'ib-reclass-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     renderSizeDistInputs('ib', document.getElementById('ib-product')?.value || '', null);   // 크기분포 그룹칸 초기화
