@@ -17355,6 +17355,9 @@ function startIbBrixEdit(id) {
 }
 
 function toggleMemo(id) {
+  // ★'메모 모두 열기'로 이미 열린 행이면 그 행만 닫는다 — 아래로 내려가면 같은 메모 행이 하나 더 붙는다(2개 뜨던 버그, v795).
+  const opened = document.getElementById(`ib-memo-row-${id}`);
+  if (opened && _expandedMemoId !== id) { opened.remove(); return; }
   const prev = _expandedMemoId;
   // 항상 이전 메모 행 제거
   if (prev) {
@@ -17385,6 +17388,21 @@ function toggleFarmMemo(id) {
   if (!isOpen) el.style.display = '';
 }
 
+// 메모 있는 행을 전부 펼친다(이미 열린 행은 건너뜀). '모두 열기' 버튼과, 그 상태에서 목록을 다시 그릴 때(renderInboundList 끝) 같이 쓴다.
+function _ibExpandAllMemos() {
+  inboundRecords.filter(r => !r.is_void && r.note).forEach(r => {
+    if (document.getElementById(`ib-memo-row-${r.id}`)) return;
+    const mainRow = document.getElementById(`ib-tr-${r.id}`);
+    if (!mainRow) return;
+    const tr = document.createElement('tr');
+    tr.id = `ib-memo-row-${r.id}`;
+    tr.innerHTML = `<td colspan="${mainRow.cells.length}" style="padding:0 10px 10px">
+      <div class="memo-expanded">${esc(r.note).replace(/\n/g, '<br>')}</div>
+    </td>`;
+    mainRow.after(tr);
+  });
+}
+
 function toggleAllMemos() {
   _allMemosExpanded = !_allMemosExpanded;
   const btn = document.getElementById('btn-toggle-all-memos');
@@ -17402,18 +17420,7 @@ function toggleAllMemos() {
         if (old) old.remove();
         _expandedMemoId = null;
       }
-      // 메모 있는 모든 행 펼침
-      inboundRecords.filter(r => !r.is_void && r.note).forEach(r => {
-        if (document.getElementById(`ib-memo-row-${r.id}`)) return;
-        const mainRow = document.getElementById(`ib-tr-${r.id}`);
-        if (!mainRow) return;
-        const tr = document.createElement('tr');
-        tr.id = `ib-memo-row-${r.id}`;
-        tr.innerHTML = `<td colspan="${mainRow.cells.length}" style="padding:0 10px 10px">
-          <div class="memo-expanded">${esc(r.note).replace(/\n/g, '<br>')}</div>
-        </td>`;
-        mainRow.after(tr);
-      });
+      _ibExpandAllMemos();
     } else {
       document.querySelectorAll('[id^="ib-memo-row-"]').forEach(el => el.remove());
       _expandedMemoId = null;
@@ -20289,6 +20296,7 @@ function renderInboundList() {
       <td class="stk-r">${actionCell}</td>
     </tr>`;
   })).join('');
+  if (_allMemosExpanded) _ibExpandAllMemos();   // ★'모두 닫기' 상태로 다시 그리면(필터·쪽 이동·공유 기록) 메모가 사라지던 것 — 다시 펼친다(v795)
   if (!_ibAuditMode) _renderIbPagination(totalFiltered);
 }
 
