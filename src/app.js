@@ -229,6 +229,8 @@ let ibSortDir = null;   // 'desc' | 'asc' | null
 let ibPage = 1;
 let ibPageSize = 25;
 let _ibAuditMode = false;
+let ibOnlyUnshared = false;   // '📋 미공유' 칩 — 켜면 다른 필터 무시하고 그 행만(v794)
+let _ibShareLastIds = null;   // 마지막으로 만든 📋 공유 텍스트의 입고 id(같은 차 묶음) — 복사 때 shared_at 기록용
 let _ibAuditChecked = new Set();
 let _ibAuditVisible = [];
 let _invAuditMode = false;
@@ -20050,6 +20052,14 @@ function renderInboundList() {
   //   (같은 페이지에서 다른 계정이 걸어 둔 필터 상태가 보이지 않게 적용되는 일이 없게).
   if (_xdToday) visible = inboundRecords.filter(r => !r.is_void && r.date === td());
 
+  // 📋 미공유(v794, 어제·오늘 등록분) — 관리자만(공유 메뉴가 관리자 전용). 개수는 차 단위(_ibTruckGroups — 공유도 차 한 장).
+  //   ★켜면 위 필터를 무시하고 미공유 행만 — 필터가 겹쳐 '왜 안 보이지'가 생기지 않게. 다 공유하면 저절로 꺼진다.
+  const _unsh = isAdm ? inboundRecords.filter(_ibIsUnsharedToday) : [];
+  const _unshN = _unsh.length ? _ibTruckGroups(_unsh).length : 0;
+  if (ibOnlyUnshared && !_unshN) ibOnlyUnshared = false;
+  if (ibOnlyUnshared) visible = _unsh;
+  _renderIbUnsharedBtn(_unshN);
+
   // ==================================================================
   // 4. 필터 UI 동기화 (칩·옵션·건수·버튼·정렬 아이콘)
   // ==================================================================
@@ -20058,7 +20068,7 @@ function renderInboundList() {
   _refreshIbProductOptions();
   _renderIbProductChips();   // 1단 품목 칩(동적)
   _renderIbFilterChips();
-  const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
+  const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo || ibOnlyUnshared;
   const fcountEl = document.getElementById('ib-filter-count');
   if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중` : '';
 
@@ -20267,7 +20277,7 @@ function renderInboundList() {
     const dealChip = _hvDealChip(HV_DEAL_COLOR[r.deal_type] ? r : _hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
@@ -23758,6 +23768,7 @@ async function _ibShareCtLine(ids) {
 }
 async function buildInboundShareText(inboundId) {
   const { base, grp, pick } = await _ibShareGroup(inboundId);
+  _ibShareLastIds = base.inbound_category === '선과품' ? [base.id] : grp.map(r => r.id);   // 복사 시 shared_at 기록 대상(선과품은 그 한 건만 — 아래 분기와 같은 범위)
 
   const total = grp.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   const drv = drivers.find(d => String(d.id) === String(base.driver_id));
@@ -23853,6 +23864,7 @@ async function openInboundShareText(inboundId, mode) {
         </div>
       </div>`;
     m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+    if (!isBrix && _ibShareLastIds) m.dataset.ids = _ibShareLastIds.join(',');   // 📋 전체 공유만 '공유함' 기록(당도 공유는 답글용이라 제외)
     document.body.appendChild(m);
     document.getElementById('ib-share-text').value = text;   // .value로 주입(이스케이프 문제 방지)
   } catch (e) { showToast('공유 텍스트 생성 오류: ' + e.message); }
@@ -23867,6 +23879,63 @@ async function copyInboundShareText() {
     ta.select(); document.execCommand('copy');   // 클립보드 권한 실패 폴백
     showToast('📋 복사되었습니다');
   }
+  const ids = (document.getElementById('modal-ib-share')?.dataset.ids || '').split(',').filter(Boolean);
+  if (ids.length) _ibMarkShared(ids);
+}
+// ── 📋 미공유(v794) ─────────────────────────────────────────
+// 어제·오늘 등록(created_at 로컬 날짜 — 입고일이 아니라 '친 날')이고 📋 공유 복사를 안 한 입고.
+//   ★어제까지 보는 이유: 밤(20~21시)에 친 입고를 다음 날 아침에 공유하는 일이 있다 — 자정 넘으면 사라지면 안 된다.
+//   ★IB_SHARE_TRACK_FROM 이전 등록은 제외 — 기록 시작(v794) 전 행은 전부 shared_at이 비어 있어 미공유로 잡힌다.
+//   칩 개수·칩 필터·행의 '📋 미공유' 버튼이 이 판정 하나를 같이 쓴다.
+const IB_SHARE_TRACK_FROM = '2026-11-14';
+function _ibIsUnsharedToday(r) {
+  if (r.is_void || r._legacy || r.shared_at || !r.created_at) return false;
+  const d = ymd(new Date(r.created_at)), y = new Date(); y.setDate(y.getDate() - 1);
+  return d >= IB_SHARE_TRACK_FROM && d >= ymd(y);
+}
+// 복사 = 보냈다고 본다 → 같은 차 묶음 전부 shared_at 기록. 실패해도 공유 자체는 된 것이라 조용히 넘어간다.
+async function _ibMarkShared(ids) {
+  const todo = ids.filter(id => { const r = inboundRecords.find(x => String(x.id) === String(id)); return !r || !r.shared_at; });
+  if (!todo.length) return;
+  const at = new Date().toISOString();
+  try {
+    await Promise.all(todo.map(id => sbUpdate('inbound_records', id, { shared_at: at })));
+    todo.forEach(id => { const r = inboundRecords.find(x => String(x.id) === String(id)); if (r) r.shared_at = at; });
+    renderInboundList();
+  } catch (e) { console.warn('공유 표시 저장 실패(무시):', e.message); }
+}
+function _renderIbUnsharedBtn(n) {
+  const b = document.getElementById('btn-ib-unshared');
+  if (!b) return;
+  if (!n) { b.style.display = 'none'; return; }
+  b.textContent = `📋 미공유 ${n}${ibOnlyUnshared ? ' ✕' : ''}`;
+  b.title = ibOnlyUnshared ? '눌러서 전체 목록으로' : '어제·오늘 등록하고 📋 공유 복사를 안 한 입고(차 단위) — 누르면 그것만';
+  b.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;'
+    + (ibOnlyUnshared ? 'background:#7C3AED;color:#fff;border:1px solid #7C3AED' : 'background:#fff;color:#7C3AED;border:1px solid #C4B5FD');
+}
+function ibToggleUnshared() { ibOnlyUnshared = !ibOnlyUnshared; ibPage = 1; renderInboundList(); }
+// 입고 저장 직후 바 — '방금 잡은 것'을 목록에서 찾지 않고 바로 공유(관리자). 토스트 자리에 대신 뜬다.
+function _ibJustSavedBar(id, msg) {
+  document.getElementById('ib-just-saved')?.remove();
+  const t = document.getElementById('toast-msg'); if (t) t.style.opacity = '0';
+  const r = inboundRecords.find(x => String(x.id) === String(id));
+  const hasBrix = r && (r.brix_range || r.brix_avg);
+  const el = document.createElement('div');
+  el.id = 'ib-just-saved';
+  el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 10px 8px 16px;border-radius:20px;font-size:13px;z-index:9999;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 24px);box-sizing:border-box;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+  const btn = 'border:none;border-radius:14px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap';
+  el.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">✓ ${esc(msg)}</span>
+    <button data-a="share" style="${btn};background:#fff;color:#7C3AED">📋 공유</button>
+    ${hasBrix ? `<button data-a="brix" style="${btn};background:#fff;color:#374151">🍊 당도</button>` : ''}
+    <button data-a="x" style="${btn};background:none;color:#9CA3AF;padding:5px 6px">✕</button>`;
+  el.addEventListener('click', e => {
+    const a = e.target.closest('button')?.dataset.a; if (!a) return;
+    el.remove();
+    if (a === 'share') openInboundShareText(id);
+    else if (a === 'brix') openInboundShareText(id, 'brix');
+  });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 15000);
 }
 
 async function confirmCancelSorting(srId, inboundId, seq) {
@@ -24563,7 +24632,8 @@ async function _addInboundCore(keepOpen) {
       const _catSummary = catQtys.map(c => `${c.cat} ${fmtN(c.qty)}`).join(' · ');   // 예: 상품 133 · 대과 4 · 소과 1 · 파치 2
       if (keepOpen) {
         clearFormPartial();
-        showToast(`✓ ${_catSummary} 등록 — 같은 농가/기사로 계속 입력 중`);
+        if (_role === 'admin' && ibId) _ibJustSavedBar(ibId, `${_catSummary} 등록 — 계속 입력 중`);
+        else showToast(`✓ ${_catSummary} 등록 — 같은 농가/기사로 계속 입력 중`);
         setTimeout(() => document.getElementById('ib-product')?.focus(), 50);
       } else {
         clearFormPartial();
@@ -24574,7 +24644,8 @@ async function _addInboundCore(keepOpen) {
         if (body) { body.style.maxHeight = body.scrollHeight + 'px'; body._ibOpen = false; requestAnimationFrame(() => requestAnimationFrame(() => { body.style.maxHeight = '0'; })); }
         if (arrow) arrow.style.transform = 'rotate(0deg)';
         if (btn) btn.style.borderBottomColor = 'transparent';
-        showToast(`${_catSummary} 등록되었습니다.`);
+        if (_role === 'admin' && ibId) _ibJustSavedBar(ibId, `${_catSummary} 등록`);
+        else showToast(`${_catSummary} 등록되었습니다.`);
       }
     } catch(e) { alert('등록 오류: ' + e.message); }
   };
