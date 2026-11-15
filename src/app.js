@@ -20061,11 +20061,14 @@ function renderInboundList() {
 
   // 📋 미공유(v794, 어제·오늘 등록분) — 관리자만(공유 메뉴가 관리자 전용). 개수는 차 단위(_ibTruckGroups — 공유도 차 한 장).
   //   ★켜면 위 필터를 무시하고 미공유 행만 — 필터가 겹쳐 '왜 안 보이지'가 생기지 않게. 다 공유하면 저절로 꺼진다.
+  //   ✂️ 선과도 같은 칩에서(v796): 공유 안 한 차수가 있는 입고도 같이 걸러진다. 개수는 입고=차 단위, 선과=차수 단위.
   const _unsh = isAdm ? inboundRecords.filter(_ibIsUnsharedToday) : [];
   const _unshN = _unsh.length ? _ibTruckGroups(_unsh).length : 0;
-  if (ibOnlyUnshared && !_unshN) ibOnlyUnshared = false;
-  if (ibOnlyUnshared) visible = _unsh;
-  _renderIbUnsharedBtn(_unshN);
+  const _srUn = isAdm ? (sortingResults || []).filter(_srIsUnshared) : [];
+  const _srIbIds = new Set(_srUn.map(x => String(x.inbound_record_id)));
+  if (ibOnlyUnshared && !_unshN && !_srUn.length) ibOnlyUnshared = false;
+  if (ibOnlyUnshared) visible = inboundRecords.filter(r => !r.is_void && (_ibIsUnsharedToday(r) || _srIbIds.has(String(r.id))));
+  _renderIbUnsharedBtn(_unshN, _srUn.length);
 
   // ==================================================================
   // 4. 필터 UI 동기화 (칩·옵션·건수·버튼·정렬 아이콘)
@@ -20284,7 +20287,7 @@ function renderInboundList() {
     const dealChip = _hvDealChip(HV_DEAL_COLOR[r.deal_type] ? r : _hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isAdm && !_ibAuditMode && _srUnsharedOf(r.id).length ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" title="선과 차수 중 📋 공유 복사를 안 한 것이 있음 — 누르면 선과 이력" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✂️ 선과 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
@@ -23498,9 +23501,13 @@ async function saveSortingResult() {
     _sortingSeq = done[done.length - 1].seq;
 
     closeSortingModal();
-    showToast(merged
+    const _srMsg = merged
       ? `합산 선과 완료 — ${done.length}개 매지 · 총 ${fmtN(inputCt)} CT`
-      : `${done[0].seq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`);
+      : `${done[0].seq}차 선과 처리 완료 (${fmtN(inputCt)} CT)`;
+    // ★저장 직후 [📋 선과 공유](v796, 관리자) — 합산이면 매지마다(공유 텍스트는 입고 한 건 기준이라 합치지 않는다)
+    if (sessionStorage.getItem('citrus_role') === 'admin')
+      _justSavedBar(_srMsg, done.map((d, k) => ({ label: merged ? `📋 ${sel[k]?.ib?.date ? sel[k].ib.date.slice(5) + ' ' : ''}매지 공유` : '📋 선과 공유', fn: () => openSortingShareText(d.srId) })));
+    else showToast(_srMsg);
     await loadAndRenderInv();
     renderInboundList();
     if (document.getElementById('sc-tab-bar')) {
@@ -23545,7 +23552,7 @@ async function showSortingHistory(id, btnEl) {
     const dateLabel = row.sorting_date ? row.sorting_date.slice(5) : '';
     return `<div style="padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:6px">
       <div>
-        <span style="font-weight:700;color:#1565C0;min-width:28px;display:inline-block">${seqLabel}</span>
+        <span style="font-weight:700;color:#1565C0;min-width:28px;display:inline-block">${seqLabel}</span>${isAdm && _srIsUnshared(row) ? `<span id="srt-un-${row.id}" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:9px;padding:0 5px;border-radius:8px;margin-right:4px">미공유</span>` : ''}
         <span style="color:#6B7280;margin-right:6px">${dateLabel}</span>
         <span style="font-weight:600">${fmtN(row.input_ct)} CT 투입</span>
         ${row.operator_name ? `<span style="color:#9CA3AF;font-size:11px;margin-left:4px">(${esc(row.operator_name)})</span>` : ''}
@@ -23667,6 +23674,7 @@ async function openSortingShareText(srId) {
         </div>
       </div>`;
     m.addEventListener('click', e => { if (e.target.dataset.close !== undefined) m.remove(); });
+    m.dataset.ids = (Array.isArray(srId) ? srId : [srId]).join(',');   // 복사하면 이 차수들에 '공유함' 기록(v796)
     document.body.appendChild(m);
     document.getElementById('srt-share-text').value = text;   // .value로 주입(이스케이프 문제 방지)
   } catch (e) { showToast('공유 텍스트 생성 오류: ' + e.message); }
@@ -23681,6 +23689,8 @@ async function copySortingShareText() {
     ta.select(); document.execCommand('copy');   // 클립보드 권한 실패 폴백
     showToast('📋 복사되었습니다');
   }
+  const ids = (document.getElementById('modal-srt-share')?.dataset.ids || '').split(',').filter(Boolean);
+  if (ids.length) _srMarkShared(ids);
 }
 
 // ── 미선과 입고 사무실 공유 텍스트(조회 전용 — 계산·저장 무변)
@@ -23912,38 +23922,62 @@ async function _ibMarkShared(ids) {
     renderInboundList();
   } catch (e) { console.warn('공유 표시 저장 실패(무시):', e.message); }
 }
-function _renderIbUnsharedBtn(n) {
+function _renderIbUnsharedBtn(n, sn = 0) {
   const b = document.getElementById('btn-ib-unshared');
   if (!b) return;
-  if (!n) { b.style.display = 'none'; return; }
-  b.textContent = `📋 미공유 ${n}${ibOnlyUnshared ? ' ✕' : ''}`;
+  if (!n && !sn) { b.style.display = 'none'; return; }
+  b.textContent = `📋 미공유 ${[n ? `입고 ${n}` : '', sn ? `선과 ${sn}` : ''].filter(Boolean).join(' · ')}${ibOnlyUnshared ? ' ✕' : ''}`;
   b.title = ibOnlyUnshared ? '눌러서 전체 목록으로' : '어제·오늘 등록하고 📋 공유 복사를 안 한 입고(차 단위) — 누르면 그것만';
   b.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;'
     + (ibOnlyUnshared ? 'background:#7C3AED;color:#fff;border:1px solid #7C3AED' : 'background:#fff;color:#7C3AED;border:1px solid #C4B5FD');
 }
 function ibToggleUnshared() { ibOnlyUnshared = !ibOnlyUnshared; ibPage = 1; renderInboundList(); }
 // 입고 저장 직후 바 — '방금 잡은 것'을 목록에서 찾지 않고 바로 공유(관리자). 토스트 자리에 대신 뜬다.
-function _ibJustSavedBar(id, msg) {
+// 저장 직후 바(공용) — 토스트 자리에 '✓ 메시지 [버튼들] ✕'를 15초. btns = [{label, color, fn}]. 입고·선과가 같이 쓴다(v796).
+function _justSavedBar(msg, btns) {
   document.getElementById('ib-just-saved')?.remove();
   const t = document.getElementById('toast-msg'); if (t) t.style.opacity = '0';
-  const r = inboundRecords.find(x => String(x.id) === String(id));
-  const hasBrix = r && (r.brix_range || r.brix_avg);
   const el = document.createElement('div');
   el.id = 'ib-just-saved';
   el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 10px 8px 16px;border-radius:20px;font-size:13px;z-index:9999;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 24px);box-sizing:border-box;box-shadow:0 6px 20px rgba(0,0,0,.25)';
   const btn = 'border:none;border-radius:14px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap';
   el.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">✓ ${esc(msg)}</span>
-    <button data-a="share" style="${btn};background:#fff;color:#7C3AED">📋 공유</button>
-    ${hasBrix ? `<button data-a="brix" style="${btn};background:#fff;color:#374151">🍊 당도</button>` : ''}
+    ${btns.map((b, i) => `<button data-a="${i}" style="${btn};background:#fff;color:${b.color || '#7C3AED'}">${esc(b.label)}</button>`).join('')}
     <button data-a="x" style="${btn};background:none;color:#9CA3AF;padding:5px 6px">✕</button>`;
   el.addEventListener('click', e => {
-    const a = e.target.closest('button')?.dataset.a; if (!a) return;
+    const a = e.target.closest('button')?.dataset.a; if (a == null) return;
     el.remove();
-    if (a === 'share') openInboundShareText(id);
-    else if (a === 'brix') openInboundShareText(id, 'brix');
+    if (a !== 'x') btns[+a]?.fn();
   });
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 15000);
+}
+// 입고 저장 직후 — [📋 공유] (+당도가 있으면 [🍊 당도])
+function _ibJustSavedBar(id, msg) {
+  const r = inboundRecords.find(x => String(x.id) === String(id));
+  const btns = [{ label: '📋 공유', fn: () => openInboundShareText(id) }];
+  if (r && (r.brix_range || r.brix_avg)) btns.push({ label: '🍊 당도', color: '#374151', fn: () => openInboundShareText(id, 'brix') });
+  _justSavedBar(msg, btns);
+}
+// ── ✂️ 선과 미공유(v796) — 입고 미공유와 같은 규칙: 어제·오늘 만든 차수 중 📋 선과내역 공유 복사를 안 한 것.
+//   SR_SHARE_TRACK_FROM 이전 차수는 제외(기록 시작 전 차수는 전부 shared_at이 비어 있다).
+const SR_SHARE_TRACK_FROM = '2026-11-16';
+function _srIsUnshared(s) {
+  if (!s || s.shared_at || !s.created_at) return false;
+  const d = ymd(new Date(s.created_at)), y = new Date(); y.setDate(y.getDate() - 1);
+  return d >= SR_SHARE_TRACK_FROM && d >= ymd(y);
+}
+function _srUnsharedOf(ibId) { return (sortingResults || []).filter(s => String(s.inbound_record_id) === String(ibId) && _srIsUnshared(s)); }
+// 복사 = 보냈다고 본다 → 공유 창에 들어간 차수 전부 기록(누적 공유면 여러 차수). 실패해도 공유 자체는 된 것이라 조용히 넘어간다.
+async function _srMarkShared(ids) {
+  const todo = ids.filter(id => { const s = (sortingResults || []).find(x => String(x.id) === String(id)); return !s || !s.shared_at; });
+  if (!todo.length) return;
+  const at = new Date().toISOString();
+  try {
+    await Promise.all(todo.map(id => sbUpdate('sorting_results', id, { shared_at: at })));
+    todo.forEach(id => { const s = (sortingResults || []).find(x => String(x.id) === String(id)); if (s) s.shared_at = at; document.getElementById(`srt-un-${id}`)?.remove(); });
+    renderInboundList();
+  } catch (e) { console.warn('선과 공유 표시 저장 실패(무시):', e.message); }
 }
 
 async function confirmCancelSorting(srId, inboundId, seq) {
