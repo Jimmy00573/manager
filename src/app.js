@@ -20466,6 +20466,26 @@ function _renderScStats() {
     </div>`;
 }
 
+// 오늘 선과 내역 — 선과 상세 → 사이즈 묶음 비율(막대·숫자) + 고당·비정상 비율 한 줄(v797).
+//   계산은 _srRatios(농가별 비율 모달과 같은 식): 사이즈 %는 정상품 안에서, 고당·파치 등은 손실 뺀 전체 대비.
+//   withBar=true면 위에 가로 막대(카드용), false면 숫자만(품목별 요약 줄용).
+function _todaySrRatioHtml(details, product, withBar) {
+  const groups = getSizeGroupsFor(product);
+  const { sizeRatios, qualRatios, totalCt } = _srRatios(details, groups);
+  if (!totalCt) return '';
+  const ABN = new Set(_fsrQualStyles({}).map(x => x.k));   // 파치·고산도·저당도·극소과·청과(_scForecast와 같은 구분)
+  const sz = groups.map(g => g.group).filter(g => sizeRatios[g] > 0);
+  const BLUES = ['#B5D4F4', '#85B7EB', '#378ADD', '#185FA5', '#0C447C', '#042C53'];
+  const col = i => BLUES[Math.min(BLUES.length - 1, Math.round(i * (BLUES.length - 1) / Math.max(1, groups.length - 1)))];
+  const top = sz.reduce((a, g) => (sizeRatios[g] > (sizeRatios[a] || -1) ? g : a), '');
+  const hi = Object.keys(qualRatios).filter(k => k !== '일반' && !ABN.has(k)).reduce((t, k) => t + (qualRatios[k] || 0), 0);
+  const abn = [...ABN].filter(k => qualRatios[k] > 0).map(k => `${k} ${qualRatios[k]}%`);
+  const bar = withBar && sz.length ? `<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:4px;background:#F3F4F6">${sz.map(g => `<i title="${esc(g)} ${sizeRatios[g]}%" style="width:${sizeRatios[g]}%;background:${col(groups.findIndex(x => x.group === g))}"></i>`).join('')}</div>` : '';
+  const szTxt = sz.map(g => g === top ? `<b style="font-weight:500;color:#1F2937">${esc(g)} ${sizeRatios[g]}%</b>` : `${esc(g)} ${sizeRatios[g]}%`).join(' · ');
+  const tail = [hi > 0 ? `<span style="color:#1565C0">고당 ${hi}%</span>` : '', ...abn].filter(Boolean).join(' · ');
+  return `${bar}<div style="font-size:12px;color:#6B7280">${szTxt}${tail ? `${szTxt ? ' &nbsp;|&nbsp; ' : ''}${tail}` : ''}</div>`;
+}
+
 async function openTodaySortingModal() {
   const today = td();
   const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today);
@@ -20473,8 +20493,20 @@ async function openTodaySortingModal() {
 
   // 오늘 sorting_results 에서 operator_name 조회 (격리 — 전역 sortingResults 미사용)
   const srRows = todayRecs.length > 0
-    ? (await sbGet('sorting_results', `sorting_date=eq.${today}&select=inbound_record_id,operator_name`).catch(() => []) || [])
+    ? (await sbGet('sorting_results', `sorting_date=eq.${today}&select=id,inbound_record_id,operator_name`).catch(() => []) || [])
     : [];
+  // 오늘 차수의 선과 상세 → 매지(입고)별·품목별 비율(v797). 계산은 비율 모달과 같은 _srRatios. 실패하면 비율 줄만 빠진다.
+  const srIbOf = {}; srRows.forEach(sr => { srIbOf[sr.id] = sr.inbound_record_id; });
+  const todayDtls = srRows.length
+    ? (await sbGet('sorting_details', `sorting_result_id=in.(${srRows.map(sr => sr.id).join(',')})&select=sorting_result_id,category,size_code,ct,quality_grade`).catch(() => []) || [])
+    : [];
+  const dtlByIb = {}, dtlByProd = {};
+  todayDtls.forEach(d => {
+    const ibId = srIbOf[d.sorting_result_id]; if (ibId == null) return;
+    (dtlByIb[ibId] || (dtlByIb[ibId] = [])).push(d);
+    const ib = inboundRecords.find(x => x.id === ibId); const pr = (ib && ib.product) || '미지정';
+    (dtlByProd[pr] || (dtlByProd[pr] = [])).push(d);
+  });
   const operatorMap = {}; // inbound_id → 작업자 중복제거 Set
   srRows.forEach(sr => {
     if (!sr.operator_name) return;
@@ -20508,6 +20540,8 @@ async function openTodaySortingModal() {
   const prodSummary = prodOrder
     .map(p => `<span style="display:inline-flex;align-items:center;gap:4px">${productChip(p)} ${fmtCT(byProduct[p])} CT</span>`)
     .join(' · ');
+  // 품목별 오늘 비율 한 줄(v797) — 카드 비율 줄과 같은 표시(_todaySrRatioHtml)
+  const prodRatio = prodOrder.filter(p => dtlByProd[p]).map(p => `<div style="display:flex;gap:6px;align-items:baseline;margin-top:4px"><span style="min-width:52px;color:#6B7280">${esc(p)}</span>${_todaySrRatioHtml(dtlByProd[p], p, false)}</div>`).join('');
 
   const cardHtml = entries.length === 0
     ? '<div style="text-align:center;color:#9CA3AF;padding:24px">오늘 선과 내역 없음</div>'
@@ -20522,7 +20556,7 @@ async function openTodaySortingModal() {
         const operators = operatorMap[ib.id] ? [...operatorMap[ib.id]].join(', ') : '';
         const operatorHtml = operators ? ` <span style="font-size:11px;color:#6B7280;font-weight:400">· ${esc(operators)}</span>` : '';
         return `${sep}
-          <div style="border:1px solid #E5E7EB;border-radius:8px;padding:12px 14px;margin-bottom:8px">
+          <div ${dtlByIb[ib.id] ? `onclick="openSortingRatioModal('${esc(ib.farm_name).replace(/'/g, '&#39;')}','${esc(ib.product || '').replace(/'/g, '&#39;')}','${ib.id}')" title="이 농가 매지별 비율 비교" ` : ''}style="border:1px solid #E5E7EB;border-radius:8px;padding:12px 14px;margin-bottom:8px${dtlByIb[ib.id] ? ';cursor:pointer' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
               <div>
                 <div style="font-size:13px;font-weight:700;color:#1F2937">${esc(ib.farm_name)}${operatorHtml}</div>
@@ -20533,6 +20567,8 @@ async function openTodaySortingModal() {
             <div style="margin-top:8px;font-size:13px;color:#374151">
               총 <strong>${fmtCT(ib.quantity)} CT</strong> 중 오늘 <strong style="color:#15803D">${fmtCT(todayCt)} CT</strong> 선과
             </div>
+            ${dtlByIb[ib.id] ? `<div style="margin-top:6px">${_todaySrRatioHtml(dtlByIb[ib.id], ib.product, true)}</div>
+            <div style="margin-top:4px;font-size:11px;color:#7C3AED">이 농가 매지 비교 ›</div>` : ''}
           </div>`;
       }).join('');
 
@@ -20551,7 +20587,7 @@ async function openTodaySortingModal() {
         </div>
         <button onclick="document.getElementById('today-sorting-modal-bg').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#9CA3AF;padding:0;line-height:1">✕</button>
       </div>
-      ${prodSummary ? `<div style="padding:10px 20px;background:#F9FAFB;border-bottom:1px solid #F0F0F0;font-size:12px;color:#374151"><span style="font-weight:600;color:#6B7280">품목별</span>&nbsp;${prodSummary}</div>` : ''}
+      ${prodSummary ? `<div style="padding:10px 20px;background:#F9FAFB;border-bottom:1px solid #F0F0F0;font-size:12px;color:#374151"><span style="font-weight:600;color:#6B7280">품목별</span>&nbsp;${prodSummary}${prodRatio}</div>` : ''}
       <div style="padding:16px 20px;max-height:60vh;overflow-y:auto">
         ${cardHtml}
       </div>
