@@ -17193,9 +17193,27 @@ let _openMenuId = null;
 
 // 메뉴가 고정 열(.stk-r) 칸 안에 있으면 열린 동안만 그 칸을 위로 올린다 — sticky 칸은 쌓임 맥락이라
 // 안 올리면 펼친 메뉴가 아래 행들의 고정 칸에 가려진다(style.css .stk-open). 고정 열이 아닌 목록(농가별 보기)은 할 일 없음.
+// ★열 때 메뉴를 body로 옮긴다(v798) — iOS(아이폰 Safari·Chrome 둘 다 WebKit)는 가로 스크롤 표(overflow) 안의
+//   position:fixed 메뉴를 표 영역으로 잘라 버려, 검색 결과처럼 행이 적은 표에서 ⋮ 메뉴가 표 밖으로 안 보였다.
+//   닫을 때 원래 칸으로 되돌린다(그 사이 목록이 다시 그려져 칸이 없어졌으면 버린다 — 새 칸에 새 메뉴가 있다).
 function _rowMenuLift(menu, on) {
-  const cell = menu && menu.closest('.stk-r');
-  if (cell) cell.classList.toggle('stk-open', on);
+  if (!menu) return;
+  if (on) {
+    document.querySelectorAll('body > .row-menu[data-portal]').forEach(m => { if (m !== menu) _rowMenuHome(m); });
+    const cell = menu.closest('.stk-r');
+    if (cell) cell.classList.toggle('stk-open', true);
+    if (menu.parentNode !== document.body) { menu._home = menu.parentNode; menu.dataset.portal = '1'; document.body.appendChild(menu); }
+  } else {
+    document.querySelectorAll('body > .row-menu[data-portal]').forEach(_rowMenuHome);
+    const cell = menu.closest('.stk-r');
+    if (cell) cell.classList.toggle('stk-open', false);
+  }
+}
+function _rowMenuHome(m) {
+  m.style.display = 'none';
+  const h = m._home; delete m.dataset.portal; m._home = null;
+  if (h && h.isConnected) { h.appendChild(m); const c = h.closest('.stk-r'); if (c) c.classList.remove('stk-open'); }
+  else m.remove();
 }
 function toggleRowMenu(id, e, btnEl) {
   if (e && e.stopPropagation) e.stopPropagation();
@@ -21831,6 +21849,10 @@ function editInboundRow(id) {
   }
   setLocValue('eib', r.location || '');
   document.getElementById('eib-m-qty').value = r.quantity || '';
+  // 총 중량(v798) — 등록 때만 넣을 수 있던 inbound_records.weight_kg를 수정에서도. 단가가 있으면 매입액도 같이 다시 계산.
+  { const w = document.getElementById('eib-m-weight'); if (w) w.value = r.weight_kg != null ? r.weight_kg : '';
+    const h = document.getElementById('eib-m-weight-hint');
+    if (h) h.textContent = r.unit_price ? `단가 ${fmtN(r.unit_price)}원 — 바꾸면 매입액도 다시 계산` : ''; }
   document.getElementById('eib-m-qty').min = processed || 1;
   const hint = document.getElementById('eib-m-qty-hint');
   if (processed > 0) { hint.textContent = `이미 ${fmtN(processed)}CT 처리됨 — ${fmtN(processed)}CT 미만으로 줄일 수 없습니다`; hint.style.display = ''; }
@@ -21886,6 +21908,9 @@ function editInboundRow(id) {
   document.getElementById('modal-edit-inbound').style.display = 'flex';
 }
 
+// 수정 모달 총 중량 칸 값(빈칸 = null, 0 이하 = null)
+function _eibWeightVal() { const v = parseFloat(document.getElementById('eib-m-weight')?.value); return v > 0 ? Math.round(v * 10) / 10 : null; }
+
 async function closeEditInboundModal() {
   const reason = document.getElementById('eib-m-reason')?.value || '';
   const r = inboundRecords.find(x => x.id === _editInboundId);
@@ -21893,6 +21918,7 @@ async function closeEditInboundModal() {
     const changed =
       document.getElementById('eib-m-date').value !== (r.date || '') ||
       document.getElementById('eib-m-qty').value !== String(r.quantity) ||
+      _eibWeightVal() !== (r.weight_kg != null ? Number(r.weight_kg) : null) ||
       getLocValue('eib') !== (r.location || null) ||
       ((document.getElementById('eib-field-txt')?.value || '').trim() || null) !== (r.field || null) ||
       (gv('eib-deal') || '') !== _eibDealInit ||
@@ -21941,6 +21967,7 @@ async function saveInboundModal() {
   if (!id) return;
   const date = document.getElementById('eib-m-date').value;
   const qty = parseInt(document.getElementById('eib-m-qty').value) || 0;
+  const weight_kg = _eibWeightVal();
   const location = getLocValue('eib') || null;
   const field = (document.getElementById('eib-field-txt')?.value || '').trim() || null;   // 표시용 — picks.field는 안 바꾼다
   const note = document.getElementById('eib-m-note').value.trim() || null;
@@ -21990,6 +22017,7 @@ async function saveInboundModal() {
   const changed =
     date !== (prev.date || '') ||
     qty !== prev.quantity ||
+    weight_kg !== (prev.weight_kg != null ? Number(prev.weight_kg) : null) ||
     location !== (prev.location || null) ||
     field !== (prev.field || null) ||
     note !== (prev.note || null) ||
@@ -22058,6 +22086,11 @@ async function saveInboundModal() {
     reclassification_source, reclassification_reason, original_work_date,
     driver_id, driver_name_manual: null,
   };
+  // 총 중량을 바꿨을 때만 넣는다(안 바꾸면 PATCH가 그 컬럼을 건드리지 않게). 단가가 있으면 매입액 = 중량 × 단가(등록과 같은 식).
+  if (weight_kg !== (prev.weight_kg != null ? Number(prev.weight_kg) : null)) {
+    updatePayload.weight_kg = weight_kg;
+    if (prev.unit_price) updatePayload.amount = weight_kg ? weight_kg * Number(prev.unit_price) : null;
+  }
   try {
     await dbUpdateInbound(id, updatePayload);
 
@@ -22112,6 +22145,7 @@ async function saveInboundModal() {
       date, quantity: qty, location, field, note, inbound_category, is_priority,
       appearance_grade, defect_tags,   // ★brix_grade·acidity_grade는 안 건드림 — 기존 값 보존
       brix_range, brix_avg, acidity_range, size_distribution,
+      ...('weight_kg' in updatePayload ? { weight_kg: updatePayload.weight_kg, amount: 'amount' in updatePayload ? updatePayload.amount : inboundRecords[idx].amount } : {}),
       reclassification_source, reclassification_reason, original_work_date,
       driver_id, driver_name_manual: null,
       driver: driver_id ? (drivers.find(d => d.id === driver_id) || null) : null };
