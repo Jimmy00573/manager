@@ -23844,9 +23844,10 @@ async function _ibShareCtLine(ids) {
     const [pk, oi, ni] = await Promise.all([
       sbGet('picks',   `inbound_id=in.(${idQ})&select=ctype,qty`),
       sbGet('own_ins', `inbound_id=in.(${idQ})&select=ctype,qty`),
-      sbGet('nhf_ins', `inbound_id=in.(${idQ})&select=type,qty`),
+      sbGet('nhf_ins', `inbound_id=in.(${idQ})&select=nhf,type,qty`),
     ]);
-    [...(pk || []).map(r => [r.ctype, r.qty]), ...(oi || []).map(r => [r.ctype, r.qty]), ...(ni || []).map(r => [r.type, r.qty])]
+    // 농협·거래처 용기는 이름 앞에 농협명(v799) — '콘테이너'만으로는 어느 농협 것인지 몰라 콘테이너 내력과 대조가 안 됐다
+    [...(pk || []).map(r => [r.ctype, r.qty]), ...(oi || []).map(r => [r.ctype, r.qty]), ...(ni || []).map(r => [[r.nhf, r.type].filter(Boolean).join(' '), r.qty])]
       .forEach(([n, q]) => { if (n) ctMap[n] = (ctMap[n] || 0) + (Number(q) || 0); });
   } catch (e) { console.warn('공유 텍스트 콘테이너 조회 실패(콘테나 줄 생략):', e.message); }
   const ctNames = Object.keys(ctMap);
