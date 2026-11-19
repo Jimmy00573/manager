@@ -8722,7 +8722,7 @@ async function _invFetch(track, token) {
       track(loadSizeConfig()), catSysP,
       track(dbGetInventoryRecords()).catch(() => []),
       track(dbGetJuiceMasters()).catch(() => []),
-      track(sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status')).catch(() => { _loadFail('선과 결과'); critFail = true; return []; }),
+      track(sbGet('sorting_results', 'select=id,inbound_record_id,sequence_number,input_ct,total_output_ct,sorting_date,status,created_at,shared_at')).catch(() => { _loadFail('선과 결과'); critFail = true; return []; }),
       track(dbGetJuiceBatches()).catch(() => []),
       // ★sbGetAll 필수 — 출고는 이미 3,000건이 넘어 sbGet으로는 1,000건에서 조용히 잘린다.
       //   ★주스분만 따로 받던 조회는 2026-09-22에 지웠다 — 받아만 놓고 읽는 곳이 0이었고(grep),
@@ -8753,7 +8753,7 @@ async function _invFetch(track, token) {
       inboundRecords = newIn;
     }
     processingRecords = newProc;
-    sortingResults = allSorting;
+    sortingResults = allSorting;   // ★created_at·shared_at까지 받아야 ✂️ 선과 미공유 판정이 된다(v800)
     invUnsorted = legacyIn;
     [invSorted, invWaste, invSizeConfig] = [sorted, waste, sizeCfg];
     invJuiceMasters = juiceMasters;
@@ -20355,7 +20355,7 @@ function renderProcessingTab() {
 
     if (_scTab === 'pending') {
       el.innerHTML = `
-        <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><div style="font-size:15px;font-weight:700;color:#1565C0">✂️ 선과 처리 센터</div><button id="btn-sc-unshared" onclick="openScUnsharedList()" style="display:none;margin-left:auto"></button></div>
         ${_tabBar()}
         <div id="sc-stats" style="margin-bottom:14px"></div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
@@ -20388,7 +20388,7 @@ function renderProcessingTab() {
       });
     } else {
       el.innerHTML = `
-        <div style="font-size:15px;font-weight:700;color:#1565C0;margin-bottom:14px">✂️ 선과 처리 센터</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><div style="font-size:15px;font-weight:700;color:#1565C0">✂️ 선과 처리 센터</div><button id="btn-sc-unshared" onclick="openScUnsharedList()" style="display:none;margin-left:auto"></button></div>
         ${_tabBar()}
         <div id="sc-stats" style="margin-bottom:14px"></div>
         <div id="sc-day-wrap" style="margin-bottom:14px"></div>
@@ -20430,6 +20430,7 @@ function renderProcessingTab() {
 function _renderScStats() {
   const statsEl = document.getElementById('sc-stats');
   if (!statsEl) return;
+  _renderScUnsharedBtn();
   const pm = _ibProcessedMap();
   const today = td();
 
@@ -24048,7 +24049,57 @@ async function _srMarkShared(ids) {
     await Promise.all(todo.map(id => sbUpdate('sorting_results', id, { shared_at: at })));
     todo.forEach(id => { const s = (sortingResults || []).find(x => String(x.id) === String(id)); if (s) s.shared_at = at; document.getElementById(`srt-un-${id}`)?.remove(); });
     renderInboundList();
+    _renderScUnsharedBtn();
+    if (document.getElementById('modal-sc-unshared')) openScUnsharedList();   // 목록 창이 열려 있으면 갱신
   } catch (e) { console.warn('선과 공유 표시 저장 실패(무시):', e.message); }
+}
+// 선과 처리 센터 제목 옆 '📋 선과 미공유 n'(v800) — 저장 직후 바(15초)가 사라져도 남는다. 판정은 _srIsUnshared 하나.
+function _scUnsharedRows() {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return [];
+  return (sortingResults || []).filter(_srIsUnshared).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+function _renderScUnsharedBtn() {
+  const b = document.getElementById('btn-sc-unshared');
+  if (!b) return;
+  const n = _scUnsharedRows().length;
+  if (!n) { b.style.display = 'none'; return; }
+  b.textContent = `📋 선과 미공유 ${n}`;
+  b.title = '어제·오늘 선과하고 📋 공유 복사를 안 한 차수 — 누르면 목록';
+  b.style.cssText = 'margin-left:auto;font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;background:#fff;color:#7C3AED;border:1px solid #C4B5FD';
+}
+function openScUnsharedList() {
+  document.getElementById('modal-sc-unshared')?.remove();
+  const rows = _scUnsharedRows();
+  if (!rows.length) { showToast('미공유 선과가 없습니다'); return; }
+  const m = document.createElement('div');
+  m.id = 'modal-sc-unshared';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2900;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  const line = s => {
+    const ib = inboundRecords.find(r => String(r.id) === String(s.inbound_record_id)) || {};
+    const t = s.created_at ? new Date(s.created_at) : null;
+    const when = t ? `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #F3F4F6">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;color:#1F2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ib.farm_name || '(입고 없음)')} <span style="color:#6B7280">· ${esc(ib.product || '')} · ${s.sequence_number || '?'}차</span></div>
+        <div style="font-size:11px;color:#9CA3AF">${when} · 투입 ${fmtN(s.input_ct || 0)} CT</div>
+      </div>
+      <button data-sr="${s.id}" class="btn pri" style="font-size:12px;padding:5px 12px;white-space:nowrap">📋 공유</button>
+    </div>`;
+  };
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:80vh">
+      <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:600;color:#7C3AED">📋 선과 미공유 ${rows.length}</div>
+        <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
+      </div>
+      <div style="padding:4px 18px 10px;overflow:auto">${rows.map(line).join('')}</div>
+    </div>`;
+  m.addEventListener('click', e => {
+    if (e.target.dataset.close !== undefined || e.target === m) { m.remove(); return; }
+    const id = e.target.closest('[data-sr]')?.dataset.sr;
+    if (id) openSortingShareText(id);   // 복사하면 _srMarkShared → 이 목록·버튼 갱신
+  });
+  document.body.appendChild(m);
 }
 
 async function confirmCancelSorting(srId, inboundId, seq) {
