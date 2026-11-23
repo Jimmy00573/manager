@@ -16841,7 +16841,12 @@ function renderInvSummary() {
       <div style="font-size:11.5px;color:#6B7280">${lbl}</div>
       <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;white-space:nowrap;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? fmtCT(n) : '—'}</div>
     </div>`;
-  const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('①', '품목별 재고', '단위 CT · 칸을 누르면 상세')}
+  // v816: 안내 글은 제목 바로 옆에(secHdr는 오른쪽 끝으로 보내서 넓은 화면에서 안 보였다)
+  const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">
+    <div class="sum-sec-hdr" style="padding:12px 16px;border-bottom:1px solid #F3F4F6;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px">
+      <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">① 품목별 재고</span>
+      <span style="font-size:12.5px;color:#4B5563;font-weight:500">단위 CT · 칸을 누르면 상세</span>
+    </div>
     <div style="padding:12px 16px">
       ${_ipRows.length ? _ipRows.map(r => `
         <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '4px' : '10px'}">
