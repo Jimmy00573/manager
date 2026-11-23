@@ -1283,6 +1283,8 @@ const OFFICE_ROLES = ['admin', 'staff', 'airport', 'ext_driver'];
 const ADM_ROLES = ['admin', 'airport', 'ext_driver'];
 const ADM_ROLE_LABEL = { admin: '관리자', airport: '공항(조회 전용)', ext_driver: '외부 기사' };
 // 역할별 상단 탭 화이트리스트(없으면 전부 보임 = admin). ★T()의 진입 가드도 이 표를 본다(한 곳).
+// v814(2026-11-23 대표님 요청): 📋 작업 기준표·🚚 출고 기록은 상단 탭 줄에서 빼고 ⚙ 설정 메뉴에서 들어간다(화면은 그대로). 들어가 있는 동안엔 ⚙ 설정이 켜진다.
+const NAV_IN_SETTINGS = ['spec', 'ship'];
 const ROLE_NAV_TABS = { staff: ['inv'], airport: ['inv'], ext_driver: ['inv', 'transport'] };   // 📋 작업 기준표(spec)는 admin만(v718)
 // 역할별 재고 화면 하위 탭 화이트리스트(없으면 전부 보임 = admin). 첫 값 = 허용 안 된 탭을 부를 때 대신 갈 탭(invTab).
 // ★공항(airport) 계정은 주스·청 한 탭만 본다. ★외부 기사는 입고 목록이 있는 미선과 탭만(1단계는 보기 전용).
@@ -1411,7 +1413,7 @@ function setRole(r) {
     const allowNav = ROLE_NAV_TABS[r] || null;
     document.querySelectorAll('#anav .nbtn').forEach(btn => {
       const tab = btn.getAttribute('data-tab');
-      btn.style.display = (allowNav && !allowNav.includes(tab)) ? 'none' : '';
+      btn.style.display = ((allowNav && !allowNav.includes(tab)) || NAV_IN_SETTINGS.includes(tab)) ? 'none' : '';
     });
     // 외부 기사 화면 축소(미선과 탭의 다른 블록·입고 폼의 관리용 칸)는 style.css의 body.role-ext-driver .xd-hide 한 규칙이 맡는다.
     document.body.classList.toggle('role-ext-driver', r === 'ext_driver');
@@ -1466,7 +1468,7 @@ function T(id) {
   const _stEl = document.getElementById('transport-subtab');
   if (_stEl) _stEl.style.display = 'none';
   document.querySelectorAll('#anav .nbtn').forEach(b =>
-    b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')`));
+    b.classList.toggle('active', b.getAttribute('onclick') === `T('${id}')` || (b.getAttribute('data-tab') === 'set' && NAV_IN_SETTINGS.includes(id))));
   ['dash', 'disp', 'ext', 'cal', 'dboard', 'chist', 'farm', 'drv', 'vehicle', 'stats', 'export', 'inv', 'set', 'spec', 'ship'].forEach(p => {
     const el = document.getElementById('p-' + p); if (el) el.classList.remove('active');
   });
