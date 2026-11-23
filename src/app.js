@@ -16813,6 +16813,50 @@ function renderInvSummary() {
   </div>`;
 
   // ==================================================================
+  // 15-2. 품목별 재고 (v815, 2026-11-24 대표님 요청 E안) — 화면의 ①②③(미선과·선과품·파치)을 이 한 칸으로 바꾼다
+  // ==================================================================
+  // 한 줄 = 품목(감귤류는 '감귤' 한 줄로 합치고 아래에 품목별 합계를 작게), 오른쪽 = 미선과 · 상품(선과품) · 파치 숫자 타일 세 칸.
+  // 단위는 셋 다 CT — 미선과 unsMap(잔여 CT) · 상품 sortDetail[품목][등급][사이즈].ct · 파치 pachiMap(CT). 새로 읽는 데이터 없음(위 맵 재사용).
+  // 타일을 누르면 그 상세 화면(invTab uns/srt/pachi). 인쇄 보고서는 예전 1~5번 블록 그대로(.sum-print-only).
+  const _ipCt = {};
+  const _ipGet = p => _ipCt[p] || (_ipCt[p] = { uns: 0, srt: 0, pachi: 0 });
+  Object.entries(unsMap).forEach(([p, v]) => { _ipGet(p).uns += (v.raw || 0) + (v.small || 0); });
+  Object.entries(sortDetail).forEach(([p, byGrade]) => Object.values(byGrade).forEach(bySize => Object.values(bySize).forEach(c => { _ipGet(p).srt += Number(c.ct) || 0; })));
+  Object.entries(pachiMap).forEach(([p, ct]) => { if (ct > 0) _ipGet(p).pachi += ct; });
+  const _ipTot = v => v.uns + v.srt + v.pachi;
+  const _ipItems = Object.entries(_ipCt).filter(([, v]) => _ipTot(v) > 0.05);
+  const _ipOrd = p => { const i = PRODUCT_ORDER.indexOf(p); return i < 0 ? 999 : i; };
+  const _ipCit = _ipItems.filter(([p]) => PRODUCT_TYPE_MAP[p] === '감귤류');
+  const _ipRows = [];
+  if (_ipCit.length) {
+    const g = { uns: 0, srt: 0, pachi: 0 };
+    _ipCit.forEach(([, v]) => { g.uns += v.uns; g.srt += v.srt; g.pachi += v.pachi; });
+    const sub = _ipCit.slice().sort((a, b) => _ipTot(b[1]) - _ipTot(a[1])).map(([p, v]) => `${esc(p)} ${fmtCT(_ipTot(v))}`).join(' · ');
+    _ipRows.push({ name: '감귤', v: g, sub, ord: -1 });
+  }
+  _ipItems.filter(([p]) => PRODUCT_TYPE_MAP[p] !== '감귤류').forEach(([p, v]) => _ipRows.push({ name: p, v, sub: '', ord: _ipOrd(p) }));
+  _ipRows.sort((a, b) => a.ord - b.ord || a.name.localeCompare(b.name, 'ko'));
+  const _ipTile = (lbl, n, tab) => `<div onclick="invTab('${tab}')" title="${lbl} 상세 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
+      onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">
+      <div style="font-size:11.5px;color:#6B7280">${lbl}</div>
+      <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;white-space:nowrap;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? fmtCT(n) : '—'}</div>
+    </div>`;
+  const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('①', '품목별 재고', '단위 CT · 칸을 누르면 상세')}
+    <div style="padding:12px 16px">
+      ${_ipRows.length ? _ipRows.map(r => `
+        <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '4px' : '10px'}">
+          <div style="display:flex;flex-direction:column;justify-content:center;min-width:0">
+            <span style="font-size:15px;font-weight:600;color:#111827">${esc(r.name)}</span>
+            <span style="font-size:12px;color:#6B7280">합계 ${fmtCT(_ipTot(r.v))}</span>
+          </div>
+          ${_ipTile('미선과', r.v.uns, 'uns')}${_ipTile('상품', r.v.srt, 'srt')}${_ipTile('파치', r.v.pachi, 'pachi')}
+        </div>
+        ${r.sub ? `<div style="font-size:11.5px;color:#6B7280;margin:0 0 12px;max-width:680px;line-height:1.5">${r.sub}</div>` : ''}`).join('')
+      : `<div style="font-size:13px;color:#9CA3AF;padding:8px 0">재고 없음</div>`}
+    </div>
+  </div>`;
+
+  // ==================================================================
   // 16. 최종 출력 — 위에서 만든 조각을 화면 순서대로 붙인다
   // ==================================================================
   // 순서: KPI → 확인 필요 → 흐름 → 입출고 → ①(화면)/1(인쇄) → ②(화면)/2·3(인쇄) → ③(화면)/4·5 2열(인쇄)
@@ -16824,8 +16868,8 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${sortTodayHtml}<div class="sum-print-only">${unsHtml}</div>${sellHtml}<div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
-    ${pjHtml}<div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
+    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${itemStockHtml /* v815: 화면 ①②③(sortTodayHtml·sellHtml·pjHtml) 대신 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
+    <div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
 // ③ 파치 · 주스/청의 '주스/청 전체 목록' 펼침 — 메모리에만(새로고침하면 접힘). 다시 그려도 상태 유지.
