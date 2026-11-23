@@ -9434,7 +9434,7 @@ function renderSizeCfg() {
   el.innerHTML = `
     <div class="form-card">
       <div class="form-title">⚙️ 품목 분류 시스템 설정</div>
-      <div class="note">💡 카테고리·품목·크기 기준을 설정합니다. 변경 후 재고 요약에 즉시 반영됩니다.</div>
+      <div class="note">💡 카테고리·품목·크기 기준을 설정합니다. 변경 후 원물 재고 탭에 즉시 반영됩니다.</div>
       <div style="display:flex;gap:0;margin:12px 0 0;border-bottom:1px solid var(--border)">
         <button class="cfg-stab af" id="cst-cat"   onclick="cfgSubTab('cat')">📁 카테고리·품목</button>
         <button class="cfg-stab"   id="cst-grade" onclick="cfgSubTab('grade')">🍊 감귤류 등급</button>
