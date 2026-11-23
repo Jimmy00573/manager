@@ -429,13 +429,13 @@ async function loadUrgencySettings() {
 }
 
 // ── 품목별 선과 중량 기준
-const PRODUCT_WEIGHTS_DEFAULT = { 극조생:18, 조생:18, 노지감귤:18, 하우스감귤:18, 비가림:18, 타이벡:18, 천혜향:18, 한라봉:15, 레드향:17, 카라향:17, 수라향:17, 황금향:17 };
+const PRODUCT_WEIGHTS_DEFAULT = { '노지 조생':18, '노지 극조생':18, '타이벡 조생':18, '타이벡 극조생':18, 극조생:18, 조생:18, 노지감귤:18, 하우스감귤:18, 비가림:18, 타이벡:18, 천혜향:18, 한라봉:15, 레드향:17, 카라향:17, 수라향:17, 황금향:17 };
 
 // ── 품목 표시 순서(시즌 순) — 감귤류 먼저(하우스감귤 → 비가림 → 유라실생 → 극조생 → 조생 → 노지감귤), 그다음 만감류(황금향 → 천혜향 → 레드향).
 //   (2026-10-14 Jimmy 결정) 품목 묶음이 날마다 '농가 수 많은 순'으로 바뀌던 것을 늘 같은 순서로 고정한다.
 //   ★타이벡·한라봉·카라향·수라향 위치는 Jimmy 확인 전 가정(시즌 순)이다 — 바꿔도 된다.
 //   ★표시 정렬에만 쓴다. 데이터·필터·합계는 이 순서와 무관하다.
-const PRODUCT_ORDER = ['하우스감귤', '비가림', '유라실생', '극조생', '조생', '노지감귤', '타이벡', '황금향', '천혜향', '레드향', '한라봉', '카라향', '수라향'];
+const PRODUCT_ORDER = ['하우스감귤', '비가림', '유라실생', '노지 극조생', '타이벡 극조생', '노지 조생', '타이벡 조생', '극조생', '조생', '노지감귤', '타이벡', '황금향', '천혜향', '레드향', '한라봉', '카라향', '수라향'];
 // 품목의 순서 번호 — 목록 위치(정확일치 → '비가림감귤'처럼 뒤가 붙은 이름은 접두일치).
 //   목록에 없으면 목록 뒤(호출부가 가나다로 가른다), '품목 미정'·빈 값은 맨 뒤.
 function _prodRank(name) {
@@ -1799,6 +1799,53 @@ function _ibDefaultProduct(farm) {
 }
 // 공급처를 고르면 기본 품목을 먼저 잡아 준다. ★품목 칸이 비었거나 직전에 자동으로 넣은 값일 때만 — 직접 고른 품목은 절대 안 바꾼다.
 //   목록에 있는 값만 넣고, 품목을 바꿀 때의 기존 동작(선과품 사이즈 칸·크기분포)은 change 이벤트로 태운다(렌더 코드 복제 없음).
+// ── 입고 품목 두 칸 [재배][품종] (v804, 2026-11-23 Jimmy 결정 '방식 1': 품목 이름 = 재배+품종, 예 '타이벡 조생')
+//   ★값의 주인은 숨은 #ib-product 하나다. 두 칸은 그것을 고르는 겉모양일 뿐 — 저장·검사·크기분포·기본 품목은 예전처럼 ib-product를 읽고 쓴다.
+//   첫 칸 = items.cultivation(재배)이 있으면 그 이름으로 묶고, 없으면(하우스감귤·비가림·만감류 등) 품목 이름 그대로. 둘째 칸 = 그 재배의 품종, 품종 없는 품목이면 숨김.
+//   목록은 ib-product의 옵션(= buildProductOptgroupHTML, retired 숨김·순서 반영)에서 그대로 뽑는다 — 목록 규칙을 따로 두지 않는다.
+function _ibPairGroups() {
+  const sel = document.getElementById('ib-product');
+  const groups = [], byKey = {};
+  if (!sel) return { groups, byKey };
+  [...sel.options].forEach(o => {
+    if (!o.value) return;
+    const it = (itemDefs || []).find(i => i.name === o.value) || {};
+    const key = it.cultivation || o.value;
+    if (!byKey[key]) { byKey[key] = { key, cat: o.parentNode && o.parentNode.tagName === 'OPTGROUP' ? o.parentNode.label : '', items: [] }; groups.push(byKey[key]); }
+    byKey[key].items.push({ name: o.value, variety: it.variety || '' });
+  });
+  return { groups, byKey };
+}
+function _ibPairFromProduct() {
+  const p1 = document.getElementById('ib-p1'), p2 = document.getElementById('ib-p2'), sel = document.getElementById('ib-product');
+  if (!p1 || !p2 || !sel) return;
+  const { groups, byKey } = _ibPairGroups();
+  let html = '<option value="">선택</option>', cat = null;
+  groups.forEach(g => {
+    if (g.cat !== cat) { if (cat) html += '</optgroup>'; if (g.cat) html += `<optgroup label="${esc(g.cat)}">`; cat = g.cat; }
+    html += `<option value="${esc(g.key)}">${esc(g.key)}</option>`;
+  });
+  if (cat) html += '</optgroup>';
+  p1.innerHTML = html;
+  const cur = sel.value, it = (itemDefs || []).find(i => i.name === cur) || {};
+  const key = cur ? (it.cultivation || cur) : '';
+  p1.value = byKey[key] ? key : '';
+  const g = byKey[p1.value];
+  const showVar = !!(g && g.items.some(x => x.variety));
+  p2.innerHTML = showVar ? g.items.map(x => `<option value="${esc(x.name)}">${esc(x.variety || x.name)}</option>`).join('') : '';
+  if (showVar) p2.value = cur;
+  p2.style.display = showVar ? '' : 'none';
+}
+// 두 칸 중 하나를 바꿨을 때 — ib-product 값을 정하고 change를 태운다(기존 onchange가 크기분포 등을 다시 그리고 끝에 두 칸도 다시 맞춘다).
+function _ibPairPick(which) {
+  const p1 = document.getElementById('ib-p1'), p2 = document.getElementById('ib-p2'), sel = document.getElementById('ib-product');
+  if (!p1 || !p2 || !sel) return;
+  const g = _ibPairGroups().byKey[p1.value];
+  const names = g ? g.items.map(x => x.name) : [];
+  const name = !g ? '' : (which === 2 && names.includes(p2.value)) ? p2.value : (names.includes(sel.value) ? sel.value : names[0]);
+  if (sel.value !== name) { sel.value = name; sel.dispatchEvent(new Event('change')); }
+  else _ibPairFromProduct();
+}
 let _ibProdAuto = false;   // ib-product 값이 여기서 넣은 것인지 — 사람이 바꾸면 ib-product onchange가 false로 돌린다
 function _ibApplyDefaultProduct(farm) {
   const sel = document.getElementById('ib-product');
@@ -7058,7 +7105,7 @@ function itemColor(item) {
     '망고': 'background:#FFECB3;color:#FF6F00',
     '단호박': 'background:#EFEBE9;color:#5D4037',
   };
-  return map[item] || 'background:#F5F5F5;color:#555';
+  return map[item] || map[_itemVarOf(item)] || 'background:#F5F5F5;color:#555';
 }
 
 // ── 농가 이력
@@ -9342,12 +9389,15 @@ function _extNameSync(pre) {
 //                 items 그룹 다음, '마스터 없음' 앞에 붙는다. items에 중복 등록하지 않으려고 여기서 합친다.
 // 품목 고르는 칸(입고·수확·배차) 안의 순서 — 적힌 것이 먼저, 나머지는 가나다순. (2026-11-09 Jimmy 결정)
 //   ★고르는 칸에만 쓴다. 목록·묶음 표시 순서는 PRODUCT_ORDER(시즌 순) 그대로.
-const ITEM_SELECT_ORDER = ['노지감귤', '극조생', '조생', '타이벡', '하우스감귤', '비가림'];
+// ★v804(2026-11-23): 재배+품종 품목(노지/타이벡 × 조생/극조생)을 앞에. 옛 4종(노지감귤·극조생·조생·타이벡)은 items.retired로 새 입고에서 숨고, 기록 화면에만 뒤쪽에 나온다.
+const ITEM_SELECT_ORDER = ['노지 조생', '노지 극조생', '타이벡 조생', '타이벡 극조생', '하우스감귤', '비가림', '유라실생', '노지감귤', '극조생', '조생', '타이벡'];
 const _itemSelIdx = n => { const i = ITEM_SELECT_ORDER.indexOf(n); return i < 0 ? ITEM_SELECT_ORDER.length : i; };
 function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
   const { firstOption, selected, only, extraGroups } = opts;
   let html = firstOption !== undefined ? firstOption : '<option value="">선택</option>';
   const keep = name => !only || only.has(name);
+  // ★items.retired(v804) — 새로 고르는 칸에서만 숨긴다. 지금 선택된 값이거나, 조회 필터(only)에 실제 데이터로 있는 이름은 그대로 보인다.
+  const _itemShown = i => !i.retired || i.name === selected || !!(only && only.has(i.name));
   const seen = new Set();
   const optOf = name => {
     seen.add(name);
@@ -9358,7 +9408,7 @@ function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
     categories.forEach(cat => {
       if (!includeEtc && NON_SORTING_CATEGORIES.includes(cat.name)) return;
       const catItems = itemDefs
-        .filter(i => i.category_id === cat.id && keep(i.name))
+        .filter(i => i.category_id === cat.id && keep(i.name) && _itemShown(i))
         .sort((a, b) => _itemSelIdx(a.name) - _itemSelIdx(b.name) || a.name.localeCompare(b.name));
       if (!catItems.length) return;
       html += `<optgroup label="${esc(cat.name)}">`;
@@ -9366,7 +9416,7 @@ function buildProductOptgroupHTML(includeEtc = false, opts = {}) {
       html += '</optgroup>';
     });
     // 카테고리 미지정 품목 — 카테고리 '기타'와 혼동 방지 위해 라벨은 '미분류'
-    const uncategorized = itemDefs.filter(i => !i.category_id && keep(i.name)).sort((a, b) => a.name.localeCompare(b.name));
+    const uncategorized = itemDefs.filter(i => !i.category_id && keep(i.name) && _itemShown(i)).sort((a, b) => a.name.localeCompare(b.name));
     if (uncategorized.length) {
       html += '<optgroup label="미분류">';
       uncategorized.forEach(i => { html += optOf(i.name); });
@@ -9404,12 +9454,12 @@ function popItemSelects() {
     if (!el || el.tagName !== 'SELECT') return;
     const cur = el.value;
     el.innerHTML = optHtml;
-    if (cur) el.value = cur;
+    if (cur) _selEnsureVal(el, cur);   // v804: 숨긴 옛 품목(retired)이 골라져 있어도 값 유지
   });
 }
 function popInvProductSelects() {
   popItemSelects();   // 품목 마스터 변경 시 수확·배차 select도 갱신
-  if (!itemDefs.length) return;
+  if (!itemDefs.length) { _ibPairFromProduct(); return; }
   const optHtml = buildProductOptgroupHTML();
   ['ib-product', 'wa-product'].forEach(id => {
     const el = document.getElementById(id);
@@ -9418,6 +9468,7 @@ function popInvProductSelects() {
     el.innerHTML = optHtml;
     if (cur) el.value = cur;
   });
+  _ibPairFromProduct();   // v804: 입고 품목 두 칸(재배·품종)을 새 목록으로 다시 그림
   // 재고 현황 품목 필터 드롭다운
   const filterEl = document.getElementById('inv-filter-product');
   if (filterEl) {
@@ -14145,7 +14196,7 @@ function openInvEntryModal() {
   if (prodEl) {
     const cur = prodEl.value;
     prodEl.innerHTML = buildProductOptgroupHTML();
-    if (cur) prodEl.value = cur;
+    if (cur) _selEnsureVal(prodEl, cur);   // v804: 숨긴 옛 품목 기록을 고칠 때도 값 유지
   }
 
   // 당도 등급 드롭다운 채우기 (일반 + 활성 브릭스 등급, sort_order 순) + 초기화
@@ -16005,7 +16056,7 @@ function renderInvSummary() {
     '수라향':    '#8B5CF6', '하우스감귤': '#10B981', '비가림감귤':'#06B6D4',
     '타이벡감귤':'#14B8A6',
   };
-  const barColor = p => BAR_COLORS[p] || '#9CA3AF';
+  const barColor = p => BAR_COLORS[p] || BAR_COLORS[_itemVarOf(p)] || '#9CA3AF';
 
   // ── KPI 카드 HTML
   const kpiCard = (label, val, unit, sub, small, navTab) => `
@@ -17934,8 +17985,10 @@ const PRODUCT_COLORS = {
   '청':       { bg: '#D1C4E9', color: '#4527A0', border: '#7E57C2' },   // 인디고
   '모나카':   { bg: '#F0F4C3', color: '#827717', border: '#C0CA33' },   // 라임
 };
+// 재배+품종 품목(예: '타이벡 조생')의 품종 — 색표에 없는 이름은 품종('조생') 색을 따른다(v804). 품목 설정 items.variety 기준.
+function _itemVarOf(name) { return ((itemDefs || []).find(i => i.name === name) || {}).variety || ''; }
 function productChip(name) {
-  const c = PRODUCT_COLORS[name] || { bg: '#F5F5F5', color: '#616161', border: '#E0E0E0' };
+  const c = PRODUCT_COLORS[name] || PRODUCT_COLORS[_itemVarOf(name)] || { bg: '#F5F5F5', color: '#616161', border: '#E0E0E0' };
   return `<span class="product-chip" style="background:${c.bg};color:${c.color};border-color:${c.border}">${esc(name)}</span>`;
 }
 
@@ -24557,7 +24610,7 @@ async function saveInboundSorted(keepOpen) {
     if (keepOpen) {
       clearSorted();
       showToast('✓ 등록 완료 — 같은 공급처로 계속 입력 중');
-      document.getElementById('ib-product')?.focus();
+      document.getElementById('ib-p1')?.focus();
     } else {
       clearSorted();
       setIbKind('raw');
@@ -24700,7 +24753,7 @@ async function _addInboundCore(keepOpen) {
 
   // Reset everything except date/farm/driver
   const clearFormPartial = () => {
-    const prodEl = document.getElementById('ib-product'); if (prodEl) prodEl.value = '';
+    const prodEl = document.getElementById('ib-product'); if (prodEl) { prodEl.value = ''; _ibPairFromProduct(); }
     const catEl = document.getElementById('ib-category'); if (catEl) catEl.value = '상품';
     sv('ib-qty', ''); sv('ib-note', '');
     _ibClearCatNotes();   // ★카테고리 메모를 먼저 비운다 — 뒤에 두면 _ibClearCatQty가 다시 그린 칸에 옛 값이 남는다
@@ -24798,7 +24851,7 @@ async function _addInboundCore(keepOpen) {
         clearFormPartial();
         if (_role === 'admin' && ibId) _ibJustSavedBar(ibId, `${_catSummary} 등록 — 계속 입력 중`);
         else showToast(`✓ ${_catSummary} 등록 — 같은 농가/기사로 계속 입력 중`);
-        setTimeout(() => document.getElementById('ib-product')?.focus(), 50);
+        setTimeout(() => document.getElementById('ib-p1')?.focus(), 50);
       } else {
         clearFormPartial();
         const drvSel = document.getElementById('inv-driver-select'); if (drvSel) drvSel.value = '';

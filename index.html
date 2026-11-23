@@ -1004,7 +1004,12 @@
           </div>
           <div class="fg"><label>날짜 *</label><input id="ib-date" type="date"></div>
           <div class="fg"><label>품목 *</label>
-            <select id="ib-product" onchange="_ibProdAuto=false;if(_ibKind==='sorted')renderIbSortedSizes();renderSizeDistInputs('ib', this.value, null)">
+            <!-- v804: 보이는 칸은 [재배][품종] 두 개, 값은 숨은 #ib-product 하나(_ibPairFromProduct/_ibPairPick) -->
+            <div style="display:flex;gap:6px">
+              <select id="ib-p1" onchange="_ibPairPick(1)" style="flex:1;min-width:0"><option value="">선택</option></select>
+              <select id="ib-p2" onchange="_ibPairPick(2)" style="flex:1;min-width:0;display:none"></select>
+            </div>
+            <select id="ib-product" style="display:none" onchange="_ibProdAuto=false;if(_ibKind==='sorted')renderIbSortedSizes();renderSizeDistInputs('ib', this.value, null);_ibPairFromProduct()">
               <option value="">선택</option>
               <option>카라향</option><option>천혜향</option><option>한라봉</option><option>레드향</option>
               <option>황금향</option><option>수라향</option><option>극조생</option><option>조생</option><option>노지감귤</option>
@@ -2101,6 +2106,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=32"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=803"></script>
+<script src="src/app.js?v=804"></script>
 </body>
 </html>
