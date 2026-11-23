@@ -16840,7 +16840,7 @@ function renderInvSummary() {
   const _ipTile = (lbl, n, tab) => `<div onclick="invTab('${tab}')" title="${lbl} 상세 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
       onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">
       <div style="font-size:11.5px;color:#6B7280">${lbl}</div>
-      <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? `<span style="white-space:nowrap">${fmtCT(n)}</span> <span style="font-size:12px;font-weight:400;color:#6B7280;white-space:nowrap">CT</span>` : '—'}</div>
+      <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;text-align:right;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? `<span style="white-space:nowrap">${fmtCT(n)}</span> <span style="font-size:12px;font-weight:400;color:#6B7280;white-space:nowrap">CT</span>` : '—'}</div>
     </div>`;
   // v816: 안내 글은 제목 바로 옆에(secHdr는 오른쪽 끝으로 보내서 넓은 화면에서 안 보였다)
   const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">
@@ -16854,14 +16854,15 @@ function renderInvSummary() {
           <div style="display:flex;flex-direction:column;justify-content:center;min-width:0">
             <span style="font-size:15px;font-weight:600;color:#111827">${esc(r.name)}</span>
             <span style="font-size:12px;color:#6B7280">합계 ${fmtCT(_ipTot(r.v))} CT</span>
+            ${r.sub ? `<button type="button" onclick="toggleSumItemSub()" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
           </div>
           ${_ipTile('미선과', r.v.uns, 'uns')}${_ipTile('상품', r.v.srt, 'srt')}${_ipTile('파치', r.v.pachi, 'pachi')}
         </div>
-        ${r.sub ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
+        ${r.sub && _sumItemSubOpen ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
           <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
             <span style="padding-left:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p)}</span>
-            ${[v.uns, v.srt, v.pachi].map(n => `<span style="padding:0 clamp(6px,1.6vw,10px);white-space:nowrap;${n > 0.05 ? '' : 'color:#C4C4C0'}">${n > 0.05 ? fmtCT(n) : '—'}</span>`).join('')}
-          </div>`).join('')}</div>` : ''}`).join('')
+            ${[v.uns, v.srt, v.pachi].map(n => `<span style="padding:0 clamp(6px,1.6vw,10px);white-space:nowrap;text-align:right;${n > 0.05 ? '' : 'color:#C4C4C0'}">${n > 0.05 ? `${fmtCT(n)} <span style="font-size:11px;color:#9CA3AF">CT</span>` : '—'}</span>`).join('')}
+          </div>`).join('')}</div>` : (r.sub ? '<div style="height:6px"></div>' : '')}`).join('')
       : `<div style="font-size:13px;color:#9CA3AF;padding:8px 0">재고 없음</div>`}
     </div>
   </div>`;
@@ -16884,6 +16885,9 @@ function renderInvSummary() {
 }
 // ③ 파치 · 주스/청의 '주스/청 전체 목록' 펼침 — 메모리에만(새로고침하면 접힘). 다시 그려도 상태 유지.
 let _sumJuiceListOpen = false;
+// v818: 품목별 재고 — 감귤 품목 내역 펼침(기본 접힘). 다시 그려도 상태 유지.
+let _sumItemSubOpen = false;
+function toggleSumItemSub() { _sumItemSubOpen = !_sumItemSubOpen; renderInvSummary(); }
 function toggleSumJuiceList() { _sumJuiceListOpen = !_sumJuiceListOpen; renderInvSummary(); }
 
 function todayTabSwitch(tab) {
