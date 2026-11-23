@@ -1382,11 +1382,20 @@ const INV_TAB_IDS = ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'];
 // 재고 화면 하위 탭 노출 — 역할이 바뀔 때마다 전부 다시 계산한다.
 // ★"허용 목록에 없으면 숨김"이 아니라 매번 양쪽(''/'none')을 다 써야 한다.
 //   한 역할로 숨긴 탭이 다른 역할로 로그인해도 숨은 채 남는 잔상이 생긴다.
-function _applyInvTabs(r) {
+// ★v810(2026-11-23 대표님 요청): 관리자·직원의 탭 줄에는 원물 재고·가공 제품만 늘 보인다(INV_BAR_TABS).
+//   미선과·선과품 재고·파치는 원물 재고의 카드로 들어가고, 들어가 있는 동안만 그 탭 하나가 켜져 '지금 어디'를 보여 준다(원물 재고 탭 = 돌아가기).
+//   거래내역·변경 이력은 설정 메뉴에서 들어온다. 외부 기사·공항은 허용 탭 그대로(예전과 같음).
+const INV_BAR_TABS = ['sum', 'juice'];
+function _invTabShown(r, t, cur) {
   const allow = ROLE_INV_TABS[r] || null;
+  if (allow && !allow.includes(t)) return false;
+  if (r === 'admin' || r === 'staff') return INV_BAR_TABS.includes(t) || t === cur;
+  return true;
+}
+function _applyInvTabs(r) {
   INV_TAB_IDS.forEach(t => {
     const btn = document.getElementById('it-' + t);
-    if (btn) btn.style.display = (!allow || allow.includes(t)) ? '' : 'none';
+    if (btn) btn.style.display = _invTabShown(r, t, 'sum') ? '' : 'none';
   });
 }
 
@@ -8530,7 +8539,7 @@ function invTab(t) {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
-    if (btn) btn.className = 'etab' + (t === s ? ' af' : '');
+    if (btn) { btn.className = 'etab' + (t === s ? ' af' : ''); btn.style.display = _invTabShown(_r, s, t) ? '' : 'none'; }   // v810: 숨긴 탭은 들어가 있는 동안만
   });
   if (t === 'srt') renderInventoryStatus();
   if (t === 'log') loadAuditLogs();
@@ -16069,7 +16078,8 @@ function renderInvSummary() {
   const kpiSub  = txt => `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${txt}</div>`;
   // ★kpiChip은 전역 헬퍼로 옮겼다(배차 현황판과 공용). 여기 호출부는 그대로 — 인자 1개면 출력이 예전과 같다.
   const kpiHtml = `<div class="sum-kpi-grid">
-    ${unsTotalCt > 0 ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
+    ${/* v810: 미선과·선과품·파치 탭을 숨겨서 이 카드들이 들어가는 문이다 — 0이어도 보인다(입고 등록 폼이 미선과 화면에 있음) */ ''}
+    ${true ? kpiCard('미선과 재고', fmtCT(unsTotalCt), 'CT',
       // 일수 환산 = 잔여 ÷ 최근 7일 선과 일평균. 반올림 정수(일별 편차가 커 소수점은 과한 정밀도). 선과 0이면 생략.
       //   ★글자는 unsDaysTxt 하나 — ① 미선과 재고 부제가 같은 값을 쓴다.
       (sortAvg7 > 0 ? kpiSub(`<span title="잔여 ${fmtCT(unsTotalCt)} CT ÷ 최근 7일 선과 일평균 ${fmtCT(sortAvg7)} CT" style="cursor:help">${unsDaysTxt}</span>`) : '') +
@@ -16081,11 +16091,11 @@ function renderInvSummary() {
       (manGamItems ? kpiSub(`${manGamItems}개 품목`) : '') +
       `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(manGamHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(manGamNormalKg))}kg</span></div>`,
       false, 'srt') : ''}
-    ${citrusTotalKg > 0 ? kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
+    ${(citrusTotalKg > 0 || !(manGamTotalKg > 0)) ? kpiCard('감귤류 선과', fmtN(Math.round(citrusTotalKg)), 'kg',
       (citrusItems ? kpiSub(`${citrusItems}개 품목`) : '') +
       `<div style="font-size:11px;margin-top:3px"><span style="color:#1565C0;font-weight:600">고당 ${fmtN(Math.round(citrusHighKg))}kg</span><span style="color:#9CA3AF"> · 일반 ${fmtN(Math.round(citrusNormalKg))}kg</span></div>`,
       false, 'srt') : ''}
-    ${pachiTotalKg > 0 ? kpiCard('파치', fmtN(Math.round(pachiTotalKg)), 'kg',
+    ${true ? kpiCard('파치', fmtN(Math.round(pachiTotalKg)), 'kg',
       '', true, 'pachi') : ''}
     ${juiceTotalNet > 0 ? kpiCard('가공 제품', fmtN(Math.round(juiceTotalNet)), '병',
       '', true, 'juice') : ''}
