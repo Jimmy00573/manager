@@ -10560,8 +10560,8 @@ function renderJuiceMasterCfg() {
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
-        <div style="font-size:14px;font-weight:700">주스/청 품명 관리</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">등록된 주스·청 품명을 수정하거나 삭제합니다.</div>
+        <div style="font-size:14px;font-weight:700">가공 제품 품명 관리</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">등록된 가공 제품 품명을 수정하거나 삭제합니다.</div>
       </div>
     </div>
     ${sorted.length ? `
@@ -13369,7 +13369,7 @@ async function saveJuiceOutbound(id) {
         }
       } catch (e2) {}
       renderJuiceSection(); renderInvSummary();
-      throw new Error(`배치 차감에 실패해 출고를 취소했습니다.\n주스·청 재고가 그대로인지 확인해주세요.\n\n${e.message}`);
+      throw new Error(`배치 차감에 실패해 출고를 취소했습니다.\n가공 제품 재고가 그대로인지 확인해주세요.\n\n${e.message}`);
     }
 
     document.getElementById('modal-outbound').style.display = 'none';
@@ -16036,7 +16036,7 @@ function renderInvSummary() {
       false, 'srt') : ''}
     ${pachiTotalKg > 0 ? kpiCard('파치', fmtN(Math.round(pachiTotalKg)), 'kg',
       '', true, 'pachi') : ''}
-    ${juiceTotalNet > 0 ? kpiCard('주스/청', fmtN(Math.round(juiceTotalNet)), '병',
+    ${juiceTotalNet > 0 ? kpiCard('가공 제품', fmtN(Math.round(juiceTotalNet)), '병',
       '', true, 'juice') : ''}
     ${boxTotalNet > 0 ? kpiCard('가공품', fmtN(Math.round(boxTotalNet)), '박스',
       '', true, 'juice') : ''}
@@ -16273,7 +16273,7 @@ function renderInvSummary() {
   const summaryCardSt = 'display:inline-flex;flex-direction:column;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px 16px;margin:0 8px 8px 0';
   let outTopHtml = '';
   if (pachiOutKg   > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">파치</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(pachiOutKg))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">kg</span></span></div>`;
-  if (juiceOutQty  > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">주스/청</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(juiceOutQty))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">병</span></span></div>`;
+  if (juiceOutQty  > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">가공 제품</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(juiceOutQty))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">병</span></span></div>`;
   if (boxOutQty    > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">가공품</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtN(Math.round(boxOutQty))}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">박스</span></span></div>`;
   if (unsortedOutCt > 0) outTopHtml += `<div style="${summaryCardSt}"><span style="font-size:11px;color:#6B7280;font-weight:600">미선과 출고</span><span style="font-size:18px;font-weight:700;color:#111827;line-height:1.3">${fmtCT(unsortedOutCt)}<span style="font-size:12px;font-weight:400;color:#9CA3AF;margin-left:3px">CT</span></span></div>`;
 
@@ -16665,9 +16665,9 @@ function renderInvSummary() {
       <thead><tr><th ${THL}>품목</th><th ${THR}>재고</th><th ${THL}>비고</th></tr></thead>
       <tbody>${juiceEntries.length
         ? juiceGroupHtml(juiceGroup) + juiceGroupHtml(cheongGroup) + juiceGroupHtml(boxGroup)
-        : EMPTY(3, '주스/청 재고 없음')}</tbody>
+        : EMPTY(3, '가공 제품 재고 없음')}</tbody>
     </table>`;
-  const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '주스/청 재고')}
+  const juiceHtml = `<div style="${CARD_I}">${secHdr(5, '가공 제품 재고')}
     ${juiceTableHtml}</div>`;
 
   // ==================================================================
@@ -16706,15 +16706,15 @@ function renderInvSummary() {
   const _jcNames = (list, color, lbl) => list.length
     ? `<div style="font-size:12px;padding:3px 0;line-height:1.5"><span style="font-weight:600;color:${color}">${lbl}</span> <span style="color:${color}">${list.map(esc).join(' · ')}</span></div>` : '';
   const _jcPane = `<div onclick="invTab('juice')" style="cursor:pointer;min-width:0">
-      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:4px">주스/청</div>
-      <div style="font-size:12px;color:#374151;padding:3px 0">${_jcSubs.length ? _jcSubs.join(' · ') : '<span style="color:#9CA3AF">주스/청 재고 없음</span>'}</div>
+      <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:4px">가공 제품</div>
+      <div style="font-size:12px;color:#374151;padding:3px 0">${_jcSubs.length ? _jcSubs.join(' · ') : '<span style="color:#9CA3AF">가공 제품 재고 없음</span>'}</div>
       ${_jcNames(_sigJOut, '#C62828', '품절')}${_jcNames(_sigJLow, '#C05800', '부족')}
       ${!_sigJOut.length && !_sigJLow.length ? `<div style="font-size:12px;color:#9CA3AF;padding:3px 0">품절·부족 없음</div>` : ''}
     </div>`;
-  const pjHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('③', '파치 · 주스/청')}
+  const pjHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('③', '파치 · 가공 제품')}
     <div class="sum-pj-grid" style="padding:12px 16px;margin-bottom:0">${_pjPane}${_jcPane}</div>
     <div style="border-top:1px solid #F3F4F6;padding:8px 16px">
-      <button type="button" onclick="toggleSumJuiceList()" style="background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit">주스/청 전체 목록 ${_sumJuiceListOpen ? '접기 ▴' : '보기 ▾'}</button>
+      <button type="button" onclick="toggleSumJuiceList()" style="background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit">가공 제품 전체 목록 ${_sumJuiceListOpen ? '접기 ▴' : '보기 ▾'}</button>
     </div>
     ${_sumJuiceListOpen ? `<div style="border-top:1px solid #F3F4F6">${juiceTableHtml}</div>` : ''}
   </div>`;
@@ -17547,7 +17547,7 @@ function getAuditTableLabel(t) {
   return ({ inbound_records: '미선과 입고', processing_records: '선과 처리',
     inventory_sorted: '선과 재고', inventory_waste: '파치', inventory_juice: '주스',
     inventory_unsorted: '미선과(구)', inventory_unsorted_backup: '미선과 백업',
-    juice_batches: '주스·청', outbound_records: '출고',
+    juice_batches: '가공 제품', outbound_records: '출고',
     inventory_records: '선과품 재고', sorting_results: '선과 차수', settings: '설정' })[t] || t;
 }
 
@@ -25967,7 +25967,7 @@ function renderJuiceSection() {
 
   const statsHtml = productKeys.length
     ? groupBlockOf('🧃 주스', juiceEntries) + groupBlockOf('🍯 청', cheongEntries) + groupBlockOf('🍫 가공품', boxEntries)
-    : `<span style="font-size:13px;color:#aaa">주스·청 재고 없음</span>`;
+    : `<span style="font-size:13px;color:#aaa">가공 제품 재고 없음</span>`;
 
   let _lastJuiceGroup = null;
   const batchSectionHtml = productKeys.map(product => {
@@ -26065,7 +26065,7 @@ function renderJuiceSection() {
 
   const formHtml = isAdm ? `
     <div style="padding:14px 16px;border-top:1px solid #E5E7EB">
-      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:10px">🧃 주스·청 입고(배치 등록)</div>
+      <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:10px">🧃 가공 제품 입고(배치 등록)</div>
       <div class="form-grid">
         <div class="fg"><label>입고일 *</label><input id="ju-date" type="date"></div>
         <div class="fg"><label>단위</label><input id="ju-unit" type="text" value="병" readonly style="background:#F3F4F6;cursor:default"></div>
@@ -26104,13 +26104,13 @@ function renderJuiceSection() {
   el.innerHTML = `
     <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB">
-        <div style="font-size:14px;font-weight:700;color:#222">주스·청·가공품 재고 현황</div>
+        <div style="font-size:14px;font-weight:700;color:#222">가공 제품 재고 현황</div>
       </div>
       <div style="padding:12px 16px;border-bottom:1px solid #F3F4F6">
         <div>${statsHtml}</div>
       </div>
       <div style="padding:12px 16px">
-        ${batchSectionHtml || '<div style="text-align:center;color:#9CA3AF;font-size:13px;padding:24px">주스·청 재고 없음</div>'}
+        ${batchSectionHtml || '<div style="text-align:center;color:#9CA3AF;font-size:13px;padding:24px">가공 제품 재고 없음</div>'}
       </div>
       ${formHtml}
     </div>`;
@@ -27103,7 +27103,7 @@ async function renderAcctCfg() {
     <div style="margin-bottom:14px">
       <div style="font-size:14px;font-weight:700">계정 관리</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">
-        관리자·공항 계정을 만들고 권한을 정합니다. <strong>공항(조회 전용)</strong>은 재고 화면의 주스·청 탭만 볼 수 있고 등록·수정은 못 합니다.
+        관리자·공항 계정을 만들고 권한을 정합니다. <strong>공항(조회 전용)</strong>은 재고 화면의 가공 제품 탭만 볼 수 있고 등록·수정은 못 합니다.
       </div>
     </div>
     ${_acctRows.length ? `
@@ -27216,7 +27216,7 @@ async function saveJuiceLowThreshold() {
   if (isNaN(v) || v < 0) return alert('0 이상의 숫자를 입력해 주세요. (0 = 경고 끄기)');
   const prev = juiceLowThreshold;
   try {
-    await dbSaveSetting('juice_low_threshold', v, '주스·청 재고 부족 기준');
+    await dbSaveSetting('juice_low_threshold', v, '가공 제품 재고 부족 기준');
     juiceLowThreshold = v;
     closeJuiceLowModal();
     renderJuiceSection();   // 설정 → 재고 화면으로 안 돌아가도 다음 진입 때 반영되게 값부터 갱신(가드 있어 안전)

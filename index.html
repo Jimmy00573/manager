@@ -704,7 +704,7 @@
         </div>
         <div class="set-item">
           <div class="set-item-info">
-            <div class="set-item-title">🧃 주스·청 재고 부족 기준</div>
+            <div class="set-item-title">🧃 가공 제품 재고 부족 기준</div>
             <div class="set-item-desc">제품별 잔여가 이 수량 미만이면 재고 화면에 빨간색으로 표시</div>
           </div>
           <button class="set-item-btn" onclick="openJuiceLowModal()">열기</button>
@@ -789,8 +789,8 @@
         </div>
         <div class="set-item">
           <div class="set-item-info">
-            <div class="set-item-title">🧃 주스/청 품명</div>
-            <div class="set-item-desc">등록된 주스·청 품명을 관리합니다</div>
+            <div class="set-item-title">🧃 가공 제품 품명</div>
+            <div class="set-item-desc">등록된 가공 제품 품명을 관리합니다</div>
           </div>
           <button class="set-item-btn" onclick="setTab('juicemaster')">열기</button>
         </div>
@@ -916,7 +916,7 @@
   <div id="set-juicemaster-view" style="display:none">
     <div class="set-back-bar">
       <button class="set-back-btn" onclick="setBack()">← 뒤로</button>
-      <span class="set-back-title">🧃 주스/청 품명</span>
+      <span class="set-back-title">🧃 가공 제품 품명</span>
     </div>
     <div id="csp-juicemaster"></div>
   </div>
@@ -961,7 +961,7 @@
     <button class="etab" id="it-uns" onclick="invTab('uns')">🍊 미선과</button>
     <button class="etab" id="it-srt" onclick="invTab('srt')">📦 선과품 재고</button>
     <button class="etab" id="it-pachi" onclick="invTab('pachi')">🧹 파치</button>
-    <button class="etab" id="it-juice" onclick="invTab('juice')">🧃 주스·청</button>
+    <button class="etab" id="it-juice" onclick="invTab('juice')">🧃 가공 제품</button>
     <button class="etab" id="it-out" onclick="invTab('out')">🔄 거래내역</button>
     <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
   </div>
@@ -1448,7 +1448,7 @@
             <option value="inbound_records">미선과 입고</option>
             <option value="outbound_records">출고</option>
             <option value="inventory_records">선과품 재고</option>
-            <option value="juice_batches">주스·청</option>
+            <option value="juice_batches">가공 제품</option>
             <option value="processing_records">선과 처리</option>
             <option value="settings">설정</option>
           </select>
@@ -1530,7 +1530,7 @@
 <div id="modal-juice-edit" class="modal-bg" style="display:none">
   <div class="modal" style="max-width:520px;width:95%">
     <div class="modal-hdr">
-      <div class="modal-title">주스/청 수정</div>
+      <div class="modal-title">가공 제품 수정</div>
       <button class="modal-close" onclick="document.getElementById('modal-juice-edit').style.display='none'">✕</button>
     </div>
     <div id="juice-edit-body"></div>
@@ -2025,7 +2025,7 @@
       <button class="modal-close" onclick="closeJuiceLowModal()">✕</button>
     </div>
     <div style="padding:4px 0 16px;font-size:13px;color:#6B7280;line-height:1.6">
-      주스·청 제품별 잔여 수량이 이 값보다 적으면 재고 화면에서 <span style="color:#DC2626;font-weight:600">빨간색 ⚠ 재고 부족</span>으로 표시됩니다.
+      가공 제품별 잔여 수량이 이 값보다 적으면 재고 화면에서 <span style="color:#DC2626;font-weight:600">빨간색 ⚠ 재고 부족</span>으로 표시됩니다.
     </div>
     <div class="fg" style="margin-bottom:4px">
       <label style="display:flex;align-items:center;gap:6px">
@@ -2101,6 +2101,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=32"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=802"></script>
+<script src="src/app.js?v=803"></script>
 </body>
 </html>
