@@ -1389,7 +1389,7 @@ const INV_BAR_TABS = ['sum', 'juice'];
 function _invTabShown(r, t, cur) {
   const allow = ROLE_INV_TABS[r] || null;
   if (allow && !allow.includes(t)) return false;
-  if (r === 'admin' || r === 'staff') return INV_BAR_TABS.includes(t) || t === cur;
+  if (r === 'admin' || r === 'staff') return INV_BAR_TABS.includes(t);   // v813(대표님 요청): 카드로 들어간 화면도 탭 줄엔 안 띄운다 — 돌아가기는 📊 원물 재고 탭
   return true;
 }
 function _applyInvTabs(r) {
