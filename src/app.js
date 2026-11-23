@@ -16300,8 +16300,8 @@ function renderInvSummary() {
         </div>`).join('')}`).join('');
     inTabContent = `<div style="padding:0 16px 12px">
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${_inStrip}</div>
-      ${_inList}
-    </div>`;
+      <div style="max-width:440px">${_inList}</div>
+    </div>`;   // v807: 폭을 좁혀 이름과 숫자 사이 거리를 줄인다(숫자 열 정렬은 유지)
   } else {
     inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
   }
