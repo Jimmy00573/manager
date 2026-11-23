@@ -20141,6 +20141,21 @@ function renderInboundList() {
   if (ibOnlyUnshared) visible = inboundRecords.filter(r => !r.is_void && (_ibIsUnsharedToday(r) || _srIbIds.has(String(r.id))));
   _renderIbUnsharedBtn(_unshN, _srUn.length);
 
+  // ── 상시 목록 줄이기(v805, 2026-11-23 대표님 요청) — 검색·필터를 안 걸었을 때는 '지금 볼 것'만 보인다:
+  //   ① 아직 선과·처리할 잔여가 있는 선과 대상(_isUnsortedTarget && 잔여>0) ② 오늘 입고 ③ 오늘 선과한 입고.
+  //   나머지(끝난 옛 기록·옛 파치·선과품 입고)는 숨기고, 검색·필터(카테고리·농가·품목·기사·기간)를 걸면 전부 다시 나온다.
+  //   ★✅ 선과 완료 보기 탭·실사 모드·📋 미공유 보기·외부 기사 화면은 예전 그대로(여기를 안 탄다).
+  let _ibHiddenOld = 0;
+  const _ibSearching = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
+  if (!_ibSearching && !ibOnlyUnshared && !_ibAuditMode && !_xdToday) {
+    const _T = td();
+    const _srToday = new Set((sortingResults || []).filter(x => x.sorting_date === _T).map(x => String(x.inbound_record_id)));
+    const _now = r => r.date === _T || _srToday.has(String(r.id)) || (_isUnsortedTarget(r) && getRemainingCT(r) > 0);
+    const _n0 = visible.length;
+    visible = visible.filter(_now);
+    _ibHiddenOld = _n0 - visible.length;
+  }
+
   // ==================================================================
   // 4. 필터 UI 동기화 (칩·옵션·건수·버튼·정렬 아이콘)
   // ==================================================================
@@ -20151,7 +20166,8 @@ function renderInboundList() {
   _renderIbFilterChips();
   const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo || ibOnlyUnshared;
   const fcountEl = document.getElementById('ib-filter-count');
-  if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중` : '';
+  if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중`
+    : _ibHiddenOld ? `끝난 이전 기록 ${fmtN(_ibHiddenOld)}건은 숨김 · 검색하면 보입니다` : '';
 
   // 버튼 활성 상태 동기화 (뷰 전환 후에도 유지)
   _updateIbFilterBtns();
@@ -20187,7 +20203,8 @@ function renderInboundList() {
         hasNewFilter ? '조건에 맞는 입고 내역이 없습니다.' :
         ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
         ibSearch ? `'${esc(ibSearch)}' 검색 결과 없음` :
-        !inboundRecords.length ? '입고 기록 없음' : '표시할 입고 기록 없음 (무효 데이터 숨김)'}
+        !inboundRecords.length ? '입고 기록 없음' :
+        _ibHiddenOld ? `지금 처리할 입고가 없습니다 · 끝난 이전 기록 ${fmtN(_ibHiddenOld)}건은 검색하면 보입니다` : '표시할 입고 기록 없음 (무효 데이터 숨김)'}
       ${hasNewFilter && !_xdToday ? '<br><button class="btn" onclick="ibClearNewFilters()" style="font-size:12px;margin-top:8px">필터 초기화</button>' : ''}
     </td></tr>`;
     document.getElementById('ib-pagination') && (document.getElementById('ib-pagination').innerHTML = '');
@@ -25232,7 +25249,8 @@ function renderWasteList() {
 
 // 파치 하위 분류축 전환 (전체/크기별/상태별/사용처별, 품목은 항상 최상위) — 3단계 수정
 function setPachiView(mode) {
-  if (!['none', 'size', 'condition', 'usage', 'location'].includes(mode)) return;
+  // ★v805(2026-11-23 대표님 요청): 크기별·상태별·위치별 보기는 버튼을 뺐다 — 전체·사용처별만. (아래 분류 코드는 그대로 둔다)
+  if (!['none', 'usage'].includes(mode)) return;
   _pachiViewMode = mode;   // 세션 중에만 유지(저장 안 함 — 새로고침하면 사용처별로 복귀)
   _pachiCollapsed = new Set();   // 뷰 바뀌면 접힘 상태 초기화
   _pachiViewJustChanged = true;  // 새 뷰는 하위그룹 전부 접힘으로 시작
@@ -25722,9 +25740,6 @@ function renderPachiSection() {
       <span style="font-size:12px;color:#6B7280;font-weight:600;margin-right:2px">품목 안 분류</span>
       <button onclick="setPachiView('none')" style="${_VB(_pvMode === 'none')}">전체</button>
       <button onclick="setPachiView('usage')" style="${_VB(_pvMode === 'usage')}">사용처별</button>
-      <button onclick="setPachiView('size')" style="${_VB(_pvMode === 'size')}">크기별</button>
-      <button onclick="setPachiView('condition')" style="${_VB(_pvMode === 'condition')}">상태별</button>
-      <button onclick="setPachiView('location')" style="${_VB(_pvMode === 'location')}">위치별</button>
     </div>`;
 
   // 일괄 지정 액션 바 (1건 이상 체크 시 JS로 표시) — admin만
