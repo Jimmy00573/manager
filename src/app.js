@@ -16282,26 +16282,27 @@ function renderInvSummary() {
       D.prods[pk].qty += Number(g.qty) || 0; D.prods[pk].farms.add(g.farm || ''); D.prods[pk].rows.push(g);
     });
     const _inDrvRows = Object.values(_inDrv).sort((a, b) => (a.drv.key === 'none') - (b.drv.key === 'none') || b.qty - a.qty);
-    const _inList = _inDrvRows.map(D => `
-      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px 6px;border-top:1px solid #E5E7EB;font-size:13px;font-weight:600;color:#111827">
-        <span>${D.drv.display ? drvHtml(D.drv) : '<span style="color:#9CA3AF">기사 없음</span>'}</span>
-        <span><span style="font-size:12px;color:#6B7280;font-weight:400">농가 ${D.farms.size}곳 · </span>${fmtN(D.qty)} CT</span>
+    // v808: 기사 하나 = 카드 하나, 카드들은 가로로 나란히(넓으면 여러 장, 좁으면 한 줄에 한 장). 카드마다 높이는 제각각(align-items:start).
+    const _inList = _inDrvRows.map(D => `<div style="border:1px solid #E5E7EB;border-radius:10px;padding:8px 10px;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:0 2px 6px;margin-bottom:2px;border-bottom:1px solid #F3F4F6;font-size:13px;font-weight:600;color:#111827">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${D.drv.display ? drvHtml(D.drv) : '<span style="color:#9CA3AF">기사 없음</span>'}</span>
+        <span style="white-space:nowrap"><span style="font-size:12px;color:#6B7280;font-weight:400">${D.farms.size}곳 · </span>${fmtN(D.qty)} CT</span>
       </div>
       ${Object.entries(D.prods).sort((a, b) => b[1].qty - a[1].qty || a[0].localeCompare(b[0], 'ko')).map(([p, P]) => `
         <div onclick="const n=this.nextElementSibling;const o=n.style.display==='none';n.style.display=o?'':'none';this.querySelector('.ib-sum-ar').textContent=o?'▾':'▸'"
-          style="display:flex;justify-content:space-between;padding:5px 4px 5px 14px;font-size:13px;color:#374151;cursor:pointer;border-radius:6px">
-          <span><span class="ib-sum-ar" style="color:#9CA3AF;font-size:11px;margin-right:4px">▸</span>${esc(p)} <span style="font-size:12px;color:#6B7280">· ${P.farms.size}곳</span></span>
+          style="display:flex;justify-content:space-between;gap:8px;padding:4px 2px;font-size:13px;color:#374151;cursor:pointer;border-radius:6px">
+          <span style="min-width:0"><span class="ib-sum-ar" style="color:#9CA3AF;font-size:11px;margin-right:4px">▸</span>${esc(p)} <span style="font-size:12px;color:#6B7280">· ${P.farms.size}곳</span></span>
           <span style="font-weight:600;color:#111827">${fmtN(P.qty)}</span>
         </div>
-        <div style="display:none;padding:0 4px 6px 34px">
+        <div style="display:none;padding:0 2px 6px 16px">
           ${P.rows.map(g => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#4B5563">
-            <span style="display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center">${esc(g.farm || '(농가없음)')} ${_catCell(g)}</span>
+            <span style="display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center;min-width:0;word-break:keep-all">${esc(g.farm || '(농가없음)')} ${_catCell(g)}</span>
             <span style="white-space:nowrap">${fmtN(g.qty)}</span></div>`).join('')}
-        </div>`).join('')}`).join('');
+        </div>`).join('')}</div>`).join('');
     inTabContent = `<div style="padding:0 16px 12px">
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${_inStrip}</div>
-      <div style="max-width:440px">${_inList}</div>
-    </div>`;   // v807: 폭을 좁혀 이름과 숫자 사이 거리를 줄인다(숫자 열 정렬은 유지)
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;align-items:start">${_inList}</div>
+    </div>`;   // v808: 기사 카드 가로 배치(v807의 폭 440px 제한 대체)
   } else {
     inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
   }
