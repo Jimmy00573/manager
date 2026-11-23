@@ -16264,17 +16264,43 @@ function renderInvSummary() {
     _inoutCatData = { prodRows: catProdRows, totalCount, totalQty };   // 접기/펼치기 부분 재렌더용
     const categoryTabHtml = _renderInoutCatTable();
 
-    inTabContent = `<div style="padding:0 16px 12px">
-      <div class="today-tabs">
-        <span id="today-tab-btn-list" class="today-tab active" onclick="todayTabSwitch('list')">목록</span>
-        <span id="today-tab-btn-category" class="today-tab" onclick="todayTabSwitch('category')">카테고리별</span>
-        <span id="today-tab-btn-product" class="today-tab" onclick="todayTabSwitch('product')">품목별</span>
-        <span id="today-tab-btn-driver" class="today-tab" onclick="todayTabSwitch('driver')">기사별</span>
+    // ★v806(2026-11-23 대표님 요청 '단순하게'): 탭 4개(목록·카테고리별·품목별·기사별)를 한 화면으로 —
+    //   위 = 그날 품목별 합계 한 줄, 아래 = 기사 → 품목(N곳·CT), 품목 줄을 누르면 농가(한 차 = 한 줄, 카테고리 칩)가 펼쳐진다.
+    //   재료는 위 listRows(한 차 = 한 줄) 그대로. 위의 기사별·품목별·카테고리별 표 계산은 쓰지 않게 됐다(남겨 둠).
+    const _inProd = {};
+    listRows.forEach(g => { const k = g.product || '(품목없음)'; _inProd[k] = (_inProd[k] || 0) + (Number(g.qty) || 0); });
+    const _inStrip = Object.entries(_inProd).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))
+      .map(([p, q]) => `<span style="font-size:12px;padding:5px 10px;border-radius:8px;background:#F3F4F6;color:#374151;white-space:nowrap">${esc(p)} <b style="font-weight:600;color:#111827">${fmtN(q)}</b></span>`).join('')
+      + `<span style="font-size:12px;padding:5px 10px;border-radius:8px;background:#E3F2FD;color:#1565C0;white-space:nowrap">합계 <b style="font-weight:600">${fmtN(totalQty)} CT</b></span>`;
+    const _inDrv = {};
+    listRows.forEach(g => {
+      const dk = g.drv.key;
+      if (!_inDrv[dk]) _inDrv[dk] = { drv: g.drv, qty: 0, farms: new Set(), prods: {} };
+      const D = _inDrv[dk], pk = g.product || '(품목없음)';
+      D.qty += Number(g.qty) || 0; D.farms.add(g.farm || '');
+      if (!D.prods[pk]) D.prods[pk] = { qty: 0, farms: new Set(), rows: [] };
+      D.prods[pk].qty += Number(g.qty) || 0; D.prods[pk].farms.add(g.farm || ''); D.prods[pk].rows.push(g);
+    });
+    const _inDrvRows = Object.values(_inDrv).sort((a, b) => (a.drv.key === 'none') - (b.drv.key === 'none') || b.qty - a.qty);
+    const _inList = _inDrvRows.map(D => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px 6px;border-top:1px solid #E5E7EB;font-size:13px;font-weight:600;color:#111827">
+        <span>${D.drv.display ? drvHtml(D.drv) : '<span style="color:#9CA3AF">기사 없음</span>'}</span>
+        <span><span style="font-size:12px;color:#6B7280;font-weight:400">농가 ${D.farms.size}곳 · </span>${fmtN(D.qty)} CT</span>
       </div>
-      <div id="today-tab-list">${listTabHtml}</div>
-      <div id="today-tab-category" style="display:none">${categoryTabHtml}</div>
-      <div id="today-tab-product" style="display:none">${productTabHtml}</div>
-      <div id="today-tab-driver" style="display:none">${driverTabHtml}</div>
+      ${Object.entries(D.prods).sort((a, b) => b[1].qty - a[1].qty || a[0].localeCompare(b[0], 'ko')).map(([p, P]) => `
+        <div onclick="const n=this.nextElementSibling;const o=n.style.display==='none';n.style.display=o?'':'none';this.querySelector('.ib-sum-ar').textContent=o?'▾':'▸'"
+          style="display:flex;justify-content:space-between;padding:5px 4px 5px 14px;font-size:13px;color:#374151;cursor:pointer;border-radius:6px">
+          <span><span class="ib-sum-ar" style="color:#9CA3AF;font-size:11px;margin-right:4px">▸</span>${esc(p)} <span style="font-size:12px;color:#6B7280">· ${P.farms.size}곳</span></span>
+          <span style="font-weight:600;color:#111827">${fmtN(P.qty)}</span>
+        </div>
+        <div style="display:none;padding:0 4px 6px 34px">
+          ${P.rows.map(g => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#4B5563">
+            <span style="display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center">${esc(g.farm || '(농가없음)')} ${_catCell(g)}</span>
+            <span style="white-space:nowrap">${fmtN(g.qty)}</span></div>`).join('')}
+        </div>`).join('')}`).join('');
+    inTabContent = `<div style="padding:0 16px 12px">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${_inStrip}</div>
+      ${_inList}
     </div>`;
   } else {
     inTabContent = `<div style="padding:18px;text-align:center;color:#9CA3AF;font-size:13px">입고 없음</div>`;
