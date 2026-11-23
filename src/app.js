@@ -16278,8 +16278,9 @@ function renderInvSummary() {
       if (!_inDrv[dk]) _inDrv[dk] = { drv: g.drv, qty: 0, farms: new Set(), prods: {} };
       const D = _inDrv[dk], pk = g.product || '(품목없음)';
       D.qty += Number(g.qty) || 0; D.farms.add(g.farm || '');
-      if (!D.prods[pk]) D.prods[pk] = { qty: 0, farms: new Set(), rows: [] };
+      if (!D.prods[pk]) D.prods[pk] = { qty: 0, farms: new Set(), rows: [], byCat: {} };
       D.prods[pk].qty += Number(g.qty) || 0; D.prods[pk].farms.add(g.farm || ''); D.prods[pk].rows.push(g);
+      Object.entries(g.byCat || {}).forEach(([c, q]) => { D.prods[pk].byCat[c] = (D.prods[pk].byCat[c] || 0) + (Number(q) || 0); });   // v809 구분별 합
     });
     const _inDrvRows = Object.values(_inDrv).sort((a, b) => (a.drv.key === 'none') - (b.drv.key === 'none') || b.qty - a.qty);
     // v808: 기사 하나 = 카드 하나, 카드들은 가로로 나란히(넓으면 여러 장, 좁으면 한 줄에 한 장). 카드마다 높이는 제각각(align-items:start).
@@ -16289,12 +16290,16 @@ function renderInvSummary() {
         <span style="white-space:nowrap"><span style="font-size:12px;color:#6B7280;font-weight:400">${D.farms.size}곳 · </span>${fmtN(D.qty)} CT</span>
       </div>
       ${Object.entries(D.prods).sort((a, b) => b[1].qty - a[1].qty || a[0].localeCompare(b[0], 'ko')).map(([p, P]) => `
-        <div onclick="const n=this.nextElementSibling;const o=n.style.display==='none';n.style.display=o?'':'none';this.querySelector('.ib-sum-ar').textContent=o?'▾':'▸'"
+        <div onclick="let n=this.nextElementSibling;if(!n.classList.contains('ib-sum-fm'))n=n.nextElementSibling;const o=n.style.display==='none';n.style.display=o?'':'none';this.querySelector('.ib-sum-ar').textContent=o?'▾':'▸'"
           style="display:flex;justify-content:space-between;gap:8px;padding:4px 2px;font-size:13px;color:#374151;cursor:pointer;border-radius:6px">
           <span style="min-width:0"><span class="ib-sum-ar" style="color:#9CA3AF;font-size:11px;margin-right:4px">▸</span>${esc(p)} <span style="font-size:12px;color:#6B7280">· ${P.farms.size}곳</span></span>
           <span style="font-weight:600;color:#111827">${fmtN(P.qty)}</span>
         </div>
-        <div style="display:none;padding:0 2px 6px 16px">
+        ${(() => {   // v809: 숫자는 실어 온 합계 그대로, 아래에 구분(상품·소과·파치…) 칩을 늘 보인다 — 상품만이면 생략. 칩 모양은 농가 줄과 같은 _catCell.
+          const cats = Object.keys(P.byCat).sort((a, b) => _ibCatRank(a) - _ibCatRank(b) || a.localeCompare(b, 'ko'));
+          return (cats.length > 1 || (cats[0] && cats[0] !== '상품')) ? `<div style="padding:0 2px 4px 16px">${_catCell({ cats, byCat: P.byCat })}</div>` : '';
+        })()}
+        <div class="ib-sum-fm" style="display:none;padding:0 2px 6px 16px">
           ${P.rows.map(g => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#4B5563">
             <span style="display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center;min-width:0;word-break:keep-all">${esc(g.farm || '(농가없음)')} ${_catCell(g)}</span>
             <span style="white-space:nowrap">${fmtN(g.qty)}</span></div>`).join('')}
