@@ -16068,12 +16068,17 @@ function renderInvSummary() {
   const barColor = p => BAR_COLORS[p] || BAR_COLORS[_itemVarOf(p)] || '#9CA3AF';
 
   // ── KPI 카드 HTML
+  // v811: 누를 수 있는 카드(navTab)는 오른쪽 위 큰 › 와 아래 파란 '…보기 ›' 한 줄 — 회색 숫자 칸으로만 보여 아무도 안 눌렀다(대표님·현장).
+  //   화면 전용(sum-screen-only) — 인쇄 보고서엔 안 나온다.
+  const KPI_NAV_TXT = { uns: '입고·선과 보기', srt: '사이즈별 보기', pachi: '파치 보기', juice: '제품별 보기' };
   const kpiCard = (label, val, unit, sub, small, navTab) => `
-    <div style="background:#E8E8E6;border-radius:8px;padding:14px 16px${navTab ? ';cursor:pointer' : ''}"
+    <div style="background:#E8E8E6;border-radius:8px;padding:14px 16px${navTab ? ';cursor:pointer;position:relative' : ''}"
       ${navTab ? `onclick="invTab('${navTab}')" onmouseover="this.style.background='#DCDCDA'" onmouseout="this.style.background='#E8E8E6'"` : ''}>
-      <div style="font-size:12px;color:#6B7280;margin-bottom:6px;font-weight:500">${label}</div>
+      ${navTab ? `<span class="sum-screen-only" aria-hidden="true" style="position:absolute;top:8px;right:12px;font-size:26px;line-height:1;font-weight:500;color:#374151">›</span>` : ''}
+      <div style="font-size:12px;color:#6B7280;margin-bottom:6px;font-weight:500${navTab ? ';padding-right:22px' : ''}">${label}</div>
       <div style="font-size:${small ? '20px' : '22px'};font-weight:700;color:#111827;line-height:1.2">${val}<span style="font-size:13px;font-weight:400;color:#9CA3AF;margin-left:4px">${unit}</span></div>
       ${sub || ''}
+      ${navTab ? `<div class="sum-screen-only" style="font-size:12px;color:#1565C0;font-weight:500;margin-top:6px">${KPI_NAV_TXT[navTab] || '보기'} ›</div>` : ''}
     </div>`;
   const kpiSub  = txt => `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${txt}</div>`;
   // ★kpiChip은 전역 헬퍼로 옮겼다(배차 현황판과 공용). 여기 호출부는 그대로 — 인자 1개면 출력이 예전과 같다.
