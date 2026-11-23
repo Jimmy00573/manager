@@ -23691,25 +23691,25 @@ async function buildSortingShareText(srId) {
   });
   // 값 있는(ct>0) 사이즈 줄만 출력 — 표시만 생략, 데이터·계산 무변
   const sizeLines = g => sizes.filter(sc => ((gradeSize[g] || {})[sc] || 0) > 0)
-    .map(sc => `${sc}\t${_srtShareCt(gradeSize[g][sc])}`).join('\n');
+    .map(sc => `${sc} ${_srtShareCt(gradeSize[g][sc])}`).join('\n');
   const L = [];
-  L.push(`입고일자\t${_srtShareMD(ir.date)}`);
-  L.push(`선과일자\t${!multi ? _srtShareMD(sr.sorting_date)
+  L.push(`입고일자 ${_srtShareMD(ir.date)}`);
+  L.push(`선과일자 ${!multi ? _srtShareMD(sr.sorting_date)
     : `${sr.sorting_date === lastSr.sorting_date ? _srtShareMD(sr.sorting_date) : `${_srtShareMD(sr.sorting_date)} ~ ${_srtShareMD(lastSr.sorting_date)}`} ${nLbl}`}`);
-  L.push(`농가명\t${ir.farm_name || ''}`);
-  L.push(`품목명\t${ir.product || ''}`);
+  L.push(`농가명 ${ir.farm_name || ''}`);
+  L.push(`품목명 ${ir.product || ''}`);
   // 선과CT: '전체 NCT 중 MCT 선과' — 입고 총량(inbound_records.quantity) 기준. 못 구하면 기존 표기
   const totalQty = Number(ir.quantity) || 0;
-  if (!multi) L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
-  else L.push(`선과CT\t${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(inputSum)}CT 선과 ${inputSum >= totalQty ? '(완료)' : nLbl}` : fmtN(inputSum)}`);   // 누적: 다 했으면 '(완료)'
+  if (!multi) L.push(`선과CT ${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(sr.input_ct)}CT 선과` : fmtN(sr.input_ct)}`);
+  else L.push(`선과CT ${totalQty > 0 ? `${fmtN(totalQty)}CT 중 ${fmtN(inputSum)}CT 선과 ${inputSum >= totalQty ? '(완료)' : nLbl}` : fmtN(inputSum)}`);   // 누적: 다 했으면 '(완료)'
   // 선과 방식 — 만감류에만 값이 있다. 없으면 줄 자체를 넣지 않는다(0 생략과 같은 규칙). 누적은 차수별 값을 중복 없이 '·'로.
   const methods = multi ? [...new Set(srList.map(x => x.sort_method).filter(Boolean))].join('·') : sr.sort_method;
-  if (methods) L.push(`선과 방식\t${methods}`);
+  if (methods) L.push(`선과 방식 ${methods}`);
   // 비정상품: 값 있는 줄만(0 생략)
   // ★앞 3개는 사무실에서 쓰던 기존 형식이라 라벨·순서 그대로. 누락됐던 극소과·청과·손실만 뒤에 추가.
   const abn = [['파치', catSum('파치')], ['9브릭스 이하 저당도', catSum('저당도')], ['고산도', catSum('고산도')],
                ['극소과', catSum('극소과')], ['청과', catSum('청과')], ['손실', catSum('손실')]].filter(([, v]) => v > 0);
-  if (abn.length) { L.push(''); abn.forEach(([n, v]) => L.push(`${n}\t${_srtShareCt(v)}`)); }
+  if (abn.length) { L.push(''); abn.forEach(([n, v]) => L.push(`${n} ${_srtShareCt(v)}`)); }
   // 일반 섹션: 전부 0이면 제목 포함 생략
   const normalLines = sizeLines('일반');
   if (normalLines) { L.push(''); L.push('일반 선과내역'); L.push(normalLines); }
