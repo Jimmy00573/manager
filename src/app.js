@@ -16851,10 +16851,10 @@ function renderInvSummary() {
     <div style="padding:12px 16px">
       ${_ipRows.length ? _ipRows.map(r => `
         <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '6px' : '12px'}">
-          <div style="display:flex;flex-direction:column;justify-content:center;min-width:0">
+          <div ${r.sub ? `onclick="toggleSumItemSub()" title="품목 내역 ${_sumItemSubOpen ? '접기' : '펼치기'}"` : ''} style="display:flex;flex-direction:column;justify-content:center;min-width:0${r.sub ? ';cursor:pointer' : ''}">
             <span style="font-size:15px;font-weight:600;color:#111827">${esc(r.name)}</span>
             <span style="font-size:12px;color:#6B7280">합계 ${fmtCT(_ipTot(r.v))} CT</span>
-            ${r.sub ? `<button type="button" onclick="toggleSumItemSub()" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
+            ${r.sub ? `<button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
           </div>
           ${_ipTile('미선과', r.v.uns, 'uns')}${_ipTile('상품', r.v.srt, 'srt')}${_ipTile('파치', r.v.pachi, 'pachi')}
         </div>
