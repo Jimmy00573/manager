@@ -16102,10 +16102,7 @@ function renderInvSummary() {
       false, 'srt') : ''}
     ${true ? kpiCard('파치', fmtN(Math.round(pachiTotalKg)), 'kg',
       '', true, 'pachi') : ''}
-    ${juiceTotalNet > 0 ? kpiCard('가공 제품', fmtN(Math.round(juiceTotalNet)), '병',
-      '', true, 'juice') : ''}
-    ${boxTotalNet > 0 ? kpiCard('가공품', fmtN(Math.round(boxTotalNet)), '박스',
-      '', true, 'juice') : ''}
+    ${/* v812(대표님 요청): 가공 제품·가공품 카드는 뺐다 — 탭 줄의 🧃 가공 제품에서 본다 */ ''}
   </div>`;
 
   // ── 흐름 줄 (7-1 결과). KPI='지금 얼마', 흐름='어떻게 변하는 중' → KPI 바로 아래.
@@ -16164,8 +16161,7 @@ function renderInvSummary() {
     .sort((a, b) => a.localeCompare(b, 'ko'));
   const _sigJOut = _sigJuiceBy(JST_OUT), _sigJLow = _sigJuiceBy(JST_LOW);
   // 글자 '주스·가공' — 주스 탭 판정을 그대로 써서 가공품(박스, 예: 한라봉 모나카)도 들어간다. 판정은 그대로.
-  if (_sigJOut.length) sigChips.push(_sigChip('red', `주스·가공 품절 ${_sigJOut.length}`, _sigTip(_sigJOut), "invTab('juice')"));
-  if (_sigJLow.length) sigChips.push(_sigChip('orange', `${_sigJOut.length ? '' : '주스·가공 '}부족 ${_sigJLow.length}`, _sigTip(_sigJLow), "invTab('juice')"));
+  // v812: 가공 제품 품절·부족 칩도 원물 재고에선 안 보인다(가공 제품 탭에서 빨강·주황으로 보임)
   const signalHtml = `<div class="sum-signal" style="${CARD};padding:10px 16px;display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap">
     <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0;margin-right:4px">확인 필요</span>
     ${sigChips.length ? sigChips.join('') : _sigChip('gray', '특이사항 없음')}
@@ -16809,12 +16805,9 @@ function renderInvSummary() {
       ${_jcNames(_sigJOut, '#C62828', '품절')}${_jcNames(_sigJLow, '#C05800', '부족')}
       ${!_sigJOut.length && !_sigJLow.length ? `<div style="font-size:12px;color:#9CA3AF;padding:3px 0">품절·부족 없음</div>` : ''}
     </div>`;
-  const pjHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('③', '파치 · 가공 제품')}
-    <div class="sum-pj-grid" style="padding:12px 16px;margin-bottom:0">${_pjPane}${_jcPane}</div>
-    <div style="border-top:1px solid #F3F4F6;padding:8px 16px">
-      <button type="button" onclick="toggleSumJuiceList()" style="background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit">가공 제품 전체 목록 ${_sumJuiceListOpen ? '접기 ▴' : '보기 ▾'}</button>
-    </div>
-    ${_sumJuiceListOpen ? `<div style="border-top:1px solid #F3F4F6">${juiceTableHtml}</div>` : ''}
+  // v812: ③은 파치만(가공 제품 칸·전체 목록은 뺐다 — 🧃 가공 제품 탭에서 본다). 인쇄용 5번 블록은 그대로.
+  const pjHtml = `<div class="sum-screen-only" style="${CARD}">${secHdr('③', '파치')}
+    <div style="padding:12px 16px;margin-bottom:0;max-width:520px">${_pjPane}</div>
   </div>`;
 
   // ==================================================================
