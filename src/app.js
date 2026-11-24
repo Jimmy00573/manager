@@ -23989,7 +23989,8 @@ async function showSortingHistory(id, btnEl) {
 
 // ── 선과내역 차수별 사무실 공유 텍스트(조회 전용 — 계산·저장 무변)
 function _srtShareMD(s) { if (!s) return ''; const p = String(s).slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}월 ${+p[2]}일` : s; }
-function _srtShareCt(v) { return (Number(v) || 0).toFixed(1); }
+// v835: 정수면 소수점 없이(31.0 → 31), 아니면 소수 1자리(12.5) — 선과 공유·선과품 입고 공유 공용
+function _srtShareCt(v) { const n = Math.round((Number(v) || 0) * 10) / 10; return Number.isInteger(n) ? String(n) : n.toFixed(1); }
 // srId = 차수 id 하나(차수별 공유) 또는 id 배열(누적 공유 — 선과 이력 팝업 순서: sorting_date·sequence_number 오름차순).
 //   ★배열일 때만 머리 줄(선과일자·선과CT·선과 방식)이 합산 표기로 바뀐다. 하나면 조회·출력 모두 예전과 한 글자도 같다.
 //   사이즈·카테고리는 details를 합쳐 세므로 본문 규칙(0 생략·섹션 순서·브릭스 등급 순서·소수 1자리)은 그대로다.
