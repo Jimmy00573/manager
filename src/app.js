@@ -7816,7 +7816,7 @@ function popUsageSelects() {
   if (el && el.tagName === 'SELECT') {
     const cur = el.value;
     el.innerHTML = '<option value="">(미분류)</option>' +
-      [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      [...pachiUsages].filter(u => u.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))   // v828: 사용 안 함은 빼고
         .map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
     if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
   }
@@ -10148,9 +10148,10 @@ function renderPachiUsageCfg() {
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
   const sorted = [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  const rows = sorted.map(u => `<tr>
+  const rows = sorted.map(u => `<tr${u.is_active === false ? ' style="opacity:.5"' : ''}>
     <td style="font-weight:600">${esc(u.name)}</td>
     <td style="color:#888;font-size:12px">${u.sort_order ?? '—'}</td>
+    <td style="text-align:center"><input type="checkbox" onchange="togglePachiUsageActive(${u.id}, this.checked)" ${u.is_active !== false ? 'checked' : ''}${isAdm ? '' : ' disabled'} title="끄면 파치 등록·수정·일괄 지정 목록에서 빠짐(기존 기록·재고는 그대로)"></td>
     <td style="text-align:center"><input type="checkbox" onchange="togglePachiUsageStock(${u.id}, this.checked)" ${u.include_in_stock !== false ? 'checked' : ''}></td>
     ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
       <button class="btn edt" onclick="editPachiUsage(${u.id})">수정</button>
@@ -10162,13 +10163,13 @@ function renderPachiUsageCfg() {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
         <div style="font-size:14px;font-weight:700">파치 사용처 관리</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">파치 등록 시 선택할 사용처를 관리합니다.</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">파치 등록 시 선택할 사용처를 관리합니다. '사용'을 끄면 고르는 목록에서만 빠지고, 기존 기록·재고는 그대로입니다.</div>
       </div>
       ${isAdm ? `<button class="btn pri" style="font-size:12px;padding:5px 14px;white-space:nowrap" onclick="addPachiUsage()">+ 사용처 추가</button>` : ''}
     </div>
     ${sorted.length ? `
     <div class="tbl-wrap"><table>
-      <thead><tr><th>사용처명</th><th>순서</th><th>재고 포함</th><th class="stk-r"></th></tr></thead>
+      <thead><tr><th>사용처명</th><th>순서</th><th title="끄면 고르는 목록에서 빠짐">사용</th><th>재고 포함</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 사용처가 없습니다.</div>`}`;
 }
@@ -10212,6 +10213,18 @@ async function deletePachiUsage(id) {
     renderPachiUsageCfg(); popUsageSelects();
     showToast('삭제되었습니다.');
   } catch(e) { alert('삭제 오류: ' + e.message); }
+}
+
+// v828: 사용처 활성/비활성 — 끄면 파치 등록(wa-usage)·수정·일괄 지정 드롭다운에서만 빠진다. 파치 목록·재고 집계는 그대로.
+async function togglePachiUsageActive(id, checked) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return;
+  try {
+    await dbUpdatePachiUsage(id, { is_active: checked });
+    const idx = pachiUsages.findIndex(u => u.id === id);
+    if (idx !== -1) pachiUsages[idx].is_active = checked;
+    renderPachiUsageCfg(); popUsageSelects();
+    showToast(checked ? '사용으로 변경' : '사용 안 함 — 고르는 목록에서 빠집니다');
+  } catch(e) { alert('변경 오류: ' + e.message); }
 }
 
 async function togglePachiUsageStock(id, checked) {
@@ -12436,7 +12449,7 @@ function openPachiEditModal(regId) {
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">사용처</label>
         <select id="pachi-edit-usage" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
           <option value="">(미분류)</option>
-          ${[...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
+          ${[...pachiUsages].filter(u => u.is_active !== false || row.usage === u.name).sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
         </select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
@@ -12866,7 +12879,7 @@ function openPachiBulkModal() {
     .map(s => `<option value="v:${esc(s.label)}">${esc(s.label)}</option>`).join('');
   const condOpts  = [...pachiConditions].filter(c => c.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
     .map(c => `<option value="v:${esc(c.label)}">${esc(c.label)}</option>`).join('');
-  const usageOpts = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+  const usageOpts = [...pachiUsages].filter(u => u.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))   // v828
     .map(u => `<option value="v:${esc(u.name)}">${esc(u.name)}</option>`).join('');
 
   const selStyle = 'width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box';
