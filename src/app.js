@@ -15916,6 +15916,8 @@ function renderInvSummary() {
   // ── 섹션 2 & 3: 선과 재고
   const manGamMap = {}, citrusMap = {}, sortDetail = {};
   let manGamHighKg=0, manGamNormalKg=0, citrusHighKg=0, citrusNormalKg=0;
+  const gradeKgByProd = {};   // v829: 품목별 고당/일반 kg — 품목별 재고 '선과된 원물' 칸 아래 줄(위 KPI와 같은 isGraded 판정)
+  const _gk = (p, hi, kg) => { const g = gradeKgByProd[p] || (gradeKgByProd[p] = { hi: 0, no: 0 }); if (hi) g.hi += kg; else g.no += kg; };
   // 신호 줄 '7일 넘은 선과품'용 — 이 반복(= 2·3번 표가 세는 선과품 재고 행)에서 같이 모은다(필터를 복사하지 않으려는 것).
   //   날짜는 선과품 매트릭스와 같은 _getInvRecordDates(입고일) + _invDaysAgo. ★기준은 매트릭스 설정(_invAgeDays,
   //   브라우저마다 다름)이 아니라 상수 SUMMARY_OLD_SORTED_DAYS. 옛 invSorted(0행, 입고일 개념 없음)는 안 센다.
@@ -15934,6 +15936,7 @@ function renderInvSummary() {
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
     const isHigh = isGraded(r);
+    _gk(r.product, isHigh, kg);
     if (ptype === '감귤류') { if(isHigh) citrusHighKg+=kg; else citrusNormalKg+=kg; }
     else { if(isHigh) manGamHighKg+=kg; else manGamNormalKg+=kg; }
     // 수별 상세 (등급 차원 추가: [품목][등급][사이즈])
@@ -15952,6 +15955,7 @@ function renderInvSummary() {
     if (!target[r.product]) target[r.product] = {};
     target[r.product][grp] = (target[r.product][grp] || 0) + kg;
     const isHighS = isGraded(r);
+    _gk(r.product, isHighS, kg);
     if (ptype === '감귤류') { if(isHighS) citrusHighKg+=kg; else citrusNormalKg+=kg; }
     else { if(isHighS) manGamHighKg+=kg; else manGamNormalKg+=kg; }
     // 수별 상세 (등급 차원 추가: [품목][등급][사이즈])
@@ -16834,7 +16838,8 @@ function renderInvSummary() {
   // 단위는 셋 다 CT — 미선과 unsMap(잔여 CT) · 상품 sortDetail[품목][등급][사이즈].ct · 파치 pachiMap(CT). 새로 읽는 데이터 없음(위 맵 재사용).
   // 타일을 누르면 그 상세 화면(invTab uns/srt/pachi). 인쇄 보고서는 예전 1~5번 블록 그대로(.sum-print-only).
   const _ipCt = {};
-  const _ipGet = p => _ipCt[p] || (_ipCt[p] = { uns: 0, srt: 0, pachi: 0 });
+  const _ipGet = p => _ipCt[p] || (_ipCt[p] = { uns: 0, srt: 0, pachi: 0, hi: 0, no: 0 });
+  Object.entries(gradeKgByProd).forEach(([p, g]) => { _ipGet(p).hi += g.hi; _ipGet(p).no += g.no; });   // v829
   Object.entries(unsMap).forEach(([p, v]) => { _ipGet(p).uns += (v.raw || 0) + (v.small || 0); });
   Object.entries(sortDetail).forEach(([p, byGrade]) => Object.values(byGrade).forEach(bySize => Object.values(bySize).forEach(c => { _ipGet(p).srt += Number(c.ct) || 0; })));
   Object.entries(pachiMap).forEach(([p, ct]) => { if (ct > 0) _ipGet(p).pachi += ct; });
@@ -16844,18 +16849,19 @@ function renderInvSummary() {
   const _ipCit = _ipItems.filter(([p]) => PRODUCT_TYPE_MAP[p] === '감귤류');
   const _ipRows = [];
   if (_ipCit.length) {
-    const g = { uns: 0, srt: 0, pachi: 0 };
-    _ipCit.forEach(([, v]) => { g.uns += v.uns; g.srt += v.srt; g.pachi += v.pachi; });
+    const g = { uns: 0, srt: 0, pachi: 0, hi: 0, no: 0 };
+    _ipCit.forEach(([, v]) => { g.uns += v.uns; g.srt += v.srt; g.pachi += v.pachi; g.hi += v.hi; g.no += v.no; });
     // v817: 품목 내역은 합계 한 숫자가 아니라 미선과·상품·파치 칸에 맞춘 작은 줄로('조생 1,689'가 조생 상품으로 읽히던 문제)
     const sub = _ipCit.slice().sort((a, b) => _ipTot(b[1]) - _ipTot(a[1]));
     _ipRows.push({ name: '감귤', v: g, sub, ord: -1 });
   }
   _ipItems.filter(([p]) => PRODUCT_TYPE_MAP[p] !== '감귤류').forEach(([p, v]) => _ipRows.push({ name: p, v, sub: null, ord: _ipOrd(p) }));
   _ipRows.sort((a, b) => a.ord - b.ord || a.name.localeCompare(b.name, 'ko'));
-  const _ipTile = (lbl, n, tab, name) => `<div onclick="openSumItem('${String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${tab}')" title="${esc(name)} ${lbl}만 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
+  const _ipTile = (lbl, n, tab, name, gk) => `<div onclick="openSumItem('${String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${tab}')" title="${esc(name)} ${lbl}만 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
       onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">
-      <div style="font-size:11.5px;color:#6B7280">${lbl}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><span style="font-size:11.5px;color:#6B7280;min-width:0">${lbl}</span><span aria-hidden="true" style="font-size:17px;line-height:1;color:#6B7280">›</span></div>
       <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;text-align:right;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? `<span style="white-space:nowrap">${fmtCT(n)}</span> <span style="font-size:12px;font-weight:400;color:#6B7280;white-space:nowrap">CT</span>` : '—'}</div>
+      ${gk && n > 0.05 ? `<div style="font-size:11px;line-height:1.35;text-align:right;margin-top:3px;display:flex;flex-wrap:wrap;justify-content:flex-end;column-gap:6px"><span style="color:#1565C0;font-weight:500;white-space:nowrap">고당 ${fmtN(Math.round(gk.hi))}<span style="font-size:10px">kg</span></span><span style="color:#6B7280;white-space:nowrap">일반 ${fmtN(Math.round(gk.no))}<span style="font-size:10px">kg</span></span></div>` : ''}
     </div>`;
   // v816: 안내 글은 제목 바로 옆에(secHdr는 오른쪽 끝으로 보내서 넓은 화면에서 안 보였다)
   const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">
@@ -16865,17 +16871,17 @@ function renderInvSummary() {
     </div>
     <div style="padding:12px 16px">
       ${_ipRows.length ? _ipRows.map(r => `
-        <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '6px' : '12px'}">
+        <div style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '6px' : '12px'}">
           <div ${r.sub ? `onclick="toggleSumItemSub()" title="품목 내역 ${_sumItemSubOpen ? '접기' : '펼치기'}"` : ''} style="display:flex;flex-direction:column;justify-content:center;min-width:0${r.sub ? ';cursor:pointer' : ''}">
             <span style="font-size:15px;font-weight:600;color:#111827">${esc(r.name)}</span>
             <span style="font-size:12px;color:#6B7280">합계 ${fmtCT(_ipTot(r.v))} CT</span>
             ${r.sub ? `<button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
           </div>
           ${/* v820: 칸 이름 — '상품'이 헷갈린다고 해서 원물 · 선과된 원물 · 파치로(대표님 요청) */ ''}
-          ${_ipTile('원물', r.v.uns, 'uns', r.name)}${_ipTile('선과된 원물', r.v.srt, 'srt', r.name)}${_ipTile('파치', r.v.pachi, 'pachi', r.name)}
+          ${_ipTile('원물', r.v.uns, 'uns', r.name)}${_ipTile('선과된 원물', r.v.srt, 'srt', r.name, r.v)}${_ipTile('파치', r.v.pachi, 'pachi', r.name)}
         </div>
         ${r.sub && _sumItemSubOpen ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
-          <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
+          <div style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
             <span style="padding-left:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p)}</span>
             ${[v.uns, v.srt, v.pachi].map(n => `<span style="padding:0 clamp(6px,1.6vw,10px);white-space:nowrap;text-align:right;${n > 0.05 ? '' : 'color:#C4C4C0'}">${n > 0.05 ? `${fmtCT(n)} <span style="font-size:11px;color:#9CA3AF">CT</span>` : '—'}</span>`).join('')}
           </div>`).join('')}</div>` : (r.sub ? '<div style="height:6px"></div>' : '')}`).join('')
@@ -16895,7 +16901,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${signalHtml}${flowHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${itemStockHtml /* v815: 화면 ①②③(sortTodayHtml·sellHtml·pjHtml) 대신 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
+    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌 — 품목별 재고 칸이 같은 문 역할 */ ''}${signalHtml}${flowHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${itemStockHtml /* v815: 화면 ①②③(sortTodayHtml·sellHtml·pjHtml) 대신 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
     <div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
