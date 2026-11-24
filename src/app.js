@@ -20712,7 +20712,8 @@ function _todaySortStats() {
     const ib = inboundRecords.find(x => x.id === pr.inbound_id); if (!ib) return;
     const k = ib.product || '미지정', q = Number(pr.quantity) || 0;
     const b = byProd[k] || (byProd[k] = { ct: 0, ibs: new Set() });
-    b.ct += q; b.ibs.add(ib.id); ct += q; ibs.add(ib.id);
+    const fk = ib.farm_name || ib.id;   // v827: 건 = 농가 수(같은 농가 여러 매지는 1)
+    b.ct += q; b.ibs.add(fk); ct += q; ibs.add(k + '||' + fk);
   });
   const prods = Object.entries(byProd).map(([p, b]) => ({ p, n: b.ibs.size, ct: b.ct })).sort((a, b) => b.ct - a.ct);
   return { n: ibs.size, ct, prods };
@@ -20725,8 +20726,8 @@ function _todaySortLineHtml(onlyProd) {
   const arg = v => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const n = prods.reduce((t, x) => t + x.n, 0), ct = prods.reduce((t, x) => t + x.ct, 0);
   return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-size:13px">
-    <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-weight:600;color:#15803D">✂️ 오늘 선과 ${n}건 · ${fmtCT(ct)} CT</span>
-    ${onlyProd ? '' : prods.map(x => `<span onclick="openTodaySortingModal('${arg(x.p)}')" title="${esc(x.p)} 오늘 선과 농가 보기" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid #E5E7EB;border-radius:12px;background:#fff">${productChip(x.p)}<span style="color:#374151">${x.n}건 · ${fmtCT(x.ct)}</span></span>`).join('')}
+    <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-weight:600;color:#15803D">✂️ 오늘 선과 ${n}농가 · ${fmtCT(ct)} CT</span>
+    ${onlyProd ? '' : prods.map(x => `<span onclick="openTodaySortingModal('${arg(x.p)}')" title="${esc(x.p)} 오늘 선과 농가 보기" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid #E5E7EB;border-radius:12px;background:#fff">${productChip(x.p)}<span style="color:#374151">${x.n}농가 · ${fmtCT(x.ct)}</span></span>`).join('')}
     <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-size:12px;color:#1565C0;font-weight:500">농가 보기 ›</span>
     ${(() => { const un = _todayUnsharedSr(onlyProd).length; return un ? `<span onclick="openScUnsharedList({ today: true, prod: '${arg(onlyProd || '')}' })" title="오늘 선과 중 📋 공유 복사를 안 한 차수 — 누르면 목록에서 바로 공유" style="cursor:pointer;font-size:12px;padding:2px 9px;border-radius:10px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD;white-space:nowrap">📋 미공유 ${un}</span>` : ''; })()}
   </div>`;
@@ -20799,39 +20800,60 @@ async function openTodaySortingModal(prodFilter) {
   const entries = Object.values(byInbound).sort((a, b) =>
     (prodOrder.indexOf(prodKey(a.ib)) - prodOrder.indexOf(prodKey(b.ib))) || a.ib.date.localeCompare(b.ib.date));
 
-  // v826: B안 — 품목 제목(농가 수 · 합계 CT · 오늘 비율) 아래 농가 한 줄씩. 줄을 누르면 매지 비교, '차수'는 공유/취소.
+  // v827: 품목 제목(농가 수 · 합계 CT) 아래 농가 한 줄씩(같은 농가의 여러 매지는 한 줄로 합침).
+  //   농가 줄을 누르면 그 아래로 매지별 상세(입고일·총량·완료/잔여·오늘 CT·차수 공유/취소) + 비율·매지 비교.
   const _isAdmT = sessionStorage.getItem('citrus_role') === 'admin';
   const _q = v => esc(v).replace(/'/g, '&#39;');
-  const _rowHtml = ({ ib, todayCt }) => {
-    const remaining = ib.quantity - (pm[ib.id] || 0);
-    const st = remaining <= 0
-      ? '<span style="font-size:11.5px;color:#15803D">완료</span>'
-      : `<span style="font-size:11.5px;color:#9CA3AF;white-space:nowrap">잔여 ${fmtCT(remaining)}</span>`;
-    const un = _isAdmT ? _srUnsharedOf(ib.id).length : 0;
-    const ops = operatorMap[ib.id] ? [...operatorMap[ib.id]].join(', ') : '';
-    const click = dtlByIb[ib.id] ? `onclick="openSortingRatioModal('${_q(ib.farm_name)}','${_q(ib.product || '')}','${ib.id}')" title="이 농가 매지 비교${ops ? ` · 작업 ${esc(ops)}` : ''}" ` : (ops ? `title="작업 ${esc(ops)}" ` : '');
-    return `<div ${click}style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:8px 2px;border-bottom:1px solid #F3F4F6;font-size:13px${dtlByIb[ib.id] ? ';cursor:pointer' : ''}"
-        ${dtlByIb[ib.id] ? `onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''"` : ''}>
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1F2937">${esc(ib.farm_name)} <span style="font-size:11px;color:#9CA3AF">${esc(String(ib.date || '').slice(5))}</span>${un ? ` <span style="font-size:10px;padding:0 6px;border-radius:8px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD">미공유</span>` : ''}</span>
-        ${st}
-        <span style="text-align:right;min-width:56px;white-space:nowrap;color:#111827">${fmtCT(todayCt)} <span style="font-size:11px;color:#6B7280">CT</span></span>
-        <button type="button" onclick="event.stopPropagation();showSortingHistory('${ib.id}',this)" title="차수별 📋 공유 · 취소(잘못 넣었으면 취소 후 다시 선과 입력)" style="font-size:11px;padding:2px 8px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#6B7280;cursor:pointer;font-family:inherit;white-space:nowrap">차수</button>
-      </div>`;
+  const _remOf = ib => ib.quantity - (pm[ib.id] || 0);
+  const _stHtml = rem => rem <= 0 ? '<span style="font-size:11.5px;color:#15803D">완료</span>'
+    : `<span style="font-size:11.5px;color:#9CA3AF;white-space:nowrap">잔여 ${fmtCT(rem)}</span>`;
+  const GRID = 'display:grid;grid-template-columns:minmax(0,1fr) auto auto 44px;gap:8px;align-items:center';
+  const _farmGroups = p => {
+    const m = {}, order = [];
+    entries.filter(e => prodKey(e.ib) === p).forEach(e => {
+      const k = e.ib.farm_name || '(농가 없음)';
+      if (!m[k]) { m[k] = { farm: k, list: [], ct: 0 }; order.push(k); }
+      m[k].list.push(e); m[k].ct += e.todayCt;
+    });
+    return order.map(k => m[k]).sort((a, b) => b.ct - a.ct);
   };
+  const _farmHtml = (p, g) => {
+    const rem = g.list.reduce((t, e) => t + Math.max(0, _remOf(e.ib)), 0);
+    const un = _isAdmT ? g.list.reduce((t, e) => t + _srUnsharedOf(e.ib.id).length, 0) : 0;
+    const ratioIb = (g.list.find(e => dtlByIb[e.ib.id]) || {}).ib;
+    const detail = g.list.map(({ ib, todayCt }) => {
+      const ops = operatorMap[ib.id] ? [...operatorMap[ib.id]].join(', ') : '';
+      return `<div style="${GRID};padding:6px 2px 6px 14px;font-size:12.5px;color:#4B5563">
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">입고 ${esc(String(ib.date || '').slice(5))} · 총 ${fmtCT(ib.quantity)}${ops ? ` · ${esc(ops)}` : ''}${_isAdmT && _srUnsharedOf(ib.id).length ? ' <span style="font-size:10px;padding:0 6px;border-radius:8px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD">미공유</span>' : ''}</span>
+          ${_stHtml(_remOf(ib))}
+          <span style="text-align:right;min-width:56px;white-space:nowrap">${fmtCT(todayCt)} <span style="font-size:11px;color:#9CA3AF">CT</span></span>
+          <button type="button" onclick="event.stopPropagation();showSortingHistory('${ib.id}',this)" title="차수별 📋 공유 · 취소(잘못 넣었으면 취소 후 다시 선과 입력)" style="font-size:11px;padding:2px 0;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#6B7280;cursor:pointer;font-family:inherit">차수</button>
+        </div>`;
+    }).join('') + (ratioIb ? `<div onclick="openSortingRatioModal('${_q(g.farm)}','${_q(p)}','${ratioIb.id}')" style="padding:4px 2px 8px 14px;font-size:12px;color:#7C3AED;cursor:pointer">비율 · 매지 비교 ›</div>` : '');
+    return `<div onclick="const d=this.nextElementSibling,o=d.style.display==='none';d.style.display=o?'':'none';this.querySelector('.tsf-ar').textContent=o?'▾':'▸'"
+        style="${GRID};padding:9px 2px;border-bottom:1px solid #F3F4F6;font-size:13.5px;cursor:pointer" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1F2937"><span class="tsf-ar" style="color:#9CA3AF;font-size:11px;margin-right:4px">▸</span>${esc(g.farm)}${g.list.length > 1 ? ` <span style="font-size:11px;color:#9CA3AF">매지 ${g.list.length}</span>` : ''}${un ? ` <span style="font-size:10px;padding:0 6px;border-radius:8px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD">미공유</span>` : ''}</span>
+        ${_stHtml(rem)}
+        <span style="text-align:right;min-width:56px;white-space:nowrap;color:#111827;font-weight:500">${fmtCT(g.ct)} <span style="font-size:11px;font-weight:400;color:#6B7280">CT</span></span>
+        <span></span>
+      </div>
+      <div style="display:none;background:#FAFAFA;border-bottom:1px solid #F3F4F6">${detail}</div>`;
+  };
+  let _farmTotal = 0;
   const cardHtml = entries.length === 0
     ? '<div style="text-align:center;color:#9CA3AF;padding:24px">오늘 선과 내역 없음</div>'
     : prodOrder.map((p, i) => {
-        const rows = entries.filter(e => prodKey(e.ib) === p);
-        if (!rows.length) return '';
+        const groups = _farmGroups(p);
+        if (!groups.length) return '';
+        _farmTotal += groups.length;
         return `<div style="${i ? 'margin-top:16px' : ''}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 2px 6px;border-bottom:1px solid #D1D5DB">
-            <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:#111827">${productChip(p)}<span style="font-size:12px;font-weight:400;color:#6B7280">${rows.length}농가</span></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:#111827">${productChip(p)}<span style="font-size:12px;font-weight:400;color:#6B7280">${groups.length}농가</span></span>
             <span style="font-size:14px;font-weight:600;color:#15803D;white-space:nowrap">${fmtCT(byProduct[p])} <span style="font-size:11px;font-weight:400;color:#6B7280">CT</span></span>
           </div>
-          ${dtlByProd[p] ? `<div style="font-size:12px;color:#6B7280;padding:5px 2px 2px">${_todaySrRatioHtml(dtlByProd[p], p, false)}</div>` : ''}
-          ${rows.map(_rowHtml).join('')}
+          ${groups.map(g => _farmHtml(p, g)).join('')}
         </div>`;
-      }).join('') + '<div style="font-size:11px;color:#9CA3AF;margin-top:10px">농가 줄을 누르면 매지 비교 · 차수 = 공유/취소</div>';
+      }).join('') + '<div style="font-size:11px;color:#9CA3AF;margin-top:10px">농가를 누르면 매지별 상세 · 비율 · 차수(공유/취소)</div>';
 
   const existing = document.getElementById('today-sorting-modal-bg');
   if (existing) existing.remove();
@@ -20844,7 +20866,7 @@ async function openTodaySortingModal(prodFilter) {
       <div style="padding:16px 20px 14px;border-bottom:1px solid #F0F0F0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
         <div>
           <div style="font-size:16px;font-weight:800;color:#1F2937">오늘 선과 내역${_pf ? ` · ${esc(_pf)}` : ''}</div>
-          <div style="font-size:12px;color:#6B7280;margin-top:2px">${today} · 총 ${fmtCT(todayTotal)} CT · ${entries.length}건${prodOrder.length > 1 ? ` · ${prodOrder.length}품목` : ''}</div>
+          <div style="font-size:12px;color:#6B7280;margin-top:2px">${today} · 총 ${fmtCT(todayTotal)} CT · ${_farmTotal}농가${entries.length > _farmTotal ? ` (매지 ${entries.length})` : ''}</div>
         </div>
         <button onclick="document.getElementById('today-sorting-modal-bg').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#9CA3AF;padding:0;line-height:1">✕</button>
       </div>
