@@ -11317,7 +11317,7 @@ function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
-let _invFlowDays = 2;    // 재고 요약 흐름 줄 기간(1~6일, 전일부터 거꾸로, 기본 2일 — v831). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 2일)
+let _invFlowDays = 1;    // 재고 요약 흐름 줄 기간(1~6일, 전일부터 거꾸로, 기본 2일 — v831). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 2일)
 // 재고 요약 신호 줄 '7일 넘은 선과품' 기준(입고일부터). ★매트릭스의 '⚠ 기준 N일'(_invAgeDays, 브라우저마다 저장)과 일부러 따로 —
 //   요약은 누가 봐도 같은 숫자여야 한다.
 const SUMMARY_OLD_SORTED_DAYS = 7;
@@ -20809,7 +20809,7 @@ async function openTodaySortingModal(prodFilter) {
 
   // 오늘 sorting_results 에서 operator_name 조회 (격리 — 전역 sortingResults 미사용)
   const srRows = todayRecs.length > 0
-    ? (await sbGet('sorting_results', `sorting_date=eq.${today}&select=id,inbound_record_id,operator_name`).catch(() => []) || [])
+    ? (await sbGet('sorting_results', `sorting_date=eq.${today}&select=id,inbound_record_id,operator_name,created_at`).catch(() => []) || [])
     : [];
   // 오늘 차수의 선과 상세 → 매지(입고)별·품목별 비율(v797). 계산은 비율 모달과 같은 _srRatios. 실패하면 비율 줄만 빠진다.
   const srIbOf = {}; srRows.forEach(sr => { srIbOf[sr.id] = sr.inbound_record_id; });
@@ -20823,6 +20823,10 @@ async function openTodaySortingModal(prodFilter) {
     const ib = inboundRecords.find(x => x.id === ibId); const pr = (ib && ib.product) || '미지정';
     (dtlByProd[pr] || (dtlByProd[pr] = [])).push(d);
   });
+  // v832: 매지별 마지막 선과 저장 시각(완료 시간 표시용) — 오늘 차수의 created_at 중 가장 늦은 것
+  const lastAtByIb = {};
+  srRows.forEach(sr => { if (sr.created_at && (!lastAtByIb[sr.inbound_record_id] || sr.created_at > lastAtByIb[sr.inbound_record_id])) lastAtByIb[sr.inbound_record_id] = sr.created_at; });
+  const _hm = iso => { if (!iso) return ''; const t = new Date(iso); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
   const operatorMap = {}; // inbound_id → 작업자 중복제거 Set
   srRows.forEach(sr => {
     if (!sr.operator_name) return;
@@ -20858,7 +20862,7 @@ async function openTodaySortingModal(prodFilter) {
   const _isAdmT = sessionStorage.getItem('citrus_role') === 'admin';
   const _q = v => esc(v).replace(/'/g, '&#39;');
   const _remOf = ib => ib.quantity - (pm[ib.id] || 0);
-  const _stHtml = rem => rem <= 0 ? '<span style="font-size:11.5px;color:#15803D">완료</span>'
+  const _stHtml = (rem, at) => rem <= 0 ? `<span style="font-size:11.5px;color:#15803D;white-space:nowrap">완료${at ? ` ${_hm(at)}` : ''}</span>`
     : `<span style="font-size:11.5px;color:#9CA3AF;white-space:nowrap">잔여 ${fmtCT(rem)}</span>`;
   const GRID = 'display:grid;grid-template-columns:minmax(0,1fr) auto auto 44px;gap:8px;align-items:center';
   const _farmGroups = p => {
@@ -20872,13 +20876,14 @@ async function openTodaySortingModal(prodFilter) {
   };
   const _farmHtml = (p, g) => {
     const rem = g.list.reduce((t, e) => t + Math.max(0, _remOf(e.ib)), 0);
+    const lastAt = g.list.map(e => lastAtByIb[e.ib.id] || '').sort().pop();   // 농가 완료 시각 = 매지 중 가장 늦은 선과
     const un = _isAdmT ? g.list.reduce((t, e) => t + _srUnsharedOf(e.ib.id).length, 0) : 0;
     const ratioIb = (g.list.find(e => dtlByIb[e.ib.id]) || {}).ib;
     const detail = g.list.map(({ ib, todayCt }) => {
       const ops = operatorMap[ib.id] ? [...operatorMap[ib.id]].join(', ') : '';
       return `<div style="${GRID};padding:6px 2px 6px 14px;font-size:12.5px;color:#4B5563">
           <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">입고 ${esc(String(ib.date || '').slice(5))} · 총 ${fmtCT(ib.quantity)}${ops ? ` · ${esc(ops)}` : ''}${_isAdmT && _srUnsharedOf(ib.id).length ? ' <span style="font-size:10px;padding:0 6px;border-radius:8px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD">미공유</span>' : ''}</span>
-          ${_stHtml(_remOf(ib))}
+          ${_stHtml(_remOf(ib), lastAtByIb[ib.id])}
           <span style="text-align:right;min-width:56px;white-space:nowrap">${fmtCT(todayCt)} <span style="font-size:11px;color:#9CA3AF">CT</span></span>
           <button type="button" onclick="event.stopPropagation();showSortingHistory('${ib.id}',this)" title="차수별 📋 공유 · 취소(잘못 넣었으면 취소 후 다시 선과 입력)" style="font-size:11px;padding:2px 0;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#6B7280;cursor:pointer;font-family:inherit">차수</button>
         </div>`;
@@ -20886,7 +20891,7 @@ async function openTodaySortingModal(prodFilter) {
     return `<div onclick="const d=this.nextElementSibling,o=d.style.display==='none';d.style.display=o?'':'none';this.querySelector('.tsf-ar').textContent=o?'▾':'▸'"
         style="${GRID};padding:9px 2px;border-bottom:1px solid #F3F4F6;font-size:13.5px;cursor:pointer" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
         <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1F2937"><span class="tsf-ar" style="color:#9CA3AF;font-size:11px;margin-right:4px">▸</span>${esc(g.farm)}${g.list.length > 1 ? ` <span style="font-size:11px;color:#9CA3AF">매지 ${g.list.length}</span>` : ''}${un ? ` <span style="font-size:10px;padding:0 6px;border-radius:8px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD">미공유</span>` : ''}</span>
-        ${_stHtml(rem)}
+        ${_stHtml(rem, lastAt)}
         <span style="text-align:right;min-width:56px;white-space:nowrap;color:#111827;font-weight:500">${fmtCT(g.ct)} <span style="font-size:11px;font-weight:400;color:#6B7280">CT</span></span>
         <span></span>
       </div>
