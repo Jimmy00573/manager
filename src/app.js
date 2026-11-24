@@ -20275,7 +20275,8 @@ function renderInboundList() {
   if (!_ibSearching && !ibOnlyUnshared && !_ibAuditMode && !_xdToday) {
     const _T = td();
     const _srToday = new Set((sortingResults || []).filter(x => x.sorting_date === _T).map(x => String(x.inbound_record_id)));
-    const _now = r => r.date === _T || _srToday.has(String(r.id)) || (_isUnsortedTarget(r) && getRemainingCT(r) > 0);
+    // ★v825: 오늘 선과로 끝난 입고도 숨긴다 — '✂️ 오늘 선과 N건' 줄(공유·차수 취소)에서 본다. 잔여가 남은 입고는 그대로 보임.
+    const _now = r => (_isUnsortedTarget(r) && getRemainingCT(r) > 0) || (r.date === _T && !_srToday.has(String(r.id)));
     const _n0 = visible.length;
     visible = visible.filter(_now);
     _ibHiddenOld = _n0 - visible.length;
@@ -20291,7 +20292,7 @@ function renderInboundList() {
   _renderIbFilterChips();
   const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo || ibOnlyUnshared;
   const fcountEl = document.getElementById('ib-filter-count');
-  if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중`
+  if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중${_ibHiddenOld ? ` · 끝난 기록 ${fmtN(_ibHiddenOld)}건 숨김(검색하면 보임)` : ''}`
     : _ibHiddenOld ? `끝난 이전 기록 ${fmtN(_ibHiddenOld)}건은 숨김 · 검색하면 보입니다` : '';
 
   // 버튼 활성 상태 동기화 (뷰 전환 후에도 유지)
@@ -20725,12 +20726,27 @@ function _todaySortLineHtml(onlyProd) {
     <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-weight:600;color:#15803D">✂️ 오늘 선과 ${n}건 · ${fmtCT(ct)} CT</span>
     ${onlyProd ? '' : prods.map(x => `<span onclick="openTodaySortingModal('${arg(x.p)}')" title="${esc(x.p)} 오늘 선과 농가 보기" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid #E5E7EB;border-radius:12px;background:#fff">${productChip(x.p)}<span style="color:#374151">${x.n}건 · ${fmtCT(x.ct)}</span></span>`).join('')}
     <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-size:12px;color:#1565C0;font-weight:500">농가 보기 ›</span>
+    ${(() => { const un = _todayUnsharedSr(onlyProd).length; return un ? `<span onclick="openScUnsharedList({ today: true, prod: '${arg(onlyProd || '')}' })" title="오늘 선과 중 📋 공유 복사를 안 한 차수 — 누르면 목록에서 바로 공유" style="cursor:pointer;font-size:12px;padding:2px 9px;border-radius:10px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD;white-space:nowrap">📋 미공유 ${un}</span>` : ''; })()}
   </div>`;
+}
+// v825: 오늘 선과 차수 중 미공유(판정은 _srIsUnshared 하나) — 품목을 주면 그 품목(감귤류 포함)만
+function _todayUnsharedSr(prod) {
+  const T = td();
+  return _scUnsharedRows().filter(sr => sr.sorting_date === T
+    && _prodMatch(prod || '', (inboundRecords.find(r => String(r.id) === String(sr.inbound_record_id)) || {}).product || '미지정'));
+}
+let _todaySortPf = '';   // v825: 오늘 선과 창이 마지막으로 연 품목(다시 그릴 때 같은 범위)
+// v825: 공유·차수 취소 뒤 — 현장 재고 전체 현황의 오늘 선과 줄, 열려 있는 오늘 선과 창을 다시 그린다
+function _refreshTodaySortViews() {
+  const sum = document.getElementById('inv-sum-div');
+  if (sum && sum.style.display !== 'none' && typeof renderInvSummary === 'function') { try { renderInvSummary(); } catch (e) {} }
+  if (document.getElementById('today-sorting-modal-bg')) openTodaySortingModal(_todaySortPf);
 }
 async function openTodaySortingModal(prodFilter) {
   const today = td();
   // v822: prodFilter(품목)를 주면 그 품목 입고의 선과만 — 같은 창, 제목에 품목 이름
   const _pf = typeof prodFilter === 'string' && prodFilter ? prodFilter : '';
+  _todaySortPf = _pf;
   const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today
     && _prodMatch(_pf, (inboundRecords.find(x => x.id === p.inbound_id) || {}).product || '미지정'));
   const pm = _ibProcessedMap();
@@ -20811,8 +20827,12 @@ async function openTodaySortingModal(prodFilter) {
             <div style="margin-top:8px;font-size:13px;color:#374151">
               총 <strong>${fmtCT(ib.quantity)} CT</strong> 중 오늘 <strong style="color:#15803D">${fmtCT(todayCt)} CT</strong> 선과
             </div>
-            ${dtlByIb[ib.id] ? `<div style="margin-top:6px">${_todaySrRatioHtml(dtlByIb[ib.id], ib.product, true)}</div>
-            <div style="margin-top:4px;font-size:11px;color:#7C3AED">이 농가 매지 비교 ›</div>` : ''}
+            ${dtlByIb[ib.id] ? `<div style="margin-top:6px">${_todaySrRatioHtml(dtlByIb[ib.id], ib.product, true)}</div>` : ''}
+            <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${dtlByIb[ib.id] ? '<span style="font-size:11px;color:#7C3AED">이 농가 매지 비교 ›</span>' : ''}
+              ${(() => { const un = _srUnsharedOf(ib.id).length; return un && sessionStorage.getItem('citrus_role') === 'admin' ? `<span style="font-size:10px;padding:1px 7px;border-radius:10px;background:#F5F3FF;color:#7C3AED;border:1px solid #C4B5FD">미공유 ${un}</span>` : ''; })()}
+              <button type="button" onclick="event.stopPropagation();showSortingHistory('${ib.id}',this)" title="차수별 📋 공유 · 취소(잘못 넣었으면 취소 후 다시 선과 입력)" style="margin-left:auto;font-size:11.5px;padding:3px 10px;border:1px solid #D1D5DB;border-radius:6px;background:#fff;color:#374151;cursor:pointer;font-family:inherit;white-space:nowrap">차수 · 공유/취소</button>
+            </div>
           </div>`;
       }).join('');
 
@@ -24276,6 +24296,7 @@ async function _srMarkShared(ids) {
     renderInboundList();
     _renderScUnsharedBtn();
     if (document.getElementById('modal-sc-unshared')) openScUnsharedList();   // 목록 창이 열려 있으면 갱신
+    _refreshTodaySortViews();   // v825: 현장 재고 전체 현황·오늘 선과 창의 미공유 표시
   } catch (e) { console.warn('선과 공유 표시 저장 실패(무시):', e.message); }
 }
 // 선과 처리 센터 제목 옆 '📋 선과 미공유 n'(v800) — 저장 직후 바(15초)가 사라져도 남는다. 판정은 _srIsUnshared 하나.
@@ -24292,9 +24313,13 @@ function _renderScUnsharedBtn() {
   b.title = '어제·오늘 선과하고 📋 공유 복사를 안 한 차수 — 누르면 목록';
   b.style.cssText = 'margin-left:auto;font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;background:#fff;color:#7C3AED;border:1px solid #C4B5FD';
 }
-function openScUnsharedList() {
+let _scUnsharedOpts = null;   // v825: 마지막으로 연 범위(오늘·품목) — 공유 후 다시 그릴 때 같은 범위로
+function openScUnsharedList(opts) {
+  const _wasOpen = !!document.getElementById('modal-sc-unshared');
   document.getElementById('modal-sc-unshared')?.remove();
-  const rows = _scUnsharedRows();
+  if (opts !== undefined) _scUnsharedOpts = opts || null; else if (!_wasOpen) _scUnsharedOpts = null;
+  const o = _scUnsharedOpts;
+  const rows = o && o.today ? _todayUnsharedSr(o.prod) : _scUnsharedRows();
   if (!rows.length) { showToast('미공유 선과가 없습니다'); return; }
   const m = document.createElement('div');
   m.id = 'modal-sc-unshared';
@@ -24314,7 +24339,7 @@ function openScUnsharedList() {
   m.innerHTML = `
     <div style="background:#fff;border-radius:14px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:80vh">
       <div style="padding:14px 18px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:14px;font-weight:600;color:#7C3AED">📋 선과 미공유 ${rows.length}</div>
+        <div style="font-size:14px;font-weight:600;color:#7C3AED">📋 ${o && o.today ? `오늘 선과${o.prod ? ` · ${esc(o.prod)}` : ''} ` : '선과 '}미공유 ${rows.length}</div>
         <button data-close style="border:none;background:none;font-size:20px;cursor:pointer;color:#9CA3AF;line-height:1">✕</button>
       </div>
       <div style="padding:4px 18px 10px;overflow:auto">${rows.map(line).join('')}</div>
@@ -24390,6 +24415,7 @@ async function cancelSortingResult(srId, inboundId, seq, worker, reason) {
 
     await loadAndRenderInv();
     showToast(`${seq}차 선과 취소 완료`);
+    _refreshTodaySortViews();   // v825: 오늘 선과 창에서 취소했으면 그 창도 새 숫자로
   } catch(e) { alert('선과 취소 오류: ' + e.message); }
 }
 
