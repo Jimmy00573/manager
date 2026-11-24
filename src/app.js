@@ -16935,7 +16935,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌. v831: 순서 품목별 재고 → 오늘 선과 → 입출고 → 흐름, '확인 필요'(signalHtml)는 기준 정할 때까지 숨김 */ ''}${itemStockHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${flowHtml}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
+    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌. v831: 순서 품목별 재고 → 오늘 선과 → 입출고 → 흐름, '확인 필요'(signalHtml)는 기준 정할 때까지 숨김 */ ''}${itemStockHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${flowHtml}${IB_FORM_ROLES.includes(sessionStorage.getItem('citrus_role')) ? `<button type="button" class="sum-screen-only" onclick="openIbFormFromSum()" style="display:block;width:100%;margin:0 0 14px;padding:12px 16px;background:#fff;border:1px dashed #93C5FD;border-radius:10px;color:#1565C0;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left">＋ 입고 등록 <span style="float:right;font-weight:400">›</span></button>` : '' /* v833 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
     <div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
@@ -24556,6 +24556,15 @@ async function permanentDeleteInbound(id) {
     renderInvSummary(); renderInboundList(); renderProcessingTab();
     showToast('영구 삭제되었습니다.');
   } catch(e) { alert('영구 삭제 오류: ' + e.message); }
+}
+
+// v833: 현장 재고 전체 현황의 '＋ 입고 등록' — 새 폼을 만들지 않고 원물 재고(미선과)의 입고 등록 폼을 열어 그 자리로 스크롤
+function openIbFormFromSum() {
+  invTab('uns');
+  if (typeof ibTab === 'function' && document.getElementById('ib-list-div')?.style.display === 'none') ibTab('list');
+  const body = document.getElementById('ib-form-body');
+  if (body && !body._ibOpen) toggleIbForm();
+  setTimeout(() => document.getElementById('ib-form-toggle')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
 }
 
 function toggleIbForm() {
