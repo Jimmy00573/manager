@@ -11317,7 +11317,7 @@ function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
-let _invFlowDays = 2;    // 재고 요약 흐름 줄 기간(2~6일, v830 기본 2일). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 2일)
+let _invFlowDays = 2;    // 재고 요약 흐름 줄 기간(1~6일, 전일부터 거꾸로, 기본 2일 — v831). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 2일)
 // 재고 요약 신호 줄 '7일 넘은 선과품' 기준(입고일부터). ★매트릭스의 '⚠ 기준 N일'(_invAgeDays, 브라우저마다 저장)과 일부러 따로 —
 //   요약은 누가 봐도 같은 숫자여야 한다.
 const SUMMARY_OLD_SORTED_DAYS = 7;
@@ -16058,18 +16058,22 @@ function renderInvSummary() {
   });
   const flowOutCt = Object.values(flowOutBy).reduce((a, v) => a + v, 0);
   const flowBacklog = flowInCt - flowSortCt;
-  // v830: 흐름 줄 = 선과 완료(sorting_results.input_ct) → 실사로 빠짐(출고 거래처 '실사출고' — 선과품·부분출고·파치).
-  //   출고를 따로 안 찍고 실사 때 빠지는 게 실제 나간 양이라서(공장장 2026-11-24). 차이 = 선과 재고(선과품+파치) 증감.
+  // v831: 흐름 = 날짜별 '선과 완료(sorting_results.input_ct) · 실사로 빠짐(출고 거래처 실사출고 — 선과품·부분출고·파치)'.
+  //   기간은 전일(어제)부터 거꾸로 N일(1~6, 기본 2) — 오늘은 실사가 아직이라 뺀다(공장장 2026-11-24).
   //   ★선과 input은 원물 CT라 선과품+파치로 나뉜다 → 실사출고도 선과품+파치를 같이 센다. 미선과·주스 실사는 뺀다.
-  const flowAuditBy = { srt: 0, pachi: 0 };
+  const _fdShift = k => { const dt = new Date(_flowToday + 'T00:00:00'); dt.setDate(dt.getDate() - k); return ymd(dt); };
+  const flowDays = Array.from({ length: flowN }, (_, i) => _fdShift(i + 1));   // [어제, 그제, …]
+  const flowByDay = {}; flowDays.forEach(d => { flowByDay[d] = { sort: 0, srt: 0, pachi: 0 }; });
+  (sortingResults || []).forEach(sr => { const b = flowByDay[sr.sorting_date]; if (b) b.sort += Number(sr.input_ct) || 0; });
   invOutbounds.forEach(o => {
     if (o.is_void || o.partner_name !== '실사출고') return;
-    if (!o.date || o.date < flowFrom || o.date > _flowToday) return;
-    if (o.source_type === 'sorting' || o.source_type === 'inventory_partial') flowAuditBy.srt += Number(o.quantity) || 0;
-    else if (o.source_type === 'pachi') flowAuditBy.pachi += Number(o.quantity) || 0;
+    const b = flowByDay[o.date]; if (!b) return;
+    if (o.source_type === 'sorting' || o.source_type === 'inventory_partial') b.srt += Number(o.quantity) || 0;
+    else if (o.source_type === 'pachi') b.pachi += Number(o.quantity) || 0;
   });
-  const flowAuditCt = flowAuditBy.srt + flowAuditBy.pachi;
-  const flowNet = flowSortCt - flowAuditCt;
+  const flowSortN = flowDays.reduce((t, d) => t + flowByDay[d].sort, 0);
+  const flowAuditCt = flowDays.reduce((t, d) => t + flowByDay[d].srt + flowByDay[d].pachi, 0);
+  const flowNet = flowSortN - flowAuditCt;
   const sortAvg7 = _flowSortCt(_flowFrom(7)) / 7;   // 0이면 KPI 일수 표시 생략(0으로 나누기 방지)
 
   // ==================================================================
@@ -16142,13 +16146,32 @@ function renderInvSummary() {
   //   ★입출고 카드(하루치) 안에 넣지 않는다 — 하루 집계와 기간 집계가 한 카드에 섞이면 헷갈린다.
   const _flowMD = ds => `${parseInt(ds.slice(5, 7))}/${parseInt(ds.slice(8, 10))}`;
   const _flowBtn = n => `<button type="button" onclick="setInvFlowDays(${n})" style="padding:3px 10px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid ${flowN === n ? '#1565C0' : '#D1D5DB'};background:${flowN === n ? '#1565C0' : '#fff'};color:${flowN === n ? '#fff' : '#374151'}">${n}일</button>`;
-  const _flowNetCol = flowNet > 0 ? '#C2410C' : flowNet < 0 ? '#15803D' : '#6B7280';   // 양수=선과 재고 쌓임(주황) · 음수=줄어듦(초록)
-  const _flowNetTxt = (flowNet > 0 ? '+' : flowNet < 0 ? '−' : '±') + fmtCT(Math.abs(flowNet));
-  const flowHtml = `<div style="${CARD};padding:10px 16px;display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap">
-    <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0">🔄 흐름</span>
-    <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap">${[2, 3, 4, 5, 6].map(_flowBtn).join('')}</div>
-    <span style="font-size:13px;color:#374151">최근 ${flowN}일 <span style="font-size:11px;color:#9CA3AF">(${_flowMD(flowFrom)}~${_flowMD(_flowToday)})</span> — 선과 완료 <b>${fmtCT(flowSortCt)}</b> → <span title="실사로 빠진 양(출고 거래처 '실사출고') — 선과품 ${fmtCT(flowAuditBy.srt)} / 파치 ${fmtCT(flowAuditBy.pachi)} CT" style="cursor:help;border-bottom:1px dotted #9CA3AF">실사로 빠짐 <b>${fmtCT(flowAuditCt)}</b></span> CT</span>
-    <span title="선과 완료 − 실사로 빠짐 = 선과 재고(선과품+파치)가 늘었는지 줄었는지" style="font-size:12px;font-weight:700;color:${_flowNetCol};white-space:nowrap">선과 재고 ${_flowNetTxt} CT</span>
+  const _netCol = v => v > 0 ? '#C2410C' : v < 0 ? '#15803D' : '#6B7280';   // 양수=선과 재고 쌓임(주황) · 음수=줄어듦(초록)
+  const _netTxt = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmtCT(Math.abs(v));
+  const _dowKo = d => '일월화수목금토'[new Date(d + 'T00:00:00').getDay()];
+  const _fdLbl = (d, i) => i === 0 ? '전일' : i === 1 ? '전전일' : `${i + 1}일 전`;
+  const _fdTd = 'padding:4px 8px;text-align:right;white-space:nowrap';
+  const flowHtml = `<div style="${CARD};padding:10px 16px">
+    <div style="display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0">🔄 흐름</span>
+      <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap">${[1, 2, 3, 4, 5, 6].map(_flowBtn).join('')}</div>
+      <span style="font-size:12px;color:#9CA3AF">전일부터 · 오늘은 실사 전이라 뺌</span>
+    </div>
+    <div class="tbl-wrap" style="margin-top:8px"><table style="border-collapse:collapse;font-size:13px;color:#374151;min-width:0">
+      <thead><tr style="color:#6B7280;font-size:12px">
+        <th style="padding:4px 8px;text-align:left;font-weight:500">날짜</th><th style="${_fdTd};font-weight:500">선과 완료</th>
+        <th style="${_fdTd};font-weight:500" title="출고 거래처 '실사출고' — 선과품+파치">실사로 빠짐</th><th style="${_fdTd};font-weight:500" title="선과 완료 − 실사로 빠짐 = 선과 재고(선과품+파치) 증감">선과 재고</th></tr></thead>
+      <tbody>${flowDays.map((d, i) => { const b = flowByDay[d], out = b.srt + b.pachi, net = b.sort - out; return `<tr style="border-top:1px solid #F3F4F6">
+        <td style="padding:4px 8px;white-space:nowrap">${_fdLbl(d, i)} <span style="font-size:11px;color:#9CA3AF">${_flowMD(d)}(${_dowKo(d)})</span></td>
+        <td style="${_fdTd}">${fmtCT(b.sort)}</td>
+        <td style="${_fdTd}" title="선과품 ${fmtCT(b.srt)} / 파치 ${fmtCT(b.pachi)} CT">${fmtCT(out)}</td>
+        <td style="${_fdTd};font-weight:600;color:${_netCol(net)}">${_netTxt(net)}</td></tr>`; }).join('')}
+      ${flowN > 1 ? `<tr style="border-top:1px solid #D1D5DB;font-weight:600">
+        <td style="padding:5px 8px">합계 <span style="font-size:11px;font-weight:400;color:#9CA3AF">${flowN}일</span></td>
+        <td style="${_fdTd}">${fmtCT(flowSortN)}</td><td style="${_fdTd}">${fmtCT(flowAuditCt)}</td>
+        <td style="${_fdTd};color:${_netCol(flowNet)}">${_netTxt(flowNet)}</td></tr>` : ''}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:4px">단위 CT · 선과 재고 = 선과 완료 − 실사로 빠짐 (주황 = 쌓임 · 초록 = 줄어듦)</div>
   </div>`;
 
   // ── 신호 줄 '확인 필요'(B안 2단계, 5단계에서 이름을 탭 이름 규칙에 맞춤) — KPI 바로 아래. 값이 0인 칩은 안 그리고, 전부 0이면 '특이사항 없음'.
@@ -16912,7 +16935,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌 — 품목별 재고 칸이 같은 문 역할 */ ''}${signalHtml}${flowHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${itemStockHtml /* v815: 화면 ①②③(sortTodayHtml·sellHtml·pjHtml) 대신 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
+    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌. v831: 순서 품목별 재고 → 오늘 선과 → 입출고 → 흐름, '확인 필요'(signalHtml)는 기준 정할 때까지 숨김 */ ''}${itemStockHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${flowHtml}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
     <div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
