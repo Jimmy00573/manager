@@ -16894,19 +16894,28 @@ function renderInvSummary() {
   const _ipTile = (lbl, n, tab, name, gk) => `<div onclick="openSumItem('${String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${tab}')" title="${esc(name)} ${lbl}만 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
       onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><span style="font-size:11.5px;color:#6B7280;min-width:0">${lbl}</span><span aria-hidden="true" style="font-size:17px;line-height:1;color:#6B7280">›</span></div>
-      <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;text-align:right;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? `<span style="white-space:nowrap">${fmtCT(n)}</span> <span style="font-size:12px;font-weight:400;color:#6B7280;white-space:nowrap">CT</span>` : '—'}</div>
+      <div class="ip-val" style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;text-align:right;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? `<span style="white-space:nowrap">${fmtCT(n)}</span> <span style="font-size:12px;font-weight:400;color:#6B7280;white-space:nowrap">CT</span>` : '—'}</div>
       ${gk && n > 0.05 ? `<div style="font-size:11px;line-height:1.35;text-align:right;margin-top:3px;display:flex;flex-wrap:wrap;justify-content:flex-end;column-gap:6px"><span style="color:#1565C0;font-weight:500;white-space:nowrap">고당 ${fmtN(Math.round(gk.hi))}<span style="font-size:10px">kg</span></span><span style="color:#6B7280;white-space:nowrap">일반 ${fmtN(Math.round(gk.no))}<span style="font-size:10px">kg</span></span></div>` : ''}
     </div>`;
   // v816: 안내 글은 제목 바로 옆에(secHdr는 오른쪽 끝으로 보내서 넓은 화면에서 안 보였다)
   const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">
+    <style>/* v834: 폰(≤600px) — 품목 이름·합계를 위 한 줄로 올리고 세 칸을 전체 폭으로(칸이 좁아 글자가 밀리던 것) */
+      @media (max-width:600px){
+        #inv-sum-div .ip-row{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+        #inv-sum-div .ip-row>.ip-name{grid-column:1/-1;flex-direction:row!important;justify-content:flex-start!important;align-items:baseline;flex-wrap:wrap;gap:2px 10px}
+        #inv-sum-div .ip-row .ip-val{font-size:17px!important}
+        #inv-sum-div .ip-row>.ip-name>button{margin-top:0!important;margin-left:auto}
+        #inv-sum-div .ip-sub{grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr))!important}
+        #inv-sum-div .ip-sub>span:first-child{padding-left:4px!important}
+      }</style>
     <div class="sum-sec-hdr" style="padding:12px 16px;border-bottom:1px solid #F3F4F6;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px">
       <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">① 품목별 재고</span>
       <span style="font-size:12.5px;color:#4B5563;font-weight:500">단위 CT · 칸을 누르면 그 품목만</span>
     </div>
     <div style="padding:12px 16px">
       ${_ipRows.length ? _ipRows.map(r => `
-        <div style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '6px' : '12px'}">
-          <div ${r.sub ? `onclick="toggleSumItemSub()" title="품목 내역 ${_sumItemSubOpen ? '접기' : '펼치기'}"` : ''} style="display:flex;flex-direction:column;justify-content:center;min-width:0${r.sub ? ';cursor:pointer' : ''}">
+        <div class="ip-row" style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '6px' : '12px'}">
+          <div class="ip-name" ${r.sub ? `onclick="toggleSumItemSub()" title="품목 내역 ${_sumItemSubOpen ? '접기' : '펼치기'}"` : ''} style="display:flex;flex-direction:column;justify-content:center;min-width:0${r.sub ? ';cursor:pointer' : ''}">
             <span style="font-size:15px;font-weight:600;color:#111827">${esc(r.name)}</span>
             <span style="font-size:12px;color:#6B7280">합계 ${fmtCT(_ipTot(r.v))} CT</span>
             ${r.sub ? `<button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
@@ -16915,7 +16924,7 @@ function renderInvSummary() {
           ${_ipTile('원물', r.v.uns, 'uns', r.name)}${_ipTile('선과된 원물', r.v.srt, 'srt', r.name, r.v)}${_ipTile('파치', r.v.pachi, 'pachi', r.name)}
         </div>
         ${r.sub && _sumItemSubOpen ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
-          <div style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
+          <div class="ip-sub" style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
             <span style="padding-left:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p)}</span>
             ${[v.uns, v.srt, v.pachi].map(n => `<span style="padding:0 clamp(6px,1.6vw,10px);white-space:nowrap;text-align:right;${n > 0.05 ? '' : 'color:#C4C4C0'}">${n > 0.05 ? `${fmtCT(n)} <span style="font-size:11px;color:#9CA3AF">CT</span>` : '—'}</span>`).join('')}
           </div>`).join('')}</div>` : (r.sub ? '<div style="height:6px"></div>' : '')}`).join('')
