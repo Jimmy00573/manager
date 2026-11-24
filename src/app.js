@@ -8547,6 +8547,7 @@ function invTab(t) {
   if (t === 'log') loadAuditLogs();
   if (t === 'sum') renderInvSummary();
   if (t === 'pachi') {
+    if (!_sumItemNav && typeof _pachiProdFilter !== 'undefined') _pachiProdFilter = '';   // v824: 다른 길로 들어오면 전체
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
     popLocSelects(); popUsageSelects();
@@ -11554,7 +11555,7 @@ function renderInventoryStatus() {
   statusEl.innerHTML = allProducts.length ? `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:4px">
       ${allProducts.map(p => {
-        const active = _invFilter.product === p;
+        const active = !!_invFilter.product && _prodMatch(_invFilter.product, p);
         return `<div onclick="invSetFilter('product','${esc(p)}')" style="padding:10px 12px;background:${active ? '#EFF6FF' : '#fff'};border:2px solid ${active ? '#1565C0' : '#E5E7EB'};border-radius:8px;cursor:pointer;text-align:center;transition:border-color .15s">
           <div style="font-size:11px;color:#6B7280;margin-bottom:3px">${esc(p)}</div>
           <div style="font-size:16px;font-weight:700;color:${active ? '#1565C0' : '#111827'}">${fmtN(productTotals[p])}</div>
@@ -11566,7 +11567,7 @@ function renderInventoryStatus() {
 
   // 필터 적용 (등급필터 recs0 위에 product/farm 필터 추가)
   let recs = recs0;
-  if (_invFilter.product) recs = recs.filter(r => r.product === _invFilter.product);
+  if (_invFilter.product) recs = recs.filter(r => _prodMatch(_invFilter.product, r.product));   // v824: '감귤류' = 감귤 전부
   if (_invFilter.farm)    recs = recs.filter(r => r.farm_name && r.farm_name.includes(_invFilter.farm));
 
   // 필터 상태 표시
@@ -16837,7 +16838,7 @@ function renderInvSummary() {
   }
   _ipItems.filter(([p]) => PRODUCT_TYPE_MAP[p] !== '감귤류').forEach(([p, v]) => _ipRows.push({ name: p, v, sub: null, ord: _ipOrd(p) }));
   _ipRows.sort((a, b) => a.ord - b.ord || a.name.localeCompare(b.name, 'ko'));
-  const _ipTile = (lbl, n, tab) => `<div onclick="invTab('${tab}')" title="${lbl} 상세 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
+  const _ipTile = (lbl, n, tab, name) => `<div onclick="openSumItem('${String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${tab}')" title="${esc(name)} ${lbl}만 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
       onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">
       <div style="font-size:11.5px;color:#6B7280">${lbl}</div>
       <div style="font-size:clamp(14px,3.6vw,19px);font-weight:600;line-height:1.3;text-align:right;color:${n > 0.05 ? '#111827' : '#C4C4C0'}">${n > 0.05 ? `<span style="white-space:nowrap">${fmtCT(n)}</span> <span style="font-size:12px;font-weight:400;color:#6B7280;white-space:nowrap">CT</span>` : '—'}</div>
@@ -16846,7 +16847,7 @@ function renderInvSummary() {
   const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">
     <div class="sum-sec-hdr" style="padding:12px 16px;border-bottom:1px solid #F3F4F6;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px">
       <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">① 품목별 재고</span>
-      <span style="font-size:12.5px;color:#4B5563;font-weight:500">단위 CT · 칸을 누르면 상세</span>
+      <span style="font-size:12.5px;color:#4B5563;font-weight:500">단위 CT · 칸을 누르면 그 품목만</span>
     </div>
     <div style="padding:12px 16px">
       ${_ipRows.length ? _ipRows.map(r => `
@@ -16857,7 +16858,7 @@ function renderInvSummary() {
             ${r.sub ? `<button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
           </div>
           ${/* v820: 칸 이름 — '상품'이 헷갈린다고 해서 원물 · 선과된 원물 · 파치로(대표님 요청) */ ''}
-          ${_ipTile('원물', r.v.uns, 'uns')}${_ipTile('선과된 원물', r.v.srt, 'srt')}${_ipTile('파치', r.v.pachi, 'pachi')}
+          ${_ipTile('원물', r.v.uns, 'uns', r.name)}${_ipTile('선과된 원물', r.v.srt, 'srt', r.name)}${_ipTile('파치', r.v.pachi, 'pachi', r.name)}
         </div>
         ${r.sub && _sumItemSubOpen ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
           <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
@@ -16889,6 +16890,24 @@ let _sumJuiceListOpen = false;
 // v818: 품목별 재고 — 감귤 품목 내역 펼침(기본 접힘). 다시 그려도 상태 유지.
 let _sumItemSubOpen = false;
 function toggleSumItemSub() { _sumItemSubOpen = !_sumItemSubOpen; renderInvSummary(); }
+// v824: 품목 거르기 공용 판정 — f가 '감귤류'면 감귤류 품목 전부, 아니면 그 품목 하나. 빈 값 = 전부.
+//   쓰는 곳: 미선과 목록(ibFilterProduct) · 선과품 재고(_invFilter.product) · 파치(_pachiProdFilter) · 오늘 선과.
+function _prodMatch(f, p) { return !f || p === f || (f === '감귤류' && PRODUCT_TYPE_MAP[p] === '감귤류'); }
+// v824: 품목별 재고 칸 → 그 탭으로 가면서 그 품목만(감귤 줄이면 감귤류 전부)
+function openSumItem(name, tab) {
+  const f = name === '감귤' ? '감귤류' : name;
+  _sumItemNav = true; try { invTab(tab); } finally { _sumItemNav = false; }
+  if (tab === 'uns') { setIbProductFilter(f); _updateIbFilterBtns(); }
+  else if (tab === 'srt') { const sel = document.getElementById('inv-filter-product'); if (sel) sel.value = f; invSetFilter('product', f); }
+  else if (tab === 'pachi') setPachiProdFilter(f);
+}
+let _sumItemNav = false;     // v824: 품목별 재고 칸에서 들어오는 중(invTab이 파치 거르기를 풀지 않게)
+let _pachiProdFilter = '';   // v824: 파치 품목 거르기('' 전부 | 품목 | '감귤류')
+function setPachiProdFilter(f) {
+  _pachiProdFilter = f || '';
+  if (_pachiProdFilter) _pachiCollapsed.forEach(k => { if (k.startsWith('PROD::') && _prodMatch(_pachiProdFilter, k.slice(6))) _pachiCollapsed.delete(k); });   // 고른 품목은 펼쳐서
+  renderPachiSection();
+}
 function toggleSumJuiceList() { _sumJuiceListOpen = !_sumJuiceListOpen; renderInvSummary(); }
 
 function todayTabSwitch(tab) {
@@ -18256,7 +18275,7 @@ function _renderIbProductChips() {
     return `<button class="ib-fprod" data-prod="${esc(val)}" onclick="setIbProductFilter('${arg}')"${tip} style="${base};${st}">${esc(label)}</button>`;
   };
   el.innerHTML = chip('', `전체 ${totalWait}`, !ibFilterProduct, false)
-    + prods.map(p => chip(p, `${p} ${wait[p] || 0}`, ibFilterProduct === p, !(wait[p] > 0))).join('');
+    + prods.map(p => chip(p, `${p} ${wait[p] || 0}`, !!ibFilterProduct && _prodMatch(ibFilterProduct, p), !(wait[p] > 0))).join('');
   // v822: 칩 줄 바로 아래 '오늘 선과' 한 줄 — 품목을 고르면 그 품목만. 오늘 선과가 없으면 비운다.
   let tl = document.getElementById('ib-today-srt');
   if (!tl && el.parentNode) { tl = document.createElement('div'); tl.id = 'ib-today-srt'; tl.style.cssText = 'margin:6px 0 2px'; el.parentNode.insertBefore(tl, el.nextSibling); }
@@ -20221,7 +20240,7 @@ function renderInboundList() {
   }
 
   // 품목 필터
-  if (ibFilterProduct) visible = visible.filter(r => r.product === ibFilterProduct);
+  if (ibFilterProduct) visible = visible.filter(r => _prodMatch(ibFilterProduct, r.product));   // v824: '감귤류' = 감귤 전부
 
   // 수송기사 필터
   if (ibFilterDriver === '__null__') visible = visible.filter(r => !r.driver_id);
@@ -20698,7 +20717,7 @@ function _todaySortStats() {
 // 오늘 선과 한 줄(칩) — 품목마다 'N건 CT', 누르면 그 품목만 '오늘 선과 내역'. onlyProd면 그 품목만.
 function _todaySortLineHtml(onlyProd) {
   const st = _todaySortStats();
-  const prods = onlyProd ? st.prods.filter(x => x.p === onlyProd) : st.prods;
+  const prods = onlyProd ? st.prods.filter(x => _prodMatch(onlyProd, x.p)) : st.prods;
   if (!prods.length) return '';
   const arg = v => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const n = prods.reduce((t, x) => t + x.n, 0), ct = prods.reduce((t, x) => t + x.ct, 0);
@@ -20713,7 +20732,7 @@ async function openTodaySortingModal(prodFilter) {
   // v822: prodFilter(품목)를 주면 그 품목 입고의 선과만 — 같은 창, 제목에 품목 이름
   const _pf = typeof prodFilter === 'string' && prodFilter ? prodFilter : '';
   const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today
-    && (!_pf || ((inboundRecords.find(x => x.id === p.inbound_id) || {}).product || '미지정') === _pf));
+    && _prodMatch(_pf, (inboundRecords.find(x => x.id === p.inbound_id) || {}).product || '미지정'));
   const pm = _ibProcessedMap();
 
   // 오늘 sorting_results 에서 operator_name 조회 (격리 — 전역 sortingResults 미사용)
@@ -25639,6 +25658,7 @@ function renderPachiSection() {
   const prodGroups = {}, prodOrder = [];
   allRows.forEach(r => {
     const p = r.product || '기타';
+    if (!_prodMatch(_pachiProdFilter, p)) return;   // v824: 품목 거르기
     if (!prodGroups[p]) { prodGroups[p] = []; prodOrder.push(p); }
     prodGroups[p].push(r);
   });
@@ -25892,7 +25912,10 @@ function renderPachiSection() {
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="font-size:14px;font-weight:700;color:#222">파치 내역</div>
         <div style="display:flex;align-items:center;gap:10px">
-          <div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>
+          ${_pachiProdFilter ? (() => { const bp = Object.entries(_pachiStock.byProduct).filter(([p]) => _prodMatch(_pachiProdFilter, p));
+              const n = prodOrder.reduce((t, p) => t + prodGroups[p].length, 0), ct = bp.reduce((t, [, c]) => t + c, 0), kg = Math.round(bp.reduce((t, [p, c]) => t + c * kgPerCt(p), 0));
+              return `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:12px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1565C0;font-size:12.5px;font-weight:500">${esc(_pachiProdFilter)}만 · ${n}건 · ${fmtN(ct)} CT · ${fmtN(kg)} kg<span onclick="setPachiProdFilter('')" title="전체 보기" style="cursor:pointer;color:#6B7280;font-weight:400">✕ 전체</span></span>`; })()
+            : `<div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>`}
           ${isAdm ? `<button onclick="togglePachiAuditMode()" style="padding:5px 12px;background:${_pachiAuditMode ? '#7C3AED' : '#fff'};color:${_pachiAuditMode ? '#fff' : '#374151'};border:1px solid ${_pachiAuditMode ? '#7C3AED' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">📋 파치 실사</button>` : ''}
         </div>
       </div>
