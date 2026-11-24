@@ -16837,50 +16837,6 @@ function renderInvSummary() {
   }
   _ipItems.filter(([p]) => PRODUCT_TYPE_MAP[p] !== '감귤류').forEach(([p, v]) => _ipRows.push({ name: p, v, sub: null, ord: _ipOrd(p) }));
   _ipRows.sort((a, b) => a.ord - b.ord || a.name.localeCompare(b.name, 'ko'));
-  // v821: 품목 이름을 누르면 그 줄 아래로 ① 원물(농가별, 오래된 순) ② 선과된 원물(등급 × 사이즈, 묶음 제목) ③ 파치(사용처별).
-  //   재료는 이 함수가 이미 만든 것만: _unsRows(잔여) · sortDetail[품목][등급][사이즈] · pachiDetail[품목][사용처] · groupsOf(품목). 데이터 무변.
-  const _ipGradeRank = g => g === '일반' ? -1 : ((brixGrades || []).find(x => x.label === g) || { sort_order: 999 }).sort_order;
-  const _ipSec = (title, sub, inner) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 12px;background:#F3F4F6;font-size:13px;font-weight:600;color:#111827;border-top:1px solid #E5E7EB">
-      <span>${title}</span><span style="font-size:12px;font-weight:400;color:#6B7280">${sub}</span></div>${inner}`;
-  const _ipTH = 'padding:5px 8px;font-size:11px;font-weight:500;color:#6B7280;text-align:right;white-space:nowrap;border-top:1px solid #F3F4F6';
-  const _ipTD = 'padding:5px 8px;font-size:12px;color:#111827;text-align:right;white-space:nowrap;border-top:1px solid #F3F4F6';
-  const _ipNone = '<div style="padding:6px 12px;font-size:12px;color:#9CA3AF">없음</div>';
-  const _ipDetail = prod => {
-    // ① 원물 — 농가별(입고 한 건 = 한 줄), 오래된 입고가 위
-    const uRows = _unsRows.filter(x => x.rec.product === prod).sort((a, b) => String(a.rec.date).localeCompare(String(b.rec.date)));
-    const uTot = uRows.reduce((t, x) => t + (Number(x.remain) || 0), 0);
-    const uFarms = new Set(uRows.map(x => x.rec.farm_name)).size;
-    const uHtml = uRows.length ? `<table style="width:100%;max-width:460px;border-collapse:collapse">
-        <tr><th style="${_ipTH};text-align:left">농가</th><th style="${_ipTH}">입고일</th><th style="${_ipTH}">잔량</th></tr>
-        ${uRows.map(x => `<tr><td style="${_ipTD};text-align:left">${esc(x.rec.farm_name || '')}${x.rec.inbound_category && x.rec.inbound_category !== '상품' ? ` <span style="font-size:11px;color:#6B7280">${esc(x.rec.inbound_category)}</span>` : ''}</td>
-          <td style="${_ipTD};color:#6B7280">${x.rec.date ? `${+x.rec.date.slice(5, 7)}/${+x.rec.date.slice(8, 10)}` : ''}</td><td style="${_ipTD}">${fmtCT(x.remain)}</td></tr>`).join('')}
-      </table>` : _ipNone;
-    // ② 선과된 원물 — 등급 줄 × 사이즈 칸, 위에 묶음(대·중·소 / 소과·로얄과…) 제목. 재고 있는 사이즈만.
-    const det = sortDetail[prod] || {};
-    const grades = Object.keys(det).filter(g => Object.values(det[g]).some(c => c.ct > 0.05)).sort((a, b) => _ipGradeRank(a) - _ipGradeRank(b) || a.localeCompare(b, 'ko'));
-    const have = new Set(); grades.forEach(g => Object.entries(det[g]).forEach(([sz, c]) => { if (c.ct > 0.05) have.add(String(sz)); }));
-    const cols = groupsOf(prod).filter(g => g.group !== '기타').map(g => ({ group: g.group, sizes: g.sizes.map(String).filter(sz => have.has(sz)) })).filter(g => g.sizes.length);
-    const inCols = new Set(cols.flatMap(g => g.sizes));
-    const etc = [...have].filter(sz => !inCols.has(sz));
-    if (etc.length) cols.push({ group: '기타', sizes: etc });
-    const sizes = cols.flatMap(g => g.sizes);
-    const sTot = grades.reduce((t, g) => t + Object.values(det[g]).reduce((a, c) => a + (c.ct || 0), 0), 0);
-    const sHtml = grades.length ? `<div style="overflow-x:auto"><table style="border-collapse:collapse;min-width:100%">
-        <tr><th style="${_ipTH};text-align:left"></th>${cols.map((g, i) => `<th colspan="${g.sizes.length}" style="${_ipTH};text-align:center;background:#FAFAFA${i ? ';border-left:1px solid #E5E7EB' : ''}">${esc(g.group)}</th>`).join('')}<th style="${_ipTH}"></th></tr>
-        <tr><th style="${_ipTH};text-align:left">등급</th>${cols.map((g, i) => g.sizes.map((sz, j) => `<th style="${_ipTH}${i && !j ? ';border-left:1px solid #E5E7EB' : ''}">${esc(sz)}</th>`).join('')).join('')}<th style="${_ipTH}">합계</th></tr>
-        ${grades.map(g => { const t = Object.values(det[g]).reduce((a, c) => a + (c.ct || 0), 0); return `<tr><td style="${_ipTD};text-align:left;${g === '일반' ? '' : 'color:#1565C0;font-weight:600'}">${esc(g)}</td>${cols.map((cg, i) => cg.sizes.map((sz, j) => { const c = det[g][sz]; return `<td style="${_ipTD}${i && !j ? ';border-left:1px solid #E5E7EB' : ''}${c && c.ct > 0.05 ? '' : ';color:#C4C4C0'}">${c && c.ct > 0.05 ? fmtCT(c.ct) : '—'}</td>`; }).join('')).join('')}<td style="${_ipTD};font-weight:600">${fmtCT(t)}</td></tr>`; }).join('')}
-      </table></div>` : _ipNone;
-    // ③ 파치 — 사용처별
-    const pEnt = Object.entries(pachiDetail[prod] || {}).filter(([, ct]) => ct > 0.05).sort((a, b) => b[1] - a[1]);
-    const pTot = pEnt.reduce((t, [, ct]) => t + ct, 0);
-    const pHtml = pEnt.length ? `<table style="width:100%;max-width:460px;border-collapse:collapse"><tr><th style="${_ipTH};text-align:left">사용처</th><th style="${_ipTH}">CT</th></tr>
-        ${pEnt.map(([u, ct]) => `<tr><td style="${_ipTD};text-align:left">${esc(u)}</td><td style="${_ipTD}">${fmtCT(ct)}</td></tr>`).join('')}</table>` : _ipNone;
-    return `<div style="max-width:min(100%,1000px);border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;margin:2px 0 12px">
-      ${_ipSec('원물 (미선과)', uRows.length ? `농가 ${uFarms}곳 · ${fmtCT(uTot)} CT · 오래된 순` : '', uHtml).replace('border-top:1px solid #E5E7EB', 'border-top:none')}
-      ${_ipSec('선과된 원물', grades.length ? `${fmtCT(sTot)} CT · 등급 × 사이즈` : '', sHtml)}
-      ${_ipSec('파치', pEnt.length ? `${fmtCT(pTot)} CT · 사용처별` : '', pHtml)}
-    </div>`;
-  };
   const _ipTile = (lbl, n, tab) => `<div onclick="invTab('${tab}')" title="${lbl} 상세 보기" style="cursor:pointer;border-radius:8px;padding:8px clamp(6px,1.6vw,10px);background:#F3F4F6;min-width:0"
       onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">
       <div style="font-size:11.5px;color:#6B7280">${lbl}</div>
@@ -16890,24 +16846,24 @@ function renderInvSummary() {
   const itemStockHtml = `<div class="sum-screen-only" style="${CARD}">
     <div class="sum-sec-hdr" style="padding:12px 16px;border-bottom:1px solid #F3F4F6;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px">
       <span class="sum-sec-hdr-title" style="font-size:15px;font-weight:600;color:#111827">① 품목별 재고</span>
-      <span style="font-size:12.5px;color:#4B5563;font-weight:500">단위 CT · 품목 이름을 누르면 상세</span>
+      <span style="font-size:12.5px;color:#4B5563;font-weight:500">단위 CT · 칸을 누르면 상세</span>
     </div>
     <div style="padding:12px 16px">
       ${_ipRows.length ? _ipRows.map(r => `
         <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);align-items:stretch;max-width:680px;margin-bottom:${r.sub ? '6px' : '12px'}">
-          <div ${r.sub ? `onclick="toggleSumItemSub()" title="품목 내역 ${_sumItemSubOpen ? '접기' : '펼치기'}"` : `onclick="toggleSumItemDetail(this.dataset.p)" data-p="${esc(r.name)}" title="${esc(r.name)} 상세 ${_sumItemDetailOpen.has(r.name) ? '접기' : '펼치기'}"`} style="display:flex;flex-direction:column;justify-content:center;min-width:0;cursor:pointer">
+          <div ${r.sub ? `onclick="toggleSumItemSub()" title="품목 내역 ${_sumItemSubOpen ? '접기' : '펼치기'}"` : ''} style="display:flex;flex-direction:column;justify-content:center;min-width:0${r.sub ? ';cursor:pointer' : ''}">
             <span style="font-size:15px;font-weight:600;color:#111827">${esc(r.name)}</span>
             <span style="font-size:12px;color:#6B7280">합계 ${fmtCT(_ipTot(r.v))} CT</span>
-            <button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${r.sub ? (_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`) : (_sumItemDetailOpen.has(r.name) ? '▾ 접기' : '▸ 상세 보기')}</button>
+            ${r.sub ? `<button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
           </div>
           ${/* v820: 칸 이름 — '상품'이 헷갈린다고 해서 원물 · 선과된 원물 · 파치로(대표님 요청) */ ''}
           ${_ipTile('원물', r.v.uns, 'uns')}${_ipTile('선과된 원물', r.v.srt, 'srt')}${_ipTile('파치', r.v.pachi, 'pachi')}
         </div>
         ${r.sub && _sumItemSubOpen ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
-          <div onclick="toggleSumItemDetail(this.dataset.p)" data-p="${esc(p)}" title="${esc(p)} 상세 ${_sumItemDetailOpen.has(p) ? '접기' : '펼치기'}" style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:3px 0;align-items:baseline;cursor:pointer;border-radius:6px" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
-            <span style="padding-left:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:#1565C0;font-size:11px;margin-right:4px">${_sumItemDetailOpen.has(p) ? '▾' : '▸'}</span>${esc(p)}</span>
+          <div style="display:grid;grid-template-columns:minmax(60px,130px) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
+            <span style="padding-left:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p)}</span>
             ${[v.uns, v.srt, v.pachi].map(n => `<span style="padding:0 clamp(6px,1.6vw,10px);white-space:nowrap;text-align:right;${n > 0.05 ? '' : 'color:#C4C4C0'}">${n > 0.05 ? `${fmtCT(n)} <span style="font-size:11px;color:#9CA3AF">CT</span>` : '—'}</span>`).join('')}
-          </div>${_sumItemDetailOpen.has(p) ? `<div style="padding-left:10px">${_ipDetail(p)}</div>` : ''}`).join('')}</div>` : (r.sub ? '<div style="height:6px"></div>' : (_sumItemDetailOpen.has(r.name) ? _ipDetail(r.name) : ''))}`).join('')
+          </div>`).join('')}</div>` : (r.sub ? '<div style="height:6px"></div>' : '')}`).join('')
       : `<div style="font-size:13px;color:#9CA3AF;padding:8px 0">재고 없음</div>`}
     </div>
   </div>`;
@@ -16933,9 +16889,6 @@ let _sumJuiceListOpen = false;
 // v818: 품목별 재고 — 감귤 품목 내역 펼침(기본 접힘). 다시 그려도 상태 유지.
 let _sumItemSubOpen = false;
 function toggleSumItemSub() { _sumItemSubOpen = !_sumItemSubOpen; renderInvSummary(); }
-// v821: 품목 상세(원물·선과된 원물·파치) 펼침 — 품목 이름 단위, 여러 개 동시에 열 수 있음. 다시 그려도 유지.
-const _sumItemDetailOpen = new Set();
-function toggleSumItemDetail(p) { if (!p) return; if (_sumItemDetailOpen.has(p)) _sumItemDetailOpen.delete(p); else _sumItemDetailOpen.add(p); renderInvSummary(); }
 function toggleSumJuiceList() { _sumJuiceListOpen = !_sumJuiceListOpen; renderInvSummary(); }
 
 function todayTabSwitch(tab) {
