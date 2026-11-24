@@ -229,6 +229,7 @@ let ibSortDir = null;   // 'desc' | 'asc' | null
 let ibPage = 1;
 let ibPageSize = 25;
 let _ibAuditMode = false;
+let ibOnlyToday = false;      // v836: '📅 오늘 입고' 칩 — 켜면 다른 필터 무시하고 오늘 입고(등록일·입고일 오늘)만. 미공유 칩과 둘 중 하나만
 let ibOnlyUnshared = false;   // '📋 미공유' 칩 — 켜면 다른 필터 무시하고 그 행만(v794)
 let _ibShareLastIds = null;   // 마지막으로 만든 📋 공유 텍스트의 입고 id(같은 차 묶음) — 복사 때 shared_at 기록용
 let _ibAuditChecked = new Set();
@@ -20328,6 +20329,11 @@ function renderInboundList() {
   if (ibOnlyUnshared && !_unshN && !_srUn.length) ibOnlyUnshared = false;
   if (ibOnlyUnshared) visible = inboundRecords.filter(r => !r.is_void && (_ibIsUnsharedToday(r) || _srIbIds.has(String(r.id))));
   _renderIbUnsharedBtn(_unshN, _srUn.length);
+  // 📅 오늘 입고(v836, 관리자) — 등록일(created_at 로컬) 또는 입고일이 오늘. 선과품 입고처럼 상시 목록에서 빠지는 것도 여기서 모아 본다.
+  const _ibTodayRecs = isAdm ? inboundRecords.filter(_ibIsToday) : [];
+  if (ibOnlyToday && !_ibTodayRecs.length) ibOnlyToday = false;
+  if (ibOnlyToday) visible = _ibTodayRecs.slice();
+  _renderIbTodayBtn(_ibTodayRecs.length);
 
   // ── 상시 목록 줄이기(v805, 2026-11-23 대표님 요청) — 검색·필터를 안 걸었을 때는 '지금 볼 것'만 보인다:
   //   ① 아직 선과·처리할 잔여가 있는 선과 대상(_isUnsortedTarget && 잔여>0) ② 오늘 입고 ③ 오늘 선과한 입고.
@@ -20336,7 +20342,7 @@ function renderInboundList() {
   let _ibHiddenOld = 0;
   // ★v822: 품목 칩·카테고리 고르기는 '둘러보기' — 끝난 기록은 여전히 숨김. 다시 보이는 건 농가 검색·기사·기간을 걸었을 때.
   const _ibSearching = ibSearch || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
-  if (!_ibSearching && !ibOnlyUnshared && !_ibAuditMode && !_xdToday) {
+  if (!_ibSearching && !ibOnlyUnshared && !ibOnlyToday && !_ibAuditMode && !_xdToday) {
     const _T = td();
     const _srToday = new Set((sortingResults || []).filter(x => x.sorting_date === _T).map(x => String(x.inbound_record_id)));
     // ★v825: 오늘 선과로 끝난 입고도 숨긴다 — '✂️ 오늘 선과 N건' 줄(공유·차수 취소)에서 본다. 잔여가 남은 입고는 그대로 보임.
@@ -20354,7 +20360,7 @@ function renderInboundList() {
   _refreshIbProductOptions();
   _renderIbProductChips();   // 1단 품목 칩(동적)
   _renderIbFilterChips();
-  const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo || ibOnlyUnshared;
+  const hasAnyFilter = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo || ibOnlyUnshared || ibOnlyToday;
   const fcountEl = document.getElementById('ib-filter-count');
   if (fcountEl) fcountEl.textContent = hasAnyFilter ? `${visible.length}건 표시 중${_ibHiddenOld ? ` · 끝난 기록 ${fmtN(_ibHiddenOld)}건 숨김(검색하면 보임)` : ''}`
     : _ibHiddenOld ? `끝난 이전 기록 ${fmtN(_ibHiddenOld)}건은 숨김 · 검색하면 보입니다` : '';
@@ -20565,7 +20571,7 @@ function renderInboundList() {
     const dealChip = _hvDealChip(HV_DEAL_COLOR[r.deal_type] ? r : _hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
-      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isAdm && !_ibAuditMode && _srUnsharedOf(r.id).length ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" title="선과 차수 중 📋 공유 복사를 안 한 것이 있음 — 누르면 선과 이력" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✂️ 선과 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
+      <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isAdm && !_ibAuditMode && ibOnlyToday && r.shared_at ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="📋 공유함(${_hmLocal(r.shared_at)}) — 누르면 다시 공유" style="border:1px solid #E5E7EB;background:#F9FAFB;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✓ 공유됨</span></div>` : ''}${isAdm && !_ibAuditMode && _srUnsharedOf(r.id).length ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" title="선과 차수 중 📋 공유 복사를 안 한 것이 있음 — 누르면 선과 이력" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✂️ 선과 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td style="text-align:center">${ibRatioBadge(r)}</td>
       <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
@@ -24334,7 +24340,24 @@ function _renderIbUnsharedBtn(n, sn = 0) {
   b.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;'
     + (ibOnlyUnshared ? 'background:#7C3AED;color:#fff;border:1px solid #7C3AED' : 'background:#fff;color:#7C3AED;border:1px solid #C4B5FD');
 }
-function ibToggleUnshared() { ibOnlyUnshared = !ibOnlyUnshared; ibPage = 1; renderInboundList(); }
+function ibToggleUnshared() { ibOnlyUnshared = !ibOnlyUnshared; if (ibOnlyUnshared) ibOnlyToday = false; ibPage = 1; renderInboundList(); }
+// ── 📅 오늘 입고(v836) — 미공유 칩 옆. 같은 목록·같은 행 모양 그대로, 오늘 입고만 거른다. 공유한 행엔 '✓ 공유됨'(누르면 다시 공유).
+function _hmLocal(iso) { const t = new Date(iso); return isNaN(t) ? '' : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; }
+function _ibIsToday(r) {
+  if (r.is_void || r._legacy) return false;
+  const T = td();
+  return r.date === T || (!!r.created_at && ymd(new Date(r.created_at)) === T);
+}
+function _renderIbTodayBtn(n) {
+  const b = document.getElementById('btn-ib-today');
+  if (!b) return;
+  if (!n) { b.style.display = 'none'; return; }
+  b.textContent = `📅 오늘 입고 ${n}${ibOnlyToday ? ' ✕' : ''}`;
+  b.title = ibOnlyToday ? '눌러서 전체 목록으로' : '오늘 등록했거나 입고일이 오늘인 입고 — 누르면 그것만(공유한 것도 다시 공유 가능)';
+  b.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;'
+    + (ibOnlyToday ? 'background:#1E3A5F;color:#fff;border:1px solid #1E3A5F' : 'background:#fff;color:#1E3A5F;border:1px solid #CBD5E1');
+}
+function ibToggleToday() { ibOnlyToday = !ibOnlyToday; if (ibOnlyToday) ibOnlyUnshared = false; ibPage = 1; renderInboundList(); }
 // 입고 저장 직후 바 — '방금 잡은 것'을 목록에서 찾지 않고 바로 공유(관리자). 토스트 자리에 대신 뜬다.
 // 저장 직후 바(공용) — 토스트 자리에 '✓ 메시지 [버튼들] ✕'를 15초. btns = [{label, color, fn}]. 입고·선과가 같이 쓴다(v796).
 function _justSavedBar(msg, btns) {
