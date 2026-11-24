@@ -16924,7 +16924,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    ${kpiHtml}${signalHtml}${flowHtml}${todayHtml}${itemStockHtml /* v815: 화면 ①②③(sortTodayHtml·sellHtml·pjHtml) 대신 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
+    ${kpiHtml}${signalHtml}${flowHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${itemStockHtml /* v815: 화면 ①②③(sortTodayHtml·sellHtml·pjHtml) 대신 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
     <div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
@@ -18304,6 +18304,10 @@ function _renderIbProductChips() {
   };
   el.innerHTML = chip('', `전체 ${totalWait}`, !ibFilterProduct, false)
     + prods.map(p => chip(p, `${p} ${wait[p] || 0}`, ibFilterProduct === p, !(wait[p] > 0))).join('');
+  // v822: 칩 줄 바로 아래 '오늘 선과' 한 줄 — 품목을 고르면 그 품목만. 오늘 선과가 없으면 비운다.
+  let tl = document.getElementById('ib-today-srt');
+  if (!tl && el.parentNode) { tl = document.createElement('div'); tl.id = 'ib-today-srt'; tl.style.cssText = 'margin:6px 0 2px'; el.parentNode.insertBefore(tl, el.nextSibling); }
+  if (tl) { const h = _todaySortLineHtml(ibFilterProduct || ''); tl.innerHTML = h; tl.style.display = h ? '' : 'none'; }
 }
 
 // 품목 칩/드롭다운 공통 진입점 — 두 경로가 같은 상태(ibFilterProduct)를 쓰도록.
@@ -20294,7 +20298,8 @@ function renderInboundList() {
   //   나머지(끝난 옛 기록·옛 파치·선과품 입고)는 숨기고, 검색·필터(카테고리·농가·품목·기사·기간)를 걸면 전부 다시 나온다.
   //   ★✅ 선과 완료 보기 탭·실사 모드·📋 미공유 보기·외부 기사 화면은 예전 그대로(여기를 안 탄다).
   let _ibHiddenOld = 0;
-  const _ibSearching = ibFilterCat || ibSearch || ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
+  // ★v822: 품목 칩·카테고리 고르기는 '둘러보기' — 끝난 기록은 여전히 숨김. 다시 보이는 건 농가 검색·기사·기간을 걸었을 때.
+  const _ibSearching = ibSearch || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
   if (!_ibSearching && !ibOnlyUnshared && !_ibAuditMode && !_xdToday) {
     const _T = td();
     const _srToday = new Set((sortingResults || []).filter(x => x.sorting_date === _T).map(x => String(x.inbound_record_id)));
@@ -20723,9 +20728,39 @@ function _todaySrRatioHtml(details, product, withBar) {
   return `${bar}<div style="font-size:12px;color:#6B7280">${szTxt}${tail ? `${szTxt ? ' &nbsp;|&nbsp; ' : ''}${tail}` : ''}</div>`;
 }
 
-async function openTodaySortingModal() {
+// v822: 오늘 선과 품목별 통계 — 오늘 선과 내역 창과 같은 원본(processingRecords '선과', 오늘). 건 = 입고(매지) 수.
+//   쓰는 곳: 현장 재고 전체 현황의 '오늘 선과' 줄 · 미선과 품목 칩 아래 '오늘 선과' 줄.
+function _todaySortStats() {
+  const T = td(), byProd = {}; let ct = 0; const ibs = new Set();
+  processingRecords.forEach(pr => {
+    if (pr.process_type !== '선과' || pr.date !== T) return;
+    const ib = inboundRecords.find(x => x.id === pr.inbound_id); if (!ib) return;
+    const k = ib.product || '미지정', q = Number(pr.quantity) || 0;
+    const b = byProd[k] || (byProd[k] = { ct: 0, ibs: new Set() });
+    b.ct += q; b.ibs.add(ib.id); ct += q; ibs.add(ib.id);
+  });
+  const prods = Object.entries(byProd).map(([p, b]) => ({ p, n: b.ibs.size, ct: b.ct })).sort((a, b) => b.ct - a.ct);
+  return { n: ibs.size, ct, prods };
+}
+// 오늘 선과 한 줄(칩) — 품목마다 'N건 CT', 누르면 그 품목만 '오늘 선과 내역'. onlyProd면 그 품목만.
+function _todaySortLineHtml(onlyProd) {
+  const st = _todaySortStats();
+  const prods = onlyProd ? st.prods.filter(x => x.p === onlyProd) : st.prods;
+  if (!prods.length) return '';
+  const arg = v => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const n = prods.reduce((t, x) => t + x.n, 0), ct = prods.reduce((t, x) => t + x.ct, 0);
+  return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-size:13px">
+    <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-weight:600;color:#15803D">✂️ 오늘 선과 ${n}건 · ${fmtCT(ct)} CT</span>
+    ${onlyProd ? '' : prods.map(x => `<span onclick="openTodaySortingModal('${arg(x.p)}')" title="${esc(x.p)} 오늘 선과 농가 보기" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid #E5E7EB;border-radius:12px;background:#fff">${productChip(x.p)}<span style="color:#374151">${x.n}건 · ${fmtCT(x.ct)}</span></span>`).join('')}
+    <span onclick="openTodaySortingModal(${onlyProd ? `'${arg(onlyProd)}'` : ''})" style="cursor:pointer;font-size:12px;color:#1565C0;font-weight:500">농가 보기 ›</span>
+  </div>`;
+}
+async function openTodaySortingModal(prodFilter) {
   const today = td();
-  const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today);
+  // v822: prodFilter(품목)를 주면 그 품목 입고의 선과만 — 같은 창, 제목에 품목 이름
+  const _pf = typeof prodFilter === 'string' && prodFilter ? prodFilter : '';
+  const todayRecs = processingRecords.filter(p => p.process_type === '선과' && p.date === today
+    && (!_pf || ((inboundRecords.find(x => x.id === p.inbound_id) || {}).product || '미지정') === _pf));
   const pm = _ibProcessedMap();
 
   // 오늘 sorting_results 에서 operator_name 조회 (격리 — 전역 sortingResults 미사용)
@@ -20819,7 +20854,7 @@ async function openTodaySortingModal() {
     <div class="modal" style="max-width:460px;padding:0">
       <div style="padding:16px 20px 14px;border-bottom:1px solid #F0F0F0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
         <div>
-          <div style="font-size:16px;font-weight:800;color:#1F2937">오늘 선과 내역</div>
+          <div style="font-size:16px;font-weight:800;color:#1F2937">오늘 선과 내역${_pf ? ` · ${esc(_pf)}` : ''}</div>
           <div style="font-size:12px;color:#6B7280;margin-top:2px">${today} · 총 ${fmtCT(todayTotal)} CT · ${entries.length}건</div>
         </div>
         <button onclick="document.getElementById('today-sorting-modal-bg').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#9CA3AF;padding:0;line-height:1">✕</button>
