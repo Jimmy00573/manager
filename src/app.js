@@ -11353,6 +11353,9 @@ let _invGrade = 'all'; // 'all' | '일반' | 브릭스 등급 label | (잔존 '�
 function setInvGrade(g) { _invGrade = g; renderInventoryStatus(); }
 
 let _summaryDate = ''; // 입출고 요약 조회 날짜 (빈 값=오늘로 초기화)
+let _sumIbBasis = 'date';   // v843: 입출고 입고 탭 기준 — 'date' 입고일 | 'reg' 등록일(created_at 로컬 날짜, 오늘 등록한 어제 입고)
+function setSumIbBasis(b) { _sumIbBasis = b === 'reg' ? 'reg' : 'date'; renderInvSummary(); }
+function _ibRegDate(r) { return r.created_at ? ymd(new Date(r.created_at)) : ''; }
 let _summaryKind = 'in'; // 'in' | 'out'
 let _summaryOpen = localStorage.getItem('summary_open') === '1'; // 기본 접힘
 let _invFlowDays = 1;    // 재고 요약 흐름 줄 기간(1~6일, 전일부터 거꾸로, 기본 2일 — v831). 세션 동안만 유지 — localStorage 안 씀(새로고침 시 2일)
@@ -16273,7 +16276,7 @@ function renderInvSummary() {
   const summaryDate = _summaryDate;
   const [sy, smo, sd] = summaryDate.split('-');
   const _sdow = ['일','월','화','수','목','금','토'][new Date(`${sy}-${smo}-${sd}`).getDay()];
-  const summaryInbounds = inboundRecords.filter(r => !r.is_void && r.date === summaryDate);
+  const summaryInbounds = inboundRecords.filter(r => !r.is_void && (_sumIbBasis === 'reg' ? _ibRegDate(r) === summaryDate : r.date === summaryDate));   // v843: 등록일 기준이면 그날 친 입고
   const totalQty = summaryInbounds.reduce((s, r) => s + r.quantity, 0);
   const totalCount = summaryInbounds.length;   // 행 수 — 카테고리별·품목별·기사별 탭의 '건수'는 예전 그대로 이 값
   // ★'목록'과 머리·접힘 요약의 N건은 한 차(한 번 저장) 기준 — 입고 폼이 카테고리마다 행을 따로 만들어 행 수가 부풀었다.
@@ -16303,7 +16306,10 @@ function renderInvSummary() {
       const byCat = {};
       g.rows.forEach(r => { const c = r.inbound_category || '상품'; byCat[c] = (byCat[c] || 0) + (Number(r.quantity) || 0); });
       const cats = Object.keys(byCat).sort((a, b) => _ibCatRank(a) - _ibCatRank(b) || a.localeCompare(b, 'ko'));
-      return { farm: r0.farm_name, product: r0.product, drv: getDrv(r0), cats, byCat, qty: g.total, cnt: g.rows.length, t: r0.created_at || '' };
+      // v843: 기준과 다른 날짜가 있으면 농가 옆에 작게(등록일 기준이면 입고일, 입고일 기준이면 등록일)
+      const _oth = _sumIbBasis === 'reg' ? (r0.date && r0.date !== summaryDate ? `입고 ${r0.date.slice(5).replace('-', '/')}` : '')
+        : (_ibRegDate(r0) && _ibRegDate(r0) !== summaryDate ? `등록 ${_ibRegDate(r0).slice(5).replace('-', '/')}` : '');
+      return { farm: r0.farm_name, product: r0.product, drv: getDrv(r0), cats, byCat, qty: g.total, cnt: g.rows.length, t: r0.created_at || '', oth: _oth };
     }).sort((a, b) => (a.farm || '').localeCompare(b.farm || '', 'ko') || (a.product || '').localeCompare(b.product || '', 'ko') || a.t.localeCompare(b.t));
     const _catCell = g => g.cats.length === 1
       ? categoryBadge(g.cats[0])
@@ -16313,7 +16319,7 @@ function renderInvSummary() {
     const listTabHtml = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:0">
       <thead><tr><th style="${TH_T}">농가</th><th style="${TH_T}">품목</th><th style="${TH_T}">구분</th><th style="${TH_T}">수송기사</th><th style="${TH_R}">수량 (CT)</th></tr></thead>
       <tbody>${listRows.map(g =>
-        `<tr><td style="${TD_L}">${esc(g.farm)}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${_catCell(g)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cats.length === 1 && g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
+        `<tr><td style="${TD_L}">${esc(g.farm)}${g.oth ? ` <span style="font-size:10.5px;color:#C2410C;white-space:nowrap">${g.oth}</span>` : ''}</td><td style="${TD_L}">${esc(g.product)}</td><td style="${TD_L}">${_catCell(g)}</td><td style="${TD_L}">${drvHtml(g.drv)}</td><td style="${TD_R}">${fmtN(g.qty)}${g.cats.length === 1 && g.cnt > 1 ? ` <span style="color:#9CA3AF;font-size:11px;font-weight:400">(${g.cnt}건)</span>` : ''}</td></tr>`
       ).join('')}</tbody>
     </table></div>`;
 
@@ -16406,7 +16412,7 @@ function renderInvSummary() {
         })()}
         <div class="ib-sum-fm" style="display:none;padding:0 2px 6px 16px">
           ${P.rows.map(g => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#4B5563">
-            <span style="display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center;min-width:0;word-break:keep-all">${esc(g.farm || '(농가없음)')} ${_catCell(g)}</span>
+            <span style="display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center;min-width:0;word-break:keep-all">${esc(g.farm || '(농가없음)')}${g.oth ? ` <span style="font-size:10.5px;color:#C2410C;white-space:nowrap">${g.oth}</span>` : ''} ${_catCell(g)}</span>
             <span style="white-space:nowrap">${fmtN(g.qty)}</span></div>`).join('')}
         </div>`).join('')}</div>`).join('');
     inTabContent = `<div style="padding:0 16px 12px">
@@ -16516,7 +16522,7 @@ function renderInvSummary() {
   // ── 접이식 요약 바 텍스트
   const sortingTotalKg = sortingProds.reduce((s, p) =>
     s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0), 0);
-  const _barInPart  = truckCount > 0 ? `입고 ${truckCount}건 ${fmtN(totalQty)}CT` : '입고 없음';   // 건 = 한 차 기준(9번 truckGroups)
+  const _barInPart  = truckCount > 0 ? `${_sumIbBasis === 'reg' ? '입고(등록일)' : '입고'} ${truckCount}건 ${fmtN(totalQty)}CT` : '입고 없음';   // 건 = 한 차 기준(9번 truckGroups)
   const _barOutArr  = [];
   if (sortingTotalKg > 0) {   // v842(검토안): '선과 255kg'이 오늘 선과(CT)와 헷갈려 → 선과품 출고, CT(품목 중량 환산) 병기
     const _sortOutCt = sortingProds.reduce((s, p) => s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0) / (kgPerCt(p) || 17), 0);
@@ -16541,6 +16547,9 @@ function renderInvSummary() {
           <button onclick="setSummaryKind('in')" style="${btnBase};border:1px solid ${_summaryKind==='in'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='in'?'#1565C0':'#fff'};color:${_summaryKind==='in'?'#fff':'#374151'}">📥 입고</button>
           <button onclick="setSummaryKind('out')" style="${btnBase};border:1px solid ${_summaryKind==='out'?'#1565C0':'#D1D5DB'};background:${_summaryKind==='out'?'#1565C0':'#fff'};color:${_summaryKind==='out'?'#fff':'#374151'}">📤 출고</button>
         </div>
+        ${_summaryKind==='in' ? `<div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:6px;overflow:hidden" title="입고일 = 실제 들어온 날 · 등록일 = 시스템에 친 날(오늘 등록한 어제 입고 보기)">
+          ${[['date', '입고일'], ['reg', '등록일']].map(([k, l]) => `<button type="button" onclick="setSumIbBasis('${k}')" style="padding:4px 10px;border:none;font-size:12px;cursor:pointer;font-family:inherit;${_sumIbBasis === k ? 'background:#1E3A5F;color:#fff;font-weight:600' : 'background:#fff;color:#374151'}">${l}</button>`).join('')}
+        </div>` : ''}
         ${_summaryKind==='in' && truckCount > 0 ? `<span style="font-size:12px;color:#6B7280">${truckCount}건 · 합계 ${fmtN(totalQty)} CT</span>` : ''}
         <div style="display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:wrap">
           <button type="button" onclick="moveSummaryDate(-1)" style="padding:4px 10px;border:1px solid #E5E7EB;border-radius:5px;background:#F9FAFB;cursor:pointer;font-size:15px;line-height:1;color:#374151;font-family:inherit;flex-shrink:0;position:relative;z-index:2">‹</button>
