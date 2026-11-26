@@ -1330,28 +1330,34 @@
         <div id="ib-filter-chips" class="xd-hide" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"></div>
         <div id="ib-audit-bar" style="display:none"></div>
         <div class="tbl-wrap">
+          <style>/* v840(기획안 9·10번): 9열 폭 합 809px · 제목·칸 가로세로 가운데(수량만 오른쪽 — 자릿수 비교) · 메모 펼침 줄은 왼쪽 */
+            .ib-list-tbl { min-width: 809px !important; }
+            .ib-list-tbl th, .ib-list-tbl td { text-align: center !important; vertical-align: middle; }
+            .ib-list-tbl th:nth-child(6), .ib-list-tbl td:nth-child(6) { text-align: right !important; }
+            .ib-list-tbl td[colspan] { text-align: left !important; }
+            .ib-list-tbl td.empty { text-align: center !important; }
+            .ib-list-tbl th:nth-child(9), .ib-list-tbl td:nth-child(9) { padding-left: 4px; padding-right: 4px; }
+          </style>
           <table class="ib-list-tbl">
-            <colgroup>
+            <colgroup><!-- v840(기획안 9번): 9열 — 폭 합 809px = 아래 <style>의 min-width -->
               <col style="width:96px">  <!-- 날짜 -->
               <col style="width:130px"> <!-- 농가명 -->
-              <col style="width:100px"> <!-- 품목(칩 전체 표시) -->
-              <col style="width:78px">  <!-- 비율('비율 ▸' 칩) -->
-              <col style="width:76px">  <!-- 카테고리(헤더 4글자 + '재선별' 칩) -->
+              <col style="width:100px"> <!-- 품목 -->
+              <col style="width:150px"> <!-- 품위검수(카테고리 배지 + 상세 ▸ + 당도 줄) -->
+              <col style="width:78px">  <!-- 품질(선과 결과 '상세 ▸') -->
               <col style="width:70px">  <!-- 수량(CT) -->
               <col style="width:70px">  <!-- 위치 -->
               <col style="width:75px">  <!-- 수송기사 -->
-              <col style="width:140px"> <!-- 품질 -->
-              <col style="width:48px">  <!-- 메모(헤더 2글자) -->
               <col style="width:40px">  <!-- ⋮ -->
             </colgroup>
             <thead><tr>
               <th class="sort-header" onclick="ibToggleSort('date')">날짜<span id="ib-si-date" class="sort-icon">↕</span></th>
               <th class="sort-header" onclick="ibToggleSort('farm')">농가명<span id="ib-si-farm" class="sort-icon">↕</span></th>
-              <th>품목</th><th>비율</th><th>카테고리</th>
+              <th>품목</th><th title="입고 때 눈으로 본 판단 — 카테고리·외관·특이사항·당도·크기 분포">품위검수</th><th title="선과 결과(기계) — 사이즈·품질 비율">품질</th>
               <th class="sort-header" onclick="ibToggleSort('qty')">수량(CT)<span id="ib-si-qty" class="sort-icon">↕</span></th>
-              <th>위치</th><th>수송기사</th><th>품질</th><th>메모</th><th class="stk-r"></th>
+              <th>위치</th><th>수송기사</th><th class="stk-r"></th>
             </tr></thead>
-            <tbody id="ib-tb"><tr><td colspan="11" class="empty">입고 기록 없음</td></tr></tbody>
+            <tbody id="ib-tb"><tr><td colspan="9" class="empty">입고 기록 없음</td></tr></tbody>
           </table>
         </div>
         <div id="ib-pagination" class="pagination"></div>
@@ -1818,12 +1824,12 @@
 <div id="modal-quality" class="modal-bg" style="display:none">
   <div class="modal" style="max-width:420px;width:95%">
     <div class="modal-hdr">
-      <div class="modal-title">📋 품질 상세</div>
+      <div class="modal-title">📋 품위검수 상세</div>
       <button class="modal-close" onclick="closeQualityModal()">✕</button>
     </div>
     <div id="qm-header" style="background:#f5f5f5;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:14px"></div>
     <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">품질 등급</div>
+      
       <div id="qm-grades"></div>
       <div id="qm-defects"></div>
     </div>
@@ -2124,6 +2130,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=32"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=839"></script>
+<script src="src/app.js?v=840"></script>
 </body>
 </html>

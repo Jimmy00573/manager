@@ -17724,42 +17724,37 @@ function toggleAllMemos() {
 }
 
 let _qModalId = null;
+// v840(기획안 9번): 품위검수 상세 — 입고 때 눈으로 본 판단. 순서: 제목(농가·품목·입고일) → 카테고리 → 외관 → 특이사항 → 당도(범위+평균) → 크기 분포(풀어서) → 메모.
+//   값이 없으면 '없음', 메모가 없으면 '메모 없음'. 목록 행의 '상세 ▸'와 ⋮ 메뉴 '📋 품위검수 상세'가 같이 쓴다.
+// 크기 분포 풀어쓰기 — 저장값은 '소과30%로얄과50%…' 형식, 파서는 기존 _parseSizeDist(목록 축약 _sizeDistInline과 같은 파서). 못 읽으면 원문.
+function _sizeDistFull(raw) {
+  const p = _parseSizeDist((raw || '').trim());
+  return p && Object.keys(p).length ? Object.entries(p).map(([k, v]) => `${k} ${v}%`).join(' · ') : (raw || '');
+}
 function openQualityModal(id) {
   const r = inboundRecords.find(x => x.id === id);
   if (!r) return;
   _qModalId = id;
   const GS = { '상': 'background:#D1FAE5;color:#059669;border-color:#6EE7B7', '중': 'background:#FEF3C7;color:#D97706;border-color:#FCD34D', '하': 'background:#FEE2E2;color:#DC2626;border-color:#FCA5A5' };
-  const gradeRow = (lbl, val) => val
-    ? `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
-        <span style="color:#888;width:40px;font-size:12px">${lbl}</span>
-        <span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid;${GS[val]};font-weight:700">${val}</span>
-       </div>` : '';
-  // ★당도·산도 등급은 표시하지 않음(qualityInline과 동일 방침). 수치는 아래 measureBlock에 그대로 나온다.
-  const gradeBlock = [gradeRow('외관', r.appearance_grade)].filter(Boolean).join('');
-  const defectBlock = r.defect_tags
-    ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${
-        r.defect_tags.split(',').map(t => `<span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid #FFCC80;background:#FFF3E0;color:#E65100;font-weight:600">${esc(t.trim())}</span>`).join('')
-      }</div>` : '';
-  const measureBlock = [
-    r.brix_range     ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">당도 범위</span>${esc(r.brix_range)}</div>` : '',
-    r.brix_avg       ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">평균당도</span>${esc(r.brix_avg)}</div>` : '',
-    r.acidity_range  ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">산도 범위</span>${esc(r.acidity_range)}</div>` : '',
-    r.size_distribution ? `<div style="padding:3px 0;font-size:12px"><span style="color:#888;width:60px;display:inline-block">크기 분포</span>${esc(r.size_distribution)}</div>` : '',
-  ].filter(Boolean).join('');
-  const reclassBlock = r.inbound_category === '재선별' && (r.reclassification_source || r.reclassification_reason)
-    ? `<div style="margin-top:12px"><div style="font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">재선별 정보</div>
-        ${r.reclassification_source ? `<div style="font-size:12px;padding:3px 0"><span style="color:#888;width:60px;display:inline-block">출처</span>${esc(r.reclassification_source)}</div>` : ''}
-        ${r.reclassification_reason ? `<div style="font-size:12px;padding:3px 0;color:#7C3AED">${esc(r.reclassification_reason)}</div>` : ''}
-       </div>` : '';
-
-  document.getElementById('qm-header').textContent = `${r.product} · ${r.farm_name} · ${r.date} · ${fmtN(r.quantity)}CT`;
-  document.getElementById('qm-grades').innerHTML = gradeBlock || '<span style="color:#bbb;font-size:12px">등급 없음</span>';
-  document.getElementById('qm-defects').innerHTML = defectBlock;
-  document.getElementById('qm-memo').textContent = r.note || '';
-  document.getElementById('qm-memo-wrap').style.display = r.note ? '' : 'none';
-  document.getElementById('qm-measures').innerHTML = measureBlock;
-  document.getElementById('qm-measures-wrap').style.display = measureBlock ? '' : 'none';
-  document.getElementById('qm-reclass').innerHTML = reclassBlock;
+  const NONE = '<span style="color:#9CA3AF">없음</span>';
+  const row = (lbl, html) => `<div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid #F3F4F6;font-size:13px">
+      <span style="color:#6B7280;width:64px;flex-shrink:0">${lbl}</span><span style="min-width:0">${html || NONE}</span></div>`;
+  const cat = categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date);
+  const grade = r.appearance_grade ? `<span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid;${GS[r.appearance_grade] || ''};font-weight:600">${esc(r.appearance_grade)}</span>` : '';
+  const defects = r.defect_tags ? r.defect_tags.split(',').map(t => t.trim()).filter(Boolean)
+    .map(t => `<span style="font-size:12px;padding:2px 10px;border-radius:5px;border:1px solid #FFCC80;background:#FFF3E0;color:#E65100;font-weight:500;margin:0 4px 4px 0;display:inline-block">${esc(t)}</span>`).join('') : '';
+  const brix = [r.brix_range ? `범위 ${esc(r.brix_range)}` : '', r.brix_avg ? `평균 ${esc(r.brix_avg)}` : ''].filter(Boolean).join(' · ');
+  const reclass = r.inbound_category === '재선별' && (r.reclassification_source || r.reclassification_reason)
+    ? row('재선별', [r.reclassification_source ? esc(r.reclassification_source) : '', r.reclassification_reason ? esc(r.reclassification_reason) : ''].filter(Boolean).join(' · ')) : '';
+  document.getElementById('qm-header').textContent = `${r.farm_name || ''} · ${r.product || ''} · 입고 ${r.date || ''} · ${fmtN(r.quantity)} CT`;
+  document.getElementById('qm-grades').innerHTML = row('카테고리', cat) + row('외관 등급', grade) + row('특이사항', defects) + row('당도', brix)
+    + (r.acidity_range ? row('산도', esc(r.acidity_range)) : '') + row('크기 분포', esc(_sizeDistFull(r.size_distribution))) + reclass;
+  document.getElementById('qm-defects').innerHTML = '';
+  document.getElementById('qm-memo').innerHTML = r.note ? esc(r.note) : '<span style="color:#9CA3AF">메모 없음</span>';
+  document.getElementById('qm-memo-wrap').style.display = '';
+  document.getElementById('qm-measures').innerHTML = '';
+  document.getElementById('qm-measures-wrap').style.display = 'none';
+  document.getElementById('qm-reclass').innerHTML = '';
   document.getElementById('modal-quality').style.display = 'flex';
 }
 function closeQualityModal() {
@@ -18899,7 +18894,7 @@ function renderIbFarmView() {
         const farmMenuItems = isAdm
           ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
              ${r.rem > 0 ? `<button onclick="openMoveModal('${r.id}')">🚚 위치 이동</button>` : ''}
-             <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
+             <button onclick="openQualityModal('${r.id}')">📋 품위검수 상세</button>
              <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
              <div class="menu-divider"></div>
              <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
@@ -19474,8 +19469,8 @@ function ibRatioBadge(r) {
     const ib = (inboundRecords || []).find(x => x.id === sr.inbound_record_id);
     return ib && ib.farm_name === r.farm_name && ib.product === r.product;
   });
-  if (!hasHistory) return '<span style="color:#9CA3AF;font-size:11px">—</span>';
-  return `<span class="ib-ratio-chip" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')" >비율 ▸</span>`;
+  if (!hasHistory) return '<span style="color:#C4C4C0;font-size:11px" title="이 농가·품목의 선과 결과가 아직 없음">선과 전</span>';
+  return `<span class="ib-ratio-chip" title="품질(선과 결과) — 사이즈·품질 비율, 배치별 내역" onclick="event.stopPropagation();openSortingRatioModal('${esc(r.farm_name).replace(/'/g,"&#39;")}','${esc(r.product||'').replace(/'/g,"&#39;")}','${r.id}')" >상세 ▸</span>`;   // v840: '비율 ▸' → 품질 칸 '상세 ▸'
 }
 
 function toggleInvAuditMode() {
@@ -20434,7 +20429,7 @@ function renderInboundList() {
 
   if (!visible.length) {
     const hasNewFilter = ibFilterProduct || ibFilterDriver || ibFilterDateFrom || ibFilterDateTo;
-    tbody.innerHTML = `<tr><td colspan="11" class="empty" style="padding:20px 10px">
+    tbody.innerHTML = `<tr><td colspan="9" class="empty" style="padding:20px 10px">
       ${_xdToday ? '오늘 입고 기록 없음' :
         hasNewFilter ? '조건에 맞는 입고 내역이 없습니다.' :
         ibFilterCat ? `'${ibFilterCat}' 카테고리 입고 기록 없음` :
@@ -20569,17 +20564,22 @@ function renderInboundList() {
     const doneBadge = isDone ? ` <span onclick="event.stopPropagation();openSortingDetailModal('${r.id}')" style="background:#DCFCE7;color:#15803D;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과 결과 보기">선과완료 🔍</span>` : '';
     const sortedBadge = isSorted ? `<span onclick="event.stopPropagation();openSortedInboundDetail('${r.id}')" style="background:#F3F4F6;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer" title="선과품 입고 내역">선과품 🔍</span>` : '';
     // 입고내역 목록만 실측 수치 줄 표시. 당도 그 자리 입력은 관리자만 — 재고 실사 중엔 행 누르기가 체크라 끈다(마이그레이션 필요 행 제외).
-    const qInline = qualityInline(r, true, { brixEdit: isAdm && !r._legacy && !_ibAuditMode });
-    const gradeCell = qInline || '<span style="color:#e0e0e0;font-size:12px">—</span>';
+    // v840(기획안 9번): 품위검수 칸 = 카테고리 배지 + '상세 ▸'(openQualityModal — 외관·특이사항·당도·크기 분포·메모) + 📝(메모 있으면).
+    //   ★관리자는 당도 줄을 그대로 둔다 — 검수에서 잰 당도를 목록에서 바로 넣는 길(startIbBrixEdit)이라 없애면 일이 막힌다.
+    //     qualityInline에 외관·특이사항·크기를 비운 사본을 줘서 당도 줄만 받는다(새 함수 안 만듦).
+    const _bxLine = isAdm && !r._legacy && !_ibAuditMode
+      ? qualityInline({ ...r, appearance_grade: null, defect_tags: null, size_distribution: null }, true, { brixEdit: true }) : '';
+    const inspCell = `<div>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</div>
+      <div style="margin-top:3px;display:flex;gap:6px;justify-content:center;align-items:center">
+        <span class="ib-ratio-chip" onclick="event.stopPropagation();openQualityModal('${r.id}')" title="품위검수 상세 — 외관·특이사항·당도·크기 분포·메모">상세 ▸</span>
+        ${r.note ? `<button class="memo-icon-btn" onclick="event.stopPropagation();toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>` : ''}
+      </div>${_bxLine}`;
     let driverCell;
     if (r.driver_id && r.driver?.name) {
       driverCell = `<span class="driver-cell driver-registered"><span class="driver-dot dot-gray"></span><span class="driver-name">${esc(r.driver.name)}</span></span>`;
     } else {
       driverCell = '<span class="driver-cell-empty">—</span>';
     }
-    const memoCell = r.note
-      ? `<button class="memo-icon-btn" onclick="event.stopPropagation();toggleMemo('${r.id}')" title="${esc(r.note)}">📝</button>`
-      : `<span style="color:#D1D5DB">-</span>`;
     const menuItems = isAdm && !r._legacy
       ? `<button onclick="editInboundRow('${r.id}')">✏️ 수정</button>
          <button onclick="openInboundShareText('${r.id}')">📋 공유</button>
@@ -20588,7 +20588,7 @@ function renderInboundList() {
          ${remaining > 0 ? `<button onclick="openUnsortedOutboundModal('${r.id}')">📤 출고</button>` : ''}
          ${_srtExcludable ? `<button onclick="toggleInboundSortExclude('${r.id}')">${isSrtExcluded ? '↩️ 선과 대상으로' : '🚫 선과 안 함'}</button>` : ''}
          ${(r.inbound_category || '상품') !== '선과품' ? `<button onclick="_ibOpenEmptyRecovery('${r.id}')">🧺 빈콘 회수</button>` : ''}
-         <button onclick="openQualityModal('${r.id}')">📋 품질 상세</button>
+         <button onclick="openQualityModal('${r.id}')">📋 품위검수 상세</button>
          <button onclick="openRecordHistory('${r.id}')">📜 변경 이력</button>
          <div class="menu-divider"></div>
          <button onclick="deleteInbound('${r.id}')" class="menu-danger">🗑️ 삭제</button>`
@@ -20613,13 +20613,11 @@ function renderInboundList() {
       <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isAdm && !_ibAuditMode && ibOnlyToday && r.shared_at ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="📋 공유함(${_hmLocal(r.shared_at)}) — 누르면 다시 공유" style="border:1px solid #E5E7EB;background:#F9FAFB;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✓ 공유됨</span></div>` : ''}${isAdm && !_ibAuditMode && _srUnsharedOf(r.id).length ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" title="선과 차수 중 📋 공유 복사를 안 한 것이 있음 — 누르면 선과 이력" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✂️ 선과 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
-      <td style="text-align:center">${ibRatioBadge(r)}</td>
-      <td>${categoryBadge(r.inbound_category, r.reclassification_source, r.reclassification_reason, r.original_work_date)}${srtExBadge}</td>
+      <td>${inspCell}</td>
+      <td>${ibRatioBadge(r)}</td>
       <td style="text-align:right">${qtyDisplay}</td>
       <td title="${esc(r.location || '')}">${locCell}</td>
       <td style="white-space:nowrap">${driverCell}</td>
-      <td style="white-space:nowrap">${gradeCell}</td>
-      <td>${memoCell}</td>
       <td class="stk-r">${actionCell}</td>
     </tr>`;
   })).join('');
