@@ -21,6 +21,15 @@
   <meta name="apple-mobile-web-app-title" content="시트리앙">
 
   <link rel="stylesheet" href="src/style.css?v=51">
+  <style>/* v844: 원물 재고 PDF 출력 = 지금 화면(품목별 재고 → 오늘 선과 → 입출고 → 흐름). 예전 1~5번 인쇄 전용 블록은 안 찍는다.
+     style.css의 @media print(.sum-screen-only 숨김 · .sum-print-only 보임)를 여기서 뒤집는다 — 같은 선택자·!important, 뒤에 와서 이긴다. */
+    @media print {
+      #inv-sum-div .sum-print-only { display: none !important; }
+      #inv-sum-div .sum-screen-only { display: block !important; }
+      #inv-sum-div .sum-noprint { display: none !important; }
+      #inv-sum-div button { display: none !important; }
+    }
+  </style>
 </head>
 <body>
 
@@ -2130,6 +2139,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=32"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=843"></script>
+<script src="src/app.js?v=844"></script>
 </body>
 </html>

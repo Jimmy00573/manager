@@ -16995,7 +16995,7 @@ function renderInvSummary() {
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
     </div>
-    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌. v831: 순서 품목별 재고 → 오늘 선과 → 입출고 → 흐름, '확인 필요'(signalHtml)는 기준 정할 때까지 숨김 */ ''}${itemStockHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${flowHtml}${IB_FORM_ROLES.includes(sessionStorage.getItem('citrus_role')) ? `<button type="button" class="sum-screen-only" onclick="openIbFormFromSum()" style="display:block;width:100%;margin:0 0 14px;padding:12px 16px;background:#fff;border:1px dashed #93C5FD;border-radius:10px;color:#1565C0;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left">＋ 입고 등록 <span style="float:right;font-weight:400">›</span></button>` : '' /* v833 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
+    <div class="sum-print-only">${kpiHtml}</div>${/* v829: 화면에선 큰 사각(KPI) 뺌. v831: 순서 품목별 재고 → 오늘 선과 → 입출고 → 흐름, '확인 필요'(signalHtml)는 기준 정할 때까지 숨김 */ ''}${itemStockHtml}${(() => { const h = _todaySortLineHtml(''); return h ? `<div class="sum-screen-only" style="${CARD};padding:10px 16px">${h}</div>` : ''; })() /* v822 오늘 선과 */}${todayHtml}${flowHtml}${IB_FORM_ROLES.includes(sessionStorage.getItem('citrus_role')) ? `<button type="button" class="sum-screen-only sum-noprint" onclick="openIbFormFromSum()" style="display:block;width:100%;margin:0 0 14px;padding:12px 16px;background:#fff;border:1px dashed #93C5FD;border-radius:10px;color:#1565C0;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left">＋ 입고 등록 <span style="float:right;font-weight:400">›</span></button>` : '' /* v833 */}<div class="sum-print-only">${unsHtml}</div><div class="sum-print-only">${manGamHtml}${citrusHtml}</div>
     <div class="sum-print-only"><div class="sum-pj-grid">${pachiHtml}${juiceHtml}</div></div>
   </div>`;
 }
@@ -17004,6 +17004,22 @@ let _sumJuiceListOpen = false;
 // v818: 품목별 재고 — 감귤 품목 내역 펼침(기본 접힘). 다시 그려도 상태 유지.
 let _sumItemSubOpen = false;
 function toggleSumItemSub() { _sumItemSubOpen = !_sumItemSubOpen; renderInvSummary(); }
+// v844: PDF 출력(window.print) 때는 종이에서 누를 수 없으니 감귤 품목 내역·입출고를 펼쳐서 찍고, 끝나면 원래대로.
+(() => {
+  let _saved = null;
+  window.addEventListener('beforeprint', () => {
+    const sum = document.getElementById('inv-sum-div');
+    if (!sum || sum.style.display === 'none') return;
+    _saved = { sub: _sumItemSubOpen, open: _summaryOpen };
+    _sumItemSubOpen = true; _summaryOpen = true;
+    try { renderInvSummary(); } catch (e) {}
+  });
+  window.addEventListener('afterprint', () => {
+    if (!_saved) return;
+    _sumItemSubOpen = _saved.sub; _summaryOpen = _saved.open; _saved = null;
+    try { renderInvSummary(); } catch (e) {}
+  });
+})();
 // v824: 품목 거르기 공용 판정 — f가 '감귤류'면 감귤류 품목 전부, 아니면 그 품목 하나. 빈 값 = 전부.
 //   쓰는 곳: 미선과 목록(ibFilterProduct) · 선과품 재고(_invFilter.product) · 파치(_pachiProdFilter) · 오늘 선과.
 function _prodMatch(f, p) { return !f || p === f || (f === '감귤류' && PRODUCT_TYPE_MAP[p] === '감귤류'); }
