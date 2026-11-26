@@ -986,7 +986,7 @@
 
 <!-- 재고관리 -->
 <div id="p-inv" class="panel">
-  <div class="ext-tabs">
+  <div class="ext-tabs" id="inv-tabbar">
     <button class="etab af" id="it-sum" onclick="invTab('sum')">📊 원물 재고</button>
     <button class="etab" id="it-uns" onclick="invTab('uns')">🍊 미선과</button>
     <button class="etab" id="it-srt" onclick="invTab('srt')">📦 선과품 재고</button>
@@ -995,6 +995,8 @@
     <button class="etab" id="it-out" onclick="invTab('out')">🔄 거래내역</button>
     <button class="etab" id="it-log" onclick="invTab('log')">📜 변경 이력</button>
   </div>
+
+  <div id="inv-scope-bar" style="display:none"></div><!-- v838: 품목별 화면 경로 줄(‹ 뒤로 · 원물 재고 › 감귤 › 미선과 원물) — _renderInvScopeBar -->
 
   <!-- 재고 요약 -->
   <div id="inv-sum-div">
@@ -2137,6 +2139,6 @@
 <script src="src/supabase-client.js?v=34"></script>
 <script src="src/db.js?v=32"></script>
 <script src="src/sms.js?v=10"></script>
-<script src="src/app.js?v=837"></script>
+<script src="src/app.js?v=838"></script>
 </body>
 </html>

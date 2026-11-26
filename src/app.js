@@ -243,6 +243,7 @@ let _pachiAuditVisible = [];      // 실사 대상 = inventory_records 파치 �
 // 재고 실사 체크는 inventory_records.audit_checked_at(TIMESTAMPTZ)에 저장 — 화면 이동·새로고침해도 유지
 let ibSearch = '';
 let ibFilterProduct = '';
+let _invScope = null;          // v838: 품목별 화면 범위 { name: '감귤'|품목, f: '감귤류'|품목, tab: 'uns'|'srt'|'pachi' } — 설명은 openSumItem 위
 let ibFilterDriver = '';
 let ibFilterDateFrom = '';
 let ibFilterDateTo = '';
@@ -8538,17 +8539,23 @@ function invTab(t) {
   // 허용 목록(ROLE_INV_TABS) 밖의 탭은 그 역할의 첫 탭으로 — 공항 → 'juice', 직원의 거래내역·변경 이력 → 'sum', 외부 기사 → 'uns'.
   const _allowInv = ROLE_INV_TABS[_r];
   if (_allowInv && !_allowInv.includes(t)) t = _allowInv[0];
+  if (!_sumItemNav && _invScope) {   // v838: 품목별 재고 칸이 아닌 길 = 범위 없음(전 품목). 범위 안에서 고른 품목 거르기도 같이 푼다
+    _invScope = null; ibFilterProduct = ''; _invFilter.product = ''; _pachiProdFilter = '';
+    const s1 = document.getElementById('ib-filter-product'); if (s1) s1.value = '';
+    const s2 = document.getElementById('inv-filter-product'); if (s2) s2.value = '';
+  }
+  if (typeof _renderInvScopeBar === 'function') _renderInvScopeBar();
   ['sum', 'uns', 'srt', 'pachi', 'juice', 'out', 'log'].forEach(s => {
     const div = document.getElementById('inv-' + s + '-div');
     const btn = document.getElementById('it-' + s);
     if (div) div.style.display = t === s ? '' : 'none';
     if (btn) { btn.className = 'etab' + (t === s ? ' af' : ''); btn.style.display = _invTabShown(_r, s, t) ? '' : 'none'; }   // v810: 숨긴 탭은 들어가 있는 동안만
   });
-  if (t === 'srt') { if (!_sumItemNav && typeof _invFocusOnly !== 'undefined') _invFocusOnly = false; renderInventoryStatus(); }   // v826
+  if (t === 'srt') renderInventoryStatus();
   if (t === 'log') loadAuditLogs();
   if (t === 'sum') renderInvSummary();
   if (t === 'pachi') {
-    if (!_sumItemNav && typeof _pachiProdFilter !== 'undefined') _pachiProdFilter = '';   // v824: 다른 길로 들어오면 전체
+    if (!_sumItemNav && typeof _pachiProdFilter !== 'undefined') _pachiProdFilter = '';   // v824: 다른 길로 들어오면 전체(범위도 위에서 풀림)
     const pachiForm = document.getElementById('inv-pachi-form');
     if (pachiForm) pachiForm.style.display = sessionStorage.getItem('citrus_role') === 'admin' ? '' : 'none';
     popLocSelects(); popUsageSelects();
@@ -11216,7 +11223,6 @@ async function deleteItemRule(id) {
 
 function invSetFilter(key, val) {
   _invFilter[key] = val;
-  if (key === 'product' && typeof _invFocusOnly !== 'undefined') _invFocusOnly = false;   // v826
   renderInventoryStatus();
 }
 
@@ -11515,7 +11521,8 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
-  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type));
+  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type) && _scopeOk(r.product));
+  { const _ps = document.getElementById('inv-filter-product'); if (_ps) _ps.style.display = _invScope ? 'none' : ''; }   // v838: 품목별 화면에선 품목 고르기 대신 위 품목 카드   // v838: 범위 밖 품목은 이 화면 어디에도 안 셈
 
   // 등급 토글 툴바 — 동적: 전체 + 일반(항상) + 재고 있는 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
   const gradeToolbarEl = document.getElementById('inv-grade-toolbar');
@@ -11569,7 +11576,7 @@ function renderInventoryStatus() {
 
   statusEl.innerHTML = allProducts.length ? `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:4px">
-      ${(_invFocusOnly && _invFilter.product ? allProducts.filter(p => p === _invFilter.product) : allProducts).map(p => {
+      ${allProducts.map(p => {
         const active = !!_invFilter.product && _prodMatch(_invFilter.product, p);
         return `<div onclick="invSetFilter('product','${esc(p)}')" style="padding:10px 12px;background:${active ? '#EFF6FF' : '#fff'};border:2px solid ${active ? '#1565C0' : '#E5E7EB'};border-radius:8px;cursor:pointer;text-align:center;transition:border-color .15s">
           <div style="font-size:11px;color:#6B7280;margin-bottom:3px">${esc(p)}</div>
@@ -11577,7 +11584,7 @@ function renderInventoryStatus() {
           <div style="font-size:10px;color:#9CA3AF">CT</div>
         </div>`;
       }).join('')}
-      ${(_invFilter.product && !_invAuditMode) ? `<div onclick="invSetFilter('product','')" style="padding:10px 12px;background:#fff;border:2px dashed #D1D5DB;border-radius:8px;cursor:pointer;text-align:center;color:#9CA3AF;font-size:12px;display:flex;align-items:center;justify-content:center">전체 보기</div>` : ''}
+      ${(_invFilter.product && !_invAuditMode && !(_invScope && allProducts.length <= 1)) ? `<div onclick="invSetFilter('product','')" style="padding:10px 12px;background:#fff;border:2px dashed #D1D5DB;border-radius:8px;cursor:pointer;text-align:center;color:#9CA3AF;font-size:12px;display:flex;align-items:center;justify-content:center">전체 보기</div>` : ''}
     </div>` : '<div style="padding:4px 0 12px;font-size:12px;color:#9CA3AF">재고 데이터 없음 — DB 마이그레이션 후 표시됩니다</div>';
 
   // 필터 적용 (등급필터 recs0 위에 product/farm 필터 추가)
@@ -16957,16 +16964,48 @@ function toggleSumItemSub() { _sumItemSubOpen = !_sumItemSubOpen; renderInvSumma
 // v824: 품목 거르기 공용 판정 — f가 '감귤류'면 감귤류 품목 전부, 아니면 그 품목 하나. 빈 값 = 전부.
 //   쓰는 곳: 미선과 목록(ibFilterProduct) · 선과품 재고(_invFilter.product) · 파치(_pachiProdFilter) · 오늘 선과.
 function _prodMatch(f, p) { return !f || p === f || (f === '감귤류' && PRODUCT_TYPE_MAP[p] === '감귤류'); }
-// v824: 품목별 재고 칸 → 그 탭으로 가면서 그 품목만(감귤 줄이면 감귤류 전부)
-function openSumItem(name, tab) {
-  const f = name === '감귤' ? '감귤류' : name;
-  _sumItemNav = true; try { invTab(tab); } finally { _sumItemNav = false; }
-  if (tab === 'uns') { setIbProductFilter(f); _updateIbFilterBtns(); }
-  else if (tab === 'srt') { const sel = document.getElementById('inv-filter-product'); if (sel) sel.value = f; _invFilter.product = f; _invFocusOnly = f !== '감귤류'; renderInventoryStatus(); }
-  else if (tab === 'pachi') setPachiProdFilter(f);
+// ── v838: 품목별 화면(범위) — 기획안 3·7번(2026-11-26 대표님) ──────────────────────
+// 품목별 재고 칸(감귤·만감 품목 × 미선과 원물·선과된 원물·파치)으로 들어가면 그 화면 전체가 '그 품목만'이다.
+//   ★필터가 아니라 화면의 범위 — ✕·전체 보기·데이터 새로 받기로 풀리지 않는다. 나가는 길은 위 경로 줄(‹ 뒤로 · 원물 재고 › 감귤)뿐.
+//   ★다른 길(탭·＋입고 등록·오늘 선과·선과 처리 센터 등 invTab 직접 호출)로 들어오면 범위 없음 = 전 품목(등록·선과 작업이 막히지 않게).
+//   감귤 = 감귤류 품목 전부(PRODUCT_TYPE_MAP), 만감은 그 품목 하나 — 판정은 _prodMatch 하나.
+//   범위 안에서 품목 칩·드롭다운·전체 보기는 '범위 안의 전체'로 동작한다.
+// let _invScope — 맨 위 전역(ibFilterProduct 옆)에 선언: invTab이 먼저 불려도 TDZ 오류가 안 나게
+const _INV_SCOPE_LBL = { uns: '미선과 원물', srt: '선과된 원물', pachi: '파치' };
+function _scopeOk(p) { return !_invScope || _prodMatch(_invScope.f, p || '미지정'); }
+function _renderInvScopeBar() {
+  const bar = document.getElementById('inv-scope-bar'), tabs = document.getElementById('inv-tabbar');
+  if (!bar) return;
+  if (!_invScope) { bar.style.display = 'none'; bar.innerHTML = ''; if (tabs) tabs.style.display = ''; return; }
+  if (tabs) tabs.style.display = 'none';
+  const lk = 'cursor:pointer;color:#1565C0';
+  bar.style.display = '';
+  bar.innerHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:10px 2px 12px;font-size:14px;color:#6B7280">
+    <span onclick="exitInvScope()" style="${lk};font-weight:500">‹ 뒤로</span><span style="color:#D1D5DB">·</span>
+    <span onclick="exitInvScope()" style="${lk}">원물 재고</span><span>›</span>
+    <span onclick="exitInvScope()" style="${lk}">${esc(_invScope.name)}</span><span>›</span>
+    <span style="color:#111827;font-weight:600">${_INV_SCOPE_LBL[_invScope.tab] || ''}</span>
+  </div>`;
 }
-let _sumItemNav = false;
-let _invFocusOnly = false;   // v826: 품목별 재고에서 만감 품목으로 들어온 선과품 재고 — 그 품목 카드만(전체 보기·다른 길로 들어오면 해제)     // v824: 품목별 재고 칸에서 들어오는 중(invTab이 파치 거르기를 풀지 않게)
+function exitInvScope() {
+  _invScope = null; ibFilterProduct = ''; _invFilter.product = ''; _pachiProdFilter = '';
+  const s1 = document.getElementById('ib-filter-product'); if (s1) s1.value = '';
+  const s2 = document.getElementById('inv-filter-product'); if (s2) s2.value = '';
+  invTab('sum');
+  window.scrollTo(0, 0);
+}
+// 품목별 재고 칸 → 범위를 정하고 그 탭으로(그 안의 품목 거르기는 비운다 = 범위 안 전체)
+function openSumItem(name, tab) {
+  _invScope = { name, f: name === '감귤' ? '감귤류' : name, tab };
+  ibFilterProduct = ''; _invFilter.product = ''; _pachiProdFilter = '';
+  const s1 = document.getElementById('ib-filter-product'); if (s1) s1.value = '';
+  const s2 = document.getElementById('inv-filter-product'); if (s2) s2.value = '';
+  _sumItemNav = true; try { invTab(tab); } finally { _sumItemNav = false; }
+  if (tab === 'uns') { ibPage = 1; renderInboundList(); _updateIbFilterBtns(); }
+  else if (tab === 'pachi') _pachiCollapsed.forEach(k => { if (k.startsWith('PROD::') && _scopeOk(k.slice(6))) _pachiCollapsed.delete(k); }), renderPachiSection();   // 범위 품목은 펼쳐서
+  window.scrollTo(0, 0);
+}
+let _sumItemNav = false;   // 품목별 재고 칸에서 들어오는 중 — invTab이 범위를 풀지 않게
 let _pachiProdFilter = '';   // v824: 파치 품목 거르기('' 전부 | 품목 | '감귤류')
 function setPachiProdFilter(f) {
   _pachiProdFilter = f || '';
@@ -18318,7 +18357,7 @@ function _renderIbProductChips() {
   if (!el) return;
   const wait = {}, all = {};
   inboundRecords.forEach(r => {
-    if (r.is_void || !r.product) return;
+    if (r.is_void || !r.product || !_scopeOk(r.product)) return;   // v838: 범위 안 품목만
     all[r.product] = (all[r.product] || 0) + 1;
     if (_isUnsortedTarget(r) && getRemainingCT(r) > 0) wait[r.product] = (wait[r.product] || 0) + 1;
   });
@@ -18344,7 +18383,7 @@ function _renderIbProductChips() {
   // v822: 칩 줄 바로 아래 '오늘 선과' 한 줄 — 품목을 고르면 그 품목만. 오늘 선과가 없으면 비운다.
   let tl = document.getElementById('ib-today-srt');
   if (!tl && el.parentNode) { tl = document.createElement('div'); tl.id = 'ib-today-srt'; tl.style.cssText = 'margin:6px 0 2px'; el.parentNode.insertBefore(tl, el.nextSibling); }
-  if (tl) { const h = _todaySortLineHtml(ibFilterProduct || ''); tl.innerHTML = h; tl.style.display = h ? '' : 'none'; }
+  if (tl) { const h = _todaySortLineHtml(ibFilterProduct || (_invScope ? _invScope.f : '')); tl.innerHTML = h; tl.style.display = h ? '' : 'none'; }
 }
 
 // 품목 칩/드롭다운 공통 진입점 — 두 경로가 같은 상태(ibFilterProduct)를 쓰도록.
@@ -18472,8 +18511,8 @@ function _refreshIbProductOptions() {
   const el = document.getElementById('ib-filter-product');
   if (!el) return;
   const cur = el.value;
-  const prods = [...new Set(inboundRecords.filter(r => !r.is_void && r.product).map(r => r.product))].sort();
-  el.innerHTML = '<option value="">품목 전체</option>' + prods.map(p => `<option value="${esc(p)}"${p === cur ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  const prods = [...new Set(inboundRecords.filter(r => !r.is_void && r.product && _scopeOk(r.product)).map(r => r.product))].sort();
+  el.innerHTML = `<option value="">${_invScope ? `${esc(_invScope.f)} 전체` : '품목 전체'}</option>` + prods.map(p => `<option value="${esc(p)}"${p === cur ? ' selected' : ''}>${esc(p)}</option>`).join('');
 }
 
 function _renderIbFilterChips() {
@@ -19192,7 +19231,7 @@ function renderIbCatSummary() {
   if (!catEl) return;
 
   // ★미선과 행(대상·잔여·경과일)은 공용 _ibUnsortedRows — 재고 요약·선과센터와 같은 계산(예전엔 여기 복사본).
-  const _unsRows = _ibUnsortedRows();
+  const _unsRows = _ibUnsortedRows().filter(x => _scopeOk(x.rec.product));   // v838: 범위 안만(위 카드·합계·우선 처리 모두)
 
   // (카테고리, 품목, 출처) 조합별 집계
   const catTotals = {};
@@ -20322,18 +20361,19 @@ function renderInboundList() {
   // 📋 미공유(v794, 어제·오늘 등록분) — 관리자만(공유 메뉴가 관리자 전용). 개수는 차 단위(_ibTruckGroups — 공유도 차 한 장).
   //   ★켜면 위 필터를 무시하고 미공유 행만 — 필터가 겹쳐 '왜 안 보이지'가 생기지 않게. 다 공유하면 저절로 꺼진다.
   //   ✂️ 선과도 같은 칩에서(v796): 공유 안 한 차수가 있는 입고도 같이 걸러진다. 개수는 입고=차 단위, 선과=차수 단위.
-  const _unsh = isAdm ? inboundRecords.filter(_ibIsUnsharedToday) : [];
+  const _unsh = isAdm ? inboundRecords.filter(r => _ibIsUnsharedToday(r) && _scopeOk(r.product)) : [];   // v838: 범위 안만
   const _unshN = _unsh.length ? _ibTruckGroups(_unsh).length : 0;
-  const _srUn = isAdm ? (sortingResults || []).filter(_srIsUnshared) : [];
+  const _srUn = isAdm ? (sortingResults || []).filter(x => _srIsUnshared(x) && _scopeOk((inboundRecords.find(r => String(r.id) === String(x.inbound_record_id)) || {}).product)) : [];
   const _srIbIds = new Set(_srUn.map(x => String(x.inbound_record_id)));
   if (ibOnlyUnshared && !_unshN && !_srUn.length) ibOnlyUnshared = false;
   if (ibOnlyUnshared) visible = inboundRecords.filter(r => !r.is_void && (_ibIsUnsharedToday(r) || _srIbIds.has(String(r.id))));
   _renderIbUnsharedBtn(_unshN, _srUn.length);
   // 📅 오늘 입고(v836, 관리자) — 등록일(created_at 로컬) 또는 입고일이 오늘. 선과품 입고처럼 상시 목록에서 빠지는 것도 여기서 모아 본다.
-  const _ibTodayRecs = isAdm ? inboundRecords.filter(_ibIsToday) : [];
+  const _ibTodayRecs = isAdm ? inboundRecords.filter(r => _ibIsToday(r) && _scopeOk(r.product)) : [];
   if (ibOnlyToday && !_ibTodayRecs.length) ibOnlyToday = false;
   if (ibOnlyToday) visible = _ibTodayRecs.slice();
   _renderIbTodayBtn(_ibTodayRecs.length);
+  if (_invScope) visible = visible.filter(r => _scopeOk(r.product));   // v838: 품목별 화면 — 어떤 필터를 풀어도 범위 밖은 안 나옴
 
   // ── 상시 목록 줄이기(v805, 2026-11-23 대표님 요청) — 검색·필터를 안 걸었을 때는 '지금 볼 것'만 보인다:
   //   ① 아직 선과·처리할 잔여가 있는 선과 대상(_isUnsortedTarget && 잔여>0) ② 오늘 입고 ③ 오늘 선과한 입고.
@@ -25802,7 +25842,7 @@ function renderPachiSection() {
   const prodGroups = {}, prodOrder = [];
   allRows.forEach(r => {
     const p = r.product || '기타';
-    if (!_prodMatch(_pachiProdFilter, p)) return;   // v824: 품목 거르기
+    if (!_prodMatch(_pachiProdFilter, p) || !_scopeOk(p)) return;   // v824 품목 거르기 · v838 범위
     if (!prodGroups[p]) { prodGroups[p] = []; prodOrder.push(p); }
     prodGroups[p].push(r);
   });
@@ -26056,9 +26096,10 @@ function renderPachiSection() {
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="font-size:14px;font-weight:700;color:#222">파치 내역</div>
         <div style="display:flex;align-items:center;gap:10px">
-          ${_pachiProdFilter ? (() => { const bp = Object.entries(_pachiStock.byProduct).filter(([p]) => _prodMatch(_pachiProdFilter, p));
+          ${_pachiProdFilter || _invScope ? (() => { const bp = Object.entries(_pachiStock.byProduct).filter(([p]) => _prodMatch(_pachiProdFilter, p) && _scopeOk(p));
               const n = prodOrder.reduce((t, p) => t + prodGroups[p].length, 0), ct = bp.reduce((t, [, c]) => t + c, 0), kg = Math.round(bp.reduce((t, [p, c]) => t + c * kgPerCt(p), 0));
-              return `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:12px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1565C0;font-size:12.5px;font-weight:500">${esc(_pachiProdFilter)}만 · ${n}건 · ${fmtN(ct)} CT · ${fmtN(kg)} kg<span onclick="setPachiProdFilter('')" title="전체 보기" style="cursor:pointer;color:#6B7280;font-weight:400">✕ 전체</span></span>`; })()
+              if (_invScope && !_pachiProdFilter) return `<div style="font-size:12px;color:#888">총 ${n}건 · ${fmtN(ct)} CT · ${fmtN(kg)} kg</div>`;   // v838: 품목별 화면 — 범위 합계만(✕ 전체 없음)
+              return `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:12px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1565C0;font-size:12.5px;font-weight:500">${esc(_pachiProdFilter)}만 · ${n}건 · ${fmtN(ct)} CT · ${fmtN(kg)} kg<span onclick="setPachiProdFilter('')" title="${_invScope ? esc(_invScope.f) + ' 전체' : '전체 보기'}" style="cursor:pointer;color:#6B7280;font-weight:400">✕ ${_invScope ? esc(_invScope.f) + ' 전체' : '전체'}</span></span>`; })()
             : `<div style="font-size:12px;color:#888">총 ${allRows.length}건 · ${fmtN(totalCt)} CT · ${fmtN(totalKg)} kg</div>`}
           ${isAdm ? `<button onclick="togglePachiAuditMode()" style="padding:5px 12px;background:${_pachiAuditMode ? '#7C3AED' : '#fff'};color:${_pachiAuditMode ? '#fff' : '#374151'};border:1px solid ${_pachiAuditMode ? '#7C3AED' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">📋 파치 실사</button>` : ''}
         </div>
