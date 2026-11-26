@@ -1404,6 +1404,7 @@ function _applyInvTabs(r) {
 }
 
 function setRole(r) {
+  { const b = document.getElementById('rbtn-drv'); if (b) b.style.display = r === 'admin' ? '' : 'none'; }   // v842(검토안): 직원·공항·외부 기사 화면엔 '기사 로그인' 버튼 숨김
   document.getElementById('anav').style.display = OFFICE_ROLES.includes(r) ? 'flex' : 'none';
   document.getElementById('dnav').style.display = r === 'driver' ? 'flex' : 'none';
   _applyInvTabs(r);
@@ -9323,6 +9324,15 @@ function _sizeDistRemain(prefix) {
   if (remain >= 0) { el.innerHTML = `남은 <b>${_sdFmtPct(remain)}%</b> <span style="color:#9CA3AF">(합 ${_sdFmtPct(sum)}%)</span>`; el.style.color = '#6B7280'; }
   else { el.innerHTML = `⚠ 합 ${_sdFmtPct(sum)}% — 100% 초과(${_sdFmtPct(-remain)}% 넘음)`; el.style.color = '#DC2626'; }
 }
+// v842(검토안): 저장 직전 크기 분포 합계 확인 — 칸을 하나라도 채웠는데 합이 100%가 아니면 한 번 묻는다(그대로 저장도 가능).
+async function _sizeDistSumOk(prefix) {
+  const wrap = document.getElementById(`${prefix}-size-dist-wrap`);
+  if (!wrap) return true;
+  let sum = 0, any = false;
+  wrap.querySelectorAll(`.${prefix}-sd-inp`).forEach(i => { const v = parseFloat(i.value); if (!isNaN(v) && v > 0) { sum += v; any = true; } });
+  if (!any || Math.abs(sum - 100) < 0.01) return true;
+  return await showConfirmEdit('크기 분포 합계 확인', `크기 분포 합계가 ${_sdFmtPct(sum)}%입니다(100%가 아님).\n그대로 저장할까요?`);
+}
 function _composeSizeDist(prefix) {
   const wrap = document.getElementById(`${prefix}-size-dist-wrap`);
   if (!wrap) return null;
@@ -16176,7 +16186,7 @@ function renderInvSummary() {
   const _flowMD = ds => `${parseInt(ds.slice(5, 7))}/${parseInt(ds.slice(8, 10))}`;
   const _flowBtn = n => `<button type="button" onclick="setInvFlowDays(${n})" style="padding:3px 10px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid ${flowN === n ? '#1565C0' : '#D1D5DB'};background:${flowN === n ? '#1565C0' : '#fff'};color:${flowN === n ? '#fff' : '#374151'}">${n}일</button>`;
   const _netCol = v => v > 0 ? '#C2410C' : v < 0 ? '#15803D' : '#6B7280';   // 양수=선과 재고 쌓임(주황) · 음수=줄어듦(초록)
-  const _netTxt = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmtCT(Math.abs(v));
+  const _netTxt = v => v > 0 ? `${fmtCT(v)} 늘어남` : v < 0 ? `${fmtCT(-v)} 줄어듦` : '변동 없음';   // v842(검토안): '−144.5'가 재고 마이너스로 읽혀 말로
   const _dowKo = d => '일월화수목금토'[new Date(d + 'T00:00:00').getDay()];
   const _fdLbl = (d, i) => i === 0 ? '전일' : i === 1 ? '전전일' : `${i + 1}일 전`;
   const _fdTd = 'padding:4px 8px;text-align:right;white-space:nowrap';
@@ -16200,7 +16210,7 @@ function renderInvSummary() {
         <td style="${_fdTd}">${fmtCT(flowSortN)}</td><td style="${_fdTd}">${fmtCT(flowAuditCt)}</td>
         <td style="${_fdTd};color:${_netCol(flowNet)}">${_netTxt(flowNet)}</td></tr>` : ''}</tbody>
     </table></div>
-    <div style="font-size:11px;color:#9CA3AF;margin-top:4px">단위 CT · 선과 재고 = 선과 완료 − 실사로 빠짐 (주황 = 쌓임 · 초록 = 줄어듦)</div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:4px">단위 CT · 선과 재고 = 그날 선과 완료 − 실사로 빠짐(늘어남 = 쌓임 · 줄어듦 = 나간 게 더 많음, 재고가 마이너스라는 뜻 아님)</div>
   </div>`;
 
   // ── 신호 줄 '확인 필요'(B안 2단계, 5단계에서 이름을 탭 이름 규칙에 맞춤) — KPI 바로 아래. 값이 0인 칩은 안 그리고, 전부 0이면 '특이사항 없음'.
@@ -16508,7 +16518,10 @@ function renderInvSummary() {
     s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0), 0);
   const _barInPart  = truckCount > 0 ? `입고 ${truckCount}건 ${fmtN(totalQty)}CT` : '입고 없음';   // 건 = 한 차 기준(9번 truckGroups)
   const _barOutArr  = [];
-  if (sortingTotalKg > 0) _barOutArr.push(`선과 ${fmtN(Math.round(sortingTotalKg))}kg`);
+  if (sortingTotalKg > 0) {   // v842(검토안): '선과 255kg'이 오늘 선과(CT)와 헷갈려 → 선과품 출고, CT(품목 중량 환산) 병기
+    const _sortOutCt = sortingProds.reduce((s, p) => s + Object.values(sortingByProd[p]).reduce((ss, gm) => ss + Object.values(gm).reduce((sss, v) => sss + v, 0), 0) / (kgPerCt(p) || 17), 0);
+    _barOutArr.push(`선과품 ${fmtCT(_sortOutCt)}CT(${fmtN(Math.round(sortingTotalKg))}kg)`);
+  }
   if (pachiOutKg    > 0) _barOutArr.push(`파치 ${fmtN(Math.round(pachiOutKg))}kg`);
   if (juiceOutQty   > 0) _barOutArr.push(`주스 ${fmtN(Math.round(juiceOutQty))}병`);
   if (boxOutQty     > 0) _barOutArr.push(`가공품 ${fmtN(Math.round(boxOutQty))}박스`);
@@ -18346,10 +18359,9 @@ function _applyIbStatusSort(arr, cntMap) {
     const ca = _ibCatRank(a.inbound_category), cb = _ibCatRank(b.inbound_category);
     const da = a.date || '', db = b.date || '';
     if (ra === 0) {
-      // 대기 그룹 — ★기존 동작 유지. 상품→대과→소과→청과→파치, 같은 카테고리면 오래된 입고부터.
-      if (ca !== cb) return ca - cb;
+      // 대기 그룹 — v842(검토안): 오래된 입고부터(날짜가 섞여 보이던 것). 같은 날이면 상품→대과→소과→청과→파치.
       if (da !== db) return da < db ? -1 : 1;
-      return 0;
+      return ca - cb;
     }
     // 그 외 그룹 — 최근 입고가 위. 같은 날짜 안에서만 카테고리 순으로 묶는다.
     if (da !== db) return da < db ? 1 : -1;
@@ -20577,8 +20589,12 @@ function renderInboundList() {
       : '';
     const _auditChk = _ibAuditMode && _ibAuditChecked.has(r.id);
     // 우선순위: 실사 체크 > 완료·선과품(회색) > 선과 대상 아님(연보라) > 우선처리(노랑)
+    // v842(검토안): 선과 대기 잔여가 있는 입고 — 경과일 표시, IB_OLD_DAYS(30일) 넘으면 줄을 연한 빨강으로(우선처리 노랑보다 먼저)
+    const _ibLive = !isGrayed && !isNotSrtTarget && remaining > 0;
+    const _ibAge = r.date ? Math.floor((new Date(td() + 'T00:00:00') - new Date(r.date + 'T00:00:00')) / 86400000) : null;
+    const _ibOld = _ibLive && _ibAge > IB_OLD_DAYS;
     const _trBaseStyle = _auditChk ? 'background:#DBEAFE;'
-      : (isGrayed ? grayStyle : (isNotSrtTarget ? 'background:#F5F3FF;' : priorityStyle));
+      : (isGrayed ? grayStyle : (isNotSrtTarget ? 'background:#F5F3FF;' : (_ibOld ? 'background:#FEF2F2;' : priorityStyle)));
     const _trStyle = _ibAuditMode ? `${_trBaseStyle}cursor:pointer;` : _trBaseStyle;
     const _trClick = _ibAuditMode ? `onclick="toggleIbAuditCheck('${r.id}')"` : '';
     const _checkMark = _ibAuditMode ? `<span style="color:#1565C0;font-weight:700;margin-right:3px;font-size:12px">${_auditChk ? '✓' : '○'}</span>` : '';
@@ -20624,14 +20640,15 @@ function renderInboundList() {
     </div>`;
     const locCell = r.distribution_group_id
       ? `<span title="${esc(getDistGroupTooltip(r.distribution_group_id))}" style="cursor:help;white-space:nowrap">📦 ${esc(r.location || '-')}</span>`
-      : esc(r.location || '-');
+      : (!r.location && _ibLive ? '<span style="color:#C2410C;font-size:11px;font-weight:600" title="선과 대기 중인데 위치가 비어 있음 — ✏️ 수정에서 넣으세요">위치 미입력</span>'   // v842(검토안)
+      : esc(r.location || '-'));
     // 거래 방식(밭떼기/관떼기) 칩 — 그 입고의 수확(_hvForInbound)에 deal_type이 있을 때만. 없으면 예전 HTML 그대로.
     //   먼 밭 농가만 그 입고의 원물수거 pick에서 밭을 찾아 넘긴다(입고 자체엔 밭 칸이 없다).
     const _ibField = _farmBranches(r.farm_name) ? (picks.find(p => p.inbound_id === r.id && p.field) || {}).field : undefined;
     //   v791: 입고에 직접 적은 거래 방식(r.deal_type)이 있으면 그것이 먼저.
     const dealChip = _hvDealChip(HV_DEAL_COLOR[r.deal_type] ? r : _hvForInbound(r.farm_name, r.date, _ibField));
     return `<tr id="ib-tr-${r.id}" ${_trClick} style="${_trStyle}${_stkBgVar(_trBaseStyle)}">
-      <td style="white-space:nowrap">${_checkMark}${r.date ? r.date.slice(2).replace(/-/g,'/') : ''}</td>
+      <td style="white-space:nowrap" title="${esc(r.date || '')}">${_checkMark}${_ibDateLbl(r.date)}${_ibLive && _ibAge != null ? `<div style="font-size:10.5px;margin-top:1px;${_ibAge > IB_OLD_DAYS ? 'color:#DC2626;font-weight:600' : 'color:#9CA3AF'}" title="입고 후 ${_ibAge}일 — 아직 선과 안 된 잔여가 있음">경과 ${_ibAge}일</div>` : ''}</td>
       <td class="nm" title="${esc(r.farm_name)}"><span style="display:inline-block;width:16px;text-align:center;font-size:12px">${r.is_priority ? '⭐' : ''}</span> ${esc(r.farm_name)}${r.field ? `<span style="font-size:11px;color:#9CA3AF"> · ${esc(r.field)}</span>` : ''}${dealChip ? `<div style="margin-top:3px">${dealChip}</div>` : ''}${isAdm && !_ibAuditMode && _ibIsUnsharedToday(r) ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="아직 📋 공유 복사 안 함 — 누르면 공유 창" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">📋 미공유</span></div>` : ''}${isAdm && !_ibAuditMode && ibOnlyToday && r.shared_at ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();openInboundShareText('${r.id}')" title="📋 공유함(${_hmLocal(r.shared_at)}) — 누르면 다시 공유" style="border:1px solid #E5E7EB;background:#F9FAFB;color:#6B7280;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✓ 공유됨</span></div>` : ''}${isAdm && !_ibAuditMode && _srUnsharedOf(r.id).length ? `<div style="margin-top:3px"><span onclick="event.stopPropagation();showSortingHistory('${r.id}',this)" title="선과 차수 중 📋 공유 복사를 안 한 것이 있음 — 누르면 선과 이력" style="border:1px solid #C4B5FD;background:#F5F3FF;color:#7C3AED;font-size:10px;padding:1px 7px;border-radius:10px;white-space:nowrap;cursor:pointer">✂️ 선과 미공유</span></div>` : ''}${isDone ? `<div style="margin-top:3px">${doneBadge}</div>` : ''}${isSorted ? `<div style="margin-top:3px">${sortedBadge}</div>` : ''}</td>
       <td>${productChip(r.product)}</td>
       <td>${inspCell}</td>
@@ -22376,6 +22393,7 @@ async function saveInboundModal() {
   const brix_range = _eibEffBrix(_origIb);
   const brix_avg = (document.getElementById('eib-m-brix-avg')?.value || '').trim() || null;   // 서술형 평균당도(목록 당도 입력과 같은 컬럼)
   const acidity_range = _eibEffAcid(_origIb);
+  if (!(await _sizeDistSumOk('eib-m'))) return;   // v842: 합계 100% 아니면 확인
   const size_distribution = _eibEffSize(_origIb);
   const is_priority = document.getElementById('eib-m-priority').checked;
   const reason = document.getElementById('eib-m-reason').value.trim();
@@ -24402,6 +24420,14 @@ function _renderIbUnsharedBtn(n, sn = 0) {
 function ibToggleUnshared() { ibOnlyUnshared = !ibOnlyUnshared; if (ibOnlyUnshared) ibOnlyToday = false; ibPage = 1; renderInboundList(); }
 // ── 📅 오늘 입고(v836) — 미공유 칩 옆. 같은 목록·같은 행 모양 그대로, 오늘 입고만 거른다. 공유한 행엔 '✓ 공유됨'(누르면 다시 공유).
 function _hmLocal(iso) { const t = new Date(iso); return isNaN(t) ? '' : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; }
+// v842(검토안): 입고 목록 날짜 — 'M/D(요일)', 올해가 아니면 'YY/M/D(요일)'. 원래 값은 칸 title에.
+const IB_OLD_DAYS = 30;   // 경과일이 이걸 넘으면 줄 연한 빨강(선과 대기 잔여가 있는 입고만)
+function _ibDateLbl(ds) {
+  if (!ds) return '';
+  const d = new Date(ds + 'T00:00:00'); if (isNaN(d)) return esc(ds);
+  const md = `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]})`;
+  return d.getFullYear() === new Date().getFullYear() ? md : `${String(d.getFullYear()).slice(2)}/${md}`;
+}
 function _ibIsToday(r) {
   if (r.is_void || r._legacy) return false;
   const T = td();
@@ -25040,6 +25066,7 @@ async function _addInboundCore(keepOpen) {
   const brix_range = _rangeComposeBrix('ib-brix-min-num', 'ib-brix-min-pos', 'ib-brix-max-num', 'ib-brix-max-pos');
   const acidity_range = _rangeComposeAcid('ib-acidity-min', 'ib-acidity-max');
   const brix_avg = (document.getElementById('ib-brix-avg')?.value || '').trim() || null;   // 서술형 평균당도(수정 모달 eib-m-brix-avg·목록 당도 입력과 같은 컬럼)
+  if (!(await _sizeDistSumOk('ib'))) return;   // v842: 합계 100% 아니면 확인
   const size_distribution = _composeSizeDist('ib');
   const is_priority = document.getElementById('ib-priority')?.checked || false;
   // 재선별 부가정보 — ★'재선별' 행에만 붙인다(다른 카테고리 행에 새어 들어가지 않게).
