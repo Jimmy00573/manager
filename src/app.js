@@ -16922,7 +16922,7 @@ function renderInvSummary() {
             ${r.sub ? `<button type="button" style="align-self:flex-start;margin-top:4px;background:none;border:none;padding:0;font-size:12px;color:#1565C0;cursor:pointer;font-family:inherit;font-weight:500">${_sumItemSubOpen ? '▾ 접기' : `▸ 품목 ${r.sub.length}개 펼치기`}</button>` : ''}
           </div>
           ${/* v820: 칸 이름 — '상품'이 헷갈린다고 해서 원물 · 선과된 원물 · 파치로(대표님 요청) */ ''}
-          ${_ipTile('원물', r.v.uns, 'uns', r.name)}${_ipTile('선과된 원물', r.v.srt, 'srt', r.name, r.v)}${_ipTile('파치', r.v.pachi, 'pachi', r.name)}
+          ${_ipTile('미선과 원물', r.v.uns, 'uns', r.name)}${_ipTile('선과된 원물', r.v.srt, 'srt', r.name, r.v)}${_ipTile('파치', r.v.pachi, 'pachi', r.name)}
         </div>
         ${r.sub && _sumItemSubOpen ? `<div style="margin:0 0 14px">${r.sub.map(([p, v]) => `
           <div class="ip-sub" style="display:grid;grid-template-columns:minmax(56px,clamp(70px,21vw,130px)) repeat(3,minmax(0,1fr));gap:clamp(4px,1.2vw,8px);max-width:680px;font-size:12.5px;color:#4B5563;padding:2px 0;align-items:baseline">
@@ -16940,7 +16940,7 @@ function renderInvSummary() {
   el.innerHTML = `<div>
     <div class="sum-main-hdr" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E5E7EB">
       <div>
-        <div class="sum-main-hdr-title" style="font-size:22px;font-weight:500;color:#111827;margin-bottom:2px">현장 재고 전체 현황</div>
+        <div class="sum-main-hdr-title" style="font-size:22px;font-weight:500;color:#111827;margin-bottom:2px">원물 재고 전체 현황</div>
         <div class="sum-main-hdr-date" style="font-size:13px;color:#9CA3AF">${dateLabel} 기준</div>
       </div>
       <button onclick="window.print()" style="background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500">🖨️ PDF 출력</button>
