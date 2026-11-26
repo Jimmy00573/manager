@@ -18267,20 +18267,21 @@ function onIbSrcFilterChange() {
 }
 
 function _updateIbFilterBtns() {
-  // 2단(카테고리)은 품목을 고른 뒤에만 노출 — 품목 전체일 땐 정렬만으로 카테고리가 묶여 보인다.
-  const catWrap = document.getElementById('ib-fcat-wrap');
-  if (catWrap) catWrap.style.display = ibFilterProduct ? 'flex' : 'none';   // 인라인 기본이 none이라 'flex'로 명시
-  document.querySelectorAll('.ib-fcat').forEach(btn => {
-    const active = btn.dataset.cat === ibFilterCat;
-    const st = IB_FILTER_STYLES[btn.dataset.cat];
-    if (active && st) {
-      btn.style.cssText = `font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid ${st.border};background:${st.bg};color:${st.color};font-weight:700;cursor:pointer;font-family:inherit`;
-    } else if (active) {
-      btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid #555;background:#333;color:#fff;font-weight:700;cursor:pointer;font-family:inherit';
-    } else {
-      btn.style.cssText = 'font-size:12px;padding:3px 11px;border-radius:12px;border:1px solid var(--border);background:#f5f5f5;color:var(--text-secondary);cursor:pointer;font-family:inherit';
-    }
-  });
+  // v839(기획안 8번): 카테고리 칩 줄 → 드롭다운(#ib-filter-cat). 값만 맞춘다(옵션은 renderInboundList의 _renderIbCatSelect).
+  const sel = document.getElementById('ib-filter-cat');
+  if (sel && sel.value !== ibFilterCat) sel.value = ibFilterCat;
+  const srcWrap = document.getElementById('ib-filter-src-wrap');
+  if (srcWrap) srcWrap.style.display = ibFilterCat === '재선별' ? '' : 'none';
+}
+// v839: 카테고리 드롭다운 옵션 — 지금 목록(카테고리로 거르기 전)에 있는 카테고리만. 고른 카테고리가 목록에서 사라지면 전체로.
+//   평소(지금 볼 것만)엔 상품·소과·파치·선과품 정도만, 검색·기간으로 옛 기록을 펼치면 대과·청과 등도 자연히 나온다.
+function _renderIbCatSelect(present) {
+  const sel = document.getElementById('ib-filter-cat');
+  if (!sel) return;
+  const order = [...IB_CATS.map(c => c.key), '선과품'];
+  const cats = [...present].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b, 'ko'); });
+  sel.innerHTML = '<option value="">카테고리 전체</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = ibFilterCat;
 }
 
 function ibToggleSort(col) {
@@ -18387,14 +18388,8 @@ function _renderIbProductChips() {
 }
 
 // 품목 칩/드롭다운 공통 진입점 — 두 경로가 같은 상태(ibFilterProduct)를 쓰도록.
-// 품목 '전체'로 되돌리면 2단 카테고리·3단 출처도 함께 초기화(2단이 숨겨져 보이지 않는 필터가 남는 것 방지).
 function setIbProductFilter(val) {
-  ibFilterProduct = val;
-  if (!val) {
-    ibFilterCat = '';
-    ibFilterSrc = '';
-    const srcEl = document.getElementById('ib-filter-src'); if (srcEl) srcEl.value = '';
-  }
+  ibFilterProduct = val;   // v839: 카테고리는 이제 따로 보이는 드롭다운이라 품목을 비워도 그대로 둔다
   ibPage = 1;
   const sel = document.getElementById('ib-filter-product'); if (sel) sel.value = val;   // 드롭다운 동기화
   renderInboundList();
@@ -18519,7 +18514,7 @@ function _renderIbFilterChips() {
   const container = document.getElementById('ib-filter-chips');
   if (!container) return;
   const chips = [];
-  if (ibFilterProduct) chips.push(`<span class="ib-chip">품목: ${esc(ibFilterProduct)} <span class="ib-chip-x" onclick="ibClearSingleFilter('product')">✕</span></span>`);
+  // v839: '품목: ○○ ✕' 태그는 뺌 — 품목 드롭다운에 이미 보인다(기획안 8번). 필터 초기화는 그대로.
   if (ibFilterDriver) {
     let label = ibFilterDriver === '__null__' ? '기사 미입력' : (drivers.find(d => String(d.id) === ibFilterDriver)?.name || ibFilterDriver);
     chips.push(`<span class="ib-chip">기사: ${esc(label)} <span class="ib-chip-x" onclick="ibClearSingleFilter('driver')">✕</span></span>`);
@@ -20333,9 +20328,7 @@ function renderInboundList() {
   // ★필터 상태는 전부 전역이라 화면을 나갔다 와도 유지된다. 초기화는 ibClearNewFilters.
   let visible = inboundRecords.filter(r => !r.is_void);
 
-  // 카테고리·출처 필터 적용
-  if (ibFilterCat) visible = visible.filter(r => (r.inbound_category || '상품') === ibFilterCat);
-  if (ibFilterCat === '재선별' && ibFilterSrc) visible = visible.filter(r => (r.reclassification_source || '') === ibFilterSrc);
+  // (카테고리·출처 필터는 v839부터 맨 끝 — 아래 '상시 목록 줄이기' 다음. 드롭다운에 지금 목록에 있는 카테고리만 띄우려고)
 
   // 농가명 검색 필터
   if (ibSearch) {
@@ -20391,6 +20384,13 @@ function renderInboundList() {
     visible = visible.filter(_now);
     _ibHiddenOld = _n0 - visible.length;
   }
+
+  // 카테고리·출처 필터(v839: 맨 끝으로) — 드롭다운엔 지금 목록에 있는 카테고리만. 고른 게 사라지면 전체로 되돌린다.
+  { const _catPresent = new Set(visible.map(r => r.inbound_category || '상품'));
+    if (ibFilterCat && !_catPresent.has(ibFilterCat)) { ibFilterCat = ''; ibFilterSrc = ''; }
+    _renderIbCatSelect(_catPresent); _updateIbFilterBtns(); }
+  if (ibFilterCat) visible = visible.filter(r => (r.inbound_category || '상품') === ibFilterCat);
+  if (ibFilterCat === '재선별' && ibFilterSrc) visible = visible.filter(r => (r.reclassification_source || '') === ibFilterSrc);
 
   // ==================================================================
   // 4. 필터 UI 동기화 (칩·옵션·건수·버튼·정렬 아이콘)
