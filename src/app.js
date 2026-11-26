@@ -11555,8 +11555,10 @@ function renderInventoryStatus() {
     matrixEl._dblclickBound = true;
   }
 
-  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type) && _scopeOk(r.product));
-  { const _ps = document.getElementById('inv-filter-product'); if (_ps) _ps.style.display = _invScope ? 'none' : ''; }   // v838: 품목별 화면에선 품목 고르기 대신 위 품목 카드   // v838: 범위 밖 품목은 이 화면 어디에도 안 셈
+  // v838: 범위 밖 품목은 이 화면 어디에도 안 셈(품목 고르기 대신 위 품목 카드).
+  // ★v845: 재고 실사 중엔 범위를 무시하고 전 품목 — 실사는 한눈에 훑으며 하는 일(공장장 2026-11-27). 실사를 끄면 다시 범위.
+  const activeRecs = inventoryRecords.filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type) && (_invAuditMode || _scopeOk(r.product)));
+  { const _ps = document.getElementById('inv-filter-product'); if (_ps) _ps.style.display = _invScope && !_invAuditMode ? 'none' : ''; }
 
   // 등급 토글 툴바 — 동적: 전체 + 일반(항상) + 재고 있는 활성 브릭스 등급(sort_order) + 데이터에 남은 기타 등급(고당 등)
   const gradeToolbarEl = document.getElementById('inv-grade-toolbar');
@@ -19546,9 +19548,10 @@ function toggleInvAuditMode() {
       .filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type) && (Number(r.quantity) || 0) > 0
         && (g === 'all' || (r.quality_grade || '일반') === g))
       .map(r => r.product))].sort((a, b) => a.localeCompare(b, 'ko'));
-    if (prods.length) _invFilter.product = prods[0];
+    if (prods.length) _invFilter.product = prods.find(p => _scopeOk(p)) || prods[0];   // v845: 품목별 화면에서 켜면 그 품목부터
   }
-  if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지. 품목 필터는 유지(사용자가 해제).
+  if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }
+  if (!_invAuditMode && _invScope && _invFilter.product && !_scopeOk(_invFilter.product)) _invFilter.product = '';   // v845: 실사 중 범위 밖 품목을 보다 끄면 범위 전체로(빈 화면 방지)   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지. 품목 필터는 유지(사용자가 해제).
   renderInventoryStatus();
 }
 // 실사 모드 내 '부분출고' 서브 토글 — ON이면 값 있는 셀 클릭 = 부분출고 모달
@@ -25913,7 +25916,7 @@ function renderPachiSection() {
   const prodGroups = {}, prodOrder = [];
   allRows.forEach(r => {
     const p = r.product || '기타';
-    if (!_prodMatch(_pachiProdFilter, p) || !_scopeOk(p)) return;   // v824 품목 거르기 · v838 범위
+    if (!_prodMatch(_pachiProdFilter, p) || !(_pachiAuditMode || _scopeOk(p))) return;   // v824 품목 거르기 · v838 범위 · v845 실사 중엔 범위 무시(감귤·만감 파치 전부)
     if (!prodGroups[p]) { prodGroups[p] = []; prodOrder.push(p); }
     prodGroups[p].push(r);
   });
@@ -26167,7 +26170,7 @@ function renderPachiSection() {
       <div style="padding:14px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="font-size:14px;font-weight:700;color:#222">파치 내역</div>
         <div style="display:flex;align-items:center;gap:10px">
-          ${_pachiProdFilter || _invScope ? (() => { const bp = Object.entries(_pachiStock.byProduct).filter(([p]) => _prodMatch(_pachiProdFilter, p) && _scopeOk(p));
+          ${_pachiProdFilter || (_invScope && !_pachiAuditMode) ? (() => { const bp = Object.entries(_pachiStock.byProduct).filter(([p]) => _prodMatch(_pachiProdFilter, p) && _scopeOk(p));
               const n = prodOrder.reduce((t, p) => t + prodGroups[p].length, 0), ct = bp.reduce((t, [, c]) => t + c, 0), kg = Math.round(bp.reduce((t, [p, c]) => t + c * kgPerCt(p), 0));
               if (_invScope && !_pachiProdFilter) return `<div style="font-size:12px;color:#888">총 ${n}건 · ${fmtN(ct)} CT · ${fmtN(kg)} kg</div>`;   // v838: 품목별 화면 — 범위 합계만(✕ 전체 없음)
               return `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:12px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1565C0;font-size:12.5px;font-weight:500">${esc(_pachiProdFilter)}만 · ${n}건 · ${fmtN(ct)} CT · ${fmtN(kg)} kg<span onclick="setPachiProdFilter('')" title="${_invScope ? esc(_invScope.f) + ' 전체' : '전체 보기'}" style="cursor:pointer;color:#6B7280;font-weight:400">✕ ${_invScope ? esc(_invScope.f) + ' 전체' : '전체'}</span></span>`; })()
