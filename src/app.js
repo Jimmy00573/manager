@@ -7818,7 +7818,7 @@ function popUsageSelects() {
   if (el && el.tagName === 'SELECT') {
     const cur = el.value;
     el.innerHTML = '<option value="">(미분류)</option>' +
-      [...pachiUsages].filter(u => u.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))   // v828: 사용 안 함은 빼고
+      _pachiUsagesSorted().filter(u => u.is_active !== false)   // v828: 사용 안 함은 빼고
         .map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
     if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
   }
@@ -10155,13 +10155,15 @@ function renderPachiUsageCfg() {
   const el = document.getElementById('csp-usage');
   if (!el) return;
   const isAdm = sessionStorage.getItem('citrus_role') === 'admin';
-  const sorted = [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  const rows = sorted.map(u => `<tr${u.is_active === false ? ' style="opacity:.5"' : ''}>
+  const sorted = _pachiUsagesSorted();
+  const rows = sorted.map((u, i) => `<tr${u.is_active === false ? ' style="opacity:.5"' : ''}>
     <td style="font-weight:600">${esc(u.name)}</td>
     <td style="color:#888;font-size:12px">${u.sort_order ?? '—'}</td>
     <td style="text-align:center"><input type="checkbox" onchange="togglePachiUsageActive(${u.id}, this.checked)" ${u.is_active !== false ? 'checked' : ''}${isAdm ? '' : ' disabled'} title="끄면 파치 등록·수정·일괄 지정 목록에서 빠짐(기존 기록·재고는 그대로)"></td>
     <td style="text-align:center"><input type="checkbox" onchange="togglePachiUsageStock(${u.id}, this.checked)" ${u.include_in_stock !== false ? 'checked' : ''}></td>
     ${isAdm ? `<td class="stk-r" style="white-space:nowrap">
+      <button class="btn" onclick="movePachiUsage(${u.id},-1)" ${i === 0 ? 'disabled' : ''} title="위로" style="padding:2px 8px${i === 0 ? ';opacity:.3;cursor:default' : ''}">▲</button>
+      <button class="btn" onclick="movePachiUsage(${u.id},1)" ${i === sorted.length - 1 ? 'disabled' : ''} title="아래로" style="padding:2px 8px${i === sorted.length - 1 ? ';opacity:.3;cursor:default' : ''}">▼</button>
       <button class="btn edt" onclick="editPachiUsage(${u.id})">수정</button>
       <button class="btn del" onclick="deletePachiUsage(${u.id})">삭제</button>
     </td>` : '<td></td>'}
@@ -10180,6 +10182,25 @@ function renderPachiUsageCfg() {
       <thead><tr><th>사용처명</th><th>순서</th><th title="끄면 고르는 목록에서 빠짐">사용</th><th>재고 포함</th><th class="stk-r"></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty">등록된 사용처가 없습니다.</div>`}`;
+}
+
+// v841: 사용처 표시 순서 — sort_order, 같으면 이름(표·드롭다운이 같은 순서). 
+function _pachiUsagesSorted() {
+  return [...pachiUsages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || '', 'ko'));
+}
+// v841: 사용처 순서 ▲▼ — moveLocation 패턴. ★기존 sort_order에 같은 값(10·10·10)이 있어 두 칸 맞바꾸기로는 안 움직인다 →
+//   새 순서대로 1..N을 다시 매기고, 값이 바뀐 줄만 저장(처음 한 번만 여러 줄, 그 뒤로는 2줄).
+async function movePachiUsage(id, dir) {
+  if (sessionStorage.getItem('citrus_role') !== 'admin') return alert('관리자만 순서를 변경할 수 있습니다.');
+  const list = _pachiUsagesSorted();
+  const i = list.findIndex(u => String(u.id) === String(id)), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  const todo = list.map((u, k) => ({ u, so: k + 1 })).filter(x => x.u.sort_order !== x.so);
+  try {
+    for (const { u, so } of todo) { await dbUpdatePachiUsage(u.id, { sort_order: so }); u.sort_order = so; }
+    renderPachiUsageCfg(); popUsageSelects();
+  } catch (e) { alert('순서 변경 오류: ' + e.message); }
 }
 
 async function addPachiUsage() {
@@ -12457,7 +12478,7 @@ function openPachiEditModal(regId) {
         <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">사용처</label>
         <select id="pachi-edit-usage" style="width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box">
           <option value="">(미분류)</option>
-          ${[...pachiUsages].filter(u => u.is_active !== false || row.usage === u.name).sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
+          ${_pachiUsagesSorted().filter(u => u.is_active !== false || row.usage === u.name).map(u => `<option value="${esc(u.name)}"${row.usage === u.name ? ' selected' : ''}>${esc(u.name)}</option>`).join('')}
         </select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
@@ -12887,7 +12908,7 @@ function openPachiBulkModal() {
     .map(s => `<option value="v:${esc(s.label)}">${esc(s.label)}</option>`).join('');
   const condOpts  = [...pachiConditions].filter(c => c.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
     .map(c => `<option value="v:${esc(c.label)}">${esc(c.label)}</option>`).join('');
-  const usageOpts = [...pachiUsages].filter(u => u.is_active !== false).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))   // v828
+  const usageOpts = _pachiUsagesSorted().filter(u => u.is_active !== false)   // v828
     .map(u => `<option value="v:${esc(u.name)}">${esc(u.name)}</option>`).join('');
 
   const selStyle = 'width:100%;padding:8px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box';
@@ -16759,7 +16780,7 @@ function renderInvSummary() {
   // 쓰는 데이터: 5번 pachiMap/pachiDetail. 새 집계 없음.
   // 용도 정렬은 pachi_usages.sort_order를 따르고 '미분류'는 항상 마지막(빨강 표시).
   // 섹션 4: 파치 (tbl-wrap 제거 → 2열 그리드 내 가로스크롤 방지)
-  const pachiUsageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
+  const pachiUsageOrder = _pachiUsagesSorted().map(u => u.name);
   const pachiEntries = Object.entries(pachiMap).filter(([, ct]) => ct > 0).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   const pachiHtml = `<div style="${CARD_I}">${secHdr(4, '파치 재고')}
     <table class="sum-pj-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed">
@@ -25809,7 +25830,7 @@ function renderPachiSection() {
   // 공통 규칙: 마스터 sort_order 순 → 마스터에 없는데 데이터에만 있는 값 → 미분류·미지정은 맨 뒤.
   // ★마스터에서 지운 값이 옛 데이터에 남아 있어도 목록에서 사라지지 않게 하는 장치다.
   // 사용처 순서(마스터 sort_order + 미분류 + 데이터 잔여) — 그룹핑/요약용
-  const usageOrder = [...pachiUsages].sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(u => u.name);
+  const usageOrder = _pachiUsagesSorted().map(u => u.name);
   usageOrder.push('미분류');
   allRows.forEach(r => { const u = r.usage || '미분류'; if (!usageOrder.includes(u)) usageOrder.push(u); });
 
