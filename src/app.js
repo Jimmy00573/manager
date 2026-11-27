@@ -238,6 +238,7 @@ let _invAuditMode = false;
 let _invOutboundSub = false;   // 실사 모드 내 '부분출고' 서브 토글(ON이면 셀 클릭=출고, OFF=확인)
 let _invAuditExpanded = new Set();
 let _invAuditVisible = [];
+let _invAuditGroups = {};   // v846: 실사 표(품목×등급)별 대상 { key: { product, grade, recs } } — 표마다 확인 처리 버튼이 이걸 쓴다
 let _pachiAuditMode = false;      // 파치 실사 모드(재고/입고 실사와 별개 플래그)
 let _pachiAuditVisible = [];      // 실사 대상 = inventory_records 파치 그룹 행 + 입고 파치(Source 3). 레거시만 제외
 // 재고 실사 체크는 inventory_records.audit_checked_at(TIMESTAMPTZ)에 저장 — 화면 이동·새로고침해도 유지
@@ -11579,14 +11580,15 @@ function renderInventoryStatus() {
       .sort((a, b) => a.localeCompare(b, 'ko'));
     const gradeKeys = ['일반', ...activeBrix, ...others];
     // 실사 모드: 선택 품목에 현재 등급 재고가 없으면 첫 등급(일반 우선, 재고 있는 것)으로 자동 전환. HTML 빌드 전에 처리.
-    if (_invAuditMode && _invFilter.product && !existing.has(_invGrade)) {
+    if (false && _invAuditMode && _invFilter.product && !existing.has(_invGrade)) {   // v846: 실사는 등급별 표를 다 펼치므로 자동 전환 안 함
       _invGrade = gradeKeys.find(k => existing.has(k)) || '일반';
     }
     // 실사 모드면 '전체' 탭 숨김(실사 실수 방지 — 등급별로만). 조회 모드는 전체 유지.
-    const grades = [...(_invAuditMode ? [] : [{ key: 'all', label: '전체' }]), ...gradeKeys.map(k => ({ key: k, label: k }))];
+    // ★v846: 실사 중엔 등급 버튼 없음 — 품목×등급 표가 전부 따로 펼쳐진다(아래 matrixHtml). 등급 고르기는 실사 끄면 원래대로.
+    const grades = _invAuditMode ? [] : [{ key: 'all', label: '전체' }, ...gradeKeys.map(k => ({ key: k, label: k }))];
     gradeToolbarEl.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
-        <span style="font-size:12px;font-weight:600;color:#374151;margin-right:4px">등급 보기:</span>
+        <span style="font-size:12px;font-weight:600;color:#374151;margin-right:4px">${_invAuditMode ? '실사 중 — 품목·브릭스 등급별 표가 모두 펼쳐짐(확인 처리 버튼은 표마다)' : '등급 보기:'}</span>
         ${grades.map(g => {
           const active = _invGrade === g.key;
           return `<button onclick="setInvGrade('${esc(g.key)}')" style="padding:5px 12px;background:${active ? '#1565C0' : '#fff'};color:${active ? '#fff' : '#374151'};border:1px solid ${active ? '#1565C0' : '#D1D5DB'};border-radius:6px;font-size:13px;font-weight:${active ? '700' : '400'};cursor:pointer;font-family:inherit">${esc(g.label)}</button>`;
@@ -11599,7 +11601,7 @@ function renderInventoryStatus() {
   }
 
   // 등급 필터
-  const recs0 = _invGrade !== 'all'
+  const recs0 = (_invGrade !== 'all' && !_invAuditMode)   // v846: 실사 중엔 전 등급(아래에서 등급별 표로 나눔)
     ? activeRecs.filter(r => (r.quality_grade || '일반') === _invGrade)
     : activeRecs;
 
@@ -11648,13 +11650,28 @@ function renderInventoryStatus() {
     byProduct[r.product].push(r);
   });
 
+  // ★v846(공장장 2026-11-27): 실사 = 전 품목 × 브릭스 등급별 표를 모두 펼친다(예전처럼 한눈에).
+  //   등급은 표마다 따로 — 한 표에 등급을 섞지 않는다(등급별 삭제·수정 분리 규칙). 표의 등급은 _renderInvMatrix 4번째 인자 →
+  //   배치 등록부(info.grade)에 실려 deleteMatrixBatch·openInvAuditAddCell이 전역 _invGrade 대신 그 표의 등급을 쓴다.
+  //   ★확인 처리(초기화·미확인 출고·미확인 삭제)는 표마다 버튼 — 그 표(품목·등급)의 재고만 대상(_invAuditGroups[key]).
+  _invAuditGroups = {};
+  const _gradeRank = g => g === '일반' ? -1 : (() => { const b = brixGrades.find(x => x.label === g); return b ? (b.sort_order || 0) : 9999; })();
   const matrixHtml = Object.entries(byProduct)
     .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    .map(([product, productRecs]) => _renderInvMatrix(product, productRecs, _invAuditMode))
+    .map(([product, productRecs]) => {
+      if (!_invAuditMode) return _renderInvMatrix(product, productRecs, false);
+      const byG = {};
+      productRecs.forEach(r => { const g = r.quality_grade || '일반'; (byG[g] = byG[g] || []).push(r); });
+      return Object.keys(byG).sort((a, b) => _gradeRank(a) - _gradeRank(b) || a.localeCompare(b, 'ko')).map(g => {
+        const key = 'g' + Object.keys(_invAuditGroups).length;
+        _invAuditGroups[key] = { product, grade: g, recs: byG[g].filter(r => (Number(r.quantity) || 0) > 0) };
+        return _renderInvAuditBar(key) + _renderInvMatrix(product, byG[g], true, g);
+      }).join('');
+    })
     .join('');
 
   if (_invAuditMode) {
-    // 실사 대상 = 현재 표시 재고(수량>0). 실사 초기화·미확인삭제가 이 목록을 참조.
+    // 실사 대상 = 현재 표시 재고(수량>0). 맨 위 바는 전체 진행률만(처리 버튼은 표마다).
     _invAuditVisible = recs.filter(r => (Number(r.quantity) || 0) > 0);
     matrixEl.innerHTML = _renderInvAuditBar() + matrixHtml;
   } else {
@@ -11679,8 +11696,9 @@ function clearInvSzSel(product) { delete _invSzSel[product]; renderInventoryStat
 function _clearAllInvSzSel() { Object.keys(_invSzSel).forEach(k => delete _invSzSel[k]); }
 
 // ── [화면: 재고관리 > 선과품 재고] 농가×사이즈 매트릭스 본체(CSS Grid). 호출부는 renderInventoryStatus.
-function _renderInvMatrix(product, recs, auditMode) {
+function _renderInvMatrix(product, recs, auditMode, gradeOverride) {   // v846: gradeOverride = 이 표의 등급(실사 품목×등급 표)
   const audit    = !!auditMode;
+  const _mxGrade = gradeOverride || _invGrade;
   const ptype    = PRODUCT_TYPE_MAP[product] || '만감류';
   // 품목 규칙 범위 열 + 데이터 실존 사이즈 합집합(규칙 밖 데이터 누락 방지). 감귤류 불변.
   const dataSzs  = [...new Set(recs.map(r => r.size_code).filter(Boolean))];
@@ -11794,7 +11812,7 @@ function _renderInvMatrix(product, recs, auditMode) {
         .map(r => r.id);
     });
     const regId = Object.keys(_matrixBatchRegistry).length;
-    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes }, recIds };
+    _matrixBatchRegistry[regId] = { farm: batch.farm, groupId: batch.groupId, product, batchTotal, sortingDate: batch.sortingDate, inboundDate: batch.inboundDate, sizes: { ...batch.sizes }, recIds, grade: gradeOverride || null };
     // 농가(행) 헤더 — 실사 모드면 클릭으로 이 배치 전체 확인/해제(regId를 위에서 먼저 계산)
     const _rowClk   = audit ? (_invOutboundSub ? ` onclick="outboundInvRow(${regId})"` : ` onclick="toggleInvAuditRow(${regId})"`) : '';
     const _rowTitle = audit ? `${esc(batch.farm)} · 클릭: 이 배치 ${_invOutboundSub ? '전량 출고' : '전체 확인/해제'}` : esc(batch.farm);
@@ -11932,11 +11950,11 @@ function _renderInvMatrix(product, recs, auditMode) {
     ? ` <span style="color:#9CA3AF">(${groupTotals.map(gt => `${esc(gt.name)} ${fmtCT(gt.ct)}`).join(' · ')})</span>`
     : '';
 
-  const gradeBadge = _invGrade === 'all'
+  const gradeBadge = _mxGrade === 'all'
     ? ''
-    : _invGrade === '일반'
+    : _mxGrade === '일반'
       ? '<span style="font-size:11px;font-weight:400;color:#6B7280;background:#F3F4F6;padding:2px 8px;border-radius:10px">일반</span>'
-      : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">${esc(_invGrade)}</span>`;
+      : `<span style="font-size:11px;font-weight:700;color:#1565C0;background:#EFF6FF;padding:2px 8px;border-radius:10px;border:1px solid #BFDBFE">${esc(_mxGrade)}</span>`;
 
   // ★가로 스크롤 div의 data-invmx는 재렌더 때 스크롤 위치를 되찾는 열쇠다(_invMxScrollSave/Restore). 지우면 스크롤이 튄다.
   return `
@@ -11969,22 +11987,24 @@ function _fmtAuditTs(ts) {
 }
 
 // 실사 진행률 바 (매트릭스 상단). _invAuditVisible 기준(수량>0 레코드).
-function _renderInvAuditBar() {
-  const items = _invAuditVisible || [];
+function _renderInvAuditBar(key) {
+  // v846: key = 실사 표(품목×등급) — 그 표만 세고 버튼도 그 표 대상. key 없으면 맨 위 전체 진행률(처리 버튼 없음, 부분출고 토글만).
+  const grp = key ? _invAuditGroups[key] : null;
+  const items = grp ? grp.recs : (_invAuditVisible || []);
   const total = items.length;
   const checked = items.filter(r => r.audit_checked_at).length;   // DB 기준
   const unchecked = total - checked;
   return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;margin-bottom:10px;font-size:13px">
-    <span>📋 <b>실사 중</b> · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건 <span style="color:${_invOutboundSub ? '#059669' : '#9CA3AF'};font-size:11px;font-weight:${_invOutboundSub ? '600' : '400'}">— 값 있는 셀 클릭 = ${_invOutboundSub ? '📤 부분출고' : '확인/해제'}</span></span>
+    <span>📋 ${grp ? `<b>${esc(grp.product)} · ${esc(grp.grade)}</b>` : '<b>실사 중</b> · 전체 진행'} · 전체 <b>${total}</b>건 · ✓<b style="color:#7C3AED">${checked}</b>건 확인 · 미확인 <b style="color:#C62828">${unchecked}</b>건 <span style="color:${_invOutboundSub ? '#059669' : '#9CA3AF'};font-size:11px;font-weight:${_invOutboundSub ? '600' : '400'}">— 값 있는 셀 클릭 = ${_invOutboundSub ? '📤 부분출고' : '확인/해제'}</span></span>
     <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
-      <button onclick="toggleInvOutboundSub()" title="ON이면 값 있는 셀 클릭 = 부분출고" style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;cursor:pointer;${_invOutboundSub ? 'background:#059669;color:#fff;border:1px solid #059669' : 'background:#fff;color:#059669;border:1px solid #6EE7B7'}">📤 부분출고 ${_invOutboundSub ? 'ON' : 'OFF'}</button>
-      ${_invOutboundSub ? '' : `
+      ${grp ? '' : `<button onclick="toggleInvOutboundSub()" title="ON이면 값 있는 셀 클릭 = 부분출고" style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;cursor:pointer;${_invOutboundSub ? 'background:#059669;color:#fff;border:1px solid #059669' : 'background:#fff;color:#059669;border:1px solid #6EE7B7'}">📤 부분출고 ${_invOutboundSub ? 'ON' : 'OFF'}</button>`}
+      ${(_invOutboundSub || !grp) ? '' : `
       <!-- ★부분출고 ON일 땐 안 그린다 — 부분출고는 셀 단위 작업이라 '확인' 개념을 안 쓰고,
            잘못 누르면 미확인 전량이 한 번에 출고·삭제된다. OFF로 되돌리면 그대로 다시 나온다.
            실사 초기화도 '확인 체크를 지우는' 작업이라 성격이 같아 함께 감춘다(하나만 남으면 오히려 헷갈림). -->
-      <button onclick="_invClearAuditChecks()" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
-      <button onclick="outboundUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}건 출고</button>
-      <button onclick="deleteUncheckedInvAudit()" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>`}
+      <button onclick="_invClearAuditChecks('${key || ''}')" style="font-size:11px;padding:2px 10px;border:1px solid #C4B5FD;border-radius:6px;background:#fff;color:#7C3AED;cursor:pointer;font-family:inherit">↺ 실사 초기화</button>
+      <button onclick="outboundUncheckedInvAudit('${key || ''}')" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#1565C0;color:#fff;border:1px solid #1565C0;cursor:pointer' : 'background:#E3F2FD;color:#9CA3AF;border:1px solid #BBDEFB;cursor:not-allowed'}">📤 미확인 ${unchecked}건 출고</button>
+      <button onclick="deleteUncheckedInvAudit('${key || ''}')" ${unchecked === 0 ? 'disabled' : ''} style="font-size:11px;padding:2px 10px;border-radius:6px;font-weight:600;font-family:inherit;${unchecked > 0 ? 'background:#DC2626;color:#fff;border:1px solid #DC2626;cursor:pointer' : 'background:#FEE2E2;color:#9CA3AF;border:1px solid #FECACA;cursor:not-allowed'}">🗑️ 미확인 ${unchecked}건 삭제</button>`}
     </div>
   </div>`;
 }
@@ -12026,12 +12046,13 @@ async function deleteMatrixBatch(regId) {
     : r => String(r.sorting_result_id) === gid && r.source_type === 'sorting' && !r.is_void;
 
   // 등급 결정
-  const isGradeTab = _invGrade !== 'all';   // 특정 등급 탭이면 그 등급만 정확히
+  const _gSel = info.grade || _invGrade;   // v846: 실사 품목×등급 표면 그 표의 등급(전역 탭 아님)
+  const isGradeTab = _gSel !== 'all';   // 특정 등급 탭이면 그 등급만 정확히
   let targetGrade;
-  if (_invGrade === '일반') {
+  if (_gSel === '일반') {
     targetGrade = '일반';
   } else if (isGradeTab) {
-    targetGrade = _invGrade;   // 브릭스/고당 등 특정 등급 탭
+    targetGrade = _gSel;   // 브릭스/고당 등 특정 등급 탭
   } else {
     // 전체 탭 — 배치 내 존재 등급 확인 후 선택
     const cands = inventoryRecords.filter(baseFilter);
@@ -19539,17 +19560,9 @@ function toggleInvAuditMode() {
   // ★모드가 바뀌면 사이즈 선택을 비운다 — 안 그러면 합계 바만 남아 떠 있어 혼란스럽다.
   //   끄고 돌아왔을 때도 초기화된 상태로 시작하게 되어 예측이 쉽다.
   _clearAllInvSzSel();
-  if (_invAuditMode && _invGrade === 'all') _invGrade = '일반';   // 실사는 등급별만(전체 탭 숨김) → 전체였으면 일반으로
+  // v846: 실사 = 전 품목 × 등급별 표를 다 펼친다 → 품목 고르기 비움, 등급 강제 전환 없음(끄면 원래 보던 등급 그대로)
   // 실사 ON & 품목 미선택 → 현재 등급에 재고 있는 첫 품목 자동 선택(품목 카드와 동일 정렬). 재고 없으면 그대로 둠.
-  if (_invAuditMode && !_invFilter.product) {
-    const PACHI_TYPES = ['pachi', 'pachi_manual', 'pachi_highacid', 'pachi_lowbrix', 'pachi_tiny', 'pachi_green'];
-    const g = _invGrade;
-    const prods = [...new Set(inventoryRecords
-      .filter(r => !r.is_void && !PACHI_TYPES.includes(r.source_type) && (Number(r.quantity) || 0) > 0
-        && (g === 'all' || (r.quality_grade || '일반') === g))
-      .map(r => r.product))].sort((a, b) => a.localeCompare(b, 'ko'));
-    if (prods.length) _invFilter.product = prods.find(p => _scopeOk(p)) || prods[0];   // v845: 품목별 화면에서 켜면 그 품목부터
-  }
+  if (_invAuditMode) _invFilter.product = '';
   if (!_invAuditMode) { _invAuditExpanded = new Set(); _invOutboundSub = false; }
   if (!_invAuditMode && _invScope && _invFilter.product && !_scopeOk(_invFilter.product)) _invFilter.product = '';   // v845: 실사 중 범위 밖 품목을 보다 끄면 범위 전체로(빈 화면 방지)   // 실사 끄면 부분출고 서브도 해제. 체크는 DB라 유지. 품목 필터는 유지(사용자가 해제).
   renderInventoryStatus();
@@ -19898,9 +19911,10 @@ async function openInvAuditAddCell(regId, sz) {
 
   // 등급 옵션: 특정 등급탭이면 그 등급 고정, 전체탭이면 배치 존재 등급(+필요시 일반)
   let gradeOptions, fixedGrade = null;
-  if (_invGrade !== 'all') {
-    fixedGrade  = _invGrade;
-    gradeOptions = [_invGrade];
+  const _gSel = info.grade || _invGrade;   // v846: 실사 품목×등급 표면 그 표의 등급
+  if (_gSel !== 'all') {
+    fixedGrade  = _gSel;
+    gradeOptions = [_gSel];
   } else {
     const present   = [...new Set(batchRecs.map(r => r.quality_grade || '일반'))];
     const brixOrder = brixGrades.filter(g => g.is_active !== false)
@@ -20104,8 +20118,10 @@ async function commitChipEdit(key, rawVal, confirmCell = false) {
     if (b) b.textContent = fmtN(Number(oldQty) || 0);
   }
 }
-async function _invClearAuditChecks() {
-  const checked = (_invAuditVisible || []).filter(r => r.audit_checked_at);
+// v846: key = 실사 표(품목×등급) — 그 표의 재고만. 키 없이 부르면 예전처럼 _invAuditVisible(호출부는 이제 표마다 키를 넘긴다).
+function _invAuditPool(key) { return key ? ((_invAuditGroups[key] || {}).recs || []) : (_invAuditVisible || []); }
+async function _invClearAuditChecks(key) {
+  const checked = _invAuditPool(key).filter(r => r.audit_checked_at);
   if (!checked.length) { showToast('확인된 항목이 없습니다.'); return; }
   const ok = await showConfirmEdit('실사 초기화', `확인 표시된 ${checked.length}건을 모두 미확인으로 되돌립니다.\n(재고 수량은 삭제·변경되지 않습니다)`);
   if (!ok) return;
@@ -20124,9 +20140,9 @@ async function _invClearAuditChecks() {
   }
 }
 
-async function deleteUncheckedInvAudit() {
+async function deleteUncheckedInvAudit(key) {
   if (!_invAuditMode) return;
-  const unchecked = _invAuditVisible.filter(r => !r.audit_checked_at);   // DB 기준(미확인)
+  const unchecked = _invAuditPool(key).filter(r => !r.audit_checked_at);   // DB 기준(미확인) · v846 그 표만
   if (unchecked.length === 0) {
     await showConfirmEdit('미확인 없음', '확인되지 않은 항목이 없습니다. 모두 확인 완료되었습니다.');
     return;
@@ -20227,9 +20243,9 @@ async function _auditOutboundInvBatch(recs, opts) {
 // 실사 미확인 = 나간 것(출고). 미확인 재고를 '실사출고'로 처리(출고 기록 생성 + 원본 재고 void).
 // deleteUncheckedInvAudit 패턴 복제 + 출고 기록. 선과품(source_type='sorting') 대상. 되돌릴 수 있게 감사로그.
 // ★처리는 _auditOutboundInvBatch 공용 헬퍼가 한다(파치 실사와 같은 식, outbound_batch 1회 — 전부 되거나 전부 취소).
-async function outboundUncheckedInvAudit() {
+async function outboundUncheckedInvAudit(key) {
   if (!_invAuditMode) return;
-  const unchecked = _invAuditVisible.filter(r => !r.audit_checked_at);   // DB 기준(미확인=나간 것)
+  const unchecked = _invAuditPool(key).filter(r => !r.audit_checked_at);   // DB 기준(미확인=나간 것) · v846 그 표만
   if (unchecked.length === 0) {
     await showConfirmEdit('미확인 없음', '확인되지 않은 항목이 없습니다. 모두 확인 완료되었습니다.');
     return;
